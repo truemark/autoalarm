@@ -1,0 +1,5 @@
+{
+  "extends": "./node_modules/gts/tsconfig-google.json",
+  "compilerOptions": {},
+  "exclude": ["node_modules", "cdk.out"]
+}

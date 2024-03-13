@@ -1,5 +1,5 @@
 {
-  "app": "npx ts-node --prefer-ts-exts bin/autoalarm.ts",
+  "app": "npx ts-node --prefer-ts-exts bin/auto-alarm.ts",
   "watch": {
     "include": [
       "**"
