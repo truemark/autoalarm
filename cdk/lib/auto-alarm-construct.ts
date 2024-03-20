@@ -3,6 +3,7 @@ import {MainFunction} from './main-function';
 import {StandardQueue} from 'truemark-cdk-lib/aws-sqs';
 import {Rule} from 'aws-cdk-lib/aws-events';
 import {LambdaFunction} from 'aws-cdk-lib/aws-events-targets';
+import {PolicyStatement, Effect} from 'aws-cdk-lib/aws-iam';
 
 export class AutoAlarmConstruct extends Construct {
   constructor(scope: Construct, id: string) {
@@ -13,6 +14,19 @@ export class AutoAlarmConstruct extends Construct {
     const mainTarget = new LambdaFunction(mainFunction, {
       deadLetterQueue,
     });
+
+    // Add permissions to the Lambda function's role
+    mainFunction.role?.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: [
+          'ec2:DescribeTags',
+          'cloudwatch:PutMetricAlarm', // Include other necessary actions here
+          'cloudwatch:DeleteAlarms',
+        ],
+        resources: ['*'], // Adjust as necessary to limit permissions
+      })
+    );
 
     // Listen to tag changes related to AutoAlarm
     const tagRule = new Rule(this, 'TagRule', {
