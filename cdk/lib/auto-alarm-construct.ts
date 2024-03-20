@@ -3,30 +3,58 @@ import {MainFunction} from './main-function';
 import {StandardQueue} from 'truemark-cdk-lib/aws-sqs';
 import {Rule} from 'aws-cdk-lib/aws-events';
 import {LambdaFunction} from 'aws-cdk-lib/aws-events-targets';
-import {PolicyStatement, Effect} from 'aws-cdk-lib/aws-iam';
+import {
+  Role,
+  ServicePrincipal,
+  PolicyStatement,
+  Effect,
+} from 'aws-cdk-lib/aws-iam';
 
 export class AutoAlarmConstruct extends Construct {
   constructor(scope: Construct, id: string) {
     super(scope, id);
 
-    const mainFunction = new MainFunction(this, 'MainFunction');
-    const deadLetterQueue = new StandardQueue(this, 'DeadLetterQueue');
-    const mainTarget = new LambdaFunction(mainFunction, {
-      deadLetterQueue,
+    // Define the IAM role with specific permissions for the Lambda function
+    const lambdaExecutionRole = new Role(this, 'LambdaExecutionRole', {
+      assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
+      description: 'Execution role for AutoAlarm Lambda function',
     });
 
-    // Add permissions to the Lambda function's role
-    mainFunction.role?.addToPolicy(
+    // Attach policies for EC2 and CloudWatch
+    lambdaExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: [
           'ec2:DescribeTags',
-          'cloudwatch:PutMetricAlarm', // Include other necessary actions here
+          'cloudwatch:PutMetricAlarm',
           'cloudwatch:DeleteAlarms',
         ],
-        resources: ['*'], // Adjust as necessary to limit permissions
+        resources: ['*'],
       })
     );
+
+    // Attach policies for CloudWatch Logs
+    lambdaExecutionRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: [
+          'logs:CreateLogGroup',
+          'logs:CreateLogStream',
+          'logs:PutLogEvents',
+        ],
+        resources: ['*'],
+      })
+    );
+
+    // Create the MainFunction and explicitly pass the execution role
+    const mainFunction = new MainFunction(this, 'MainFunction', {
+      role: lambdaExecutionRole, // Pass the role here
+    });
+
+    const deadLetterQueue = new StandardQueue(this, 'DeadLetterQueue');
+    const mainTarget = new LambdaFunction(mainFunction, {
+      deadLetterQueue,
+    });
 
     // Listen to tag changes related to AutoAlarm
     const tagRule = new Rule(this, 'TagRule', {
