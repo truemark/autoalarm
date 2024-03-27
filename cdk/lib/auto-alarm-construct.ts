@@ -28,6 +28,7 @@ export class AutoAlarmConstruct extends Construct {
           'ec2:DescribeTags',
           'cloudwatch:PutMetricAlarm',
           'cloudwatch:DeleteAlarms',
+          'cloudwatch:DescribeAlarms',
         ],
         resources: ['*'],
       })
