@@ -20,6 +20,31 @@ async function doesAlarmExist(instanceId: string): Promise<boolean> {
   return (response.MetricAlarms?.length ?? 0) > 0;
 }
 
+async function deleteAlarm(
+  log: Logger,
+  instanceId: string,
+  check: string
+): Promise<void> {
+  const alarmName = `AutoAlarm-EC2-${instanceId}-${check}`;
+  const alarmExists = await doesAlarmExist(instanceId);
+  if (alarmExists) {
+    await cloudWatchClient.send(
+      new DeleteAlarmsCommand({AlarmNames: [alarmName]})
+    );
+    log
+      .info()
+      .str('alarmName', alarmName)
+      .str('instanceId', instanceId)
+      .msg('Deleted alarm');
+  } else {
+    log
+      .info()
+      .str('alarmName', alarmName)
+      .str('instanceId', instanceId)
+      .msg('Alarm does not exist for instance');
+  }
+}
+
 async function CriticalCPUUsageAlarmForInstance(
   log: Logger,
   instanceId: string,
@@ -29,7 +54,7 @@ async function CriticalCPUUsageAlarmForInstance(
   const alarmExists = await doesAlarmExist(instanceId);
   let threshold = 99; // Default threshold
 
-  // Check for the "CPUAlarmThreshold" tag
+  // Check for the "CriticalCPUAlarmThreshold" tag
   const thresholdTag = tags['CriticalCPUAlarmThreshold'];
   if (thresholdTag) {
     log
@@ -49,7 +74,45 @@ async function CriticalCPUUsageAlarmForInstance(
     }
   }
 
-  if (!alarmExists) {
+  if (alarmExists) {
+    // Get the existing alarm's threshold value
+    const existingAlarm = await cloudWatchClient.send(
+      new DescribeAlarmsCommand({AlarmNames: [alarmName]})
+    );
+    const existingThreshold = existingAlarm.MetricAlarms?.[0].Threshold;
+
+    if (existingThreshold !== threshold) {
+      // Update the existing alarm's threshold value if it's different
+      await cloudWatchClient.send(
+        new PutMetricAlarmCommand({
+          AlarmName: alarmName,
+          ComparisonOperator: 'GreaterThanThreshold',
+          EvaluationPeriods: 1,
+          MetricName: 'CPUUtilization',
+          Namespace: 'AWS/EC2',
+          Period: 300,
+          Statistic: 'Average',
+          Threshold: threshold,
+          ActionsEnabled: false,
+          Dimensions: [{Name: 'InstanceId', Value: instanceId}],
+        })
+      );
+      log
+        .info()
+        .str('alarmName', alarmName)
+        .str('instanceId', instanceId)
+        .num('threshold', threshold)
+        .msg('Updated Critical CPU usage alarm threshold');
+    } else {
+      log
+        .info()
+        .str('alarmName', alarmName)
+        .str('instanceId', instanceId)
+        .num('threshold', threshold)
+        .msg('Critical CPU usage alarm threshold is already up-to-date');
+    }
+  } else {
+    // Create a new alarm
     await cloudWatchClient.send(
       new PutMetricAlarmCommand({
         AlarmName: alarmName,
@@ -70,12 +133,6 @@ async function CriticalCPUUsageAlarmForInstance(
       .str('instanceId', instanceId)
       .num('threshold', threshold)
       .msg('Created Critical CPU usage alarm');
-  } else {
-    log
-      .info()
-      .str('alarmName', alarmName)
-      .str('instanceId', instanceId)
-      .msg('CPU usage alarm already exists for instance');
   }
 }
 
@@ -108,7 +165,45 @@ async function warningCPUUsageAlarmForInstance(
     }
   }
 
-  if (!alarmExists) {
+  if (alarmExists) {
+    // Get the existing alarm's threshold value
+    const existingAlarm = await cloudWatchClient.send(
+      new DescribeAlarmsCommand({AlarmNames: [alarmName]})
+    );
+    const existingThreshold = existingAlarm.MetricAlarms?.[0].Threshold;
+
+    if (existingThreshold !== threshold) {
+      // Update the existing alarm's threshold value if it's different
+      await cloudWatchClient.send(
+        new PutMetricAlarmCommand({
+          AlarmName: alarmName,
+          ComparisonOperator: 'GreaterThanThreshold',
+          EvaluationPeriods: 1,
+          MetricName: 'CPUUtilization',
+          Namespace: 'AWS/EC2',
+          Period: 300,
+          Statistic: 'Average',
+          Threshold: threshold,
+          ActionsEnabled: false,
+          Dimensions: [{Name: 'InstanceId', Value: instanceId}],
+        })
+      );
+      log
+        .info()
+        .str('alarmName', alarmName)
+        .str('instanceId', instanceId)
+        .num('threshold', threshold)
+        .msg('Updated Warning CPU usage alarm threshold');
+    } else {
+      log
+        .info()
+        .str('alarmName', alarmName)
+        .str('instanceId', instanceId)
+        .num('threshold', threshold)
+        .msg('Warning CPU usage alarm threshold is already up-to-date');
+    }
+  } else {
+    // Create a new alarm
     await cloudWatchClient.send(
       new PutMetricAlarmCommand({
         AlarmName: alarmName,
@@ -128,13 +223,7 @@ async function warningCPUUsageAlarmForInstance(
       .str('alarmName', alarmName)
       .str('instanceId', instanceId)
       .num('threshold', threshold)
-      .msg('Created Warning CPU usage alarm');
-  } else {
-    log
-      .info()
-      .str('alarmName', alarmName)
-      .str('instanceId', instanceId)
-      .msg('CPU usage alarm already exists for instance');
+      .msg('Created warning CPU usage alarm');
   }
 }
 
@@ -170,31 +259,6 @@ async function createStatusAlarmForInstance(
       .str('alarmName', alarmName)
       .str('instanceId', instanceId)
       .msg('Alarm  already exists for instance');
-  }
-}
-
-async function deleteAlarm(
-  log: Logger,
-  instanceId: string,
-  check: string
-): Promise<void> {
-  const alarmName = `AutoAlarm-EC2-${instanceId}-${check}`;
-  const alarmExists = await doesAlarmExist(instanceId);
-  if (alarmExists) {
-    await cloudWatchClient.send(
-      new DeleteAlarmsCommand({AlarmNames: [alarmName]})
-    );
-    log
-      .info()
-      .str('alarmName', alarmName)
-      .str('instanceId', instanceId)
-      .msg('Deleted alarm');
-  } else {
-    log
-      .info()
-      .str('alarmName', alarmName)
-      .str('instanceId', instanceId)
-      .msg('Alarm does not exist for instance');
   }
 }
 
@@ -259,7 +323,11 @@ export const handler: Handler = async (
       sublog.info().str('resourceId', resourceId).msg('Processing tag event');
 
       const tags = await fetchInstanceTags(resourceId);
-      console.log(`Fetched tags for resource: ${resourceId}`, tags);
+      sublog
+        .info()
+        .str('resource:', resourceId)
+        .str('tags', JSON.stringify(tags))
+        .msg('Fetched tags');
 
       if (tags['autoalarm:disabled'] === 'false') {
         await createStatusAlarmForInstance(sublog, resourceId);
@@ -268,7 +336,6 @@ export const handler: Handler = async (
       }
     }
   } catch (e) {
-    console.error('Error processing event', e);
     sublog.error().err(e).msg('Error processing event');
   }
 };
