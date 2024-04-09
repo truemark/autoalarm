@@ -12,6 +12,27 @@ import {Logger} from '@nr1e/logging';
 const ec2Client = new EC2Client({});
 const cloudWatchClient = new CloudWatchClient({});
 
+async function createCPUThresholdAlarm(
+  alarmName: string,
+  instanceId: string,
+  threshold: number
+): Promise<void> {
+  await cloudWatchClient.send(
+    new PutMetricAlarmCommand({
+      AlarmName: alarmName,
+      ComparisonOperator: 'GreaterThanThreshold',
+      EvaluationPeriods: 1,
+      MetricName: 'CPUUtilization',
+      Namespace: 'AWS/EC2',
+      Period: 300,
+      Statistic: 'Average',
+      Threshold: threshold,
+      ActionsEnabled: false,
+      Dimensions: [{Name: 'InstanceId', Value: instanceId}],
+    })
+  );
+}
+
 async function doesAlarmExist(instanceId: string): Promise<boolean> {
   const alarmName = `StatusCheckFailed_${instanceId}`;
   const response = await cloudWatchClient.send(
@@ -83,20 +104,7 @@ async function CriticalCPUUsageAlarmForInstance(
 
     if (existingThreshold !== threshold) {
       // Update the existing alarm's threshold value if it's different
-      await cloudWatchClient.send(
-        new PutMetricAlarmCommand({
-          AlarmName: alarmName,
-          ComparisonOperator: 'GreaterThanThreshold',
-          EvaluationPeriods: 1,
-          MetricName: 'CPUUtilization',
-          Namespace: 'AWS/EC2',
-          Period: 300,
-          Statistic: 'Average',
-          Threshold: threshold,
-          ActionsEnabled: false,
-          Dimensions: [{Name: 'InstanceId', Value: instanceId}],
-        })
-      );
+      await createCPUThresholdAlarm(alarmName, instanceId, threshold);
       log
         .info()
         .str('alarmName', alarmName)
@@ -113,20 +121,7 @@ async function CriticalCPUUsageAlarmForInstance(
     }
   } else {
     // Create a new alarm
-    await cloudWatchClient.send(
-      new PutMetricAlarmCommand({
-        AlarmName: alarmName,
-        ComparisonOperator: 'GreaterThanThreshold',
-        EvaluationPeriods: 1,
-        MetricName: 'CPUUtilization',
-        Namespace: 'AWS/EC2',
-        Period: 300,
-        Statistic: 'Average',
-        Threshold: threshold,
-        ActionsEnabled: false,
-        Dimensions: [{Name: 'InstanceId', Value: instanceId}],
-      })
-    );
+    await createCPUThresholdAlarm(alarmName, instanceId, threshold);
     log
       .info()
       .str('alarmName', alarmName)
@@ -174,20 +169,7 @@ async function warningCPUUsageAlarmForInstance(
 
     if (existingThreshold !== threshold) {
       // Update the existing alarm's threshold value if it's different
-      await cloudWatchClient.send(
-        new PutMetricAlarmCommand({
-          AlarmName: alarmName,
-          ComparisonOperator: 'GreaterThanThreshold',
-          EvaluationPeriods: 1,
-          MetricName: 'CPUUtilization',
-          Namespace: 'AWS/EC2',
-          Period: 300,
-          Statistic: 'Average',
-          Threshold: threshold,
-          ActionsEnabled: false,
-          Dimensions: [{Name: 'InstanceId', Value: instanceId}],
-        })
-      );
+      await createCPUThresholdAlarm(alarmName, instanceId, threshold);
       log
         .info()
         .str('alarmName', alarmName)
@@ -204,20 +186,7 @@ async function warningCPUUsageAlarmForInstance(
     }
   } else {
     // Create a new alarm
-    await cloudWatchClient.send(
-      new PutMetricAlarmCommand({
-        AlarmName: alarmName,
-        ComparisonOperator: 'GreaterThanThreshold',
-        EvaluationPeriods: 1,
-        MetricName: 'CPUUtilization',
-        Namespace: 'AWS/EC2',
-        Period: 300,
-        Statistic: 'Average',
-        Threshold: threshold,
-        ActionsEnabled: false,
-        Dimensions: [{Name: 'InstanceId', Value: instanceId}],
-      })
-    );
+    await createCPUThresholdAlarm(alarmName, instanceId, threshold);
     log
       .info()
       .str('alarmName', alarmName)
