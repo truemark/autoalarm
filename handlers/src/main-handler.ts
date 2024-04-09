@@ -301,18 +301,22 @@ export const handler: Handler = async (
         .str('state', state)
         .msg('Processing EC2 event');
 
+      // Check if the instance is running and create alarms for cpu usage which should be done by default for every instance
       if (state === 'running') {
         const tags = await fetchInstanceTags(instanceId);
         sublog.info().str('tags', JSON.stringify(tags)).msg('Fetched tags');
         await warningCPUUsageAlarmForInstance(sublog, instanceId, tags);
         await CriticalCPUUsageAlarmForInstance(sublog, instanceId, tags);
 
+        // Check if the instance has the "autoalarm:disabled" tag set to "true" and skip creating status check alarm
         if (tags['autoalarm:disabled'] === 'true') {
           sublog.info().msg('autoalarm:disabled=true. Skipping alarm creation');
+          // Check if the instance has the "autoalarm:disabled" tag set to "false" and create status check alarm
         } else if (tags['autoalarm:disabled'] === 'false') {
           await createStatusAlarmForInstance(sublog, instanceId);
           sublog.info().msg('autoalarm:disabled=false');
         }
+        // If the instance is terminated, delete all alarms
       } else if (state === 'terminated') {
         await deleteAlarm(sublog, instanceId, 'WarningCPUUtilization');
         await deleteAlarm(sublog, instanceId, 'CriticalCPUUtilization');
@@ -329,6 +333,11 @@ export const handler: Handler = async (
         .str('tags', JSON.stringify(tags))
         .msg('Fetched tags');
 
+      // Create default alarms for CPU usage or update thresholds if they exist in tag updates
+      await warningCPUUsageAlarmForInstance(sublog, resourceId, tags);
+      await CriticalCPUUsageAlarmForInstance(sublog, resourceId, tags);
+
+      // Create or delete status check alarm based on the value of the "autoalarm:disabled" tag
       if (tags['autoalarm:disabled'] === 'false') {
         await createStatusAlarmForInstance(sublog, resourceId);
       } else if (tags['autoalarm:disabled'] === 'true') {
