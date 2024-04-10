@@ -65,7 +65,15 @@ export class AutoAlarmConstruct extends Construct {
         detail: {
           service: ['ec2', 'ecs', 'rds'],
           'resource-type': ['instance'],
-          'changed-tag-keys': ['autoalarm:disabled'],
+          'changed-tag-keys': [
+            'autoalarm:disabled',
+            'autoalarm:cpu-percent-above-critical',
+            'autoalarm:storage-free-percent-critical ',
+            'autoalarm:cpu-percent-above-warning',
+            'autoalarm:storage-free-percent-warning',
+            'autoalarm:cpu-percent-duration-time',
+            'autoalarm:cpu-percent-duration-periods',
+          ],
         },
       },
       description: 'Routes tag events to AutoAlarm',

@@ -15,16 +15,18 @@ const cloudWatchClient = new CloudWatchClient({});
 async function createCPUThresholdAlarm(
   alarmName: string,
   instanceId: string,
-  threshold: number
+  threshold: number,
+  duration: number,
+  evaluationPeriods: number
 ): Promise<void> {
   await cloudWatchClient.send(
     new PutMetricAlarmCommand({
       AlarmName: alarmName,
       ComparisonOperator: 'GreaterThanThreshold',
-      EvaluationPeriods: 1,
+      EvaluationPeriods: evaluationPeriods,
       MetricName: 'CPUUtilization',
       Namespace: 'AWS/EC2',
-      Period: 300,
+      Period: duration,
       Statistic: 'Average',
       Threshold: threshold,
       ActionsEnabled: false,
@@ -33,8 +35,7 @@ async function createCPUThresholdAlarm(
   );
 }
 
-async function doesAlarmExist(instanceId: string): Promise<boolean> {
-  const alarmName = `StatusCheckFailed_${instanceId}`;
+async function doesAlarmExist(alarmName: string): Promise<boolean> {
   const response = await cloudWatchClient.send(
     new DescribeAlarmsCommand({AlarmNames: [alarmName]})
   );
@@ -47,8 +48,13 @@ async function deleteAlarm(
   check: string
 ): Promise<void> {
   const alarmName = `AutoAlarm-EC2-${instanceId}-${check}`;
-  const alarmExists = await doesAlarmExist(instanceId);
+  const alarmExists = await doesAlarmExist(alarmName);
   if (alarmExists) {
+    log
+      .info()
+      .str('alarmName', alarmName)
+      .str('instanceId', instanceId)
+      .msg('Attempting to delete alarm');
     await cloudWatchClient.send(
       new DeleteAlarmsCommand({AlarmNames: [alarmName]})
     );
@@ -72,26 +78,72 @@ async function CriticalCPUUsageAlarmForInstance(
   tags: {[key: string]: string}
 ): Promise<void> {
   const alarmName = `AutoAlarm-EC2-${instanceId}-CriticalCPUUtilization`;
-  const alarmExists = await doesAlarmExist(instanceId);
+  const alarmExists = await doesAlarmExist(alarmName);
   let threshold = 99; // Default threshold
+  let duration = 60; // Default duration (in seconds)
+  let evaluationPeriods = 5; // Default evaluation periods
 
-  // Check for the "CriticalCPUAlarmThreshold" tag
-  const thresholdTag = tags['CriticalCPUAlarmThreshold'];
+  // Check for the "autoalarm:cpu-percent-above-critical" tag
+  const thresholdTag = tags['autoalarm:cpu-percent-above-critical'];
   if (thresholdTag) {
     log
       .info()
-      .str('tag', 'CriticalCPUAlarmThreshold')
+      .str('tag', 'autoalarm:cpu-percent-above-critical')
       .str('value', thresholdTag)
-      .msg('Found threshold value in tag: CriticalCPUAlarmThreshold');
+      .msg(
+        'Found threshold value in tag: autoalarm:cpu-percent-above-critical'
+      );
     const parsedThreshold = parseFloat(thresholdTag);
     if (!isNaN(parsedThreshold)) {
       threshold = parsedThreshold;
     } else {
       log
         .warn()
-        .str('tag', 'CriticalCPUAlarmThreshold')
+        .str('tag', 'autoalarm:cpu-percent-above-critical')
         .str('value', thresholdTag)
         .msg('Invalid threshold value in tag, using default');
+    }
+  }
+
+  // Check for the "autoalarm:cpu-percent-duration-time" tag
+  const durationTag = tags['autoalarm:cpu-percent-duration-time'];
+  if (durationTag) {
+    log
+      .info()
+      .str('tag', 'autoalarm:cpu-percent-duration-time')
+      .str('value', durationTag)
+      .msg('Found duration value in tag: autoalarm:cpu-percent-duration-time');
+    const parsedDuration = parseInt(durationTag, 10);
+    if (!isNaN(parsedDuration)) {
+      duration = parsedDuration;
+    } else {
+      log
+        .warn()
+        .str('tag', 'autoalarm:cpu-percent-duration-time')
+        .str('value', durationTag)
+        .msg('Invalid duration value in tag, using default');
+    }
+  }
+
+  // Check for the "autoalarm:cpu-percent-duration-periods" tag
+  const evaluationPeriodsTag = tags['autoalarm:cpu-percent-duration-periods'];
+  if (evaluationPeriodsTag) {
+    log
+      .info()
+      .str('tag', 'autoalarm:cpu-percent-duration-periods')
+      .str('value', evaluationPeriodsTag)
+      .msg(
+        'Found evaluation periods value in tag: autoalarm:cpu-percent-duration-periods'
+      );
+    const parsedEvaluationPeriods = parseInt(evaluationPeriodsTag, 10);
+    if (!isNaN(parsedEvaluationPeriods)) {
+      evaluationPeriods = parsedEvaluationPeriods;
+    } else {
+      log
+        .warn()
+        .str('tag', 'autoalarm:cpu-percent-duration-periods')
+        .str('value', evaluationPeriodsTag)
+        .msg('Invalid evaluation periods value in tag, using default');
     }
   }
 
@@ -104,29 +156,47 @@ async function CriticalCPUUsageAlarmForInstance(
 
     if (existingThreshold !== threshold) {
       // Update the existing alarm's threshold value if it's different
-      await createCPUThresholdAlarm(alarmName, instanceId, threshold);
+      await createCPUThresholdAlarm(
+        alarmName,
+        instanceId,
+        threshold,
+        duration,
+        evaluationPeriods
+      );
       log
         .info()
         .str('alarmName', alarmName)
         .str('instanceId', instanceId)
         .num('threshold', threshold)
-        .msg('Updated Critical CPU usage alarm threshold');
+        .num('duration', duration)
+        .num('evaluationPeriods', evaluationPeriods)
+        .msg('Updated Critical CPU usage alarm');
     } else {
       log
         .info()
         .str('alarmName', alarmName)
         .str('instanceId', instanceId)
         .num('threshold', threshold)
-        .msg('Critical CPU usage alarm threshold is already up-to-date');
+        .num('duration', duration)
+        .num('evaluationPeriods', evaluationPeriods)
+        .msg('Critical CPU usage alarm is already up-to-date');
     }
   } else {
     // Create a new alarm
-    await createCPUThresholdAlarm(alarmName, instanceId, threshold);
+    await createCPUThresholdAlarm(
+      alarmName,
+      instanceId,
+      threshold,
+      duration,
+      evaluationPeriods
+    );
     log
       .info()
       .str('alarmName', alarmName)
       .str('instanceId', instanceId)
       .num('threshold', threshold)
+      .num('duration', duration)
+      .num('evaluationPeriods', evaluationPeriods)
       .msg('Created Critical CPU usage alarm');
   }
 }
@@ -137,26 +207,70 @@ async function warningCPUUsageAlarmForInstance(
   tags: {[key: string]: string}
 ): Promise<void> {
   const alarmName = `AutoAlarm-EC2-${instanceId}-WarningCPUUtilization`;
-  const alarmExists = await doesAlarmExist(instanceId);
+  const alarmExists = await doesAlarmExist(alarmName);
   let threshold = 97; // Default threshold
+  let duration = 60; // Default duration (in seconds)
+  let evaluationPeriods = 5; // Default evaluation periods
 
-  // Check for the "CPUAlarmThreshold" tag
-  const thresholdTag = tags['WarningCPUAlarmThreshold'];
+  // Check for the "autoalarm:cpu-percent-above-warning" tag
+  const thresholdTag = tags['autoalarm:cpu-percent-above-warning'];
   if (thresholdTag) {
     log
       .info()
-      .str('tag', 'WarningCPUAlarmThreshold')
+      .str('tag', 'autoalarm:cpu-percent-above-warning')
       .str('value', thresholdTag)
-      .msg('Found threshold value in tag: WarningCPUAlarmThreshold');
+      .msg('Found threshold value in tag: autoalarm:cpu-percent-above-warning');
     const parsedThreshold = parseFloat(thresholdTag);
     if (!isNaN(parsedThreshold)) {
       threshold = parsedThreshold;
     } else {
       log
         .warn()
-        .str('tag', 'WarningCPUAlarmThreshold')
+        .str('tag', 'autoalarm:cpu-percent-above-warning')
         .str('value', thresholdTag)
         .msg('Invalid threshold value in tag, using default');
+    }
+  }
+
+  // Check for the "autoalarm:cpu-percent-duration-time" tag
+  const durationTag = tags['autoalarm:cpu-percent-duration-time'];
+  if (durationTag) {
+    log
+      .info()
+      .str('tag', 'autoalarm:cpu-percent-duration-time')
+      .str('value', durationTag)
+      .msg('Found duration value in tag: autoalarm:cpu-percent-duration-time');
+    const parsedDuration = parseInt(durationTag, 10);
+    if (!isNaN(parsedDuration)) {
+      duration = parsedDuration;
+    } else {
+      log
+        .warn()
+        .str('tag', 'autoalarm:cpu-percent-duration-time')
+        .str('value', durationTag)
+        .msg('Invalid duration value in tag, using default');
+    }
+  }
+
+  // Check for the "autoalarm:cpu-percent-duration-periods" tag
+  const evaluationPeriodsTag = tags['autoalarm:cpu-percent-duration-periods'];
+  if (evaluationPeriodsTag) {
+    log
+      .info()
+      .str('tag', 'autoalarm:cpu-percent-duration-periods')
+      .str('value', evaluationPeriodsTag)
+      .msg(
+        'Found evaluation periods value in tag: autoalarm:cpu-percent-duration-periods'
+      );
+    const parsedEvaluationPeriods = parseInt(evaluationPeriodsTag, 10);
+    if (!isNaN(parsedEvaluationPeriods)) {
+      evaluationPeriods = parsedEvaluationPeriods;
+    } else {
+      log
+        .warn()
+        .str('tag', 'autoalarm:cpu-percent-duration-periods')
+        .str('value', evaluationPeriodsTag)
+        .msg('Invalid evaluation periods value in tag, using default');
     }
   }
 
@@ -169,30 +283,48 @@ async function warningCPUUsageAlarmForInstance(
 
     if (existingThreshold !== threshold) {
       // Update the existing alarm's threshold value if it's different
-      await createCPUThresholdAlarm(alarmName, instanceId, threshold);
+      await createCPUThresholdAlarm(
+        alarmName,
+        instanceId,
+        threshold,
+        duration,
+        evaluationPeriods
+      );
       log
         .info()
         .str('alarmName', alarmName)
         .str('instanceId', instanceId)
         .num('threshold', threshold)
-        .msg('Updated Warning CPU usage alarm threshold');
+        .num('duration', duration)
+        .num('evaluationPeriods', evaluationPeriods)
+        .msg('Updated Warning CPU usage alarm');
     } else {
       log
         .info()
         .str('alarmName', alarmName)
         .str('instanceId', instanceId)
         .num('threshold', threshold)
-        .msg('Warning CPU usage alarm threshold is already up-to-date');
+        .num('duration', duration)
+        .num('evaluationPeriods', evaluationPeriods)
+        .msg('Warning CPU usage alarm is already up-to-date');
     }
   } else {
     // Create a new alarm
-    await createCPUThresholdAlarm(alarmName, instanceId, threshold);
+    await createCPUThresholdAlarm(
+      alarmName,
+      instanceId,
+      threshold,
+      duration,
+      evaluationPeriods
+    );
     log
       .info()
       .str('alarmName', alarmName)
       .str('instanceId', instanceId)
       .num('threshold', threshold)
-      .msg('Created warning CPU usage alarm');
+      .num('duration', duration)
+      .num('evaluationPeriods', evaluationPeriods)
+      .msg('Created Warning CPU usage alarm');
   }
 }
 
