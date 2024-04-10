@@ -236,6 +236,8 @@ async function createOrUpdateAlarm(
       .str('alarmName', alarmName)
       .str('instanceId', instanceId)
       .num('threshold', props.threshold)
+      .num('period', props.period)
+      .num('evaluationPeriods', props.evaluationPeriods)
       .msg('Alarm configured');
   } catch (e) {
     log
@@ -243,7 +245,7 @@ async function createOrUpdateAlarm(
       .err(e)
       .str('alarmName', alarmName)
       .str('instanceId', instanceId)
-      .msg('Failed to configure alarm due to an error');
+      .msg('Failed to create or update alarm due to an error');
   }
 }
 
@@ -283,20 +285,30 @@ async function createStatusAlarmForInstance(
 }
 
 async function fetchInstanceTags(
+  log: Logger,
   instanceId: string
 ): Promise<{[key: string]: string}> {
-  const response = await ec2Client.send(
-    new DescribeTagsCommand({
-      Filters: [{Name: 'resource-id', Values: [instanceId]}],
-    })
-  );
-  const tags: {[key: string]: string} = {};
-  response.Tags?.forEach(tag => {
-    if (tag.Key && tag.Value) {
-      tags[tag.Key] = tag.Value;
-    }
-  });
-  return tags;
+  try {
+    const response = await ec2Client.send(
+      new DescribeTagsCommand({
+        Filters: [{Name: 'resource-id', Values: [instanceId]}],
+      })
+    );
+    const tags: {[key: string]: string} = {};
+    response.Tags?.forEach(tag => {
+      if (tag.Key && tag.Value) {
+        tags[tag.Key] = tag.Value;
+      }
+    });
+    return tags;
+  } catch (error) {
+    log
+      .error()
+      .err(error)
+      .str('instanceId', instanceId)
+      .msg('Error fetching instance tags');
+    return {};
+  }
 }
 
 export const handler: Handler = async (
@@ -323,7 +335,7 @@ export const handler: Handler = async (
 
       // Check if the instance is running and create alarms for cpu usage which should be done by default for every instance
       if (state === 'running') {
-        const tags = await fetchInstanceTags(instanceId);
+        const tags = await fetchInstanceTags(sublog, instanceId);
         sublog.info().str('tags', JSON.stringify(tags)).msg('Fetched tags');
         await manageCPUUsageAlarmForInstance(
           sublog,
@@ -356,7 +368,7 @@ export const handler: Handler = async (
       const resourceId = event.resources[0].split('/').pop();
       sublog.info().str('resourceId', resourceId).msg('Processing tag event');
 
-      const tags = await fetchInstanceTags(resourceId);
+      const tags = await fetchInstanceTags(sublog, resourceId);
       sublog
         .info()
         .str('resource:', resourceId)
@@ -376,6 +388,24 @@ export const handler: Handler = async (
       if (tags['autoalarm:disabled'] === 'false') {
         await createStatusAlarmForInstance(sublog, resourceId);
       } else if (tags['autoalarm:disabled'] === 'true') {
+        await deleteAlarm(sublog, resourceId, 'StatusCheckFailed');
+        // If the tag exists but has an unexpected value, log the value and check for the alarm and create if it does not exist
+      } else if ('autoalarm:disabled' in tags) {
+        sublog
+          .info()
+          .str('resource:', resourceId)
+          .str('autoalarm:disabled', tags['autoalarm:disabled'])
+          .msg(
+            'autoalarm:disabled tag exists but has unexpected value. checking for alarm and creating if it does not exist'
+          );
+        await createStatusAlarmForInstance(sublog, resourceId);
+        // If the tag is not found, check for the alarm and delete if it exists
+      } else {
+        sublog
+          .info()
+          .msg(
+            'autoalarm:disabled tag not found. checking for alarm and deleting if exists'
+          );
         await deleteAlarm(sublog, resourceId, 'StatusCheckFailed');
       }
     }
