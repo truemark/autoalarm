@@ -136,6 +136,7 @@ async function manageCPUUsageAlarmForInstance(
             .info()
             .str('tag', 'autoalarm:cpu-percent-duration-time')
             .str('value', tags['autoalarm:cpu-percent-duration-time'])
+            .num('period', parsedPeriod)
             .msg(
               'Period value less than 10 is not allowed, must be 10, 30, or multiple of 60. Using default value of 10'
             );
@@ -145,6 +146,7 @@ async function manageCPUUsageAlarmForInstance(
             .info()
             .str('tag', 'autoalarm:cpu-percent-duration-time')
             .str('value', tags['autoalarm:cpu-percent-duration-time'])
+            .num('period', parsedPeriod)
             .msg(
               'Period value not 10 or 30 is not allowed, must be 10, 30, or multiple of 60. Since value is less ' +
                 'than 30 but more than 10, Using default value of 30'
