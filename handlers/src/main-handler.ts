@@ -431,7 +431,7 @@ export const handler: Handler = async (event: any): Promise<void> => {
             .info()
             .str('resourceId', resourceId)
             .msg(
-              'Instance does not exist or is not in the running state. Skipping alarm management.'
+              'Instance has since been deleted or terminated. Skipping alarm management.'
             );
         }
       } catch (error) {
