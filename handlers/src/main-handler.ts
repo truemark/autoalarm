@@ -1,4 +1,8 @@
-import {EC2Client, DescribeTagsCommand} from '@aws-sdk/client-ec2';
+import {
+  EC2Client,
+  DescribeTagsCommand,
+  DescribeInstancesCommand,
+} from '@aws-sdk/client-ec2';
 import {
   CloudWatchClient,
   PutMetricAlarmCommand,
@@ -365,45 +369,77 @@ export const handler: Handler = async (event: any): Promise<void> => {
       const resourceId = event.resources[0].split('/').pop();
       sublog.info().str('resourceId', resourceId).msg('Processing tag event');
 
-      const tags = await fetchInstanceTags(sublog, resourceId);
-      sublog
-        .info()
-        .str('resource:', resourceId)
-        .str('tags', JSON.stringify(tags))
-        .msg('Fetched tags');
+      try {
+        // This event bridge rule sometimes sends delayed tag signals. Here we are checking if those instances exist.
+        const describeInstancesResponse = await ec2Client.send(
+          new DescribeInstancesCommand({
+            InstanceIds: [resourceId],
+          })
+        );
 
-      // Create default alarms for CPU usage or update thresholds if they exist in tag updates
-      await manageCPUUsageAlarmForInstance(
-        sublog,
-        resourceId,
-        tags,
-        'Critical'
-      );
-      await manageCPUUsageAlarmForInstance(sublog, resourceId, tags, 'Warning');
+        const instance =
+          describeInstancesResponse.Reservations?.[0]?.Instances?.[0];
 
-      // Create or delete status check alarm based on the value of the "autoalarm:disabled" tag
-      if (tags['autoalarm:disabled'] === 'false') {
-        await createStatusAlarmForInstance(sublog, resourceId);
-      } else if (tags['autoalarm:disabled'] === 'true') {
-        await deleteAlarm(sublog, resourceId, 'StatusCheckFailed');
-        // If the tag exists but has an unexpected value, log the value and check for the alarm and create if it does not exist
-      } else if ('autoalarm:disabled' in tags) {
-        sublog
-          .info()
-          .str('resource:', resourceId)
-          .str('autoalarm:disabled', tags['autoalarm:disabled'])
-          .msg(
-            'autoalarm:disabled tag exists but has unexpected value. checking for alarm and creating if it does not exist'
+        if (instance && instance.State?.Name === 'running') {
+          const tags = await fetchInstanceTags(sublog, resourceId);
+          sublog
+            .info()
+            .str('resource:', resourceId)
+            .str('tags', JSON.stringify(tags))
+            .msg('Fetched tags');
+
+          // Create default alarms for CPU usage or update thresholds if they exist in tag updates
+          await manageCPUUsageAlarmForInstance(
+            sublog,
+            resourceId,
+            tags,
+            'Critical'
           );
-        await createStatusAlarmForInstance(sublog, resourceId);
-        // If the tag is not found, check for the alarm and delete if it exists
-      } else {
-        sublog
-          .info()
-          .msg(
-            'autoalarm:disabled tag not found. checking for alarm and deleting if exists'
+          await manageCPUUsageAlarmForInstance(
+            sublog,
+            resourceId,
+            tags,
+            'Warning'
           );
-        await deleteAlarm(sublog, resourceId, 'StatusCheckFailed');
+
+          // Create or delete status check alarm based on the value of the "autoalarm:disabled" tag
+          if (tags['autoalarm:disabled'] === 'false') {
+            await createStatusAlarmForInstance(sublog, resourceId);
+          } else if (tags['autoalarm:disabled'] === 'true') {
+            await deleteAlarm(sublog, resourceId, 'StatusCheckFailed');
+            // If the tag exists but has an unexpected value, log the value and check for the alarm and create if it does not exist
+          } else if ('autoalarm:disabled' in tags) {
+            sublog
+              .info()
+              .str('resource:', resourceId)
+              .str('autoalarm:disabled', tags['autoalarm:disabled'])
+              .msg(
+                'autoalarm:disabled tag exists but has unexpected value. checking for alarm and creating if it does not exist'
+              );
+            await createStatusAlarmForInstance(sublog, resourceId);
+            // If the tag is not found, check for the alarm and delete if it exists
+          } else {
+            sublog
+              .info()
+              .msg(
+                'autoalarm:disabled tag not found. checking for alarm and deleting if exists'
+              );
+            await deleteAlarm(sublog, resourceId, 'StatusCheckFailed');
+          }
+        } else {
+          sublog
+            .info()
+            .str('resourceId', resourceId)
+            .msg(
+              'Instance does not exist or is not in the running state. Skipping alarm management.'
+            );
+        }
+      } catch (error) {
+        sublog
+          .error()
+          .err(error)
+          .str('resourceId', resourceId)
+          .msg('Error describing instance');
       }
     }
   } catch (e) {
