@@ -5,7 +5,7 @@ import {
   DeleteAlarmsCommand,
   DescribeAlarmsCommand,
 } from '@aws-sdk/client-cloudwatch';
-import {Handler, Context} from 'aws-lambda';
+import {Handler} from 'aws-lambda';
 import * as logging from '@nr1e/logging';
 import {Logger} from '@nr1e/logging';
 
@@ -311,17 +311,14 @@ async function fetchInstanceTags(
   }
 }
 
-export const handler: Handler = async (
-  event: any,
-  context: Context
-): Promise<void> => {
+export const handler: Handler = async (event: any): Promise<void> => {
   const log = await logging.initialize({
     svc: 'AutoAlarm',
     name: 'main-handler',
     level: 'trace',
   });
   const sublog = logging.getLogger('ec2-tag-autoalarm', log);
-  sublog.trace().unknown('context', context).msg('Received context');
+  sublog.trace().unknown('event', event).msg('Received event');
 
   try {
     if (event.source === 'aws.ec2') {
