@@ -25,6 +25,7 @@ export class AutoAlarmConstruct extends Construct {
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: [
+          'ec2:DescribeInstances',
           'ec2:DescribeTags',
           'cloudwatch:PutMetricAlarm',
           'cloudwatch:DeleteAlarms',
