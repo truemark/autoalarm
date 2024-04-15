@@ -20,6 +20,7 @@ interface AlarmProps {
   threshold: number;
   period: number;
   evaluationPeriods: number;
+  metricName: string;
 }
 
 interface Tag {
@@ -111,6 +112,7 @@ async function manageCPUUsageAlarmForInstance(
     threshold: defaultThreshold,
     period: 60,
     evaluationPeriods: 5,
+    metricName: 'CPUUtilization',
   };
 
   try {
@@ -214,6 +216,81 @@ async function manageCPUUsageAlarmForInstance(
   }
 }
 
+async function manageStorageAlarmForInstance(
+  log: Logger,
+  instanceId: string,
+  tags: Tag
+): Promise<void> {
+  const baseAlarmName = `AutoAlarm-EC2-${instanceId}-Storage`;
+  const criticalThreshold = parseFloat(
+    tags['autoalarm:storage-free-percent-critical'] || '10'
+  ); // Default to 10% if not specified
+  const warningThreshold = parseFloat(
+    tags['autoalarm:storage-free-percent-warning'] || '20'
+  ); // Default to 20% if not specified
+
+  const alarmPropsCritical = {
+    metricName: 'FreeStorageSpace',
+    threshold: criticalThreshold,
+    period: 60, // 5 minutes
+    evaluationPeriods: 5,
+    comparisonOperator: 'LessThanOrEqualToThreshold',
+  };
+
+  const alarmPropsWarning = {
+    ...alarmPropsCritical,
+    threshold: warningThreshold,
+  };
+
+  // Create or update critical alarm
+  if (!isNaN(criticalThreshold)) {
+    try {
+      await createOrUpdateAlarm(
+        log,
+        `${baseAlarmName}-Critical`,
+        instanceId,
+        alarmPropsCritical
+      );
+      log
+        .info()
+        .str('alarmName', `${baseAlarmName}-Critical`)
+        .str('instanceId', instanceId)
+        .msg('Critical storage alarm configured or updated.');
+    } catch (error) {
+      log
+        .error()
+        .str('alarmName', `${baseAlarmName}-Critical`)
+        .str('instanceId', instanceId)
+        .err(error)
+        .msg('Failed to configure critical storage alarm.');
+    }
+  }
+
+  // Attempt to create or update warning alarm
+  if (!isNaN(warningThreshold)) {
+    try {
+      await createOrUpdateAlarm(
+        log,
+        `${baseAlarmName}-Warning`,
+        instanceId,
+        alarmPropsWarning
+      );
+      log
+        .info()
+        .str('alarmName', `${baseAlarmName}-Warning`)
+        .str('instanceId', instanceId)
+        .msg('Warning storage alarm configured or updated.');
+    } catch (error) {
+      log
+        .error()
+        .str('alarmName', `${baseAlarmName}-Warning`)
+        .str('instanceId', instanceId)
+        .err(error)
+        .msg('Failed to configure warning storage alarm.');
+    }
+  }
+}
+
 async function createOrUpdateAlarm(
   log: Logger,
   alarmName: string,
@@ -226,7 +303,7 @@ async function createOrUpdateAlarm(
         AlarmName: alarmName,
         ComparisonOperator: 'GreaterThanThreshold',
         EvaluationPeriods: props.evaluationPeriods,
-        MetricName: 'CPUUtilization',
+        MetricName: props.metricName,
         Namespace: 'AWS/EC2',
         Period: props.period,
         Statistic: 'Average',
@@ -350,6 +427,7 @@ export const handler: Handler = async (event: any): Promise<void> => {
           tags,
           'Warning'
         );
+        await manageStorageAlarmForInstance(sublog, instanceId, tags);
 
         // Check if the instance has the "autoalarm:disabled" tag set to "true" and skip creating status check alarm
         if (tags['autoalarm:disabled'] === 'true') {
@@ -401,6 +479,7 @@ export const handler: Handler = async (event: any): Promise<void> => {
             tags,
             'Warning'
           );
+          await manageStorageAlarmForInstance(sublog, resourceId, tags);
 
           // Create or delete status check alarm based on the value of the "autoalarm:disabled" tag
           if (tags['autoalarm:disabled'] === 'false') {
