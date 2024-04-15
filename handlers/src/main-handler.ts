@@ -442,6 +442,8 @@ export const handler: Handler = async (event: any): Promise<void> => {
         await deleteAlarm(sublog, instanceId, 'WarningCPUUtilization');
         await deleteAlarm(sublog, instanceId, 'CriticalCPUUtilization');
         await deleteAlarm(sublog, instanceId, 'StatusCheckFailed');
+        await deleteAlarm(sublog, instanceId, 'Storage-Critical');
+        await deleteAlarm(sublog, instanceId, 'Storage-Warning');
       }
     } else if (event.source === 'aws.tag') {
       const resourceId = event.resources[0].split('/').pop();
