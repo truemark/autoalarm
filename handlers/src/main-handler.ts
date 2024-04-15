@@ -291,6 +291,79 @@ async function manageStorageAlarmForInstance(
   }
 }
 
+async function manageMemoryAlarmForInstance(
+  log: Logger,
+  instanceId: string,
+  tags: Tag
+): Promise<void> {
+  const baseAlarmName = `AutoAlarm-EC2-${instanceId}-Memory`;
+  const criticalThreshold = parseFloat(
+    tags['autoalarm:memory-percent-above-critical'] || '90'
+  ); // Default to 90% if not specified
+  const warningThreshold = parseFloat(
+    tags['autoalarm:memory-percent-above-warning'] || '80'
+  ); // Default to 80% if not specified
+
+  const alarmPropsCritical = {
+    metricName: 'MemoryUtilization',
+    threshold: criticalThreshold,
+    period: 60, // 5 minutes
+    evaluationPeriods: 5,
+    comparisonOperator: 'LessThanOrEqualToThreshold',
+  };
+
+  const alarmPropsWarning = {
+    ...alarmPropsCritical,
+    threshold: warningThreshold,
+  };
+
+  if (!isNaN(criticalThreshold)) {
+    try {
+      await createOrUpdateAlarm(
+        log,
+        `${baseAlarmName}-Critical`,
+        instanceId,
+        alarmPropsCritical
+      );
+      log
+        .info()
+        .str('alarmName', `${baseAlarmName}-Critical`)
+        .str('instanceId', instanceId)
+        .msg('Critical memory alarm configured or updated.');
+    } catch (error) {
+      log
+        .error()
+        .str('alarmName', `${baseAlarmName}-Critical`)
+        .str('instanceId', instanceId)
+        .err(error)
+        .msg('Failed to configure critical memory alarm.');
+    }
+  }
+
+  if (!isNaN(warningThreshold)) {
+    try {
+      await createOrUpdateAlarm(
+        log,
+        `${baseAlarmName}-Warning`,
+        instanceId,
+        alarmPropsWarning
+      );
+      log
+        .info()
+        .str('alarmName', `${baseAlarmName}-Warning`)
+        .str('instanceId', instanceId)
+        .msg('Warning memory alarm configured or updated.');
+    } catch (error) {
+      log
+        .error()
+        .str('alarmName', `${baseAlarmName}-Warning`)
+        .str('instanceId', instanceId)
+        .err(error)
+        .msg('Failed to configure warning memory alarm.');
+    }
+  }
+}
+
 async function createOrUpdateAlarm(
   log: Logger,
   alarmName: string,
@@ -428,6 +501,7 @@ export const handler: Handler = async (event: any): Promise<void> => {
           'Warning'
         );
         await manageStorageAlarmForInstance(sublog, instanceId, tags);
+        await manageMemoryAlarmForInstance(sublog, instanceId, tags);
 
         // Check if the instance has the "autoalarm:disabled" tag set to "true" and skip creating status check alarm
         if (tags['autoalarm:disabled'] === 'true') {
@@ -444,6 +518,8 @@ export const handler: Handler = async (event: any): Promise<void> => {
         await deleteAlarm(sublog, instanceId, 'StatusCheckFailed');
         await deleteAlarm(sublog, instanceId, 'Storage-Critical');
         await deleteAlarm(sublog, instanceId, 'Storage-Warning');
+        await deleteAlarm(sublog, instanceId, 'CriticalMemoryUtilization');
+        await deleteAlarm(sublog, instanceId, 'WarningMemoryUtilization');
       }
     } else if (event.source === 'aws.tag') {
       const resourceId = event.resources[0].split('/').pop();
@@ -482,6 +558,7 @@ export const handler: Handler = async (event: any): Promise<void> => {
             'Warning'
           );
           await manageStorageAlarmForInstance(sublog, resourceId, tags);
+          await manageMemoryAlarmForInstance(sublog, resourceId, tags);
 
           // Create or delete status check alarm based on the value of the "autoalarm:disabled" tag
           if (tags['autoalarm:disabled'] === 'false') {
