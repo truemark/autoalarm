@@ -1,29 +1,31 @@
 import {
-  EC2Client,
-  DescribeTagsCommand,
   DescribeInstancesCommand,
+  DescribeTagsCommand,
+  EC2Client,
 } from '@aws-sdk/client-ec2';
 import {
   CloudWatchClient,
-  PutMetricAlarmCommand,
   DeleteAlarmsCommand,
   DescribeAlarmsCommand,
+  PutMetricAlarmCommand,
 } from '@aws-sdk/client-cloudwatch';
 import {Handler} from 'aws-lambda';
 import * as logging from '@nr1e/logging';
-import {Logger} from '@nr1e/logging';
+import {AlarmClassification, ValidInstanceState} from './enums';
+import {AlarmProps, Tag} from './types';
 
+let log: ReturnType<typeof logging.getRootLogger> = logging.getRootLogger();
 const ec2Client = new EC2Client({});
 const cloudWatchClient = new CloudWatchClient({});
 
-interface AlarmProps {
-  threshold: number;
-  period: number;
-  evaluationPeriods: number;
-}
-
-interface Tag {
-  [key: string]: string;
+async function loggingSetup() {
+  await logging.initialize({
+    svc: 'AutoAlarm',
+    name: 'main-handler',
+    level: 'trace',
+  });
+  // Initialize log after logging has been set up
+  log = logging.getRootLogger();
 }
 
 async function doesAlarmExist(alarmName: string): Promise<boolean> {
@@ -33,11 +35,7 @@ async function doesAlarmExist(alarmName: string): Promise<boolean> {
   return (response.MetricAlarms?.length ?? 0) > 0;
 }
 
-async function deleteAlarm(
-  log: Logger,
-  instanceId: string,
-  check: string
-): Promise<void> {
+async function deleteAlarm(instanceId: string, check: string): Promise<void> {
   const alarmName = `AutoAlarm-EC2-${instanceId}-${check}`;
   const alarmExists = await doesAlarmExist(alarmName);
   if (alarmExists) {
@@ -64,7 +62,6 @@ async function deleteAlarm(
 }
 
 async function needsUpdate(
-  log: Logger,
   alarmName: string,
   newProps: AlarmProps
 ): Promise<boolean> {
@@ -77,9 +74,10 @@ async function needsUpdate(
       const existingProps = existingAlarm.MetricAlarms[0];
 
       if (
-        existingProps.Threshold !== newProps.threshold ||
-        existingProps.EvaluationPeriods !== newProps.evaluationPeriods ||
-        existingProps.Period !== newProps.period
+        Number(existingProps.Threshold) !== newProps.threshold ||
+        Number(existingProps.EvaluationPeriods) !==
+          newProps.evaluationPeriods ||
+        Number(existingProps.Period) !== newProps.period
       ) {
         log.info().str('alarmName', alarmName).msg('Alarm needs update');
         return true;
@@ -98,10 +96,9 @@ async function needsUpdate(
 }
 
 async function manageCPUUsageAlarmForInstance(
-  log: Logger,
   instanceId: string,
   tags: Tag,
-  type: 'Critical' | 'Warning'
+  type: AlarmClassification
 ): Promise<void> {
   const baseAlarmName = `AutoAlarm-EC2-${instanceId}-${type}CPUUtilization`;
   const thresholdKey = `autoalarm:cpu-percent-above-${type.toLowerCase()}`;
@@ -166,7 +163,7 @@ async function manageCPUUsageAlarmForInstance(
               'Period value that is not 10 or 30 must be multiple of 60. Adjusted to nearest multiple of 60'
             );
         }
-        alarmProps.period = parsedPeriod;
+        alarmProps.period = Number(parsedPeriod);
       } else {
         log
           .warn()
@@ -202,7 +199,7 @@ async function manageCPUUsageAlarmForInstance(
 
   if (
     !alarmExists ||
-    (alarmExists && (await needsUpdate(log, baseAlarmName, alarmProps)))
+    (alarmExists && (await needsUpdate(baseAlarmName, alarmProps)))
   ) {
     try {
       await cloudWatchClient.send(
@@ -244,10 +241,7 @@ async function manageCPUUsageAlarmForInstance(
   }
 }
 
-async function createStatusAlarmForInstance(
-  log: Logger,
-  instanceId: string
-): Promise<void> {
+async function createStatusAlarmForInstance(instanceId: string): Promise<void> {
   const alarmName = `AutoAlarm-EC2-${instanceId}-StatusCheckFailed`;
   const alarmExists = await doesAlarmExist(alarmName);
   if (!alarmExists) {
@@ -280,7 +274,6 @@ async function createStatusAlarmForInstance(
 }
 
 async function fetchInstanceTags(
-  log: Logger,
   instanceId: string
 ): Promise<{[key: string]: string}> {
   try {
@@ -307,16 +300,17 @@ async function fetchInstanceTags(
 }
 
 export const handler: Handler = async (event: any): Promise<void> => {
-  await logging.initialize({
-    svc: 'AutoAlarm',
-    name: 'main-handler',
-    level: 'trace',
-  });
-
-  const log = logging.getRootLogger();
-
+  await loggingSetup();
   log.trace().unknown('event', event).msg('Received event');
-
+  const liveStates: Set<ValidInstanceState> = new Set([
+    ValidInstanceState.Running,
+    ValidInstanceState.Pending,
+  ]);
+  const deadStates: Set<ValidInstanceState> = new Set([
+    ValidInstanceState.Terminated,
+    ValidInstanceState.Stopped,
+    ValidInstanceState.ShuttingDown,
+  ]);
   try {
     if (event.source === 'aws.ec2') {
       const instanceId = event.detail['instance-id'];
@@ -328,25 +322,33 @@ export const handler: Handler = async (event: any): Promise<void> => {
         .msg('Processing EC2 event');
 
       // Check if the instance is running and create alarms for cpu usage which should be done by default for every instance
-      if (state === 'running') {
-        const tags = await fetchInstanceTags(log, instanceId);
+      if (liveStates.has(state)) {
+        const tags = await fetchInstanceTags(instanceId);
         log.info().str('tags', JSON.stringify(tags)).msg('Fetched tags');
-        await manageCPUUsageAlarmForInstance(log, instanceId, tags, 'Critical');
-        await manageCPUUsageAlarmForInstance(log, instanceId, tags, 'Warning');
+        await manageCPUUsageAlarmForInstance(
+          instanceId,
+          tags,
+          AlarmClassification.Critical
+        );
+        await manageCPUUsageAlarmForInstance(
+          instanceId,
+          tags,
+          AlarmClassification.Warning
+        );
 
         // Check if the instance has the "autoalarm:disabled" tag set to "true" and skip creating status check alarm
         if (tags['autoalarm:disabled'] === 'true') {
           log.info().msg('autoalarm:disabled=true. Skipping alarm creation');
           // Check if the instance has the "autoalarm:disabled" tag set to "false" and create status check alarm
         } else if (tags['autoalarm:disabled'] === 'false') {
-          await createStatusAlarmForInstance(log, instanceId);
+          await createStatusAlarmForInstance(instanceId);
           log.info().msg('autoalarm:disabled=false');
         }
         // If the instance is terminated, delete all alarms
-      } else if (state === 'terminated') {
-        await deleteAlarm(log, instanceId, 'WarningCPUUtilization');
-        await deleteAlarm(log, instanceId, 'CriticalCPUUtilization');
-        await deleteAlarm(log, instanceId, 'StatusCheckFailed');
+      } else if (deadStates.has(state)) {
+        await deleteAlarm(instanceId, 'WarningCPUUtilization');
+        await deleteAlarm(instanceId, 'CriticalCPUUtilization');
+        await deleteAlarm(instanceId, 'StatusCheckFailed');
       }
     } else if (event.source === 'aws.tag') {
       const resourceId = event.resources[0].split('/').pop();
@@ -362,9 +364,10 @@ export const handler: Handler = async (event: any): Promise<void> => {
 
         const instance =
           describeInstancesResponse.Reservations?.[0]?.Instances?.[0];
+        const state = instance?.State?.Name as ValidInstanceState;
 
-        if (instance && instance.State?.Name === 'running') {
-          const tags = await fetchInstanceTags(log, resourceId);
+        if (instance && liveStates.has(state)) {
+          const tags = await fetchInstanceTags(resourceId);
           log
             .info()
             .str('resource:', resourceId)
@@ -373,23 +376,21 @@ export const handler: Handler = async (event: any): Promise<void> => {
 
           // Create default alarms for CPU usage or update thresholds if they exist in tag updates
           await manageCPUUsageAlarmForInstance(
-            log,
             resourceId,
             tags,
-            'Critical'
+            AlarmClassification.Critical
           );
           await manageCPUUsageAlarmForInstance(
-            log,
             resourceId,
             tags,
-            'Warning'
+            AlarmClassification.Warning
           );
 
           // Create or delete status check alarm based on the value of the "autoalarm:disabled" tag
           if (tags['autoalarm:disabled'] === 'false') {
-            await createStatusAlarmForInstance(log, resourceId);
+            await createStatusAlarmForInstance(resourceId);
           } else if (tags['autoalarm:disabled'] === 'true') {
-            await deleteAlarm(log, resourceId, 'StatusCheckFailed');
+            await deleteAlarm(resourceId, 'StatusCheckFailed');
             // If the tag exists but has an unexpected value, log the value and check for the alarm and create if it does not exist
           } else if ('autoalarm:disabled' in tags) {
             log
@@ -399,7 +400,7 @@ export const handler: Handler = async (event: any): Promise<void> => {
               .msg(
                 'autoalarm:disabled tag exists but has unexpected value. checking for alarm and creating if it does not exist'
               );
-            await createStatusAlarmForInstance(log, resourceId);
+            await createStatusAlarmForInstance(resourceId);
             // If the tag is not found, check for the alarm and delete if it exists
           } else {
             log
@@ -407,7 +408,7 @@ export const handler: Handler = async (event: any): Promise<void> => {
               .msg(
                 'autoalarm:disabled tag not found. checking for alarm and deleting if exists'
               );
-            await deleteAlarm(log, resourceId, 'StatusCheckFailed');
+            await deleteAlarm(resourceId, 'StatusCheckFailed');
           }
         } else {
           log

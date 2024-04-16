@@ -86,7 +86,13 @@ export class AutoAlarmConstruct extends Construct {
         source: ['aws.ec2'],
         detailType: ['EC2 Instance State-change Notification'],
         detail: {
-          state: ['running', 'terminated'],
+          state: [
+            'running',
+            'terminated',
+            'stopped',
+            'shutting-down',
+            'pending',
+          ],
         },
       },
       description: 'Routes ec2 instance events to AutoAlarm',
