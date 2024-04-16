@@ -204,52 +204,43 @@ async function manageCPUUsageAlarmForInstance(
     !alarmExists ||
     (alarmExists && (await needsUpdate(log, baseAlarmName, alarmProps)))
   ) {
-    await createOrUpdateAlarm(log, baseAlarmName, instanceId, alarmProps);
+    try {
+      await cloudWatchClient.send(
+        new PutMetricAlarmCommand({
+          AlarmName: baseAlarmName,
+          ComparisonOperator: 'GreaterThanThreshold',
+          EvaluationPeriods: alarmProps.evaluationPeriods,
+          MetricName: 'CPUUtilization',
+          Namespace: 'AWS/EC2',
+          Period: alarmProps.period,
+          Statistic: 'Average',
+          Threshold: alarmProps.threshold,
+          ActionsEnabled: false,
+          Dimensions: [{Name: 'InstanceId', Value: instanceId}],
+        })
+      );
+      log
+        .info()
+        .str('alarmName', baseAlarmName)
+        .str('instanceId', instanceId)
+        .num('threshold', alarmProps.threshold)
+        .num('period', alarmProps.period)
+        .num('evaluationPeriods', alarmProps.evaluationPeriods)
+        .msg('Alarm configured');
+    } catch (e) {
+      log
+        .error()
+        .err(e)
+        .str('alarmName', baseAlarmName)
+        .str('instanceId', instanceId)
+        .msg('Failed to create or update alarm due to an error');
+    }
   } else {
     log
       .info()
       .str('alarmName', baseAlarmName)
       .str('instanceId', instanceId)
       .msg('CPU usage alarm is already up-to-date');
-  }
-}
-
-async function createOrUpdateAlarm(
-  log: Logger,
-  alarmName: string,
-  instanceId: string,
-  props: AlarmProps
-) {
-  try {
-    await cloudWatchClient.send(
-      new PutMetricAlarmCommand({
-        AlarmName: alarmName,
-        ComparisonOperator: 'GreaterThanThreshold',
-        EvaluationPeriods: props.evaluationPeriods,
-        MetricName: 'CPUUtilization',
-        Namespace: 'AWS/EC2',
-        Period: props.period,
-        Statistic: 'Average',
-        Threshold: props.threshold,
-        ActionsEnabled: false,
-        Dimensions: [{Name: 'InstanceId', Value: instanceId}],
-      })
-    );
-    log
-      .info()
-      .str('alarmName', alarmName)
-      .str('instanceId', instanceId)
-      .num('threshold', props.threshold)
-      .num('period', props.period)
-      .num('evaluationPeriods', props.evaluationPeriods)
-      .msg('Alarm configured');
-  } catch (e) {
-    log
-      .error()
-      .err(e)
-      .str('alarmName', alarmName)
-      .str('instanceId', instanceId)
-      .msg('Failed to create or update alarm due to an error');
   }
 }
 
@@ -316,19 +307,21 @@ async function fetchInstanceTags(
 }
 
 export const handler: Handler = async (event: any): Promise<void> => {
-  const log = await logging.initialize({
+  await logging.initialize({
     svc: 'AutoAlarm',
     name: 'main-handler',
     level: 'trace',
   });
-  const sublog = logging.getLogger('ec2-tag-autoalarm', log);
-  sublog.trace().unknown('event', event).msg('Received event');
+
+  const log = logging.getRootLogger();
+
+  log.trace().unknown('event', event).msg('Received event');
 
   try {
     if (event.source === 'aws.ec2') {
       const instanceId = event.detail['instance-id'];
       const state = event.detail.state;
-      sublog
+      log
         .info()
         .str('instanceId', instanceId)
         .str('state', state)
@@ -336,38 +329,28 @@ export const handler: Handler = async (event: any): Promise<void> => {
 
       // Check if the instance is running and create alarms for cpu usage which should be done by default for every instance
       if (state === 'running') {
-        const tags = await fetchInstanceTags(sublog, instanceId);
-        sublog.info().str('tags', JSON.stringify(tags)).msg('Fetched tags');
-        await manageCPUUsageAlarmForInstance(
-          sublog,
-          instanceId,
-          tags,
-          'Critical'
-        );
-        await manageCPUUsageAlarmForInstance(
-          sublog,
-          instanceId,
-          tags,
-          'Warning'
-        );
+        const tags = await fetchInstanceTags(log, instanceId);
+        log.info().str('tags', JSON.stringify(tags)).msg('Fetched tags');
+        await manageCPUUsageAlarmForInstance(log, instanceId, tags, 'Critical');
+        await manageCPUUsageAlarmForInstance(log, instanceId, tags, 'Warning');
 
         // Check if the instance has the "autoalarm:disabled" tag set to "true" and skip creating status check alarm
         if (tags['autoalarm:disabled'] === 'true') {
-          sublog.info().msg('autoalarm:disabled=true. Skipping alarm creation');
+          log.info().msg('autoalarm:disabled=true. Skipping alarm creation');
           // Check if the instance has the "autoalarm:disabled" tag set to "false" and create status check alarm
         } else if (tags['autoalarm:disabled'] === 'false') {
-          await createStatusAlarmForInstance(sublog, instanceId);
-          sublog.info().msg('autoalarm:disabled=false');
+          await createStatusAlarmForInstance(log, instanceId);
+          log.info().msg('autoalarm:disabled=false');
         }
         // If the instance is terminated, delete all alarms
       } else if (state === 'terminated') {
-        await deleteAlarm(sublog, instanceId, 'WarningCPUUtilization');
-        await deleteAlarm(sublog, instanceId, 'CriticalCPUUtilization');
-        await deleteAlarm(sublog, instanceId, 'StatusCheckFailed');
+        await deleteAlarm(log, instanceId, 'WarningCPUUtilization');
+        await deleteAlarm(log, instanceId, 'CriticalCPUUtilization');
+        await deleteAlarm(log, instanceId, 'StatusCheckFailed');
       }
     } else if (event.source === 'aws.tag') {
       const resourceId = event.resources[0].split('/').pop();
-      sublog.info().str('resourceId', resourceId).msg('Processing tag event');
+      log.info().str('resourceId', resourceId).msg('Processing tag event');
 
       try {
         // This event bridge rule sometimes sends delayed tag signals. Here we are checking if those instances exist.
@@ -381,8 +364,8 @@ export const handler: Handler = async (event: any): Promise<void> => {
           describeInstancesResponse.Reservations?.[0]?.Instances?.[0];
 
         if (instance && instance.State?.Name === 'running') {
-          const tags = await fetchInstanceTags(sublog, resourceId);
-          sublog
+          const tags = await fetchInstanceTags(log, resourceId);
+          log
             .info()
             .str('resource:', resourceId)
             .str('tags', JSON.stringify(tags))
@@ -390,13 +373,13 @@ export const handler: Handler = async (event: any): Promise<void> => {
 
           // Create default alarms for CPU usage or update thresholds if they exist in tag updates
           await manageCPUUsageAlarmForInstance(
-            sublog,
+            log,
             resourceId,
             tags,
             'Critical'
           );
           await manageCPUUsageAlarmForInstance(
-            sublog,
+            log,
             resourceId,
             tags,
             'Warning'
@@ -404,30 +387,30 @@ export const handler: Handler = async (event: any): Promise<void> => {
 
           // Create or delete status check alarm based on the value of the "autoalarm:disabled" tag
           if (tags['autoalarm:disabled'] === 'false') {
-            await createStatusAlarmForInstance(sublog, resourceId);
+            await createStatusAlarmForInstance(log, resourceId);
           } else if (tags['autoalarm:disabled'] === 'true') {
-            await deleteAlarm(sublog, resourceId, 'StatusCheckFailed');
+            await deleteAlarm(log, resourceId, 'StatusCheckFailed');
             // If the tag exists but has an unexpected value, log the value and check for the alarm and create if it does not exist
           } else if ('autoalarm:disabled' in tags) {
-            sublog
+            log
               .info()
               .str('resource:', resourceId)
               .str('autoalarm:disabled', tags['autoalarm:disabled'])
               .msg(
                 'autoalarm:disabled tag exists but has unexpected value. checking for alarm and creating if it does not exist'
               );
-            await createStatusAlarmForInstance(sublog, resourceId);
+            await createStatusAlarmForInstance(log, resourceId);
             // If the tag is not found, check for the alarm and delete if it exists
           } else {
-            sublog
+            log
               .info()
               .msg(
                 'autoalarm:disabled tag not found. checking for alarm and deleting if exists'
               );
-            await deleteAlarm(sublog, resourceId, 'StatusCheckFailed');
+            await deleteAlarm(log, resourceId, 'StatusCheckFailed');
           }
         } else {
-          sublog
+          log
             .info()
             .str('resourceId', resourceId)
             .msg(
@@ -435,7 +418,7 @@ export const handler: Handler = async (event: any): Promise<void> => {
             );
         }
       } catch (error) {
-        sublog
+        log
           .error()
           .err(error)
           .str('resourceId', resourceId)
@@ -443,6 +426,6 @@ export const handler: Handler = async (event: any): Promise<void> => {
       }
     }
   } catch (e) {
-    sublog.error().err(e).msg('Error processing event');
+    log.error().err(e).msg('Error processing event');
   }
 };

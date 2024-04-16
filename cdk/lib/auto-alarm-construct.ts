@@ -69,7 +69,7 @@ export class AutoAlarmConstruct extends Construct {
           'changed-tag-keys': [
             'autoalarm:disabled',
             'autoalarm:cpu-percent-above-critical',
-            'autoalarm:storage-free-percent-critical ',
+            'autoalarm:storage-free-percent-critical',
             'autoalarm:cpu-percent-above-warning',
             'autoalarm:storage-free-percent-warning',
             'autoalarm:cpu-percent-duration-time',
