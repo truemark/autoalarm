@@ -232,7 +232,7 @@ async function manageStorageAlarmForInstance(
   const alarmPropsCritical = {
     metricName: 'FreeStorageSpace',
     threshold: criticalThreshold,
-    period: 60, // 5 minutes
+    period: 60, // 1 minute
     evaluationPeriods: 5,
     comparisonOperator: 'LessThanOrEqualToThreshold',
   };
@@ -307,7 +307,7 @@ async function manageMemoryAlarmForInstance(
   const alarmPropsCritical = {
     metricName: 'MemoryUtilization',
     threshold: criticalThreshold,
-    period: 60, // 5 minutes
+    period: 60, // 1 minute
     evaluationPeriods: 5,
     comparisonOperator: 'LessThanOrEqualToThreshold',
   };
@@ -518,8 +518,8 @@ export const handler: Handler = async (event: any): Promise<void> => {
         await deleteAlarm(sublog, instanceId, 'StatusCheckFailed');
         await deleteAlarm(sublog, instanceId, 'Storage-Critical');
         await deleteAlarm(sublog, instanceId, 'Storage-Warning');
-        await deleteAlarm(sublog, instanceId, 'CriticalMemoryUtilization');
-        await deleteAlarm(sublog, instanceId, 'WarningMemoryUtilization');
+        await deleteAlarm(sublog, instanceId, 'Memory-Critical');
+        await deleteAlarm(sublog, instanceId, 'Memory-Warning');
       }
     } else if (event.source === 'aws.tag') {
       const resourceId = event.resources[0].split('/').pop();
