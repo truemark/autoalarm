@@ -14,7 +14,7 @@ import * as logging from '@nr1e/logging';
 import {AlarmClassification, ValidInstanceState} from './enums';
 import {AlarmProps, Tag} from './types';
 
-let log: ReturnType<typeof logging.getRootLogger> = logging.getRootLogger();
+let log: ReturnType<typeof logging.getRootLogger>;
 const ec2Client = new EC2Client({});
 const cloudWatchClient = new CloudWatchClient({});
 
