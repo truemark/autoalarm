@@ -302,6 +302,7 @@ async function fetchInstanceTags(
 export const handler: Handler = async (event: any): Promise<void> => {
   await loggingSetup();
   log.trace().unknown('event', event).msg('Received event');
+  //creating sets of live and dead instance states to compare against in various alarm conditionals later on.
   const liveStates: Set<ValidInstanceState> = new Set([
     ValidInstanceState.Running,
     ValidInstanceState.Pending,
@@ -344,18 +345,19 @@ export const handler: Handler = async (event: any): Promise<void> => {
           await createStatusAlarmForInstance(instanceId);
           log.info().msg('autoalarm:disabled=false');
         }
-        // If the instance is terminated, delete all alarms
+        // Check if the instance is in a dead state and delete all alarms
       } else if (deadStates.has(state)) {
         await deleteAlarm(instanceId, 'WarningCPUUtilization');
         await deleteAlarm(instanceId, 'CriticalCPUUtilization');
         await deleteAlarm(instanceId, 'StatusCheckFailed');
       }
+      // Check if the event is a tag event and initiate tag event workflows
     } else if (event.source === 'aws.tag') {
       const resourceId = event.resources[0].split('/').pop();
       log.info().str('resourceId', resourceId).msg('Processing tag event');
 
       try {
-        // This event bridge rule sometimes sends delayed tag signals. Here we are checking if those instances exist.
+        // The tag event bridge rule sometimes sends delayed tag signals. Here we are checking if those instances exist.
         const describeInstancesResponse = await ec2Client.send(
           new DescribeInstancesCommand({
             InstanceIds: [resourceId],
@@ -365,7 +367,7 @@ export const handler: Handler = async (event: any): Promise<void> => {
         const instance =
           describeInstancesResponse.Reservations?.[0]?.Instances?.[0];
         const state = instance?.State?.Name as ValidInstanceState;
-
+        //checking our liveStates set to see if the instance is in a state that we should be managing alarms for.
         if (instance && liveStates.has(state)) {
           const tags = await fetchInstanceTags(resourceId);
           log
