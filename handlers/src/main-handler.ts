@@ -21,6 +21,8 @@ interface AlarmProps {
   period: number;
   evaluationPeriods: number;
   metricName: string;
+  namespace: string;
+  dimensions: {Name: string; Value: string}[];
 }
 
 interface Tag {
@@ -111,8 +113,10 @@ async function manageCPUUsageAlarmForInstance(
   const alarmProps = {
     threshold: defaultThreshold,
     period: 60,
+    namespace: 'AWS/EC2',
     evaluationPeriods: 5,
     metricName: 'CPUUtilization',
+    dimensions: [{Name: 'InstanceId', Value: instanceId}],
   };
 
   try {
@@ -230,11 +234,13 @@ async function manageStorageAlarmForInstance(
   ); // Default to 20% if not specified
 
   const alarmPropsCritical = {
-    metricName: 'FreeStorageSpace',
+    metricName: 'disc_used_percent',
+    namespace: 'CWAgent',
     threshold: criticalThreshold,
     period: 60, // 1 minute
     evaluationPeriods: 5,
     comparisonOperator: 'LessThanOrEqualToThreshold',
+    dimensions: [{Name: 'InstanceId', Value: instanceId}],
   };
 
   const alarmPropsWarning = {
@@ -305,11 +311,13 @@ async function manageMemoryAlarmForInstance(
   ); // Default to 80% if not specified
 
   const alarmPropsCritical = {
-    metricName: 'MemoryUtilization',
+    metricName: 'mem_used_percent',
+    namespace: 'CWAgent',
     threshold: criticalThreshold,
     period: 60, // 1 minute
     evaluationPeriods: 5,
     comparisonOperator: 'LessThanOrEqualToThreshold',
+    dimensions: [{Name: 'InstanceId', Value: instanceId}],
   };
 
   const alarmPropsWarning = {
@@ -377,12 +385,12 @@ async function createOrUpdateAlarm(
         ComparisonOperator: 'GreaterThanThreshold',
         EvaluationPeriods: props.evaluationPeriods,
         MetricName: props.metricName,
-        Namespace: 'AWS/EC2',
+        Namespace: props.namespace,
         Period: props.period,
         Statistic: 'Average',
         Threshold: props.threshold,
         ActionsEnabled: false,
-        Dimensions: [{Name: 'InstanceId', Value: instanceId}],
+        Dimensions: props.dimensions,
       })
     );
     log
