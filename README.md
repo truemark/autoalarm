@@ -25,14 +25,17 @@ The system is event-driven, responding to EC2 state change notifications and tag
 
 ## Supported Tags
 
-| Tag                                        | Description                                                                           |
-|--------------------------------------------|---------------------------------------------------------------------------------------|
-| `autoalarm:disabled`                       | If set to "true", the alarms will not be created for the resource. Default is "false".|
-| `autoalarm:cpu-percent-above-critical`     | Threshold for critical CPU utilization alarm.                                          |
-| `autoalarm:cpu-percent-above-warning`      | Threshold for warning CPU utilization alarm.                                           |
-| `autoalarm:cpu-percent-duration-time`      | Duration for CPU utilization to exceed threshold before triggering the alarm.         |
-| `autoalarm:cpu-percent-duration-periods`   | Number of evaluation periods for the alarm.                                            |
+| Tag                                        | Description                                                                                              | Default Value        |
+|--------------------------------------------|----------------------------------------------------------------------------------------------------------|----------------------|
+| `autoalarm:disabled`                       | If set to "true", instance status check alarms will not be created for the resource. Default is "false". | `false`              |
+| `autoalarm:cpu-percent-above-critical`     | Threshold for critical CPU utilization alarm. If not set, a default threshold of 99% is used.            | `99%`                |
+| `autoalarm:cpu-percent-above-warning`      | Threshold for warning CPU utilization alarm. If not set, a default threshold of 97% is used.             | `97%`                |
+| `autoalarm:cpu-percent-duration-time`      | Duration in seconds for CPU utilization to exceed the threshold before triggering the alarm.              | `60 seconds`         |
+| `autoalarm:cpu-percent-duration-periods`   | Number of consecutive periods over which data is evaluated against the specified threshold.               | `5 periods`          |
 
+### Default Alarm Behavior
+
+If the `autoalarm:cpu-percent-above-critical` and `autoalarm:cpu-percent-above-warning` tags are not present, alarms will be created with default thresholds of 99% for critical alarms and 97% for warning alarms, respectively. These default settings ensure that basic monitoring is in place even if specific customizations are not specified. This default behavior helps to maintain a baseline of operational awareness and prompt response capability.
 ## EventBridge Rules
 
 The project configures AWS EventBridge to route specific events to the AutoAlarm Lambda function. Below are the detailed rules created:
@@ -59,4 +62,5 @@ The project configures AWS EventBridge to route specific events to the AutoAlarm
 ## Limitations
 
 - Currently supports only EC2 instances. Extension to other services like ECS or RDS would require modifications to the Lambda function and CDK setup.
-- Error handling is basic, and operational issues need to be monitored through CloudWatch logs.
+- Tag-based configuration may not be suitable for all use cases. Customization options are limited to the supported tags.
+- Some alarms are created by default even without tags, such as cpu utilization alarms and can only be modified with the use of tags. Otherwise, they will be created with default values.
