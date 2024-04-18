@@ -95,125 +95,6 @@ async function needsUpdate(
   }
 }
 
-async function manageCPUUsageAlarmForInstance(
-  instanceId: string,
-  tags: Tag,
-  type: AlarmClassification
-): Promise<void> {
-  const baseAlarmName = `AutoAlarm-EC2-${instanceId}-${type}CPUUtilization`;
-  const thresholdKey = `autoalarm:cpu-percent-above-${type.toLowerCase()}`;
-  const defaultThreshold = type === 'Critical' ? 99 : 97;
-
-  const alarmProps = {
-    threshold: defaultThreshold,
-    period: 60,
-    namespace: 'AWS/EC2',
-    evaluationPeriods: 5,
-    metricName: 'CPUUtilization',
-    dimensions: [{Name: 'InstanceId', Value: instanceId}],
-  };
-
-  try {
-    if (tags[thresholdKey]) {
-      const parsedThreshold = parseFloat(tags[thresholdKey]);
-      if (!isNaN(parsedThreshold)) {
-        alarmProps.threshold = parsedThreshold;
-      } else {
-        log
-          .warn()
-          .str('tag', thresholdKey)
-          .str('value', tags[thresholdKey])
-          .msg('Invalid threshold value in tag, using default');
-      }
-    }
-
-    if (tags['autoalarm:cpu-percent-duration-time']) {
-      let parsedPeriod = parseInt(
-        tags['autoalarm:cpu-percent-duration-time'],
-        10
-      );
-      if (!isNaN(parsedPeriod)) {
-        // Validate and adjust the period value to align with CloudWatch's requirements
-        if (parsedPeriod < 10) {
-          parsedPeriod = 10;
-          log
-            .info()
-            .str('tag', 'autoalarm:cpu-percent-duration-time')
-            .str('value', tags['autoalarm:cpu-percent-duration-time'])
-            .num('period', parsedPeriod)
-            .msg(
-              'Period value less than 10 is not allowed, must be 10, 30, or multiple of 60. Using default value of 10'
-            );
-        } else if (parsedPeriod < 30) {
-          parsedPeriod = 30;
-          log
-            .info()
-            .str('tag', 'autoalarm:cpu-percent-duration-time')
-            .str('value', tags['autoalarm:cpu-percent-duration-time'])
-            .num('period', parsedPeriod)
-            .msg(
-              'Period value not 10 or 30 is not allowed, must be 10, 30, or multiple of 60. Since value is less ' +
-                'than 30 but more than 10, Using default value of 30'
-            );
-        } else {
-          parsedPeriod = Math.ceil(parsedPeriod / 60) * 60;
-          log
-            .info()
-            .str('tag', 'autoalarm:cpu-percent-duration-time')
-            .str('value', tags['autoalarm:cpu-percent-duration-time'])
-            .num('period', parsedPeriod)
-            .msg(
-              'Period value that is not 10 or 30 must be multiple of 60. Adjusted to nearest multiple of 60'
-            );
-        }
-        alarmProps.period = Number(parsedPeriod);
-      } else {
-        log
-          .warn()
-          .str('tag', 'autoalarm:cpu-percent-duration-time')
-          .str('value', tags['autoalarm:cpu-percent-duration-time'])
-          .msg('Invalid duration value in tag, using default');
-      }
-    }
-
-    if (tags['autoalarm:cpu-percent-duration-periods']) {
-      const parsedEvaluationPeriods = parseInt(
-        tags['autoalarm:cpu-percent-duration-periods'],
-        10
-      );
-      if (!isNaN(parsedEvaluationPeriods)) {
-        alarmProps.evaluationPeriods = parsedEvaluationPeriods;
-      } else {
-        log
-          .warn()
-          .str('tag', 'autoalarm:cpu-percent-duration-periods')
-          .str('value', tags['autoalarm:cpu-percent-duration-periods'])
-          .msg('Invalid evaluation periods value in tag, using default');
-      }
-    }
-  } catch (error) {
-    log
-      .error()
-      .err(error)
-      .msg('Error parsing tag values, using default values');
-  }
-
-  const alarmExists = await doesAlarmExist(baseAlarmName);
-
-  if (
-    !alarmExists ||
-    (alarmExists && (await needsUpdate(baseAlarmName, alarmProps)))
-  ) {
-    await createOrUpdateAlarm(baseAlarmName, instanceId, alarmProps);
-  } else {
-    log
-      .info()
-      .str('alarmName', baseAlarmName)
-      .str('instanceId', instanceId)
-      .msg('CPU usage alarm is already up-to-date');
-  }
-}
-
 async function createOrUpdateAlarm(
   alarmName: string,
   instanceId: string,
@@ -252,139 +133,263 @@ async function createOrUpdateAlarm(
   }
 }
 
-async function manageStorageAlarmForInstance(
+function configureAlarmPropsFromTags(
+  alarmProps: AlarmProps,
+  tags: Tag,
+  thresholdKey: string,
+  durationTimeKey: string,
+  durationPeriodsKey: string
+): void {
+  // Adjust threshold based on tags
+  if (tags[thresholdKey]) {
+    const parsedThreshold = parseFloat(tags[thresholdKey]);
+    if (!isNaN(parsedThreshold)) {
+      alarmProps.threshold = parsedThreshold;
+      log
+        .info()
+        .str('tag', thresholdKey)
+        .num('threshold', parsedThreshold)
+        .msg('Adjusted threshold based on tag');
+    } else {
+      log
+        .warn()
+        .str('tag', thresholdKey)
+        .str('value', tags[thresholdKey])
+        .msg('Invalid threshold value in tag, using default');
+    }
+  }
+
+  // Adjust period based on tags
+  if (tags[durationTimeKey]) {
+    let parsedPeriod = parseInt(tags[durationTimeKey], 10);
+    if (!isNaN(parsedPeriod)) {
+      if (parsedPeriod < 10) {
+        parsedPeriod = 10;
+        log
+          .info()
+          .str('tag', durationTimeKey)
+          .num('period', parsedPeriod)
+          .msg(
+            'Period value less than 10 is not allowed, must be 10. Using default value of 10'
+          );
+      } else if (parsedPeriod < 30) {
+        parsedPeriod = 30;
+        log
+          .info()
+          .str('tag', durationTimeKey)
+          .num('period', parsedPeriod)
+          .msg(
+            'Period value less than 30 and not 10 is adjusted to 30. Using default value of 30'
+          );
+      } else {
+        parsedPeriod = Math.ceil(parsedPeriod / 60) * 60;
+        log
+          .info()
+          .str('tag', durationTimeKey)
+          .num('period', parsedPeriod)
+          .msg(
+            'Period value not 10 or 30 must be multiple of 60. Adjusted to nearest multiple of 60'
+          );
+      }
+      alarmProps.period = parsedPeriod;
+    } else {
+      log
+        .warn()
+        .str('tag', durationTimeKey)
+        .str('value', tags[durationTimeKey])
+        .msg('Invalid period value in tag, using default 60 seconds');
+    }
+  }
+
+  // Adjust evaluation periods based on tags
+  if (tags[durationPeriodsKey]) {
+    const parsedEvaluationPeriods = parseInt(tags[durationPeriodsKey], 10);
+    if (!isNaN(parsedEvaluationPeriods)) {
+      alarmProps.evaluationPeriods = parsedEvaluationPeriods;
+      log
+        .info()
+        .str('tag', durationPeriodsKey)
+        .num('evaluationPeriods', parsedEvaluationPeriods)
+        .msg('Adjusted evaluation periods based on tag');
+    } else {
+      log
+        .warn()
+        .str('tag', durationPeriodsKey)
+        .str('value', tags[durationPeriodsKey])
+        .msg('Invalid evaluation periods value in tag, using default 5');
+    }
+  }
+}
+
+async function manageCPUUsageAlarmForInstance(
   instanceId: string,
   tags: Tag,
   type: AlarmClassification
 ): Promise<void> {
-  const baseAlarmName = `AutoAlarm-EC2-${instanceId}-Storage`;
-  const defaultThreshold = type === 'Critical' ? 10 : 20;
-  const alarmPropsCritical = {
-    metricName: 'disc_used_percent',
-    namespace: 'CWAgent',
+  const baseAlarmName = `AutoAlarm-EC2-${instanceId}-${type}CPUUtilization`;
+  const thresholdKey = `autoalarm:cpu-percent-above-${type.toLowerCase()}`;
+  const durationTimeKey = 'autoalarm:cpu-percent-duration-time';
+  const durationPeriodsKey = 'autoalarm:cpu-percent-duration-periods';
+  const defaultThreshold = type === 'Critical' ? 99 : 97;
+
+  const alarmProps: AlarmProps = {
     threshold: defaultThreshold,
-    period: 60, // 1 minute
+    period: 60,
+    namespace: 'AWS/EC2',
     evaluationPeriods: 5,
-    comparisonOperator: 'LessThanOrEqualToThreshold',
+    metricName: 'CPUUtilization',
     dimensions: [{Name: 'InstanceId', Value: instanceId}],
   };
 
-  const alarmPropsWarning = {
-    ...alarmPropsCritical,
-    threshold: defaultThreshold,
-  };
-
-  // Create or update critical alarm
-  if (!isNaN(defaultThreshold)) {
-    try {
-      await createOrUpdateAlarm(
-        `${baseAlarmName}-Critical`,
-        instanceId,
-        alarmPropsCritical
-      );
-      log
-        .info()
-        .str('alarmName', `${baseAlarmName}-Critical`)
-        .str('instanceId', instanceId)
-        .msg('Critical storage alarm configured or updated.');
-    } catch (error) {
-      log
-        .error()
-        .str('alarmName', `${baseAlarmName}-Critical`)
-        .str('instanceId', instanceId)
-        .err(error)
-        .msg('Failed to configure critical storage alarm.');
-    }
+  try {
+    configureAlarmPropsFromTags(
+      alarmProps,
+      tags,
+      thresholdKey,
+      durationTimeKey,
+      durationPeriodsKey
+    );
+  } catch (e) {
+    log.error().err(e).msg('Error configuring alarm props from tags');
+    throw new Error('Error configuring alarm props from tags');
   }
 
-  // Attempt to create or update warning alarm
-  if (!isNaN(defaultThreshold)) {
-    try {
-      await createOrUpdateAlarm(
-        `${baseAlarmName}-Warning`,
-        instanceId,
-        alarmPropsWarning
-      );
-      log
-        .info()
-        .str('alarmName', `${baseAlarmName}-Warning`)
-        .str('instanceId', instanceId)
-        .msg('Warning storage alarm configured or updated.');
-    } catch (error) {
-      log
-        .error()
-        .str('alarmName', `${baseAlarmName}-Warning`)
-        .str('instanceId', instanceId)
-        .err(error)
-        .msg('Failed to configure warning storage alarm.');
-    }
+  const alarmExists = await doesAlarmExist(baseAlarmName);
+
+  if (
+    !alarmExists ||
+    (alarmExists && (await needsUpdate(baseAlarmName, alarmProps)))
+  ) {
+    await createOrUpdateAlarm(baseAlarmName, instanceId, alarmProps);
+    log
+      .info()
+      .str('alarmName', baseAlarmName)
+      .str('instanceId', instanceId)
+      .msg('CPU usage alarm configured or updated.');
+  } else {
+    log
+      .info()
+      .str('alarmName', baseAlarmName)
+      .str('instanceId', instanceId)
+      .msg('CPU usage alarm is already up-to-date');
+  }
+}
+
+async function manageStorageAlarmForInstance(
+  instanceId: string,
+  instanceType: string,
+  imageId: string,
+  tags: Tag,
+  type: AlarmClassification
+): Promise<void> {
+  const baseAlarmName = `AutoAlarm-EC2-${instanceId}-${type}StorageUtilization`;
+  const thresholdKey = `autoalarm:storage-free-percent-${type.toLowerCase()}`;
+  const durationTimeKey = 'autoalarm:storage-percent-duration-time';
+  const durationPeriodsKey = 'autoalarm:storage-percent-duration-periods';
+  const defaultThreshold = type === 'Critical' ? 10 : 20;
+
+  const alarmProps: AlarmProps = {
+    threshold: defaultThreshold,
+    period: 60,
+    namespace: 'CWAgent',
+    evaluationPeriods: 5,
+    metricName: 'disc_used_percent',
+    dimensions: [
+      {Name: 'InstanceId', Value: instanceId},
+      {Name: 'ImageId', Value: imageId},
+      {Name: 'InstanceType', Value: instanceType},
+    ],
+  };
+
+  try {
+    configureAlarmPropsFromTags(
+      alarmProps,
+      tags,
+      thresholdKey,
+      durationTimeKey,
+      durationPeriodsKey
+    );
+  } catch (e) {
+    log.error().err(e).msg('Error configuring alarm props from tags');
+    throw new Error('Error configuring alarm props from tags');
+  }
+
+  const alarmExists = await doesAlarmExist(baseAlarmName);
+  if (
+    !alarmExists ||
+    (alarmExists && (await needsUpdate(baseAlarmName, alarmProps)))
+  ) {
+    await createOrUpdateAlarm(baseAlarmName, instanceId, alarmProps);
+    log
+      .info()
+      .str('alarmName', baseAlarmName)
+      .str('instanceId', instanceId)
+      .msg('Storage usage alarm configured or updated.');
+  } else {
+    log
+      .info()
+      .str('alarmName', baseAlarmName)
+      .str('instanceId', instanceId)
+      .msg('Storage usage alarm is already up-to-date');
   }
 }
 
 async function manageMemoryAlarmForInstance(
   instanceId: string,
+  instanceType: string,
+  imageId: string,
   tags: Tag,
   type: AlarmClassification
 ): Promise<void> {
   const baseAlarmName = `AutoAlarm-EC2-${instanceId}-${type}-Memory`;
   const defaultThreshold = type === 'Critical' ? 90 : 80;
-  const alarmPropsCritical = {
+  const thresholdKey = `autoalarm:memory-percent-above-${type.toLowerCase()}`;
+  const durationTimeKey = 'autoalarm:memory-percent-duration-time';
+  const durationPeriodsKey = 'autoalarm:memory-percent-duration-periods';
+
+  const alarmProps: AlarmProps = {
     metricName: 'mem_used_percent',
     namespace: 'CWAgent',
-    threshold: defaultThreshold,
-    period: 60, // 1 minute
-    evaluationPeriods: 5,
-    comparisonOperator: 'LessThanOrEqualToThreshold',
-    dimensions: [{Name: 'InstanceId', Value: instanceId}],
+    threshold: defaultThreshold, // Default thresholds
+    period: 60, // Default period in seconds
+    evaluationPeriods: 5, // Default number of evaluation periods
+    dimensions: [
+      {Name: 'InstanceId', Value: instanceId},
+      {Name: 'ImageId', Value: imageId},
+      {Name: 'InstanceType', Value: instanceType},
+    ],
   };
 
-  const alarmPropsWarning = {
-    ...alarmPropsCritical,
-    threshold: defaultThreshold,
-  };
-
-  if (!isNaN(defaultThreshold)) {
-    try {
-      await createOrUpdateAlarm(
-        `${baseAlarmName}-Critical`,
-        instanceId,
-        alarmPropsCritical
-      );
-      log
-        .info()
-        .str('alarmName', `${baseAlarmName}-Critical`)
-        .str('instanceId', instanceId)
-        .msg('Critical memory alarm configured or updated.');
-    } catch (error) {
-      log
-        .error()
-        .str('alarmName', `${baseAlarmName}-Critical`)
-        .str('instanceId', instanceId)
-        .err(error)
-        .msg('Failed to configure critical memory alarm.');
-    }
+  try {
+    configureAlarmPropsFromTags(
+      alarmProps,
+      tags,
+      thresholdKey,
+      durationTimeKey,
+      durationPeriodsKey
+    );
+  } catch (e) {
+    log.error().err(e).msg('Error configuring alarm props from tags');
+    throw new Error('Error configuring alarm props from tags');
   }
 
-  if (!isNaN(defaultThreshold)) {
-    try {
-      await createOrUpdateAlarm(
-        `${baseAlarmName}-Warning`,
-        instanceId,
-        alarmPropsWarning
-      );
-      log
-        .info()
-        .str('alarmName', `${baseAlarmName}-Warning`)
-        .str('instanceId', instanceId)
-        .msg('Warning memory alarm configured or updated.');
-    } catch (error) {
-      log
-        .error()
-        .str('alarmName', `${baseAlarmName}-Warning`)
-        .str('instanceId', instanceId)
-        .err(error)
-        .msg('Failed to configure warning memory alarm.');
-    }
+  const alarmExists = await doesAlarmExist(baseAlarmName);
+  if (
+    !alarmExists ||
+    (alarmExists && (await needsUpdate(baseAlarmName, alarmProps)))
+  ) {
+    await createOrUpdateAlarm(baseAlarmName, instanceId, alarmProps);
+    log
+      .info()
+      .str('alarmName', baseAlarmName)
+      .str('instanceId', instanceId)
+      .msg(`${type} memory alarm configured or updated.`);
+  } else {
+    log
+      .info()
+      .str('alarmName', baseAlarmName)
+      .str('instanceId', instanceId)
+      .msg('Memory usage alarm is already up-to-date');
   }
 }
 
@@ -446,6 +451,44 @@ async function fetchInstanceTags(
   }
 }
 
+async function getInstanceDetails(
+  instanceId: string
+): Promise<{imageId: string | null; instanceType: string | null}> {
+  try {
+    const params = {
+      InstanceIds: [instanceId],
+    };
+    const command = new DescribeInstancesCommand(params);
+    const response = await ec2Client.send(command);
+
+    if (
+      response.Reservations &&
+      response.Reservations.length > 0 &&
+      response.Reservations[0].Instances &&
+      response.Reservations[0].Instances.length > 0
+    ) {
+      const instance = response.Reservations[0].Instances[0];
+      return {
+        imageId: instance.ImageId ?? null,
+        instanceType: instance.InstanceType ?? null,
+      };
+    } else {
+      log
+        .info()
+        .str('instanceId', instanceId)
+        .msg('No reservations found or no instances in reservation');
+      return {imageId: null, instanceType: null};
+    }
+  } catch (error) {
+    log
+      .error()
+      .err(error)
+      .str('instanceId', instanceId)
+      .msg('Failed to fetch instance details');
+    return {imageId: null, instanceType: null};
+  }
+}
+
 export const handler: Handler = async (event: any): Promise<void> => {
   await loggingSetup();
   log.trace().unknown('event', event).msg('Received event');
@@ -462,6 +505,20 @@ export const handler: Handler = async (event: any): Promise<void> => {
   try {
     if (event.source === 'aws.ec2') {
       const instanceId = event.detail['instance-id'];
+      const {imageId, instanceType} = await getInstanceDetails(instanceId);
+      if (typeof imageId === 'string' && typeof instanceType === 'string') {
+        log
+          .info()
+          .str('imageId', imageId)
+          .str('instanceType', instanceType)
+          .msg('Fetched instance details and confirmed as strings');
+      } else {
+        log
+          .error()
+          .str('instanceId', instanceId)
+          .msg('Missing or invalid image ID or instance type');
+        throw new Error('Missing or invalid image ID or instance type');
+      }
       const state = event.detail.state;
       log
         .info()
@@ -485,21 +542,29 @@ export const handler: Handler = async (event: any): Promise<void> => {
         );
         await manageStorageAlarmForInstance(
           instanceId,
+          instanceType,
+          imageId,
           tags,
           AlarmClassification.Critical
         );
         await manageStorageAlarmForInstance(
           instanceId,
+          instanceType,
+          imageId,
           tags,
           AlarmClassification.Warning
         );
         await manageMemoryAlarmForInstance(
           instanceId,
+          instanceType,
+          imageId,
           tags,
           AlarmClassification.Warning
         );
         await manageMemoryAlarmForInstance(
           instanceId,
+          instanceType,
+          imageId,
           tags,
           AlarmClassification.Critical
         );
@@ -526,7 +591,20 @@ export const handler: Handler = async (event: any): Promise<void> => {
     } else if (event.source === 'aws.tag') {
       const instanceId = event.resources[0].split('/').pop();
       log.info().str('resourceId', instanceId).msg('Processing tag event');
-
+      const {imageId, instanceType} = await getInstanceDetails(instanceId);
+      if (typeof imageId === 'string' && typeof instanceType === 'string') {
+        log
+          .info()
+          .str('imageId', imageId)
+          .str('instanceType', instanceType)
+          .msg('Fetched instance details and confirmed as strings');
+      } else {
+        log
+          .error()
+          .str('instanceId', instanceId)
+          .msg('Missing or invalid image ID or instance type');
+        throw new Error('Missing or invalid image ID or instance type');
+      }
       try {
         // The tag event bridge rule sometimes sends delayed tag signals. Here we are checking if those instances exist.
         const describeInstancesResponse = await ec2Client.send(
@@ -560,21 +638,29 @@ export const handler: Handler = async (event: any): Promise<void> => {
           );
           await manageStorageAlarmForInstance(
             instanceId,
+            instanceType,
+            imageId,
             tags,
             AlarmClassification.Critical
           );
           await manageStorageAlarmForInstance(
             instanceId,
+            instanceType,
+            imageId,
             tags,
             AlarmClassification.Warning
           );
           await manageMemoryAlarmForInstance(
             instanceId,
+            instanceType,
+            imageId,
             tags,
             AlarmClassification.Warning
           );
           await manageMemoryAlarmForInstance(
             instanceId,
+            instanceType,
+            imageId,
             tags,
             AlarmClassification.Critical
           );
