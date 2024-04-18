@@ -240,7 +240,11 @@ async function manageStorageAlarmForInstance(
     period: 60, // 1 minute
     evaluationPeriods: 5,
     comparisonOperator: 'LessThanOrEqualToThreshold',
-    dimensions: [{Name: 'InstanceId', Value: instanceId}],
+    dimensions: [
+      {Name: 'InstanceId', Value: instanceId},
+      {Name: 'ImageId', Value: imageId},
+      {Name: 'InstanceType', Value: instanceType},
+    ],
   };
 
   const alarmPropsWarning = {
