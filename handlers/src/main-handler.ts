@@ -341,7 +341,7 @@ async function manageMemoryAlarmForInstance(
   tags: Tag,
   type: AlarmClassification
 ): Promise<void> {
-  const baseAlarmName = `AutoAlarm-EC2-${instanceId}-${type}-Memory`;
+  const baseAlarmName = `AutoAlarm-EC2-${instanceId}-${type}MemoryUtilization`;
   const defaultThreshold = type === 'Critical' ? 90 : 80;
   const thresholdKey = `autoalarm:memory-percent-above-${type.toLowerCase()}`;
   const durationTimeKey = 'autoalarm:memory-percent-duration-time';
@@ -582,10 +582,10 @@ export const handler: Handler = async (event: any): Promise<void> => {
         await deleteAlarm(instanceId, 'WarningCPUUtilization');
         await deleteAlarm(instanceId, 'CriticalCPUUtilization');
         await deleteAlarm(instanceId, 'StatusCheckFailed');
-        await deleteAlarm(instanceId, 'CriticalStorage');
-        await deleteAlarm(instanceId, 'WarningStorage');
-        await deleteAlarm(instanceId, 'CriticalMemory');
-        await deleteAlarm(instanceId, 'WarningMemory');
+        await deleteAlarm(instanceId, 'CriticalStorageUtilization');
+        await deleteAlarm(instanceId, 'WarningStorageUtilization');
+        await deleteAlarm(instanceId, 'CriticalMemoryUtilization');
+        await deleteAlarm(instanceId, 'WarningMemoryUtilization');
       }
       // Check if the event is a tag event and initiate tag event workflows
     } else if (event.source === 'aws.tag') {
