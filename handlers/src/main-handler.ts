@@ -107,7 +107,10 @@ async function manageCPUUsageAlarmForInstance(
   const alarmProps = {
     threshold: defaultThreshold,
     period: 60,
+    namespace: 'AWS/EC2',
     evaluationPeriods: 5,
+    metricName: 'CPUUtilization',
+    dimensions: [{Name: 'InstanceId', Value: instanceId}],
   };
 
   try {
@@ -201,43 +204,187 @@ async function manageCPUUsageAlarmForInstance(
     !alarmExists ||
     (alarmExists && (await needsUpdate(baseAlarmName, alarmProps)))
   ) {
-    try {
-      await cloudWatchClient.send(
-        new PutMetricAlarmCommand({
-          AlarmName: baseAlarmName,
-          ComparisonOperator: 'GreaterThanThreshold',
-          EvaluationPeriods: alarmProps.evaluationPeriods,
-          MetricName: 'CPUUtilization',
-          Namespace: 'AWS/EC2',
-          Period: alarmProps.period,
-          Statistic: 'Average',
-          Threshold: alarmProps.threshold,
-          ActionsEnabled: false,
-          Dimensions: [{Name: 'InstanceId', Value: instanceId}],
-        })
-      );
-      log
-        .info()
-        .str('alarmName', baseAlarmName)
-        .str('instanceId', instanceId)
-        .num('threshold', alarmProps.threshold)
-        .num('period', alarmProps.period)
-        .num('evaluationPeriods', alarmProps.evaluationPeriods)
-        .msg('Alarm configured');
-    } catch (e) {
-      log
-        .error()
-        .err(e)
-        .str('alarmName', baseAlarmName)
-        .str('instanceId', instanceId)
-        .msg('Failed to create or update alarm due to an error');
-    }
+    await createOrUpdateAlarm(baseAlarmName, instanceId, alarmProps);
   } else {
     log
       .info()
       .str('alarmName', baseAlarmName)
       .str('instanceId', instanceId)
       .msg('CPU usage alarm is already up-to-date');
+  }
+}
+
+async function createOrUpdateAlarm(
+  alarmName: string,
+  instanceId: string,
+  props: AlarmProps
+) {
+  try {
+    await cloudWatchClient.send(
+      new PutMetricAlarmCommand({
+        AlarmName: alarmName,
+        ComparisonOperator: 'GreaterThanThreshold',
+        EvaluationPeriods: props.evaluationPeriods,
+        MetricName: props.metricName,
+        Namespace: props.namespace,
+        Period: props.period,
+        Statistic: 'Average',
+        Threshold: props.threshold,
+        ActionsEnabled: false,
+        Dimensions: props.dimensions,
+      })
+    );
+    log
+      .info()
+      .str('alarmName', alarmName)
+      .str('instanceId', instanceId)
+      .num('threshold', props.threshold)
+      .num('period', props.period)
+      .num('evaluationPeriods', props.evaluationPeriods)
+      .msg('Alarm configured');
+  } catch (e) {
+    log
+      .error()
+      .err(e)
+      .str('alarmName', alarmName)
+      .str('instanceId', instanceId)
+      .msg('Failed to create or update alarm due to an error');
+  }
+}
+
+async function manageStorageAlarmForInstance(
+  instanceId: string,
+  tags: Tag,
+  type: AlarmClassification
+): Promise<void> {
+  const baseAlarmName = `AutoAlarm-EC2-${instanceId}-Storage`;
+  const defaultThreshold = type === 'Critical' ? 10 : 20;
+  const alarmPropsCritical = {
+    metricName: 'disc_used_percent',
+    namespace: 'CWAgent',
+    threshold: defaultThreshold,
+    period: 60, // 1 minute
+    evaluationPeriods: 5,
+    comparisonOperator: 'LessThanOrEqualToThreshold',
+    dimensions: [{Name: 'InstanceId', Value: instanceId}],
+  };
+
+  const alarmPropsWarning = {
+    ...alarmPropsCritical,
+    threshold: defaultThreshold,
+  };
+
+  // Create or update critical alarm
+  if (!isNaN(defaultThreshold)) {
+    try {
+      await createOrUpdateAlarm(
+        `${baseAlarmName}-Critical`,
+        instanceId,
+        alarmPropsCritical
+      );
+      log
+        .info()
+        .str('alarmName', `${baseAlarmName}-Critical`)
+        .str('instanceId', instanceId)
+        .msg('Critical storage alarm configured or updated.');
+    } catch (error) {
+      log
+        .error()
+        .str('alarmName', `${baseAlarmName}-Critical`)
+        .str('instanceId', instanceId)
+        .err(error)
+        .msg('Failed to configure critical storage alarm.');
+    }
+  }
+
+  // Attempt to create or update warning alarm
+  if (!isNaN(defaultThreshold)) {
+    try {
+      await createOrUpdateAlarm(
+        `${baseAlarmName}-Warning`,
+        instanceId,
+        alarmPropsWarning
+      );
+      log
+        .info()
+        .str('alarmName', `${baseAlarmName}-Warning`)
+        .str('instanceId', instanceId)
+        .msg('Warning storage alarm configured or updated.');
+    } catch (error) {
+      log
+        .error()
+        .str('alarmName', `${baseAlarmName}-Warning`)
+        .str('instanceId', instanceId)
+        .err(error)
+        .msg('Failed to configure warning storage alarm.');
+    }
+  }
+}
+
+async function manageMemoryAlarmForInstance(
+  instanceId: string,
+  tags: Tag,
+  type: AlarmClassification
+): Promise<void> {
+  const baseAlarmName = `AutoAlarm-EC2-${instanceId}-${type}-Memory`;
+  const defaultThreshold = type === 'Critical' ? 90 : 80;
+  const alarmPropsCritical = {
+    metricName: 'mem_used_percent',
+    namespace: 'CWAgent',
+    threshold: defaultThreshold,
+    period: 60, // 1 minute
+    evaluationPeriods: 5,
+    comparisonOperator: 'LessThanOrEqualToThreshold',
+    dimensions: [{Name: 'InstanceId', Value: instanceId}],
+  };
+
+  const alarmPropsWarning = {
+    ...alarmPropsCritical,
+    threshold: defaultThreshold,
+  };
+
+  if (!isNaN(defaultThreshold)) {
+    try {
+      await createOrUpdateAlarm(
+        `${baseAlarmName}-Critical`,
+        instanceId,
+        alarmPropsCritical
+      );
+      log
+        .info()
+        .str('alarmName', `${baseAlarmName}-Critical`)
+        .str('instanceId', instanceId)
+        .msg('Critical memory alarm configured or updated.');
+    } catch (error) {
+      log
+        .error()
+        .str('alarmName', `${baseAlarmName}-Critical`)
+        .str('instanceId', instanceId)
+        .err(error)
+        .msg('Failed to configure critical memory alarm.');
+    }
+  }
+
+  if (!isNaN(defaultThreshold)) {
+    try {
+      await createOrUpdateAlarm(
+        `${baseAlarmName}-Warning`,
+        instanceId,
+        alarmPropsWarning
+      );
+      log
+        .info()
+        .str('alarmName', `${baseAlarmName}-Warning`)
+        .str('instanceId', instanceId)
+        .msg('Warning memory alarm configured or updated.');
+    } catch (error) {
+      log
+        .error()
+        .str('alarmName', `${baseAlarmName}-Warning`)
+        .str('instanceId', instanceId)
+        .err(error)
+        .msg('Failed to configure warning memory alarm.');
+    }
   }
 }
 
@@ -322,7 +469,7 @@ export const handler: Handler = async (event: any): Promise<void> => {
         .str('state', state)
         .msg('Processing EC2 event');
 
-      // Check if the instance is running and create alarms for cpu usage which should be done by default for every instance
+      // Check if the instance is running and create alarms for cpu, storage and memory usage which should be done by default for every instance
       if (liveStates.has(state)) {
         const tags = await fetchInstanceTags(instanceId);
         log.info().str('tags', JSON.stringify(tags)).msg('Fetched tags');
@@ -335,6 +482,26 @@ export const handler: Handler = async (event: any): Promise<void> => {
           instanceId,
           tags,
           AlarmClassification.Warning
+        );
+        await manageStorageAlarmForInstance(
+          instanceId,
+          tags,
+          AlarmClassification.Critical
+        );
+        await manageStorageAlarmForInstance(
+          instanceId,
+          tags,
+          AlarmClassification.Warning
+        );
+        await manageMemoryAlarmForInstance(
+          instanceId,
+          tags,
+          AlarmClassification.Warning
+        );
+        await manageMemoryAlarmForInstance(
+          instanceId,
+          tags,
+          AlarmClassification.Critical
         );
 
         // Check if the instance has the "autoalarm:disabled" tag set to "true" and skip creating status check alarm
@@ -350,17 +517,21 @@ export const handler: Handler = async (event: any): Promise<void> => {
         await deleteAlarm(instanceId, 'WarningCPUUtilization');
         await deleteAlarm(instanceId, 'CriticalCPUUtilization');
         await deleteAlarm(instanceId, 'StatusCheckFailed');
+        await deleteAlarm(instanceId, 'CriticalStorage');
+        await deleteAlarm(instanceId, 'WarningStorage');
+        await deleteAlarm(instanceId, 'CriticalMemory');
+        await deleteAlarm(instanceId, 'WarningMemory');
       }
       // Check if the event is a tag event and initiate tag event workflows
     } else if (event.source === 'aws.tag') {
-      const resourceId = event.resources[0].split('/').pop();
-      log.info().str('resourceId', resourceId).msg('Processing tag event');
+      const instanceId = event.resources[0].split('/').pop();
+      log.info().str('resourceId', instanceId).msg('Processing tag event');
 
       try {
         // The tag event bridge rule sometimes sends delayed tag signals. Here we are checking if those instances exist.
         const describeInstancesResponse = await ec2Client.send(
           new DescribeInstancesCommand({
-            InstanceIds: [resourceId],
+            InstanceIds: [instanceId],
           })
         );
 
@@ -369,40 +540,60 @@ export const handler: Handler = async (event: any): Promise<void> => {
         const state = instance?.State?.Name as ValidInstanceState;
         //checking our liveStates set to see if the instance is in a state that we should be managing alarms for.
         if (instance && liveStates.has(state)) {
-          const tags = await fetchInstanceTags(resourceId);
+          const tags = await fetchInstanceTags(instanceId);
           log
             .info()
-            .str('resource:', resourceId)
+            .str('resource:', instanceId)
             .str('tags', JSON.stringify(tags))
             .msg('Fetched tags');
 
-          // Create default alarms for CPU usage or update thresholds if they exist in tag updates
+          // Create default alarms for CPU,storage, and memory usage or update thresholds if they exist in tag updates
           await manageCPUUsageAlarmForInstance(
-            resourceId,
+            instanceId,
             tags,
             AlarmClassification.Critical
           );
           await manageCPUUsageAlarmForInstance(
-            resourceId,
+            instanceId,
             tags,
             AlarmClassification.Warning
+          );
+          await manageStorageAlarmForInstance(
+            instanceId,
+            tags,
+            AlarmClassification.Critical
+          );
+          await manageStorageAlarmForInstance(
+            instanceId,
+            tags,
+            AlarmClassification.Warning
+          );
+          await manageMemoryAlarmForInstance(
+            instanceId,
+            tags,
+            AlarmClassification.Warning
+          );
+          await manageMemoryAlarmForInstance(
+            instanceId,
+            tags,
+            AlarmClassification.Critical
           );
 
           // Create or delete status check alarm based on the value of the "autoalarm:disabled" tag
           if (tags['autoalarm:disabled'] === 'false') {
-            await createStatusAlarmForInstance(resourceId);
+            await createStatusAlarmForInstance(instanceId);
           } else if (tags['autoalarm:disabled'] === 'true') {
-            await deleteAlarm(resourceId, 'StatusCheckFailed');
+            await deleteAlarm(instanceId, 'StatusCheckFailed');
             // If the tag exists but has an unexpected value, log the value and check for the alarm and create if it does not exist
           } else if ('autoalarm:disabled' in tags) {
             log
               .info()
-              .str('resource:', resourceId)
+              .str('resource:', instanceId)
               .str('autoalarm:disabled', tags['autoalarm:disabled'])
               .msg(
                 'autoalarm:disabled tag exists but has unexpected value. checking for alarm and creating if it does not exist'
               );
-            await createStatusAlarmForInstance(resourceId);
+            await createStatusAlarmForInstance(instanceId);
             // If the tag is not found, check for the alarm and delete if it exists
           } else {
             log
@@ -410,12 +601,12 @@ export const handler: Handler = async (event: any): Promise<void> => {
               .msg(
                 'autoalarm:disabled tag not found. checking for alarm and deleting if exists'
               );
-            await deleteAlarm(resourceId, 'StatusCheckFailed');
+            await deleteAlarm(instanceId, 'StatusCheckFailed');
           }
         } else {
           log
             .info()
-            .str('resourceId', resourceId)
+            .str('resource', instanceId)
             .msg(
               'Instance has since been deleted or terminated. Skipping alarm management.'
             );
@@ -424,7 +615,7 @@ export const handler: Handler = async (event: any): Promise<void> => {
         log
           .error()
           .err(error)
-          .str('resourceId', resourceId)
+          .str('resource', instanceId)
           .msg('Error describing instance');
       }
     }
