@@ -282,7 +282,7 @@ async function manageStorageAlarmForInstance(
   tags: Tag,
   type: AlarmClassification
 ): Promise<void> {
-  const baseAlarmName = `autoAlarm-EC2-${instanceId}-${type}StorageUtilization`;
+  const baseAlarmName = `AutoAlarm-EC2-${instanceId}-${type}StorageUtilization`;
   const thresholdKey = `autoalarm:storage-free-percent-${type.toLowerCase()}`;
   const durationTimeKey = 'autoalarm:storage-percent-duration-time';
   const durationPeriodsKey = 'autoalarm:storage-percent-duration-periods';
