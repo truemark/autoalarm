@@ -291,7 +291,7 @@ async function manageStorageAlarmForInstance(
   const alarmProps: AlarmProps = {
     threshold: defaultThreshold,
     period: 60,
-    namespace: 'disk',
+    namespace: 'CWAgent',
     evaluationPeriods: 5,
     metricName: 'used_percent',
     dimensions: [
