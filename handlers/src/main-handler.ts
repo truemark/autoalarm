@@ -282,7 +282,7 @@ async function manageStorageAlarmForInstance(
   tags: Tag,
   type: AlarmClassification
 ): Promise<void> {
-  const baseAlarmName = `AutoAlarm-EC2-${instanceId}-${type}StorageUtilization`;
+  const baseAlarmName = `autoAlarm-EC2-${instanceId}-${type}StorageUtilization`;
   const thresholdKey = `autoalarm:storage-free-percent-${type.toLowerCase()}`;
   const durationTimeKey = 'autoalarm:storage-percent-duration-time';
   const durationPeriodsKey = 'autoalarm:storage-percent-duration-periods';
@@ -291,13 +291,15 @@ async function manageStorageAlarmForInstance(
   const alarmProps: AlarmProps = {
     threshold: defaultThreshold,
     period: 60,
-    namespace: 'CWAgent',
+    namespace: 'disk',
     evaluationPeriods: 5,
-    metricName: 'disc_used_percent',
+    metricName: 'used_percent',
     dimensions: [
       {Name: 'InstanceId', Value: instanceId},
       {Name: 'ImageId', Value: imageId},
       {Name: 'InstanceType', Value: instanceType},
+      {Name: 'Path', Value: '/'},
+      {Name: 'FsType', Value: 'ext4'},
     ],
   };
 
