@@ -495,6 +495,17 @@ async function getInstanceDetails(
 export const handler: Handler = async (event: any): Promise<void> => {
   await loggingSetup();
   log.trace().unknown('event', event).msg('Received event');
+  //creating array of alarm names that we will be deleting if the instance is in a dead state.
+  const alarmAnchors: string[] = [
+    'WarningCPUUtilization',
+    'CriticalCPUUtilization',
+    'StatusCheckFailed',
+    'CriticalStorageUtilization',
+    'WarningStorageUtilization',
+    'CriticalMemoryUtilization',
+    'WarningMemoryUtilization',
+  ];
+
   //creating sets of live and dead instance states to compare against in various alarm conditionals later on.
   const liveStates: Set<ValidInstanceState> = new Set([
     ValidInstanceState.Running,
@@ -533,45 +544,26 @@ export const handler: Handler = async (event: any): Promise<void> => {
       if (liveStates.has(state)) {
         const tags = await fetchInstanceTags(instanceId);
         log.info().str('tags', JSON.stringify(tags)).msg('Fetched tags');
-        await manageCPUUsageAlarmForInstance(
-          instanceId,
-          tags,
-          AlarmClassification.Critical
-        );
-        await manageCPUUsageAlarmForInstance(
-          instanceId,
-          tags,
-          AlarmClassification.Warning
-        );
-        await manageStorageAlarmForInstance(
-          instanceId,
-          instanceType,
-          imageId,
-          tags,
-          AlarmClassification.Critical
-        );
-        await manageStorageAlarmForInstance(
-          instanceId,
-          instanceType,
-          imageId,
-          tags,
-          AlarmClassification.Warning
-        );
-        await manageMemoryAlarmForInstance(
-          instanceId,
-          instanceType,
-          imageId,
-          tags,
-          AlarmClassification.Warning
-        );
-        await manageMemoryAlarmForInstance(
-          instanceId,
-          instanceType,
-          imageId,
-          tags,
-          AlarmClassification.Critical
-        );
-
+        // Loop through each classification and create alarms for CPU, storage, and memory usage: Critical and Warning
+        for (const classification of Object.values(AlarmClassification)) {
+          await Promise.all([
+            manageCPUUsageAlarmForInstance(instanceId, tags, classification),
+            manageStorageAlarmForInstance(
+              instanceId,
+              instanceType,
+              imageId,
+              tags,
+              classification
+            ),
+            manageMemoryAlarmForInstance(
+              instanceId,
+              instanceType,
+              imageId,
+              tags,
+              classification
+            ),
+          ]);
+        }
         // Check if the instance has the "autoalarm:disabled" tag set to "true" and skip creating status check alarm
         if (tags['autoalarm:disabled'] === 'true') {
           log.info().msg('autoalarm:disabled=true. Skipping alarm creation');
@@ -580,15 +572,11 @@ export const handler: Handler = async (event: any): Promise<void> => {
           await createStatusAlarmForInstance(instanceId);
           log.info().msg('autoalarm:disabled=false');
         }
-        // Check if the instance is in a dead state and delete all alarms
+        // Check if the instance is in a dead state and delete all alarms asycnronously
       } else if (deadStates.has(state)) {
-        await deleteAlarm(instanceId, 'WarningCPUUtilization');
-        await deleteAlarm(instanceId, 'CriticalCPUUtilization');
-        await deleteAlarm(instanceId, 'StatusCheckFailed');
-        await deleteAlarm(instanceId, 'CriticalStorageUtilization');
-        await deleteAlarm(instanceId, 'WarningStorageUtilization');
-        await deleteAlarm(instanceId, 'CriticalMemoryUtilization');
-        await deleteAlarm(instanceId, 'WarningMemoryUtilization');
+        await Promise.all(
+          alarmAnchors.map(anchor => deleteAlarm(instanceId, anchor))
+        );
       }
       // Check if the event is a tag event and initiate tag event workflows
     } else if (event.source === 'aws.tag') {
@@ -628,46 +616,26 @@ export const handler: Handler = async (event: any): Promise<void> => {
             .str('tags', JSON.stringify(tags))
             .msg('Fetched tags');
 
-          // Create default alarms for CPU,storage, and memory usage or update thresholds if they exist in tag updates
-          await manageCPUUsageAlarmForInstance(
-            instanceId,
-            tags,
-            AlarmClassification.Critical
-          );
-          await manageCPUUsageAlarmForInstance(
-            instanceId,
-            tags,
-            AlarmClassification.Warning
-          );
-          await manageStorageAlarmForInstance(
-            instanceId,
-            instanceType,
-            imageId,
-            tags,
-            AlarmClassification.Critical
-          );
-          await manageStorageAlarmForInstance(
-            instanceId,
-            instanceType,
-            imageId,
-            tags,
-            AlarmClassification.Warning
-          );
-          await manageMemoryAlarmForInstance(
-            instanceId,
-            instanceType,
-            imageId,
-            tags,
-            AlarmClassification.Warning
-          );
-          await manageMemoryAlarmForInstance(
-            instanceId,
-            instanceType,
-            imageId,
-            tags,
-            AlarmClassification.Critical
-          );
-
+          // Loop through each classification and create alarms for CPU, storage, and memory usage: Critical and Warning
+          for (const classification of Object.values(AlarmClassification)) {
+            await Promise.all([
+              manageCPUUsageAlarmForInstance(instanceId, tags, classification),
+              manageStorageAlarmForInstance(
+                instanceId,
+                instanceType,
+                imageId,
+                tags,
+                classification
+              ),
+              manageMemoryAlarmForInstance(
+                instanceId,
+                instanceType,
+                imageId,
+                tags,
+                classification
+              ),
+            ]);
+          }
           // Create or delete status check alarm based on the value of the "autoalarm:disabled" tag
           if (tags['autoalarm:disabled'] === 'false') {
             await createStatusAlarmForInstance(instanceId);
