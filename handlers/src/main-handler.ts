@@ -279,9 +279,14 @@ async function manageStorageAlarmForInstance(
   instanceId: string,
   instanceType: string,
   imageId: string,
+  platform: string,
   tags: Tag,
   type: AlarmClassification
 ): Promise<void> {
+  const isWindows = platform.includes('Windows'); // Check if the platform is Windows
+  const metricName = isWindows
+    ? 'LogicalDisk % Free Space'
+    : 'disk_used_percent';
   const baseAlarmName = `AutoAlarm-EC2-${instanceId}-${type}StorageUtilization`;
   const thresholdKey = `autoalarm:storage-used-percent-${type.toLowerCase()}`;
   const durationTimeKey = 'autoalarm:storage-percent-duration-time';
@@ -293,15 +298,8 @@ async function manageStorageAlarmForInstance(
     period: 60,
     namespace: 'CWAgent',
     evaluationPeriods: 5,
-    metricName: 'disk_used_percent',
-    dimensions: [
-      {Name: 'InstanceId', Value: instanceId},
-      {Name: 'ImageId', Value: imageId},
-      {Name: 'InstanceType', Value: instanceType},
-      {Name: 'device', Value: 'xvda1'},
-      {Name: 'path', Value: '/'},
-      {Name: 'fstype', Value: 'xfs'},
-    ],
+    metricName: metricName,
+    dimensions: [{Name: 'InstanceId', Value: instanceId}],
   };
 
   try {
@@ -341,9 +339,15 @@ async function manageMemoryAlarmForInstance(
   instanceId: string,
   instanceType: string,
   imageId: string,
+  platform: string,
   tags: Tag,
   type: AlarmClassification
 ): Promise<void> {
+  const isWindows = platform.includes('Windows'); // Check if the platform is Windows
+  const metricName = isWindows
+    ? 'Memory % Committed Bytes In Use'
+    : 'mem_used_percent';
+
   const baseAlarmName = `AutoAlarm-EC2-${instanceId}-${type}MemoryUtilization`;
   const defaultThreshold = type === 'Critical' ? 90 : 80;
   const thresholdKey = `autoalarm:memory-percent-above-${type.toLowerCase()}`;
@@ -351,16 +355,12 @@ async function manageMemoryAlarmForInstance(
   const durationPeriodsKey = 'autoalarm:memory-percent-duration-periods';
 
   const alarmProps: AlarmProps = {
-    metricName: 'mem_used_percent',
+    metricName: metricName,
     namespace: 'CWAgent',
     threshold: defaultThreshold, // Default thresholds
     period: 60, // Default period in seconds
     evaluationPeriods: 5, // Default number of evaluation periods
-    dimensions: [
-      {Name: 'InstanceId', Value: instanceId},
-      {Name: 'ImageId', Value: imageId},
-      {Name: 'InstanceType', Value: instanceType},
-    ],
+    dimensions: [{Name: 'InstanceId', Value: instanceId}],
   };
 
   try {
@@ -454,9 +454,11 @@ async function fetchInstanceTags(
   }
 }
 
-async function getInstanceDetails(
-  instanceId: string
-): Promise<{imageId: string | null; instanceType: string | null}> {
+async function getInstanceDetails(instanceId: string): Promise<{
+  imageId: string | null;
+  instanceType: string | null;
+  platform: string | null;
+}> {
   try {
     const params = {
       InstanceIds: [instanceId],
@@ -474,13 +476,14 @@ async function getInstanceDetails(
       return {
         imageId: instance.ImageId ?? null,
         instanceType: instance.InstanceType ?? null,
+        platform: instance.PlatformDetails ?? null,
       };
     } else {
       log
         .info()
         .str('instanceId', instanceId)
         .msg('No reservations found or no instances in reservation');
-      return {imageId: null, instanceType: null};
+      return {imageId: null, instanceType: null, platform: null};
     }
   } catch (error) {
     log
@@ -488,7 +491,7 @@ async function getInstanceDetails(
       .err(error)
       .str('instanceId', instanceId)
       .msg('Failed to fetch instance details');
-    return {imageId: null, instanceType: null};
+    return {imageId: null, instanceType: null, platform: null};
   }
 }
 
@@ -508,8 +511,13 @@ export const handler: Handler = async (event: any): Promise<void> => {
   try {
     if (event.source === 'aws.ec2') {
       const instanceId = event.detail['instance-id'];
-      const {imageId, instanceType} = await getInstanceDetails(instanceId);
-      if (typeof imageId === 'string' && typeof instanceType === 'string') {
+      const {imageId, instanceType, platform} =
+        await getInstanceDetails(instanceId);
+      if (
+        typeof imageId === 'string' &&
+        typeof instanceType === 'string' &&
+        typeof platform === 'string'
+      ) {
         log
           .info()
           .str('imageId', imageId)
@@ -547,6 +555,7 @@ export const handler: Handler = async (event: any): Promise<void> => {
           instanceId,
           instanceType,
           imageId,
+          platform,
           tags,
           AlarmClassification.Critical
         );
@@ -554,6 +563,7 @@ export const handler: Handler = async (event: any): Promise<void> => {
           instanceId,
           instanceType,
           imageId,
+          platform,
           tags,
           AlarmClassification.Warning
         );
@@ -561,6 +571,7 @@ export const handler: Handler = async (event: any): Promise<void> => {
           instanceId,
           instanceType,
           imageId,
+          platform,
           tags,
           AlarmClassification.Warning
         );
@@ -568,6 +579,7 @@ export const handler: Handler = async (event: any): Promise<void> => {
           instanceId,
           instanceType,
           imageId,
+          platform,
           tags,
           AlarmClassification.Critical
         );
@@ -594,8 +606,13 @@ export const handler: Handler = async (event: any): Promise<void> => {
     } else if (event.source === 'aws.tag') {
       const instanceId = event.resources[0].split('/').pop();
       log.info().str('resourceId', instanceId).msg('Processing tag event');
-      const {imageId, instanceType} = await getInstanceDetails(instanceId);
-      if (typeof imageId === 'string' && typeof instanceType === 'string') {
+      const {imageId, instanceType, platform} =
+        await getInstanceDetails(instanceId);
+      if (
+        typeof imageId === 'string' &&
+        typeof instanceType === 'string' &&
+        platform
+      ) {
         log
           .info()
           .str('imageId', imageId)
@@ -643,6 +660,7 @@ export const handler: Handler = async (event: any): Promise<void> => {
             instanceId,
             instanceType,
             imageId,
+            platform,
             tags,
             AlarmClassification.Critical
           );
@@ -650,6 +668,7 @@ export const handler: Handler = async (event: any): Promise<void> => {
             instanceId,
             instanceType,
             imageId,
+            platform,
             tags,
             AlarmClassification.Warning
           );
@@ -657,6 +676,7 @@ export const handler: Handler = async (event: any): Promise<void> => {
             instanceId,
             instanceType,
             imageId,
+            platform,
             tags,
             AlarmClassification.Warning
           );
@@ -664,6 +684,7 @@ export const handler: Handler = async (event: any): Promise<void> => {
             instanceId,
             instanceType,
             imageId,
+            platform,
             tags,
             AlarmClassification.Critical
           );
