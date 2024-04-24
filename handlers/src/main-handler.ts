@@ -347,7 +347,6 @@ async function manageMemoryAlarmForInstance(
   const metricName = isWindows
     ? 'Memory % Committed Bytes In Use'
     : 'mem_used_percent';
-
   const baseAlarmName = `AutoAlarm-EC2-${instanceId}-${type}MemoryUtilization`;
   const defaultThreshold = type === 'Critical' ? 90 : 80;
   const thresholdKey = `autoalarm:memory-percent-above-${type.toLowerCase()}`;
@@ -522,6 +521,7 @@ export const handler: Handler = async (event: any): Promise<void> => {
           .info()
           .str('imageId', imageId)
           .str('instanceType', instanceType)
+          .str('platform', platform)
           .msg('Fetched instance details and confirmed as strings');
       } else {
         log
@@ -617,6 +617,7 @@ export const handler: Handler = async (event: any): Promise<void> => {
           .info()
           .str('imageId', imageId)
           .str('instanceType', instanceType)
+          .str('platform', platform)
           .msg('Fetched instance details and confirmed as strings');
       } else {
         log
