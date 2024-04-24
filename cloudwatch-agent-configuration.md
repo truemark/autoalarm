@@ -36,7 +36,8 @@ Use SSM to run commands on your EC2 instances to install the CloudWatch Agent.
 5. In the **Targets** area, select the instances where you want to install the agent.
 6. In the **Action** options, select **Install**.
 7. For **Name**, type `AmazonCloudWatchAgent`.
-8. Click on **Run**.
+8. Uncheck `Enable an S3 bucket` in Output options.
+9. Click on **Run**.
 
 ## Step 4: Configure the CloudWatch Agent
 
@@ -73,5 +74,6 @@ Once the configuration is saved, you can apply it to multiple instances using SS
 5. Set the mode to **ec2**.
 6. In the **optionalConfigurationSource** choose **ssm**.
 7. Specify the **optionalConfigurationLocation** with the name of the SSM parameter where your configuration is saved.
-8. Select your targets and run the command.
+8. Uncheck `Enable an S3 bucket` in Output options.
+9. Select your targets and run the command.
 
