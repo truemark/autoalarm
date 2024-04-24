@@ -1,4 +1,5 @@
 import {
+  DescribeInstanceAttributeCommand,
   DescribeInstancesCommand,
   DescribeTagsCommand,
   EC2Client,
@@ -33,6 +34,70 @@ async function doesAlarmExist(alarmName: string): Promise<boolean> {
     new DescribeAlarmsCommand({AlarmNames: [alarmName]})
   );
   return (response.MetricAlarms?.length ?? 0) > 0;
+}
+
+//this function is used to get the instance details from the instance id including platform type and if the cloudwatch agent is installed.
+async function getInstanceDetails(
+  instanceId: string
+): Promise<{platform: string | null; isCloudWatchAgentInstalled: boolean}> {
+  const ec2Client = new EC2Client({});
+
+  try {
+    const describeInstancesCommand = new DescribeInstancesCommand({
+      InstanceIds: [instanceId],
+    });
+    const describeInstancesResponse = await ec2Client.send(
+      describeInstancesCommand
+    );
+
+    if (
+      describeInstancesResponse.Reservations &&
+      describeInstancesResponse.Reservations.length > 0 &&
+      describeInstancesResponse.Reservations[0].Instances &&
+      describeInstancesResponse.Reservations[0].Instances.length > 0
+    ) {
+      const instance = describeInstancesResponse.Reservations[0].Instances[0];
+
+      const describeInstanceAttributeCommand =
+        new DescribeInstanceAttributeCommand({
+          Attribute: 'userData',
+          InstanceId: instanceId,
+        });
+      const describeInstanceAttributeResponse = await ec2Client.send(
+        describeInstanceAttributeCommand
+      );
+
+      let isCloudWatchAgentInstalled = false;
+      const userData = describeInstanceAttributeResponse.UserData?.Value;
+
+      if (userData) {
+        const decodedUserData = Buffer.from(userData, 'base64').toString(
+          'utf8'
+        );
+        isCloudWatchAgentInstalled = decodedUserData.includes(
+          'amazon-cloudwatch-agent'
+        );
+      }
+
+      return {
+        platform: instance.PlatformDetails ?? ' ',
+        isCloudWatchAgentInstalled,
+      };
+    } else {
+      log
+        .info()
+        .str('instanceId', instanceId)
+        .msg('No reservations found or no instances in reservation');
+      return {platform: null, isCloudWatchAgentInstalled: false};
+    }
+  } catch (error) {
+    log
+      .error()
+      .err(error)
+      .str('instanceId', instanceId)
+      .msg('Failed to fetch instance details');
+    return {platform: null, isCloudWatchAgentInstalled: false};
+  }
 }
 
 async function deleteAlarm(instanceId: string, check: string): Promise<void> {
@@ -277,11 +342,12 @@ async function manageCPUUsageAlarmForInstance(
 
 async function manageStorageAlarmForInstance(
   instanceId: string,
-  platform: string,
   tags: Tag,
   type: AlarmClassification
 ): Promise<void> {
-  const isWindows = platform.includes('Windows'); // Check if the platform is Windows
+  const instanceDetailProps = await getInstanceDetails(instanceId);
+  const isWindows =
+    instanceDetailProps.platform?.toLowerCase().includes('windows') ?? false;
   const metricName = isWindows
     ? 'LogicalDisk % Free Space'
     : 'disk_used_percent';
@@ -299,47 +365,57 @@ async function manageStorageAlarmForInstance(
     metricName: metricName,
     dimensions: [{Name: 'InstanceId', Value: instanceId}],
   };
+  //check if cloudwatch agent is installed on the instance and create alarm. Otherwise, skip creating alarm
+  if (instanceDetailProps.isCloudWatchAgentInstalled) {
+    try {
+      configureAlarmPropsFromTags(
+        alarmProps,
+        tags,
+        thresholdKey,
+        durationTimeKey,
+        durationPeriodsKey
+      );
+    } catch (e) {
+      log.error().err(e).msg('Error configuring alarm props from tags');
+      throw new Error('Error configuring alarm props from tags');
+    }
 
-  try {
-    configureAlarmPropsFromTags(
-      alarmProps,
-      tags,
-      thresholdKey,
-      durationTimeKey,
-      durationPeriodsKey
-    );
-  } catch (e) {
-    log.error().err(e).msg('Error configuring alarm props from tags');
-    throw new Error('Error configuring alarm props from tags');
-  }
-
-  const alarmExists = await doesAlarmExist(baseAlarmName);
-  if (
-    !alarmExists ||
-    (alarmExists && (await needsUpdate(baseAlarmName, alarmProps)))
-  ) {
-    await createOrUpdateAlarm(baseAlarmName, instanceId, alarmProps);
-    log
-      .info()
-      .str('alarmName', baseAlarmName)
-      .str('instanceId', instanceId)
-      .msg('Storage usage alarm configured or updated.');
+    const alarmExists = await doesAlarmExist(baseAlarmName);
+    if (
+      !alarmExists ||
+      (alarmExists && (await needsUpdate(baseAlarmName, alarmProps)))
+    ) {
+      await createOrUpdateAlarm(baseAlarmName, instanceId, alarmProps);
+      log
+        .info()
+        .str('alarmName', baseAlarmName)
+        .str('instanceId', instanceId)
+        .msg('Storage usage alarm configured or updated.');
+    } else {
+      log
+        .info()
+        .str('alarmName', baseAlarmName)
+        .str('instanceId', instanceId)
+        .msg('Storage usage alarm is already up-to-date');
+    }
   } else {
     log
       .info()
-      .str('alarmName', baseAlarmName)
       .str('instanceId', instanceId)
-      .msg('Storage usage alarm is already up-to-date');
+      .msg(
+        `Skipping ${baseAlarmName} alarm creation as CloudWatch agent is not installed`
+      );
   }
 }
 
 async function manageMemoryAlarmForInstance(
   instanceId: string,
-  platform: string,
   tags: Tag,
   type: AlarmClassification
 ): Promise<void> {
-  const isWindows = platform.includes('Windows'); // Check if the platform is Windows
+  const instanceDetailProps = await getInstanceDetails(instanceId);
+  const isWindows =
+    instanceDetailProps.platform?.toLowerCase().includes('windows') ?? false; // Check if the platform is Windows
   const metricName = isWindows
     ? 'Memory % Committed Bytes In Use'
     : 'mem_used_percent';
@@ -357,37 +433,45 @@ async function manageMemoryAlarmForInstance(
     evaluationPeriods: 5, // Default number of evaluation periods
     dimensions: [{Name: 'InstanceId', Value: instanceId}],
   };
+  if (instanceDetailProps.isCloudWatchAgentInstalled) {
+    try {
+      configureAlarmPropsFromTags(
+        alarmProps,
+        tags,
+        thresholdKey,
+        durationTimeKey,
+        durationPeriodsKey
+      );
+    } catch (e) {
+      log.error().err(e).msg('Error configuring alarm props from tags');
+      throw new Error('Error configuring alarm props from tags');
+    }
 
-  try {
-    configureAlarmPropsFromTags(
-      alarmProps,
-      tags,
-      thresholdKey,
-      durationTimeKey,
-      durationPeriodsKey
-    );
-  } catch (e) {
-    log.error().err(e).msg('Error configuring alarm props from tags');
-    throw new Error('Error configuring alarm props from tags');
-  }
-
-  const alarmExists = await doesAlarmExist(baseAlarmName);
-  if (
-    !alarmExists ||
-    (alarmExists && (await needsUpdate(baseAlarmName, alarmProps)))
-  ) {
-    await createOrUpdateAlarm(baseAlarmName, instanceId, alarmProps);
-    log
-      .info()
-      .str('alarmName', baseAlarmName)
-      .str('instanceId', instanceId)
-      .msg(`${type} memory alarm configured or updated.`);
+    const alarmExists = await doesAlarmExist(baseAlarmName);
+    if (
+      !alarmExists ||
+      (alarmExists && (await needsUpdate(baseAlarmName, alarmProps)))
+    ) {
+      await createOrUpdateAlarm(baseAlarmName, instanceId, alarmProps);
+      log
+        .info()
+        .str('alarmName', baseAlarmName)
+        .str('instanceId', instanceId)
+        .msg(`${type} memory alarm configured or updated.`);
+    } else {
+      log
+        .info()
+        .str('alarmName', baseAlarmName)
+        .str('instanceId', instanceId)
+        .msg('Memory usage alarm is already up-to-date');
+    }
   } else {
     log
       .info()
-      .str('alarmName', baseAlarmName)
       .str('instanceId', instanceId)
-      .msg('Memory usage alarm is already up-to-date');
+      .msg(
+        `Skipping ${baseAlarmName} alarm creation as CloudWatch agent is not installed`
+      );
   }
 }
 
@@ -449,43 +533,6 @@ async function fetchInstanceTags(
   }
 }
 
-async function getInstanceDetails(instanceId: string): Promise<{
-  platform: string | null;
-}> {
-  try {
-    const params = {
-      InstanceIds: [instanceId],
-    };
-    const command = new DescribeInstancesCommand(params);
-    const response = await ec2Client.send(command);
-
-    if (
-      response.Reservations &&
-      response.Reservations.length > 0 &&
-      response.Reservations[0].Instances &&
-      response.Reservations[0].Instances.length > 0
-    ) {
-      const instance = response.Reservations[0].Instances[0];
-      return {
-        platform: instance.PlatformDetails ?? null,
-      };
-    } else {
-      log
-        .info()
-        .str('instanceId', instanceId)
-        .msg('No reservations found or no instances in reservation');
-      return {platform: null};
-    }
-  } catch (error) {
-    log
-      .error()
-      .err(error)
-      .str('instanceId', instanceId)
-      .msg('Failed to fetch instance details');
-    return {platform: null};
-  }
-}
-
 export const handler: Handler = async (event: any): Promise<void> => {
   await loggingSetup();
   log.trace().unknown('event', event).msg('Received event');
@@ -541,18 +588,8 @@ export const handler: Handler = async (event: any): Promise<void> => {
         for (const classification of Object.values(AlarmClassification)) {
           await Promise.all([
             manageCPUUsageAlarmForInstance(instanceId, tags, classification),
-            manageStorageAlarmForInstance(
-              instanceId,
-              platform,
-              tags,
-              classification
-            ),
-            manageMemoryAlarmForInstance(
-              instanceId,
-              platform,
-              tags,
-              classification
-            ),
+            manageStorageAlarmForInstance(instanceId, tags, classification),
+            manageMemoryAlarmForInstance(instanceId, tags, classification),
           ]);
         }
         // Check if the instance has the "autoalarm:disabled" tag set to "true" and skip creating status check alarm
@@ -610,18 +647,8 @@ export const handler: Handler = async (event: any): Promise<void> => {
           for (const classification of Object.values(AlarmClassification)) {
             await Promise.all([
               manageCPUUsageAlarmForInstance(instanceId, tags, classification),
-              manageStorageAlarmForInstance(
-                instanceId,
-                platform,
-                tags,
-                classification
-              ),
-              manageMemoryAlarmForInstance(
-                instanceId,
-                platform,
-                tags,
-                classification
-              ),
+              manageStorageAlarmForInstance(instanceId, tags, classification),
+              manageMemoryAlarmForInstance(instanceId, tags, classification),
             ]);
           }
           // Create or delete status check alarm based on the value of the "autoalarm:disabled" tag
