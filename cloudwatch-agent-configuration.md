@@ -59,7 +59,10 @@ Once the configuration is saved, you can apply it to multiple instances using SS
 1. RDP into your Windows EC2 instance.
 2. Run the following command to start the configuration wizard:
    ```sh
-   C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-config-wizard.exe
+   cd "C:\Program Files\Amazon\AmazonCloudWatchAgent"
+   ```
+   ```sh
+   .\amazon-cloudwatch-agent-config-wizard.exe
 3. Follow the prompts to configure the agent.
 4. Save the configuration to an SSM parameter.
 
