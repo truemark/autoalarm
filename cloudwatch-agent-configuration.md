@@ -40,7 +40,9 @@ Use SSM to run commands on your EC2 instances to install the CloudWatch Agent.
 
 ## Step 4: Configure the CloudWatch Agent
 
-Use the wizard to specify metrics and logs to collect.
+Use the wizard to configure the CloudWatch Agent on your EC2 instances. The wizard will guide you through setting up the agent and creating a configuration file. You can save this configuration to an SSM parameter for easy management.
+
+Once the configuration is saved, you can apply it to multiple instances using SSM.
 
 ### Linux Configuration Wizard
 
