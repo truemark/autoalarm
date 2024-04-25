@@ -4,6 +4,11 @@ import {
   EC2Client,
 } from '@aws-sdk/client-ec2';
 import {
+  RDSClient,
+  DescribeDBInstancesCommand,
+  DBInstance,
+} from '@aws-sdk/client-rds';
+import {
   CloudWatchClient,
   DeleteAlarmsCommand,
   DescribeAlarmsCommand,
@@ -11,11 +16,18 @@ import {
 } from '@aws-sdk/client-cloudwatch';
 import {Handler} from 'aws-lambda';
 import * as logging from '@nr1e/logging';
-import {AlarmClassification, ValidInstanceState} from './enums';
-import {AlarmProps, Tag} from './types';
+import {
+  AlarmClassification,
+  ValidInstanceState,
+  RDSInstanceState,
+  ServiceType,
+  SERVICE_CONFIGS,
+} from './enums';
+import {AlarmProps, Tag, RDSInstanceDetails} from './types';
 
 let log: ReturnType<typeof logging.getRootLogger>;
 const ec2Client = new EC2Client({});
+const rdsClient = new RDSClient({});
 const cloudWatchClient = new CloudWatchClient({});
 
 async function loggingSetup() {
@@ -300,11 +312,24 @@ async function createOrUpdateAlarm(
 }
 
 async function manageCPUUsageAlarmForInstance(
-  instanceId: string,
+  resourceId: string,
+  resourceType: ServiceType,
   tags: Tag,
+  metricName: string,
+  specificNamespace: string,
   type: AlarmClassification
 ): Promise<void> {
-  const alarmName = `AutoAlarm-EC2-${instanceId}-${type}CPUUtilization`;
+  const config = SERVICE_CONFIGS[resourceType].namespaces.find(
+    n => n.namespace === specificNamespace
+  );
+  if (!config) {
+    log
+      .error()
+      .msg(`Namespace ${specificNamespace} not configured for ${resourceType}`);
+    return;
+  }
+
+  const alarmName = `AutoAlarm-${resourceType}-${resourceId}-${type}-${metricName}`;
   const thresholdKey = `autoalarm:cpu-percent-above-${type.toLowerCase()}`;
   const durationTimeKey = 'autoalarm:cpu-percent-duration-time';
   const durationPeriodsKey = 'autoalarm:cpu-percent-duration-periods';
@@ -313,15 +338,15 @@ async function manageCPUUsageAlarmForInstance(
   const alarmProps: AlarmProps = {
     threshold: defaultThreshold,
     period: 60,
-    namespace: 'AWS/EC2',
+    namespace: config.namespace,
     evaluationPeriods: 5,
-    metricName: 'CPUUtilization',
-    dimensions: [{Name: 'InstanceId', Value: instanceId}],
+    metricName: metricName,
+    dimensions: [{Name: config.dimensionName, Value: resourceId}],
   };
 
   await createOrUpdateAlarm(
     alarmName,
-    instanceId,
+    resourceId,
     alarmProps,
     tags,
     thresholdKey,
@@ -539,6 +564,19 @@ const deadStates: Set<ValidInstanceState> = new Set([
   ValidInstanceState.ShuttingDown,
 ]);
 
+const rdsLiveStates: Set<string> = new Set([
+  RDSInstanceState.Available,
+  RDSInstanceState.BackingUp,
+  RDSInstanceState.Creating,
+  RDSInstanceState.Modifying,
+  RDSInstanceState.Rebooting,
+]);
+
+const rdsDeadStates: Set<string> = new Set([
+  RDSInstanceState.Deleting,
+  RDSInstanceState.Failed,
+]);
+
 async function manageActiveInstanceAlarms(
   instanceId: string,
   tags: {[key: string]: string}
@@ -547,11 +585,31 @@ async function manageActiveInstanceAlarms(
   // Loop through classifications and manage alarms
   for (const classification of Object.values(AlarmClassification)) {
     try {
-      await Promise.all([
-        manageCPUUsageAlarmForInstance(instanceId, tags, classification),
+      const results = await Promise.allSettled([
+        manageCPUUsageAlarmForInstance(
+          instanceId,
+          ServiceType.EC2,
+          tags,
+          'CPUUtilization',
+          'AWS/EC2',
+          classification
+        ),
+        manageCPUUsageAlarmForInstance(
+          instanceId,
+          ServiceType.RDS,
+          tags,
+          'CPUUtilization',
+          'AWS/RDS',
+          classification
+        ),
         manageStorageAlarmForInstance(instanceId, tags, classification),
         manageMemoryAlarmForInstance(instanceId, tags, classification),
       ]);
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          log.error().msg(`Task ${index} failed with error: ${result.reason}`);
+        }
+      });
     } catch (e) {
       log.error().err(e).msg('Error managing alarms for instance');
       throw new Error(`Error managing alarms for instance: ${e}`);

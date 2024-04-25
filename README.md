@@ -25,39 +25,39 @@ The system is event-driven, responding to EC2 state change notifications and tag
 
 ## Supported Tags
 
-| Tag                                        | Description                                                                                              | Default Value        |
-|--------------------------------------------|----------------------------------------------------------------------------------------------------------|----------------------|
-| `autoalarm:disabled`                       | If set to "true", instance status check alarms will not be created for the resource. Default is "false". | `false`              |
-| `autoalarm:cpu-percent-above-critical`     | Threshold for critical CPU utilization alarm. If not set, a default threshold of 99% is used.            | `99%`                |
-| `autoalarm:cpu-percent-above-warning`      | Threshold for warning CPU utilization alarm. If not set, a default threshold of 97% is used.             | `97%`                |
-| `autoalarm:cpu-percent-duration-time`      | Duration in seconds for CPU utilization to exceed the threshold before triggering the alarm.              | `60 seconds`         |
-| `autoalarm:cpu-percent-duration-periods`   | Number of consecutive periods over which data is evaluated against the specified threshold.               | `5 periods`          |
+| Tag                                      | Description                                                                                              | Default Value |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------- |
+| `autoalarm:disabled`                     | If set to "true", instance status check alarms will not be created for the resource. Default is "false". | `false`       |
+| `autoalarm:cpu-percent-above-critical`   | Threshold for critical CPU utilization alarm. If not set, a default threshold of 99% is used.            | `99%`         |
+| `autoalarm:cpu-percent-above-warning`    | Threshold for warning CPU utilization alarm. If not set, a default threshold of 97% is used.             | `97%`         |
+| `autoalarm:cpu-percent-duration-time`    | Duration in seconds for CPU utilization to exceed the threshold before triggering the alarm.             | `60 seconds`  |
+| `autoalarm:cpu-percent-duration-periods` | Number of consecutive periods over which data is evaluated against the specified threshold.              | `5 periods`   |
 
 ### Default Alarm Behavior
 
 If the `autoalarm:cpu-percent-above-critical` and `autoalarm:cpu-percent-above-warning` tags are not present, alarms will be created with default thresholds of 99% for critical alarms and 97% for warning alarms, respectively. These default settings ensure that basic monitoring is in place even if specific customizations are not specified. This default behavior helps to maintain a baseline of operational awareness and prompt response capability.
+
 ## EventBridge Rules
 
 The project configures AWS EventBridge to route specific events to the AutoAlarm Lambda function. Below are the detailed rules created:
 
 ### Tag Rule
 
-| Description                              | Value                                                                                                                                                                    |
-|------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Event Source**                         | `aws.tag`                                                                                                                                                                |
-| **Detail Type**                          | Tag Change on Resource                                                                                                                                                   |
-| **Service**                              | EC2, ECS, RDS                                                                                                                                                            |
-| **Resource Type**                        | Instance                                                                                                                                                                 |
-| **Changed Tag Keys**                     | `autoalarm:disabled`, `autoalarm:cpu-percent-above-critical`, `autoalarm:cpu-percent-above-warning`, `autoalarm:cpu-percent-duration-time`, `autoalarm:cpu-percent-duration-periods` |
+| Description          | Value                                                                                                                                                                                |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Event Source**     | `aws.tag`                                                                                                                                                                            |
+| **Detail Type**      | Tag Change on Resource                                                                                                                                                               |
+| **Service**          | EC2, ECS, RDS                                                                                                                                                                        |
+| **Resource Type**    | Instance                                                                                                                                                                             |
+| **Changed Tag Keys** | `autoalarm:disabled`, `autoalarm:cpu-percent-above-critical`, `autoalarm:cpu-percent-above-warning`, `autoalarm:cpu-percent-duration-time`, `autoalarm:cpu-percent-duration-periods` |
 
 ### EC2 State Change Rule
 
-| Description                              | Value                                                                          |
-|------------------------------------------|--------------------------------------------------------------------------------|
-| **Event Source**                         | `aws.ec2`                                                                      |
-| **Detail Type**                          | EC2 Instance State-change Notification                                         |
-| **States**                               | `running`, `terminated`, `stopped`, `shutting-down`, `pending`                  |
-
+| Description      | Value                                                          |
+| ---------------- | -------------------------------------------------------------- |
+| **Event Source** | `aws.ec2`                                                      |
+| **Detail Type**  | EC2 Instance State-change Notification                         |
+| **States**       | `running`, `terminated`, `stopped`, `shutting-down`, `pending` |
 
 ## Limitations
 
