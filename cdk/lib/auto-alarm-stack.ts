@@ -1,4 +1,4 @@
-import { Construct } from 'constructs';
+import {Construct} from 'constructs';
 import {AutoAlarmConstruct} from './auto-alarm-construct';
 import {ExtendedStack, ExtendedStackProps} from 'truemark-cdk-lib/aws-cdk';
 

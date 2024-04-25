@@ -68,6 +68,7 @@ export class AutoAlarmConstruct extends Construct {
           'resource-type': ['instance'],
           'changed-tag-keys': [
             'autoalarm:disabled',
+            'autoalarm:cw-agent-enabled',
             'autoalarm:cpu-percent-above-critical',
             'autoalarm:cpu-percent-above-warning',
             'autoalarm:cpu-percent-duration-time',

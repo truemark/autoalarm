@@ -1,5 +1,9 @@
 {
   "extends": "./node_modules/gts/tsconfig-google.json",
-  "compilerOptions": {},
+  "compilerOptions": {
+    "module": "esnext",
+    "target": "esnext",
+    "moduleResolution": "node"
+  },
   "include": ["src/**/*.ts"]
 }
