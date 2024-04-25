@@ -14,7 +14,7 @@ import * as logging from '@nr1e/logging';
 import {AlarmClassification, ValidInstanceState} from './enums';
 import {AlarmProps, Tag} from './types';
 
-let log: ReturnType<typeof logging.getRootLogger>;
+const log = logging.getRootLogger();
 const ec2Client = new EC2Client({});
 const cloudWatchClient = new CloudWatchClient({});
 
@@ -30,7 +30,6 @@ async function loggingSetup() {
     console.error('Failed to initialize custom logger:', error);
     throw new Error(`Failed to initialize custom logger: ${error}`);
   }
-  log = logging.getRootLogger();
 }
 
 async function doesAlarmExist(alarmName: string): Promise<boolean> {
@@ -222,18 +221,6 @@ function configureAlarmPropsFromTags(
 }
 
 //check if cloudwatch agent tag has been set to true. Should only be used if CW Agent has been installed on the instance
-async function cwAgentCheck(tags: {
-  [key: string]: string;
-}): Promise<{isEnabled: boolean}> {
-  if (
-    'autoalarm:cw-agent-enabled' in tags &&
-    tags['autoalarm:cw-agent-enabled'] === 'true'
-  ) {
-    return {isEnabled: true};
-  } else {
-    return {isEnabled: false};
-  }
-}
 
 async function createOrUpdateAlarm(
   alarmName: string,
@@ -348,7 +335,6 @@ async function manageStorageAlarmForInstance(
   const durationTimeKey = 'autoalarm:storage-percent-duration-time';
   const durationPeriodsKey = 'autoalarm:storage-percent-duration-periods';
   const defaultThreshold = type === 'Critical' ? 90 : 80;
-  const cwAgentStatus = await cwAgentCheck(tags);
 
   const alarmProps: AlarmProps = {
     threshold: defaultThreshold,
@@ -358,30 +344,16 @@ async function manageStorageAlarmForInstance(
     metricName: metricName,
     dimensions: [{Name: 'InstanceId', Value: instanceId}],
   };
-  //check if cloudwatch agent is installed on the instance and create alarm. Otherwise, skip creating alarm
-  if (cwAgentStatus.isEnabled) {
-    log
-      .info()
-      .str('instanceId', instanceId)
-      .msg('CloudWatch agent tag set to true. Creating storage alarm');
-    await createOrUpdateAlarm(
-      alarmName,
-      instanceId,
-      alarmProps,
-      tags,
-      thresholdKey,
-      durationTimeKey,
-      durationPeriodsKey
-    );
-  } else {
-    log
-      .info()
-      .str('instanceId', instanceId)
-      .msg(
-        'CloudWatch agent tags not configured or set to false. Skipping storage alarms or deleting if they exist'
-      );
-    await deleteAlarm(instanceId, `${type}StorageUtilization`);
-  }
+
+  await createOrUpdateAlarm(
+    alarmName,
+    instanceId,
+    alarmProps,
+    tags,
+    thresholdKey,
+    durationTimeKey,
+    durationPeriodsKey
+  );
 }
 
 async function manageMemoryAlarmForInstance(
@@ -402,7 +374,6 @@ async function manageMemoryAlarmForInstance(
   const thresholdKey = `autoalarm:memory-percent-above-${type.toLowerCase()}`;
   const durationTimeKey = 'autoalarm:memory-percent-duration-time';
   const durationPeriodsKey = 'autoalarm:memory-percent-duration-periods';
-  const cwAgentStatus = await cwAgentCheck(tags);
 
   const alarmProps: AlarmProps = {
     metricName: metricName,
@@ -412,30 +383,16 @@ async function manageMemoryAlarmForInstance(
     evaluationPeriods: 5, // Default number of evaluation periods
     dimensions: [{Name: 'InstanceId', Value: instanceId}],
   };
-  //If cloudwatch agent is installed, create alarm. Otherwise, skip creating alarm
-  if (cwAgentStatus.isEnabled) {
-    log
-      .info()
-      .str('instanceId', instanceId)
-      .msg('CloudWatch agent tag set to true. Creating memory alarm');
-    await createOrUpdateAlarm(
-      alarmName,
-      instanceId,
-      alarmProps,
-      tags,
-      thresholdKey,
-      durationTimeKey,
-      durationPeriodsKey
-    );
-  } else {
-    log
-      .info()
-      .str('instanceId', instanceId)
-      .msg(
-        'CloudWatch agent tags not configured or set to false. Skipping memory alarms or deleting if they exist'
-      );
-    await deleteAlarm(instanceId, `${type}MemoryUtilization`);
-  }
+
+  await createOrUpdateAlarm(
+    alarmName,
+    instanceId,
+    alarmProps,
+    tags,
+    thresholdKey,
+    durationTimeKey,
+    durationPeriodsKey
+  );
 }
 
 async function deleteAlarm(instanceId: string, check: string): Promise<void> {
@@ -539,10 +496,7 @@ const deadStates: Set<ValidInstanceState> = new Set([
   ValidInstanceState.ShuttingDown,
 ]);
 
-async function manageActiveInstanceAlarms(
-  instanceId: string,
-  tags: {[key: string]: string}
-) {
+async function manageActiveInstanceAlarms(instanceId: string, tags: Tag) {
   await checkAndManageStatusAlarm(instanceId, tags);
   // Loop through classifications and manage alarms
   for (const classification of Object.values(AlarmClassification)) {
@@ -581,10 +535,7 @@ async function manageInactiveInstanceAlarms(instanceId: string) {
   }
 }
 
-async function checkAndManageStatusAlarm(
-  instanceId: string,
-  tags: {[key: string]: string}
-) {
+async function checkAndManageStatusAlarm(instanceId: string, tags: Tag) {
   if (tags['autoalarm:disabled'] === 'true') {
     deleteAlarm(instanceId, 'StatusCheckFailed');
     log.info().msg('Status check alarm creation skipped due to tag settings.');
