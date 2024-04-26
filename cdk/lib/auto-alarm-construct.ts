@@ -30,6 +30,8 @@ export class AutoAlarmConstruct extends Construct {
           'cloudwatch:PutMetricAlarm',
           'cloudwatch:DeleteAlarms',
           'cloudwatch:DescribeAlarms',
+          'rds:DescribeDBInstances',
+          'rds:ListTagsForResource',
         ],
         resources: ['*'],
       })
@@ -105,5 +107,35 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes ec2 instance events to AutoAlarm',
     });
     ec2Rule.addTarget(mainTarget);
+
+    const rdsRule = new Rule(this, 'RdsRule', {
+      eventPattern: {
+        source: ['aws.rds'],
+        detailType: ['RDS DB Instance Event'],
+        detail: {
+          eventCategories: [
+            'backup',
+            'deletion',
+            'availability',
+            'creation',
+            'low storage',
+            'restoration',
+            'configuration change',
+            'failover',
+            'maintenance',
+            'failure',
+            'notification',
+            'read replica',
+            'recovery',
+            'security',
+            'backtrack',
+            'security patching',
+          ],
+          sourceType: ['db-instance'],
+        },
+      },
+      description: 'Routes RDS DB instance events to AutoAlarm',
+    });
+    rdsRule.addTarget(mainTarget);
   }
 }

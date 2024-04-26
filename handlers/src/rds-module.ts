@@ -2,7 +2,9 @@ import {
   DescribeDBInstancesCommand,
   DBInstance,
   RDSClient,
+  ListTagsForResourceCommand,
 } from '@aws-sdk/client-rds';
+import {STSClient, GetCallerIdentityCommand} from '@aws-sdk/client-sts';
 import {
   CloudWatchClient,
   PutMetricAlarmCommand,
@@ -11,9 +13,11 @@ import * as logging from '@nr1e/logging';
 import {AlarmClassification, ValidDBInstanceState} from './enums';
 import {AlarmProps, Tag} from './types';
 import {doesAlarmExist, createOrUpdateAlarm, deleteAlarm} from './alarm-tools';
+import {createStatusAlarmForInstance} from './ec2-modules';
 
 const log = logging.getRootLogger();
 const rdsClient = new RDSClient({});
+const stsClient = new STSClient({});
 const cloudWatchClient = new CloudWatchClient({});
 
 async function getDBInstanceEngine(
@@ -150,11 +154,32 @@ export async function getRDSIdAndState(
   event: any
 ): Promise<{dbInstanceId: string; state: ValidDBInstanceState}> {
   const dbInstanceId = event.detail['DBInstanceIdentifier'];
-  const state = event.detail['state'];
-  return {dbInstanceId, state};
+
+  try {
+    const response = await rdsClient.send(
+      new DescribeDBInstancesCommand({
+        DBInstanceIdentifier: dbInstanceId,
+      })
+    );
+    const dbInstance = response.DBInstances?.[0];
+    const state = dbInstance?.DBInstanceStatus as ValidDBInstanceState;
+    log
+      .info()
+      .str('dbInstanceId', dbInstanceId)
+      .str('state', state)
+      .msg('Fetched DB instance details');
+    return {dbInstanceId, state};
+  } catch (error) {
+    log
+      .error()
+      .err(error)
+      .str('dbInstanceId', dbInstanceId)
+      .msg('Failed to fetch DB instance details');
+    return {dbInstanceId, state: 'unknown' as ValidDBInstanceState}; // or handle error differently
+  }
 }
 
-export const liveStates: Set<ValidDBInstanceState> = new Set([
+export const liveStatesRDS: Set<ValidDBInstanceState> = new Set([
   ValidDBInstanceState.Available,
   ValidDBInstanceState.BackingUp,
   ValidDBInstanceState.Creating,
@@ -165,7 +190,7 @@ export const liveStates: Set<ValidDBInstanceState> = new Set([
   ValidDBInstanceState.Upgrading,
 ]);
 
-export const deadStates: Set<ValidDBInstanceState> = new Set([
+export const deadStatesRDS: Set<ValidDBInstanceState> = new Set([
   ValidDBInstanceState.Deleting,
   ValidDBInstanceState.Failed,
   ValidDBInstanceState.RestoreError,
@@ -241,5 +266,97 @@ export async function manageActiveRDSAlarms(dbInstanceId: string, tags: Tag) {
         );
       throw new Error(`Error managing alarms for active RDS instance: ${e}`);
     }
+  }
+}
+
+export async function fetchDBInstanceTags(
+  dbInstanceId: string
+): Promise<{[key: string]: string}> {
+  try {
+    // Dynamically obtain the AWS account ID
+    const accountIdResponse = await stsClient.send(
+      new GetCallerIdentityCommand({})
+    );
+    const accountId = accountIdResponse.Account;
+
+    // Use the AWS SDK's configured region for the RDS client
+    const region = rdsClient.config.region;
+
+    // Construct the ARN for the RDS instance
+    const resourceArn = `arn:aws:rds:${region}:${accountId}:db:${dbInstanceId}`;
+
+    const response = await rdsClient.send(
+      new ListTagsForResourceCommand({
+        ResourceName: resourceArn,
+      })
+    );
+
+    const tags: {[key: string]: string} = {};
+    response.TagList?.forEach(tag => {
+      if (tag.Key && tag.Value) {
+        tags[tag.Key] = tag.Value;
+      }
+    });
+
+    log
+      .info()
+      .str('dbInstanceId', dbInstanceId)
+      .obj('tags', tags)
+      .msg('Tags fetched for DB instance');
+    return tags;
+  } catch (error) {
+    log
+      .error()
+      .err(error)
+      .str('dbInstanceId', dbInstanceId)
+      .msg('Failed to fetch tags for DB instance');
+    return {};
+  }
+}
+
+export async function createStatusAlarmForDBInstance(
+  dbInstanceId: string,
+  doesAlarmExist: Function
+): Promise<void> {
+  const alarmName = `AutoAlarm-RDS-${dbInstanceId}-Status`;
+  const alarmExists = await doesAlarmExist(alarmName);
+  if (!alarmExists) {
+    await cloudWatchClient.send(
+      new PutMetricAlarmCommand({
+        AlarmName: alarmName,
+        ComparisonOperator: 'GreaterThanThreshold',
+        EvaluationPeriods: 1,
+        MetricName: 'StatusCheckFailed',
+        Namespace: 'AWS/RDS',
+        Period: 300,
+        Statistic: 'Average',
+        Threshold: 0,
+        ActionsEnabled: false,
+        Dimensions: [{Name: 'DBInstanceIdentifier', Value: dbInstanceId}],
+      })
+    );
+    log.info().str('dbInstanceId', dbInstanceId).msg('Status alarm created');
+  } else {
+    log
+      .info()
+      .str('dbInstanceId', dbInstanceId)
+      .msg('Status alarm already exists');
+  }
+}
+
+async function checkAndManageStatusAlarm(dbInstanceId: string, tags: Tag) {
+  if (tags['autoalarm:disabled'] === 'true') {
+    deleteAlarm(dbInstanceId, 'StatusCheckFailed');
+    log.info().msg('Status check alarm creation skipped due to tag settings.');
+  } else if (tags['autoalarm:disabled'] === 'false') {
+    // Create status check alarm if not disabled
+    await createStatusAlarmForInstance(dbInstanceId, doesAlarmExist);
+  } else if (tags['autoalarm:disabled'] in tags) {
+    log
+      .warn()
+      .msg(
+        'autoalarm:disabled tag exists but has unexpected value. checking for alarm and creating if it does not exist'
+      );
+    await createStatusAlarmForInstance(dbInstanceId, doesAlarmExist);
   }
 }

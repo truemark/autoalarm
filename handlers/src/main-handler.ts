@@ -8,6 +8,14 @@ import {
   liveStates,
   deadStates,
 } from './ec2-modules';
+import {
+  manageInactiveRDSAlarms,
+  manageActiveRDSAlarms,
+  liveStatesRDS,
+  deadStatesRDS,
+  getRDSIdAndState,
+  fetchDBInstanceTags,
+} from './rds-module';
 
 const log = logging.getRootLogger();
 
@@ -37,12 +45,32 @@ async function processEC2Event(event: any) {
   }
 }
 
-async function processTagEvent(event: any) {
+async function processRDSInstanceEvent(event: any) {
+  const dbInstanceId = event.detail['DBInstanceIdentifier'];
+  const state = event.detail.state;
+  const tags = await fetchDBInstanceTags(dbInstanceId);
+
+  if (liveStatesRDS.has(state)) {
+    await manageActiveRDSAlarms(dbInstanceId, tags);
+  } else if (deadStatesRDS.has(state)) {
+    await manageInactiveRDSAlarms(dbInstanceId);
+  }
+}
+async function processEC2TagEvent(event: any) {
   const {instanceId, state} = await getEC2IdAndState(event);
   //checking our liveStates set to see if the instance is in a state that we should be managing alarms for.
   if (instanceId && liveStates.has(state)) {
     const tags = await fetchInstanceTags(instanceId);
     await manageActiveInstanceAlarms(instanceId, tags);
+  }
+}
+
+async function processRDSTagEvent(event: any) {
+  const {dbInstanceId, state} = await getRDSIdAndState(event);
+  //checking our liveStates set to see if the instance is in a state that we should be managing alarms for.
+  if (dbInstanceId && liveStatesRDS.has(state)) {
+    const tags = await fetchDBInstanceTags(dbInstanceId);
+    await manageActiveRDSAlarms(dbInstanceId, tags);
   }
 }
 
@@ -54,8 +82,17 @@ export const handler: Handler = async (event: any): Promise<void> => {
       case 'aws.ec2':
         await processEC2Event(event);
         break;
+      case 'aws.rds':
+        await processRDSInstanceEvent(event);
+        break;
       case 'aws.tag':
-        await processTagEvent(event);
+        if (event.detail['instance-id']) {
+          await processEC2TagEvent(event);
+        } else if (event.detail['DBInstanceIdentifier']) {
+          await processRDSTagEvent(event);
+        } else {
+          log.warn().msg('Tag event received without recognizable identifiers');
+        }
         break;
       default:
         log.warn().msg('Unhandled event source');
