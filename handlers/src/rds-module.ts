@@ -242,6 +242,7 @@ export async function manageInactiveRDSAlarms(instanceId: string) {
 }
 
 export async function manageActiveRDSAlarms(dbInstanceId: string, tags: Tag) {
+  await checkAndManageRDSStatusAlarm(dbInstanceId, tags);
   // This function manages alarms for active RDS instances based on their current state and classification
   for (const classification of Object.values(AlarmClassification)) {
     try {
@@ -344,19 +345,19 @@ export async function createStatusAlarmForDBInstance(
   }
 }
 
-async function checkAndManageStatusAlarm(dbInstanceId: string, tags: Tag) {
+async function checkAndManageRDSStatusAlarm(dbInstanceId: string, tags: Tag) {
   if (tags['autoalarm:disabled'] === 'true') {
     deleteAlarm(dbInstanceId, 'StatusCheckFailed');
     log.info().msg('Status check alarm creation skipped due to tag settings.');
   } else if (tags['autoalarm:disabled'] === 'false') {
     // Create status check alarm if not disabled
-    await createStatusAlarmForInstance(dbInstanceId, doesAlarmExist);
+    await createStatusAlarmForDBInstance(dbInstanceId, doesAlarmExist);
   } else if (tags['autoalarm:disabled'] in tags) {
     log
       .warn()
       .msg(
         'autoalarm:disabled tag exists but has unexpected value. checking for alarm and creating if it does not exist'
       );
-    await createStatusAlarmForInstance(dbInstanceId, doesAlarmExist);
+    await createStatusAlarmForDBInstance(dbInstanceId, doesAlarmExist);
   }
 }
