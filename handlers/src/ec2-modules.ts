@@ -155,7 +155,7 @@ export async function manageStorageAlarmForInstance(
   const metricName = isWindows
     ? 'LogicalDisk % Free Space'
     : 'disk_used_percent';
-  const alarmName = `AutoAlarm-EC2-${instanceId}-${type}StorageUtilization`;
+  let alarmName = `AutoAlarm-EC2-${instanceId}-${type}StorageUtilization`;
   const thresholdKey = `autoalarm:storage-used-percent-${type.toLowerCase()}`;
   const durationTimeKey = 'autoalarm:storage-percent-duration-time';
   const durationPeriodsKey = 'autoalarm:storage-percent-duration-periods';
@@ -167,6 +167,7 @@ export async function manageStorageAlarmForInstance(
   );
 
   for (const path of storage_paths) {
+    alarmName = `AutoAlarm-EC2-${instanceId}-${type}StorageUtilization-${path}`;
     const alarmProps: AlarmProps = {
       threshold: defaultThreshold,
       period: 60,
