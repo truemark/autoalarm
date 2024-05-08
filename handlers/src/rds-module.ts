@@ -13,7 +13,6 @@ import * as logging from '@nr1e/logging';
 import {AlarmClassification, ValidDBInstanceState} from './enums';
 import {AlarmProps, Tag} from './types';
 import {doesAlarmExist, createOrUpdateAlarm, deleteAlarm} from './alarm-tools';
-import {createStatusAlarmForInstance} from './ec2-modules';
 
 const log = logging.getRootLogger();
 const rdsClient = new RDSClient({});
