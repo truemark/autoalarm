@@ -5,6 +5,7 @@ import {
 } from '@aws-sdk/client-ec2';
 import {
   CloudWatchClient,
+  ListMetricsCommand,
   PutMetricAlarmCommand,
 } from '@aws-sdk/client-cloudwatch';
 import * as logging from '@nr1e/logging';
@@ -101,6 +102,46 @@ export async function manageCPUUsageAlarmForInstance(
   );
 }
 
+async function getStoragePathsFromCloudWatch(
+  instanceId: string,
+  metricName: string
+): Promise<string[]> {
+  const params = {
+    Namespace: 'CWAgent',
+    MetricName: metricName,
+    Dimensions: [
+      {
+        Name: 'InstanceId',
+        Value: instanceId,
+      },
+    ],
+  };
+
+  const command = new ListMetricsCommand(params);
+  const response = await cloudWatchClient.send(command);
+  const metrics = response.Metrics || [];
+
+  const storagePaths: string[] = [];
+  for (const metric of metrics) {
+    const pathDimension = metric.Dimensions?.find(dim => dim.Name === 'path');
+    if (pathDimension) {
+      log
+        .info()
+        .str('instanceId', instanceId)
+        .str('path', String(pathDimension.Value))
+        .msg('Found storage path');
+      storagePaths.push(String(pathDimension.Value));
+    } else {
+      log
+        .warn()
+        .str('instanceId', instanceId)
+        .msg('No storage path found in dimensions');
+    }
+  }
+
+  return storagePaths;
+}
+
 export async function manageStorageAlarmForInstance(
   instanceId: string,
   tags: Tag,
@@ -120,24 +161,33 @@ export async function manageStorageAlarmForInstance(
   const durationPeriodsKey = 'autoalarm:storage-percent-duration-periods';
   const defaultThreshold = type === 'Critical' ? 90 : 80;
 
-  const alarmProps: AlarmProps = {
-    threshold: defaultThreshold,
-    period: 60,
-    namespace: 'CWAgent',
-    evaluationPeriods: 5,
-    metricName: metricName,
-    dimensions: [{Name: 'InstanceId', Value: instanceId}],
-  };
-
-  await createOrUpdateAlarm(
-    alarmName,
+  const storage_paths = await getStoragePathsFromCloudWatch(
     instanceId,
-    alarmProps,
-    tags,
-    thresholdKey,
-    durationTimeKey,
-    durationPeriodsKey
+    metricName
   );
+
+  for (const path of storage_paths) {
+    const alarmProps: AlarmProps = {
+      threshold: defaultThreshold,
+      period: 60,
+      namespace: 'CWAgent',
+      evaluationPeriods: 5,
+      metricName: metricName,
+      dimensions: [
+        {Name: 'InstanceId', Value: instanceId},
+        {Name: 'path', Value: path},
+      ],
+    };
+    await createOrUpdateAlarm(
+      alarmName,
+      instanceId,
+      alarmProps,
+      tags,
+      thresholdKey,
+      durationTimeKey,
+      durationPeriodsKey
+    );
+  }
 }
 
 export async function manageMemoryAlarmForInstance(
