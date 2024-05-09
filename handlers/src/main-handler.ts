@@ -63,5 +63,6 @@ export const handler: Handler = async (event: any): Promise<void> => {
     }
   } catch (error) {
     log.error().err(error).msg('Error processing event');
+    throw error;
   }
 };

@@ -10,3 +10,12 @@ export interface AlarmProps {
 export interface Tag {
   [key: string]: string;
 }
+
+export interface Dimension {
+  Name: string;
+  Value: string;
+}
+
+export interface PathMetrics {
+  [path: string]: Dimension[];
+}

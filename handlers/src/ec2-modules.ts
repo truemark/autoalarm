@@ -10,7 +10,7 @@ import {
 } from '@aws-sdk/client-cloudwatch';
 import * as logging from '@nr1e/logging';
 import {AlarmClassification, ValidInstanceState} from './enums';
-import {AlarmProps, Tag} from './types';
+import {AlarmProps, Tag, Dimension, PathMetrics} from './types';
 import {doesAlarmExist, createOrUpdateAlarm, deleteAlarm} from './alarm-tools';
 
 const log = logging.getRootLogger();
@@ -105,7 +105,15 @@ export async function manageCPUUsageAlarmForInstance(
 async function getStoragePathsFromCloudWatch(
   instanceId: string,
   metricName: string
-): Promise<string[]> {
+): Promise<PathMetrics> {
+  const requiredDimensions = [
+    'InstanceId',
+    'ImageId',
+    'InstanceType',
+    'device',
+    'path',
+    'fstype',
+  ];
   const params = {
     Namespace: 'CWAgent',
     MetricName: metricName,
@@ -120,26 +128,49 @@ async function getStoragePathsFromCloudWatch(
   const command = new ListMetricsCommand(params);
   const response = await cloudWatchClient.send(command);
   const metrics = response.Metrics || [];
+  log
+    .info()
+    .str('instanceId', instanceId)
+    .str('metricName', metricName)
+    .str('metrics', JSON.stringify(metrics))
+    .msg('Fetched CloudWatch metrics');
 
-  const storagePaths: string[] = [];
+  // Initialize a result object to store dimensions grouped by path
+  const paths: PathMetrics = {};
+
   for (const metric of metrics) {
-    const pathDimension = metric.Dimensions?.find(dim => dim.Name === 'path');
-    if (pathDimension) {
-      log
-        .info()
-        .str('instanceId', instanceId)
-        .str('path', String(pathDimension.Value))
-        .msg('Found storage path');
-      storagePaths.push(String(pathDimension.Value));
-    } else {
-      log
-        .warn()
-        .str('instanceId', instanceId)
-        .msg('No storage path found in dimensions');
+    // Initialize a map to hold dimension values for this metric
+    const dimensionMap: Record<string, string> = {
+      InstanceId: instanceId,
+      ImageId: '',
+      InstanceType: '',
+      device: '',
+      path: '',
+      fstype: '',
+    };
+
+    // Populate the dimension map with metric's values
+    metric.Dimensions?.forEach(dim => {
+      if (dim.Name && dim.Value && requiredDimensions.includes(dim.Name)) {
+        dimensionMap[dim.Name] = dim.Value;
+      }
+    });
+
+    // Extract the path dimension and ensure it's defined
+    const path = dimensionMap['path'];
+    if (path) {
+      // Build an array of dimensions excluding 'path' itself
+      const dimensionsArray = requiredDimensions
+        .filter(name => name !== 'path')
+        .map(name => ({Name: name, Value: dimensionMap[name]}))
+        .concat([{Name: 'path', Value: path}]);
+
+      // Add this array to the paths object using the path as the key
+      paths[path] = dimensionsArray;
     }
   }
 
-  return storagePaths;
+  return paths;
 }
 
 export async function manageStorageAlarmForInstance(
@@ -155,39 +186,56 @@ export async function manageStorageAlarmForInstance(
   const metricName = isWindows
     ? 'LogicalDisk % Free Space'
     : 'disk_used_percent';
-  let alarmName = `AutoAlarm-EC2-${instanceId}-${type}StorageUtilization`;
+  const alarmName = `AutoAlarm-EC2-${instanceId}-${type}StorageUtilization`;
   const thresholdKey = `autoalarm:storage-used-percent-${type.toLowerCase()}`;
   const durationTimeKey = 'autoalarm:storage-percent-duration-time';
   const durationPeriodsKey = 'autoalarm:storage-percent-duration-periods';
   const defaultThreshold = type === 'Critical' ? 90 : 80;
 
-  const storage_paths = await getStoragePathsFromCloudWatch(
+  // Fetch storage paths and their associated dimensions
+  const storagePaths = await getStoragePathsFromCloudWatch(
     instanceId,
     metricName
   );
 
-  for (const path of storage_paths) {
-    alarmName = `AutoAlarm-EC2-${instanceId}-${type}StorageUtilization-${path}`;
-    const alarmProps: AlarmProps = {
-      threshold: defaultThreshold,
-      period: 60,
-      namespace: 'CWAgent',
-      evaluationPeriods: 5,
-      metricName: metricName,
-      dimensions: [
-        {Name: 'InstanceId', Value: instanceId},
-        {Name: 'path', Value: path},
-      ],
-    };
-    await createOrUpdateAlarm(
-      alarmName,
-      instanceId,
-      alarmProps,
-      tags,
-      thresholdKey,
-      durationTimeKey,
-      durationPeriodsKey
-    );
+  const paths = Object.keys(storagePaths);
+  if (paths.length > 0) {
+    for (const path of paths) {
+      const dimensions_props = storagePaths[path]; // Get dimensions for the current path
+      log
+        .info()
+        .str('instanceId', instanceId)
+        .str('path', path)
+        .str('dimensions', JSON.stringify(dimensions_props))
+        .msg('found dimensions for storage path');
+
+      const alarmName = `AutoAlarm-EC2-${instanceId}-${type}StorageUtilization-${path}`;
+      const alarmProps = {
+        threshold: defaultThreshold,
+        period: 60,
+        namespace: 'CWAgent',
+        evaluationPeriods: 5,
+        metricName: metricName,
+        dimensions: dimensions_props, // Use the dimensions directly from stroagePaths
+      };
+
+      await createOrUpdateAlarm(
+        alarmName,
+        instanceId,
+        alarmProps,
+        tags,
+        thresholdKey,
+        durationTimeKey,
+        durationPeriodsKey
+      );
+    }
+  } else {
+    log
+      .info()
+      .str('instanceId', instanceId)
+      .msg(
+        'CloudWatch metrics not found for storage paths. Skipping alarm creation.'
+      );
   }
 }
 
