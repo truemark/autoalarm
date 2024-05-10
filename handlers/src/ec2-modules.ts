@@ -17,6 +17,14 @@ const log = logging.getRootLogger();
 const ec2Client = new EC2Client({});
 const cloudWatchClient = new CloudWatchClient({});
 
+const alarmAnchors = [
+  'WarningCPUUtilization',
+  'CriticalCPUUtilization',
+  'StatusCheckFailed',
+  'CriticalMemoryUtilization',
+  'WarningMemoryUtilization',
+];
+
 //this function is used to get the instance OS platform type
 async function getInstancePlatform(
   instanceId: string
@@ -186,7 +194,6 @@ export async function manageStorageAlarmForInstance(
   const metricName = isWindows
     ? 'LogicalDisk % Free Space'
     : 'disk_used_percent';
-  const alarmName = `AutoAlarm-EC2-${instanceId}-${type}StorageUtilization`;
   const thresholdKey = `autoalarm:storage-used-percent-${type.toLowerCase()}`;
   const durationTimeKey = 'autoalarm:storage-percent-duration-time';
   const durationPeriodsKey = 'autoalarm:storage-percent-duration-periods';
@@ -201,7 +208,7 @@ export async function manageStorageAlarmForInstance(
   const paths = Object.keys(storagePaths);
   if (paths.length > 0) {
     for (const path of paths) {
-      const dimensions_props = storagePaths[path]; // Get dimensions for the current path
+      const dimensions_props = storagePaths[path];
       log
         .info()
         .str('instanceId', instanceId)
@@ -216,7 +223,7 @@ export async function manageStorageAlarmForInstance(
         namespace: 'CWAgent',
         evaluationPeriods: 5,
         metricName: metricName,
-        dimensions: dimensions_props, // Use the dimensions directly from stroagePaths
+        dimensions: dimensions_props, // Use the dimensions directly from storage Paths
       };
 
       await createOrUpdateAlarm(
@@ -350,18 +357,41 @@ export async function manageActiveInstanceAlarms(
   }
 }
 
-export async function manageInactiveInstanceAlarms(instanceId: string) {
-  const alarmAnchors = [
-    'WarningCPUUtilization',
-    'CriticalCPUUtilization',
-    'StatusCheckFailed',
-    'CriticalStorageUtilization',
-    'WarningStorageUtilization',
-    'CriticalMemoryUtilization',
-    'WarningMemoryUtilization',
-  ];
+async function getStorageAlarmAnchors(instanceId: string): Promise<void> {
+  const instanceDetailProps = await getInstancePlatform(instanceId);
+  // Check if the platform is Windows
+  const isWindows = instanceDetailProps.platform
+    ? instanceDetailProps.platform.toLowerCase().includes('windows')
+    : false;
+  const metricName = isWindows
+    ? 'LogicalDisk % Free Space'
+    : 'disk_used_percent';
+  // Fetch storage paths and their associated dimensions
+  const storagePaths = await getStoragePathsFromCloudWatch(
+    instanceId,
+    metricName
+  );
 
-  // Delete all alarms associated with the instance
+  const paths = Object.keys(storagePaths);
+  if (paths.length > 0) {
+    for (const path of paths) {
+      const dimensions_props = storagePaths[path];
+      log
+        .info()
+        .str('instanceId', instanceId)
+        .str('path', path)
+        .str('dimensions', JSON.stringify(dimensions_props))
+        .msg('found dimensions for storage path');
+
+      for (const classification of Object.values(AlarmClassification)) {
+        alarmAnchors.push(`${classification}StorageUtilization-${path}`);
+      }
+    }
+  }
+}
+
+export async function manageInactiveInstanceAlarms(instanceId: string) {
+  await getStorageAlarmAnchors(instanceId);
   try {
     await Promise.all(
       alarmAnchors.map(anchor => deleteAlarm(instanceId, anchor))
