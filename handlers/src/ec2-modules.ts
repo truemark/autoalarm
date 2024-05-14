@@ -114,14 +114,23 @@ async function getStoragePathsFromCloudWatch(
   instanceId: string,
   metricName: string
 ): Promise<PathMetrics> {
-  const requiredDimensions = [
-    'InstanceId',
-    'ImageId',
-    'InstanceType',
-    'device',
-    'path',
-    'fstype',
-  ];
+  // First, determine if the instance is running Windows
+  const instanceDetailProps = await getInstancePlatform(instanceId);
+  const isWindows = instanceDetailProps.platform
+    ? instanceDetailProps.platform.toLowerCase().includes('windows')
+    : false;
+
+  // Set required dimensions based on the operating system
+  const requiredDimensions = isWindows
+    ? [
+        'InstanceId',
+        'ImageId',
+        'InstanceType',
+        'instance', // Adjusted for Windows
+        'objectname', // Adjusted for Windows
+      ]
+    : ['InstanceId', 'ImageId', 'InstanceType', 'device', 'path', 'fstype'];
+
   const params = {
     Namespace: 'CWAgent',
     MetricName: metricName,
@@ -148,14 +157,11 @@ async function getStoragePathsFromCloudWatch(
 
   for (const metric of metrics) {
     // Initialize a map to hold dimension values for this metric
-    const dimensionMap: Record<string, string> = {
-      InstanceId: instanceId,
-      ImageId: '',
-      InstanceType: '',
-      device: '',
-      path: '',
-      fstype: '',
-    };
+    const dimensionMap: Record<string, string> = {};
+    requiredDimensions.forEach(dim => {
+      dimensionMap[dim] = ''; // Initialize all required dimensions with empty strings
+    });
+    dimensionMap['InstanceId'] = instanceId; // Always set InstanceId
 
     // Populate the dimension map with metric's values
     metric.Dimensions?.forEach(dim => {
@@ -164,14 +170,15 @@ async function getStoragePathsFromCloudWatch(
       }
     });
 
-    // Extract the path dimension and ensure it's defined
-    const path = dimensionMap['path'];
+    // Extract the path dimension based on the OS and ensure it's defined
+    const pathKey = isWindows ? 'instance' : 'path';
+    const path = dimensionMap[pathKey];
     if (path) {
-      // Build an array of dimensions excluding 'path' itself
-      const dimensionsArray = requiredDimensions
-        .filter(name => name !== 'path')
-        .map(name => ({Name: name, Value: dimensionMap[name]}))
-        .concat([{Name: 'path', Value: path}]);
+      // Build an array of dimensions
+      const dimensionsArray = requiredDimensions.map(name => ({
+        Name: name,
+        Value: dimensionMap[name],
+      }));
 
       // Add this array to the paths object using the path as the key
       paths[path] = dimensionsArray;
