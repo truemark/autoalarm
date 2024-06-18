@@ -5,9 +5,11 @@ import {
   manageActiveInstanceAlarms,
   getEC2IdAndState,
   fetchInstanceTags,
+  isPromEnabled,
   liveStates,
   deadStates,
 } from './ec2-modules';
+import {AlarmClassification} from './enums';
 
 const log = logging.getRootLogger();
 
@@ -29,23 +31,42 @@ async function processEC2Event(event: any) {
   const instanceId = event.detail['instance-id'];
   const state = event.detail.state;
   const tags = await fetchInstanceTags(instanceId);
+  const useProm = await isPromEnabled(instanceId);
 
-  if (liveStates.has(state)) {
-    await manageActiveInstanceAlarms(instanceId, tags);
+  if (instanceId && liveStates.has(state)) {
+    //checking our liveStates set to see if the instance is in a state that we should be managing alarms for.
+    for (const classification of Object.values(AlarmClassification)) {
+      await manageActiveInstanceAlarms(
+        instanceId,
+        tags,
+        classification,
+        useProm
+      );
+    }
   } else if (deadStates.has(state)) {
+    // TODO Do not delete alarms just because the instance is shutdown. You do delete them on terminate.
     await manageInactiveInstanceAlarms(instanceId);
   }
 }
 
 async function processTagEvent(event: any) {
   const {instanceId, state} = await getEC2IdAndState(event);
+  const useProm = await isPromEnabled(instanceId);
   //checking our liveStates set to see if the instance is in a state that we should be managing alarms for.
   if (instanceId && liveStates.has(state)) {
     const tags = await fetchInstanceTags(instanceId);
-    await manageActiveInstanceAlarms(instanceId, tags);
+    for (const classification of Object.values(AlarmClassification)) {
+      await manageActiveInstanceAlarms(
+        instanceId,
+        tags,
+        classification,
+        useProm
+      );
+    }
   }
 }
 
+// Handler function
 export const handler: Handler = async (event: any): Promise<void> => {
   await loggingSetup();
   log.trace().unknown('event', event).msg('Received event');

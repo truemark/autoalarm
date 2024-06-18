@@ -9,6 +9,7 @@ import {
   PutMetricAlarmCommand,
 } from '@aws-sdk/client-cloudwatch';
 import * as logging from '@nr1e/logging';
+//import {AmpClient, QueryCommand} from '@aws-sdk/client-amp';
 import {AlarmClassification, ValidInstanceState} from './enums';
 import {AlarmProps, Tag, Dimension, PathMetrics} from './types';
 import {doesAlarmExist, createOrUpdateAlarm, deleteAlarm} from './alarm-tools';
@@ -82,13 +83,22 @@ async function getInstancePlatform(
 export async function manageCPUUsageAlarmForInstance(
   instanceId: string,
   tags: Tag,
-  type: AlarmClassification
+  type: AlarmClassification,
+  useProm: boolean
 ): Promise<void> {
   const alarmName = `AutoAlarm-EC2-${instanceId}-${type}CPUUtilization`;
   const thresholdKey = `autoalarm:cpu-percent-above-${type.toLowerCase()}`;
   const durationTimeKey = 'autoalarm:cpu-percent-duration-time';
   const durationPeriodsKey = 'autoalarm:cpu-percent-duration-periods';
   const defaultThreshold = type === 'Critical' ? 99 : 97;
+  const usePrometheus = useProm;
+
+  if (usePrometheus) {
+    log
+      .info()
+      .str('instanceId', instanceId)
+      .msg('Prometheus metrics enabled. Skipping CloudWatch alarm creation');
+  }
 
   const alarmProps: AlarmProps = {
     threshold: defaultThreshold,
@@ -191,7 +201,8 @@ async function getStoragePathsFromCloudWatch(
 export async function manageStorageAlarmForInstance(
   instanceId: string,
   tags: Tag,
-  type: AlarmClassification
+  type: AlarmClassification,
+  useProm: boolean
 ): Promise<void> {
   const instanceDetailProps = await getInstancePlatform(instanceId);
   // Check if the platform is Windows
@@ -201,12 +212,19 @@ export async function manageStorageAlarmForInstance(
   const metricName = isWindows
     ? 'LogicalDisk % Free Space'
     : 'disk_used_percent';
+  const usePrometheus = useProm;
   const thresholdKey = `autoalarm:storage-used-percent-${type.toLowerCase()}`;
   const durationTimeKey = 'autoalarm:storage-percent-duration-time';
   const durationPeriodsKey = 'autoalarm:storage-percent-duration-periods';
   const defaultThreshold = type === 'Critical' ? 90 : 80;
 
-  // Fetch storage paths and their associated dimensions
+  if (usePrometheus) {
+    log
+      .info()
+      .str('instanceId', instanceId)
+      .msg('Prometheus metrics enabled. Skipping CloudWatch alarm creation');
+  }
+  // Fetch storage paths and their associated dimensions for cloudwatch alarms
   const storagePaths = await getStoragePathsFromCloudWatch(
     instanceId,
     metricName
@@ -256,7 +274,8 @@ export async function manageStorageAlarmForInstance(
 export async function manageMemoryAlarmForInstance(
   instanceId: string,
   tags: Tag,
-  type: AlarmClassification
+  type: AlarmClassification,
+  useProm: boolean
 ): Promise<void> {
   const instanceDetailProps = await getInstancePlatform(instanceId);
   // Check if the platform is Windows
@@ -266,6 +285,7 @@ export async function manageMemoryAlarmForInstance(
   const metricName = isWindows
     ? 'Memory % Committed Bytes In Use'
     : 'mem_used_percent';
+  const usePrometheus = useProm;
   const alarmName = `AutoAlarm-EC2-${instanceId}-${type}MemoryUtilization`;
   const defaultThreshold = type === 'Critical' ? 90 : 80;
   const thresholdKey = `autoalarm:memory-percent-above-${type.toLowerCase()}`;
@@ -281,6 +301,12 @@ export async function manageMemoryAlarmForInstance(
     dimensions: [{Name: 'InstanceId', Value: instanceId}],
   };
 
+  if (usePrometheus) {
+    log
+      .info()
+      .str('instanceId', instanceId)
+      .msg('Prometheus metrics enabled. Skipping CloudWatch alarm creation');
+  }
   await createOrUpdateAlarm(
     alarmName,
     instanceId,
@@ -346,21 +372,21 @@ async function checkAndManageStatusAlarm(instanceId: string, tags: Tag) {
 
 export async function manageActiveInstanceAlarms(
   instanceId: string,
-  tags: Tag
+  tags: Tag,
+  classification: AlarmClassification,
+  useProm: boolean
 ) {
   await checkAndManageStatusAlarm(instanceId, tags);
   // Loop through classifications and manage alarms
-  for (const classification of Object.values(AlarmClassification)) {
-    try {
-      await Promise.all([
-        manageCPUUsageAlarmForInstance(instanceId, tags, classification),
-        manageStorageAlarmForInstance(instanceId, tags, classification),
-        manageMemoryAlarmForInstance(instanceId, tags, classification),
-      ]);
-    } catch (e) {
-      log.error().err(e).msg('Error managing alarms for instance');
-      throw new Error(`Error managing alarms for instance: ${e}`);
-    }
+  try {
+    await Promise.all([
+      manageCPUUsageAlarmForInstance(instanceId, tags, classification, useProm),
+      manageStorageAlarmForInstance(instanceId, tags, classification, useProm),
+      manageMemoryAlarmForInstance(instanceId, tags, classification, useProm),
+    ]);
+  } catch (e) {
+    log.error().err(e).msg('Error managing alarms for instance');
+    throw new Error(`Error managing alarms for instance: ${e}`);
   }
 }
 
@@ -456,6 +482,83 @@ export async function fetchInstanceTags(
   }
 }
 
+//async function checkPromMetrics(instanceId: string): Promise<boolean> {
+//  try {
+//    const workspaceId = 'your-workspace-id'; // Replace with your actual workspace ID
+//    const query = `up{instance="${instanceId}"}`; // Adjust query to your actual metric labels
+//    const command = new QueryCommand({workspaceId, query});
+//    const response = await AmpClient.send(command);
+//
+//    // Check if there are any data points in the response
+//    const metricsExist = response.data?.result?.length > 0;
+//    if (metricsExist) {
+//      log
+//        .info()
+//        .str('instanceId', instanceId)
+//        .msg('Metrics are being sent to Prometheus');
+//    } else {
+//      log
+//        .info()
+//        .str('instanceId', instanceId)
+//        .msg('Metrics are not being sent to Prometheus');
+//    }
+//    return metricsExist;
+//  } catch (error) {
+//    log
+//      .error()
+//      .err(error)
+//      .str('instanceId', instanceId)
+//      .msg('Failed to query Prometheus metrics');
+//    throw new Error(
+//      `Failed to query Prometheus metrics for instance ${instanceId}: ${error}`
+//    );
+//  }
+//}
+
+// Check if the Prometheus tag is set to true and if metrics are being sent to Prometheus
+export async function isPromEnabled(instanceId: string): Promise<boolean> {
+  try {
+    const tags = await fetchInstanceTags(instanceId);
+    if (tags['Prometheus'] && tags['Prometheus'] === 'true') {
+      log
+        .info()
+        .str('instanceId', instanceId)
+        .msg(
+          'Prometheus tag found. Checking if metrics are being sent to Prometheus'
+        );
+      // Check if metrics are being sent to Prometheus and return true or false for alarms
+      //const useProm = await checkPromMetrics(instanceId);
+      // log
+      //   .info()
+      //   .str('instanceId', instanceId)
+      //   .msg(`Prometheus metrics enabled=${useProm}`);
+      return true; //this will be used for the useProm variable once we finish testing the inital logic
+    } else if (
+      (tags['Prometheus'] && tags['Prometheus'] === 'false') ||
+      !tags['Prometheus'] ||
+      (tags['Prometheus'] !== 'true' && tags['Prometheus'] !== 'false')
+    ) {
+      log
+        .info()
+        .str('instanceId', instanceId)
+        .str('tags', JSON.stringify(tags))
+        .msg('Prometheus tag not found or not set to true');
+      return false;
+    } else {
+      return false;
+    }
+  } catch (error) {
+    log
+      .error()
+      .err(error)
+      .str('instanceId', instanceId)
+      .msg('Failed to check Prometheus tag');
+    throw new Error(
+      `Failed to check Prometheus tag for instance ${instanceId}: ${error}`
+    );
+  }
+}
+
 export const liveStates: Set<ValidInstanceState> = new Set([
   ValidInstanceState.Running,
   ValidInstanceState.Pending,
@@ -463,7 +566,7 @@ export const liveStates: Set<ValidInstanceState> = new Set([
 
 export const deadStates: Set<ValidInstanceState> = new Set([
   ValidInstanceState.Terminated,
-  ValidInstanceState.Stopping,
-  ValidInstanceState.Stopped,
-  ValidInstanceState.ShuttingDown,
+  ValidInstanceState.Stopping, //for testing. to be removed
+  ValidInstanceState.Stopped, //for testing. to be removed
+  ValidInstanceState.ShuttingDown, //for testing. to be removed
 ]);

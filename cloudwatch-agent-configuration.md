@@ -49,8 +49,9 @@ Once the configuration is saved, you can apply it to multiple instances using SS
 
 1. SSH into your EC2 instance.
 2. Run the following command to start the configuration wizard:
-    ```sh
-    sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-config-wizard
+   ```sh
+   sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-config-wizard
+   ```
 3. Follow the prompts to configure the agent.
 4. Save the configuration to an SSM parameter.
 
@@ -63,6 +64,7 @@ Once the configuration is saved, you can apply it to multiple instances using SS
    ```
    ```sh
    .\amazon-cloudwatch-agent-config-wizard.exe
+   ```
 3. Follow the prompts to configure the agent.
 4. Save the configuration to an SSM parameter.
 
@@ -79,4 +81,3 @@ Once the configuration is saved, you can apply it to multiple instances using SS
 7. Specify the **optionalConfigurationLocation** with the name of the SSM parameter where your configuration is saved.
 8. Uncheck `Enable an S3 bucket` in Output options.
 9. Select your targets and run the command.
-
