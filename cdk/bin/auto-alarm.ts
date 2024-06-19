@@ -13,4 +13,11 @@ const app = new ExtendedApp({
   },
 });
 
-new AutoAlarmStack(app, 'AutoAlarm', {});
+// The prometheusWorkspaceId const is configured to take in an environment variable for the Prometheus Workspace ID which
+// is then passed to our lambda to use dynamically across all environments.
+const prometheusWorkspaceId = app.node.tryGetContext('prometheusWorkspaceId');
+const stackProps: ExtendedAutoAlarmProps = {
+  prometheusWorkspaceId: prometheusWorkspaceId,
+};
+
+new AutoAlarmStack(app, 'AutoAlarm', stackProps);
