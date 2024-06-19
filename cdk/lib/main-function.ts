@@ -8,6 +8,7 @@ import * as process from 'process';
 
 interface MainFunctionProps {
   role?: IRole; // Define other props as needed
+  prometheusWorkspaceId?: string;
 }
 
 export class MainFunction extends ExtendedNodejsFunction {
@@ -26,6 +27,9 @@ export class MainFunction extends ExtendedNodejsFunction {
       timeout: Duration.seconds(300),
       memorySize: 768,
       role: props?.role,
+      environment: {
+        PROMETHEUS_WORKSPACE: process.env.PROMETHEUS_WORKSPACE || '',
+      },
     });
   }
 }

@@ -17,6 +17,7 @@ import {doesAlarmExist, createOrUpdateAlarm, deleteAlarm} from './alarm-tools';
 const log = logging.getRootLogger();
 const ec2Client = new EC2Client({});
 const cloudWatchClient = new CloudWatchClient({});
+const prometheusWorkspaceId = process.env.PROMETHEUS_WORKSPACE_ID || '';
 
 const alarmAnchors = [
   'WarningCPUUtilization',
@@ -97,7 +98,10 @@ export async function manageCPUUsageAlarmForInstance(
     log
       .info()
       .str('instanceId', instanceId)
-      .msg('Prometheus metrics enabled. Skipping CloudWatch alarm creation');
+      .msg(
+        'Prometheus metrics enabled. Skipping CloudWatch alarm creation and using Prometheus metrics instead' +
+          ` and prometheus workspace id is ${prometheusWorkspaceId}`
+      );
   }
 
   const alarmProps: AlarmProps = {

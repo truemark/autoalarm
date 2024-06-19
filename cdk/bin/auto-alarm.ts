@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import 'source-map-support/register';
-
 import {AutoAlarmStack} from '../lib/auto-alarm-stack';
 import {ExtendedApp} from 'truemark-cdk-lib/aws-cdk';
+import {ExtendedAutoAlarmProps} from '../lib/auto-alarm-stack-props';
 
 const app = new ExtendedApp({
   standardTags: {

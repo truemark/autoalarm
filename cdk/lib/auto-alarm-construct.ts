@@ -3,6 +3,7 @@ import {MainFunction} from './main-function';
 import {StandardQueue} from 'truemark-cdk-lib/aws-sqs';
 import {Rule} from 'aws-cdk-lib/aws-events';
 import {LambdaFunction} from 'aws-cdk-lib/aws-events-targets';
+import {ExtendedAutoAlarmProps} from './auto-alarm-stack-props';
 import {
   Role,
   ServicePrincipal,
@@ -11,9 +12,10 @@ import {
 } from 'aws-cdk-lib/aws-iam';
 
 export class AutoAlarmConstruct extends Construct {
-  constructor(scope: Construct, id: string) {
+  constructor(scope: Construct, id: string, props: ExtendedAutoAlarmProps) {
     super(scope, id);
 
+    const prometheusWorkspaceId = props.prometheusWorkspaceId || '';
     // Define the IAM role with specific permissions for the Lambda function
     const lambdaExecutionRole = new Role(this, 'LambdaExecutionRole', {
       assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
@@ -52,6 +54,7 @@ export class AutoAlarmConstruct extends Construct {
     // Create the MainFunction and explicitly pass the execution role
     const mainFunction = new MainFunction(this, 'MainFunction', {
       role: lambdaExecutionRole, // Pass the role here
+      prometheusWorkspaceId: prometheusWorkspaceId,
     });
 
     const deadLetterQueue = new StandardQueue(this, 'DeadLetterQueue');
@@ -82,6 +85,7 @@ export class AutoAlarmConstruct extends Construct {
             'autoalarm:memory-percent-duration-time',
             'autoalarm:memory-percent-duration-periods',
             'autoalarm:selective-storage', //true or false
+            'Prometheus:',
           ],
         },
       },
