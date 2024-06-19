@@ -486,6 +486,10 @@ export async function fetchInstanceTags(
   }
 }
 
+/* TODO: implement this function and be sure to remove the useProm variable from the manageActiveInstanceAlarms function
+ * as well as check if our promethuesWorkspaceId is not empty.
+ */
+
 //async function checkPromMetrics(instanceId: string): Promise<boolean> {
 //  try {
 //    const workspaceId = 'your-workspace-id'; // Replace with your actual workspace ID
