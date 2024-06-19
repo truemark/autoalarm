@@ -11,6 +11,7 @@ import {
 } from './ec2-modules';
 import {AlarmClassification} from './enums';
 
+const prometheusWorkspaceId = process.env.PROMETHEUS_WORKSPACE_ID || '';
 const log = logging.getRootLogger();
 
 async function loggingSetup() {
@@ -70,6 +71,11 @@ async function processTagEvent(event: any) {
 export const handler: Handler = async (event: any): Promise<void> => {
   await loggingSetup();
   log.trace().unknown('event', event).msg('Received event');
+  log
+    .info()
+    .str('prometheusWorkspaceId', prometheusWorkspaceId)
+    .msg('Prometheus');
+
   try {
     switch (event.source) {
       case 'aws.ec2':

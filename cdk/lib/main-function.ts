@@ -28,7 +28,7 @@ export class MainFunction extends ExtendedNodejsFunction {
       memorySize: 768,
       role: props?.role,
       environment: {
-        PROMETHEUS_WORKSPACE: process.env.PROMETHEUS_WORKSPACE || '',
+        PROMETHEUS_WORKSPACE_ID: props?.prometheusWorkspaceId || '',
       },
     });
   }
