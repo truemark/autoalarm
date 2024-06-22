@@ -187,19 +187,19 @@ export async function manageCPUUsageAlarmForInstance(
   tags: Tag,
   type: AlarmClassification
 ): Promise<void> {
-  const usePrometheus = isPromEnabled('');
+  //const usePrometheus = isPromEnabled('');
   const {alarmName, thresholdKey, durationTimeKey, durationPeriodsKey} =
     getAlarmConfig(instanceId, type, 'cpu');
 
-  if (usePrometheus) {
-    log
-      .info()
-      .str('instanceId', instanceId)
-      .msg(
-        'Prometheus metrics enabled. Skipping CloudWatch alarm creation and using Prometheus metrics instead' +
-          ` and prometheus workspace id is ${prometheusWorkspaceId}`
-      );
-  }
+  // if (usePrometheus) {
+  //   log
+  //     .info()
+  //     .str('instanceId', instanceId)
+  //     .msg(
+  //       'Prometheus metrics enabled. Skipping CloudWatch alarm creation and using Prometheus metrics instead' +
+  //         ` and prometheus workspace id is ${prometheusWorkspaceId}`
+  //     );
+  // }
 
   const alarmProps: AlarmProps = {
     threshold: defaultThreshold(type),
@@ -236,14 +236,14 @@ export async function manageStorageAlarmForInstance(
     : 'disk_used_percent';
   const {alarmName, thresholdKey, durationTimeKey, durationPeriodsKey} =
     getAlarmConfig(instanceId, type, 'storage');
-  const usePrometheus = isPromEnabled('');
+  //const usePrometheus = isPromEnabled('');
 
-  if (usePrometheus) {
-    log
-      .info()
-      .str('instanceId', instanceId)
-      .msg('Prometheus metrics enabled. Skipping CloudWatch alarm creation');
-  }
+  // if (usePrometheus) {
+  //   log
+  //     .info()
+  //     .str('instanceId', instanceId)
+  //     .msg('Prometheus metrics enabled. Skipping CloudWatch alarm creation');
+  // }
   // Fetch storage paths and their associated dimensions for cloudwatch alarms
   const storagePaths = await getStoragePathsFromCloudWatch(
     instanceId,
@@ -307,7 +307,7 @@ export async function manageMemoryAlarmForInstance(
   const {alarmName, thresholdKey, durationTimeKey, durationPeriodsKey} =
     getAlarmConfig(instanceId, type, 'memory');
 
-  const usePrometheus = isPromEnabled('');
+  //const usePrometheus = isPromEnabled('');
 
   const alarmProps: AlarmProps = {
     metricName: metricName,
@@ -318,12 +318,12 @@ export async function manageMemoryAlarmForInstance(
     dimensions: [{Name: 'InstanceId', Value: instanceId}],
   };
 
-  if (usePrometheus) {
-    log
-      .info()
-      .str('instanceId', instanceId)
-      .msg('Prometheus metrics enabled. Skipping CloudWatch alarm creation');
-  }
+  //if (usePrometheus) {
+  //  log
+  //    .info()
+  //    .str('instanceId', instanceId)
+  //    .msg('Prometheus metrics enabled. Skipping CloudWatch alarm creation');
+  //}
   await createOrUpdateAlarm(
     alarmName,
     instanceId,
