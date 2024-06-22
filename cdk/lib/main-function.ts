@@ -4,7 +4,6 @@ import {Construct} from 'constructs';
 import * as path from 'path';
 import {Duration} from 'aws-cdk-lib';
 import {Architecture} from 'aws-cdk-lib/aws-lambda';
-import * as process from 'process';
 
 interface MainFunctionProps {
   role?: IRole; // Define other props as needed

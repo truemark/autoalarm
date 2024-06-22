@@ -21,3 +21,4 @@ const stackProps: ExtendedAutoAlarmProps = {
 };
 
 new AutoAlarmStack(app, 'AutoAlarm', stackProps);
+
