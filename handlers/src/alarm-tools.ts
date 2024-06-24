@@ -4,6 +4,8 @@ import {
   DescribeAlarmsCommand,
   PutMetricAlarmCommand,
 } from '@aws-sdk/client-cloudwatch';
+import * as aws4 from 'aws4';
+import {defaultProvider} from '@aws-sdk/credential-provider-node';
 import * as logging from '@nr1e/logging';
 import {AlarmProps, Tag} from './types';
 import * as https from 'https';
@@ -290,13 +292,93 @@ export async function deleteAlarm(
   }
 }
 
-/*this function uses case switching to dynamically check that aws managed prometheus is receiving data from a service.
- * cases are ec2, ecs, eks, rds, ect <--- add more cases as needed and make note here in this comment. All Lower case.
+// We use the following const to make a signed http request for the prom APIs following patterns found in this example:
+// https://github.com/aws-samples/sigv4-signing-examples/blob/main/sdk/nodejs/main.js. We use defaultProvider to get the
+// credentials needed to sign the request. We then sign the request using aws4 and make the request using https.request.
+const makeSignedRequest = async (
+  path: string,
+  region: string
+): Promise<any> => {
+  const hostname = `aps-workspaces.${region}.amazonaws.com`;
+
+  // Fetch credentials using the default provider
+  const credentials = await defaultProvider()();
+
+  // Define the request options
+  const options = {
+    hostname,
+    path,
+    method: 'GET',
+    headers: {
+      host: hostname,
+      'Content-Type': 'application/json',
+    },
+  };
+
+  // Sign the request using aws4
+  const signer = aws4.sign(
+    {
+      service: 'aps',
+      region: region,
+      path: path,
+      headers: options.headers,
+      method: options.method,
+      body: '',
+    },
+    {
+      accessKeyId: credentials.accessKeyId,
+      secretAccessKey: credentials.secretAccessKey,
+      sessionToken: credentials.sessionToken,
+    }
+  );
+
+  // Add signed headers to the request options
+  Object.assign(options.headers, signer.headers);
+
+  return new Promise((resolve, reject) => {
+    const req = https.request(options, res => {
+      let data = '';
+      res.on('data', chunk => {
+        data += chunk;
+      });
+      res.on('end', () => {
+        log
+          .info()
+          .num('statusCode', res.statusCode || 0)
+          .str('headers', JSON.stringify(res.headers, null, 2))
+          .str('body', data)
+          .msg('Response received');
+
+        try {
+          const parsedData = JSON.parse(data);
+          resolve(parsedData);
+        } catch (error) {
+          log
+            .error()
+            .err(error)
+            .str('rawData', data)
+            .msg('Failed to parse response data');
+          reject(error);
+        }
+      });
+    });
+
+    req.on('error', error => {
+      log.error().err(error).msg('Request error');
+      reject(error);
+    });
+
+    req.end();
+  });
+};
+
+/* this function uses case switching to dynamically check that aws managed prometheus is receiving data from a service.
+ * cases are ec2, ecs, eks, rds, etc <--- add more cases as needed and make note here in this comment. All Lower case.
  * ec2 service identifier is the instance private IP address.
  * ecs service identifier is...
  * eks service identifier is...
  * rds service identifier is...
- *QueryMetrics API documentation can be found here: https://docs.aws.amazon.com/prometheus/latest/userguide/AMP-APIReference-QueryMetrics.html
+ * QueryMetrics API documentation can be found here: https://docs.aws.amazon.com/prometheus/latest/userguide/AMP-APIReference-QueryMetrics.html
  */
 
 export async function queryPrometheusForService(
@@ -305,41 +387,9 @@ export async function queryPrometheusForService(
   promWorkspaceID: string,
   region: string
 ): Promise<boolean> {
-  // Construct the Prometheus query URL path
   const queryPath = `/workspaces/${promWorkspaceID}/api/v1/query?query=`;
 
-  // Create a promise to wrap the HTTPS request
-  const makeRequest = (path: string): Promise<any> => {
-    return new Promise((resolve, reject) => {
-      const options = {
-        hostname: `aps-workspaces.${region}.amazonaws.com`,
-        path: path,
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      };
-
-      const req = https.request(options, res => {
-        let data = '';
-        res.on('data', chunk => {
-          data += chunk;
-        });
-        res.on('end', () => {
-          resolve(JSON.parse(data));
-        });
-      });
-
-      req.on('error', error => {
-        reject(error);
-      });
-
-      req.end();
-    });
-  };
-
   try {
-    // Dynamically create the query based on service type
     let query = '';
     switch (serviceType) {
       case 'ec2': {
@@ -347,36 +397,41 @@ export async function queryPrometheusForService(
           .info()
           .str('serviceType', serviceType)
           .str('serviceIdentifier', serviceIdentifier)
+          .str('promWorkspaceID', promWorkspaceID)
+          .str('region', region)
           .msg('Querying Prometheus for EC2 instances');
+
         query = 'up{job="ec2"}';
-        // Make the HTTPS request to the Prometheus query endpoint
-        const response = await makeRequest(
-          queryPath + encodeURIComponent(query)
-        );
+
         log
           .info()
-          .str('serviceType', serviceType)
-          .str('serviceIdentifier', serviceIdentifier)
-          .str('Prometheus Workspace ID', promWorkspaceID)
-          .str('response', JSON.stringify(response))
-          .msg('Prometheus query successful');
+          .str('fullQueryPath', queryPath + encodeURIComponent(query))
+          .msg('Full query path');
+
+        const response = await makeSignedRequest(
+          queryPath + encodeURIComponent(query),
+          region
+        );
+
         if (response.status !== 'success') {
           log
             .warn()
             .str('serviceType', serviceType)
             .str('serviceIdentifier', serviceIdentifier)
             .str('Prometheus Workspace ID', promWorkspaceID)
+            .str('response', JSON.stringify(response, null, 2))
             .msg(
               'Prometheus query failed. Defaulting to CW Alarms if possible...'
             );
           return false;
         }
-        // Extract IP addresses from the Prometheus response
+
         const ipAddresses = response.data.result.map((item: any) => {
           const instance = item.metric.instance;
-          const ipAddr = instance.split(':')[0]; // Strip out the port
+          const ipAddr = instance.split(':')[0];
           return ipAddr;
         });
+
         log
           .info()
           .str('serviceType', serviceType)
@@ -384,7 +439,7 @@ export async function queryPrometheusForService(
           .str('Prometheus Workspace ID', promWorkspaceID)
           .str('ipAddresses', JSON.stringify(ipAddresses))
           .msg('IP addresses extracted from Prometheus response.');
-        // Check if the service identifier matches any of the IP addresses
+
         return ipAddresses.includes(serviceIdentifier);
       }
       // Add more cases here for other service types
@@ -397,7 +452,14 @@ export async function queryPrometheusForService(
       }
     }
   } catch (error) {
-    log.error().err(error).msg('Error querying Prometheus:');
+    log
+      .error()
+      .err(error)
+      .str('serviceType', serviceType)
+      .str('serviceIdentifier', serviceIdentifier)
+      .str('Prometheus Workspace ID', promWorkspaceID)
+      .str('region', region)
+      .msg('Error querying Prometheus');
     return false;
   }
 }
@@ -416,7 +478,8 @@ export async function isPromEnabled(
   tags: {[key: string]: string}
 ): Promise<boolean> {
   try {
-    if (tags['Prometheus'] && tags['Prometheus'] === 'true') {
+    const prometheusTag = tags['Prometheus'];
+    if (prometheusTag === 'true') {
       log
         .info()
         .str('instanceId', instanceId)
@@ -429,16 +492,24 @@ export async function isPromEnabled(
         promWorkspaceId,
         region
       );
+      /* The following conditional is used to check if the useProm variable is true or false. This will be used to
+      determine if metrics are being sent to Prometheus. Specifically, since we use the privet IP address of the instance
+      to verify we can match up instances with alarms, this also confirms we are abel to pull the required metadata to
+      create alarms for the instances that are triggering the lambda.
+       */
+      if (!useProm) {
+        log
+          .warn()
+          .str('instanceId', instanceId)
+          .msg('Metrics are not being sent to Prometheus');
+        return false;
+      }
       log
         .info()
         .str('instanceId', instanceId)
         .msg(`Prometheus metrics enabled=${useProm}`);
-      return true; //this will be used for the useProm variable once we finish testing the inital logic
-    } else if (
-      (tags['Prometheus'] && tags['Prometheus'] === 'false') ||
-      !tags['Prometheus'] ||
-      (tags['Prometheus'] !== 'true' && tags['Prometheus'] !== 'false')
-    ) {
+      return true; //this will be used for the useProm variable once we finish testing the initial logic
+    } else if (prometheusTag === 'false' || !prometheusTag) {
       log
         .info()
         .str('instanceId', instanceId)

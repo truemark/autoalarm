@@ -10,17 +10,32 @@ import {
   PolicyStatement,
   Effect,
 } from 'aws-cdk-lib/aws-iam';
+import {Stack} from 'aws-cdk-lib';
 
 export class AutoAlarmConstruct extends Construct {
   constructor(scope: Construct, id: string, props: ExtendedAutoAlarmProps) {
     super(scope, id);
 
+    //the following four consts are used to pass the correct ARN for whichever prometheus ID is being used as well as to the lambda.
     const prometheusWorkspaceId = props.prometheusWorkspaceId || '';
+    const accountId = Stack.of(this).account;
+    const region = Stack.of(this).region;
+    const prometheusArn = `arn:aws:aps:${region}:${accountId}:workspace/${prometheusWorkspaceId}`;
+
     // Define the IAM role with specific permissions for the Lambda function
     const lambdaExecutionRole = new Role(this, 'LambdaExecutionRole', {
       assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
       description: 'Execution role for AutoAlarm Lambda function',
     });
+
+    // Attach policies for Prometheus
+    lambdaExecutionRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['aps:QueryMetrics'],
+        resources: [prometheusArn],
+      })
+    );
 
     // Attach policies for EC2 and CloudWatch
     lambdaExecutionRole.addToPolicy(

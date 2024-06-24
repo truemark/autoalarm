@@ -11,7 +11,7 @@ import {
 } from '@aws-sdk/client-cloudwatch';
 import * as logging from '@nr1e/logging';
 import {AlarmClassification, ValidInstanceState} from './enums';
-import {AlarmProps, Tag, Dimension, PathMetrics} from './types';
+import {AlarmProps, Tag, Dimension, PathMetrics} from './types'; //need to investigate what we were doing with Dimension.
 import {
   doesAlarmExist,
   createOrUpdateAlarm,
@@ -27,27 +27,36 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({});
 const prometheusWorkspaceId: string = process.env.PROMETHEUS_WORKSPACE_ID || '';
 const region: string = process.env.AWS_REGION || '';
 
-// The following two consts are used to dynamically identify the alarm configuration tags and apply them to each alarm
+// The following const and function are used to dynamically identify the alarm configuration tags and apply them to each alarm
 // that requires those configurations. The default threshold is set to 90 for critical alarms and 80 for warning alarms.
+// The main handler will call these alarm function twice, once for each alarm classification type 'Critical' and 'Warning'.
 const defaultThreshold = (type: AlarmClassification) =>
   type === 'CRITICAL' ? 90 : 80;
 
-const getAlarmConfig = (
+async function getAlarmConfig(
   instanceId: string,
   type: AlarmClassification,
   metric: string
-) => {
+): Promise<{
+  alarmName: string;
+  thresholdKey: string;
+  durationTimeKey: string;
+  durationPeriodsKey: string;
+  ec2Metadata: {platform: string | null; privateIp: string | null};
+}> {
   const thresholdKey = `autoalarm:${metric}-percent-above-${type.toLowerCase()}`;
   const durationTimeKey = `autoalarm:${metric}-percent-duration-time`;
   const durationPeriodsKey = `autoalarm:${metric}-percent-duration-periods`;
+  const ec2Metadata = await getInstanceDetails(instanceId);
 
   return {
     alarmName: `AutoAlarm-EC2-${instanceId}-${type}${metric}Utilization`,
     thresholdKey,
     durationTimeKey,
     durationPeriodsKey,
+    ec2Metadata,
   };
-};
+}
 
 // This function is used to get the storage paths and their associated dimensions from CloudWatch for our ManageStorageAlarmForInstance function
 async function getStoragePathsFromCloudWatch(
@@ -55,7 +64,7 @@ async function getStoragePathsFromCloudWatch(
   metricName: string
 ): Promise<PathMetrics> {
   // First, determine if the instance is running Windows
-  const instanceDetailProps = await getInstancePlatform(instanceId);
+  const instanceDetailProps = await getInstanceDetails(instanceId);
   const isWindows = instanceDetailProps.platform
     ? instanceDetailProps.platform.toLowerCase().includes('windows')
     : false;
@@ -128,10 +137,11 @@ async function getStoragePathsFromCloudWatch(
   return paths;
 }
 
-//this function is used to get the instance OS platform type
-async function getInstancePlatform(
+//this function is used to get the instance OS platform type for CW metrics specific to mem and storage and private IP
+// address for promQL queries
+async function getInstanceDetails(
   instanceId: string
-): Promise<{platform: string | null}> {
+): Promise<{platform: string | null; privateIp: string}> {
   try {
     const describeInstancesCommand = new DescribeInstancesCommand({
       InstanceIds: [instanceId],
@@ -147,29 +157,32 @@ async function getInstancePlatform(
       describeInstancesResponse.Reservations[0].Instances.length > 0
     ) {
       const instance = describeInstancesResponse.Reservations[0].Instances[0];
-      if (!instance.PlatformDetails) {
+      const platform = instance.PlatformDetails ?? null;
+      const privateIp = instance.PrivateIpAddress ?? '';
+
+      if (!platform) {
         log
           .info()
           .err('No platform details found')
           .str('instanceId', instanceId)
           .msg('No platform details found');
         throw new Error('No platform details found');
-      } else if (instance.PlatformDetails) {
+      } else {
         log
           .info()
           .str('instanceId', instanceId)
-          .str('platform', instance.PlatformDetails)
-          .msg('Platform details found');
+          .str('platform', platform)
+          .str('privateIp', privateIp)
+          .msg('EC2 instance details found');
       }
-      return {
-        platform: instance.PlatformDetails ?? null,
-      };
+
+      return {platform, privateIp};
     } else {
       log
         .info()
         .str('instanceId', instanceId)
         .msg('No reservations found or no instances in reservation');
-      return {platform: null};
+      return {platform: null, privateIp: ''};
     }
   } catch (error) {
     log
@@ -177,7 +190,7 @@ async function getInstancePlatform(
       .err(error)
       .str('instanceId', instanceId)
       .msg('Failed to fetch instance details');
-    return {platform: null};
+    return {platform: null, privateIp: ''};
   }
 }
 
@@ -187,19 +200,31 @@ export async function manageCPUUsageAlarmForInstance(
   tags: Tag,
   type: AlarmClassification
 ): Promise<void> {
-  //const usePrometheus = isPromEnabled('');
-  const {alarmName, thresholdKey, durationTimeKey, durationPeriodsKey} =
-    getAlarmConfig(instanceId, type, 'cpu');
+  const {
+    alarmName,
+    thresholdKey,
+    durationTimeKey,
+    durationPeriodsKey,
+    ec2Metadata,
+  } = await getAlarmConfig(instanceId, type, 'cpu');
+  const usePrometheus = await isPromEnabled(
+    instanceId,
+    'ec2',
+    ec2Metadata.privateIp ? ec2Metadata.privateIp : '',
+    prometheusWorkspaceId,
+    region,
+    tags
+  );
 
-  // if (usePrometheus) {
-  //   log
-  //     .info()
-  //     .str('instanceId', instanceId)
-  //     .msg(
-  //       'Prometheus metrics enabled. Skipping CloudWatch alarm creation and using Prometheus metrics instead' +
-  //         ` and prometheus workspace id is ${prometheusWorkspaceId}`
-  //     );
-  // }
+  if (usePrometheus) {
+    log
+      .info()
+      .str('instanceId', instanceId)
+      .msg(
+        'Prometheus metrics enabled. Skipping CloudWatch alarm creation and using Prometheus metrics instead' +
+          ` and prometheus workspace id is ${prometheusWorkspaceId}`
+      );
+  }
 
   const alarmProps: AlarmProps = {
     threshold: defaultThreshold(type),
@@ -226,16 +251,21 @@ export async function manageStorageAlarmForInstance(
   tags: Tag,
   type: AlarmClassification
 ): Promise<void> {
-  const instanceDetailProps = await getInstancePlatform(instanceId);
+  const {
+    alarmName,
+    thresholdKey,
+    durationTimeKey,
+    durationPeriodsKey,
+    ec2Metadata,
+  } = await getAlarmConfig(instanceId, type, 'storage');
   // Check if the platform is Windows
-  const isWindows = instanceDetailProps.platform
-    ? instanceDetailProps.platform.toLowerCase().includes('windows')
+  const isWindows = ec2Metadata.platform
+    ? ec2Metadata.platform.toLowerCase().includes('windows')
     : false;
   const metricName = isWindows
     ? 'LogicalDisk % Free Space'
     : 'disk_used_percent';
-  const {alarmName, thresholdKey, durationTimeKey, durationPeriodsKey} =
-    getAlarmConfig(instanceId, type, 'storage');
+
   //const usePrometheus = isPromEnabled('');
 
   // if (usePrometheus) {
@@ -296,16 +326,21 @@ export async function manageMemoryAlarmForInstance(
   tags: Tag,
   type: AlarmClassification
 ): Promise<void> {
-  const instanceDetailProps = await getInstancePlatform(instanceId);
+  const {
+    alarmName,
+    thresholdKey,
+    durationTimeKey,
+    durationPeriodsKey,
+    ec2Metadata,
+  } = await getAlarmConfig(instanceId, type, 'memory');
   // Check if the platform is Windows
-  const isWindows = instanceDetailProps.platform
-    ? instanceDetailProps.platform.toLowerCase().includes('windows')
+  const privateIp = ec2Metadata.privateIp;
+  const isWindows = ec2Metadata.platform
+    ? ec2Metadata.platform.toLowerCase().includes('windows')
     : false;
   const metricName = isWindows
     ? 'Memory % Committed Bytes In Use'
     : 'mem_used_percent';
-  const {alarmName, thresholdKey, durationTimeKey, durationPeriodsKey} =
-    getAlarmConfig(instanceId, type, 'memory');
 
   //const usePrometheus = isPromEnabled('');
 
