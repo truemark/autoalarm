@@ -18,6 +18,7 @@ import {
   getCWAlarmsForInstance,
   deleteCWAlarm,
   isPromEnabled,
+  managePromNameSpaceAlarms,
 } from './alarm-tools';
 
 const log: logging.Logger = logging.getRootLogger();
@@ -25,7 +26,6 @@ const ec2Client: EC2Client = new EC2Client({});
 const cloudWatchClient: CloudWatchClient = new CloudWatchClient({});
 //the follwing environment variables are used to get the prometheus workspace id and the region
 const prometheusWorkspaceId: string = process.env.PROMETHEUS_WORKSPACE_ID || '';
-const region: string = process.env.AWS_REGION || '';
 
 // The following const and function are used to dynamically identify the alarm configuration tags and apply them to each alarm
 // that requires those configurations. The default threshold is set to 90 for critical alarms and 80 for warning alarms.
@@ -212,38 +212,69 @@ export async function manageCPUUsageAlarmForInstance(
     'ec2',
     ec2Metadata.privateIp ? ec2Metadata.privateIp : '',
     prometheusWorkspaceId,
-    region,
     tags
   );
 
   if (usePrometheus) {
-    log
-      .info()
-      .str('instanceId', instanceId)
-      .msg(
-        'Prometheus metrics enabled. Skipping CloudWatch alarm creation and using Prometheus metrics instead' +
-          ` and prometheus workspace id is ${prometheusWorkspaceId}`
+    try {
+      log
+        .info()
+        .str('instanceId', instanceId)
+        .msg(
+          'Prometheus metrics enabled. Skipping CloudWatch alarm creation and using Prometheus metrics instead' +
+            ` and prometheus workspace id is ${prometheusWorkspaceId}`
+        );
+      await managePromNameSpaceAlarms(
+        prometheusWorkspaceId,
+        'ec2',
+        'cpu',
+        alarmName,
+        'up'
       );
+    } catch (e) {
+      log
+        .info()
+        .err(e)
+        .msg('Error managing Prometheus alarms. Falling back to CW Alarms');
+      const alarmProps: AlarmProps = {
+        threshold: defaultThreshold(type),
+        period: 60,
+        namespace: 'AWS/EC2',
+        evaluationPeriods: 5,
+        metricName: 'CPUUtilization',
+        dimensions: [{Name: 'InstanceId', Value: instanceId}],
+      };
+
+      await createOrUpdateCWAlarm(
+        alarmName,
+        instanceId,
+        alarmProps,
+        tags,
+        thresholdKey,
+        durationTimeKey,
+        durationPeriodsKey
+      );
+    }
+  } else {
+    const alarmProps: AlarmProps = {
+      threshold: defaultThreshold(type),
+      period: 60,
+      namespace: 'AWS/EC2',
+      evaluationPeriods: 5,
+      metricName: 'CPUUtilization',
+      dimensions: [{Name: 'InstanceId', Value: instanceId}],
+    };
+
+    await createOrUpdateCWAlarm(
+      alarmName,
+      instanceId,
+      alarmProps,
+      tags,
+      thresholdKey,
+      durationTimeKey,
+      durationPeriodsKey
+    );
   }
-
-  const alarmProps: AlarmProps = {
-    threshold: defaultThreshold(type),
-    period: 60,
-    namespace: 'AWS/EC2',
-    evaluationPeriods: 5,
-    metricName: 'CPUUtilization',
-    dimensions: [{Name: 'InstanceId', Value: instanceId}],
-  };
-
-  await createOrUpdateCWAlarm(
-    alarmName,
-    instanceId,
-    alarmProps,
-    tags,
-    thresholdKey,
-    durationTimeKey,
-    durationPeriodsKey
-  );
 }
 
 export async function manageStorageAlarmForInstance(
