@@ -14,9 +14,9 @@ import {AlarmClassification, ValidInstanceState} from './enums';
 import {AlarmProps, Tag, Dimension, PathMetrics} from './types'; //need to investigate what we were doing with Dimension.
 import {
   doesAlarmExist,
-  createOrUpdateAlarm,
-  getAlarmsForInstance,
-  deleteAlarm,
+  createOrUpdateCWAlarm,
+  getCWAlarmsForInstance,
+  deleteCWAlarm,
   isPromEnabled,
 } from './alarm-tools';
 
@@ -235,7 +235,7 @@ export async function manageCPUUsageAlarmForInstance(
     dimensions: [{Name: 'InstanceId', Value: instanceId}],
   };
 
-  await createOrUpdateAlarm(
+  await createOrUpdateCWAlarm(
     alarmName,
     instanceId,
     alarmProps,
@@ -301,7 +301,7 @@ export async function manageStorageAlarmForInstance(
         dimensions: dimensions_props, // Use the dimensions directly from storage Paths
       };
 
-      await createOrUpdateAlarm(
+      await createOrUpdateCWAlarm(
         storageAlarmName,
         instanceId,
         alarmProps,
@@ -359,7 +359,7 @@ export async function manageMemoryAlarmForInstance(
   //    .str('instanceId', instanceId)
   //    .msg('Prometheus metrics enabled. Skipping CloudWatch alarm creation');
   //}
-  await createOrUpdateAlarm(
+  await createOrUpdateCWAlarm(
     alarmName,
     instanceId,
     alarmProps,
@@ -407,7 +407,7 @@ export async function createStatusAlarmForInstance(
 
 async function checkAndManageStatusAlarm(instanceId: string, tags: Tag) {
   if (tags['autoalarm:disabled'] === 'true') {
-    deleteAlarm(instanceId, 'StatusCheckFailed');
+    deleteCWAlarm(instanceId, 'StatusCheckFailed');
     log.info().msg('Status check alarm creation skipped due to tag settings.');
   } else if (tags['autoalarm:disabled'] === 'false') {
     // Create status check alarm if not disabled
@@ -446,12 +446,12 @@ export async function manageActiveInstanceAlarms(
 
 export async function manageInactiveInstanceAlarms(instanceId: string) {
   try {
-    const activeAutoAlarms: string[] = await getAlarmsForInstance(
+    const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
       'ec2',
       instanceId
     );
     await Promise.all(
-      activeAutoAlarms.map(alarmName => deleteAlarm(instanceId, alarmName))
+      activeAutoAlarms.map(alarmName => deleteCWAlarm(instanceId, alarmName))
     );
   } catch (e) {
     log.error().err(e).msg(`Error deleting alarms: ${e}`);

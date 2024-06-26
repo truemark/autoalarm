@@ -20,7 +20,7 @@ export async function doesAlarmExist(alarmName: string): Promise<boolean> {
   return (response.MetricAlarms?.length ?? 0) > 0;
 }
 
-export async function needsUpdate(
+export async function CWAlarmNeedsUpdate(
   alarmName: string,
   newProps: AlarmProps
 ): Promise<boolean> {
@@ -146,7 +146,7 @@ export function configureAlarmPropsFromTags(
   }
 }
 
-export async function createOrUpdateAlarm(
+export async function createOrUpdateCWAlarm(
   alarmName: string,
   instanceId: string,
   props: AlarmProps,
@@ -173,7 +173,10 @@ export async function createOrUpdateAlarm(
     throw new Error('Error configuring alarm props from tags');
   }
   const alarmExists = await doesAlarmExist(alarmName);
-  if (!alarmExists || (alarmExists && (await needsUpdate(alarmName, props)))) {
+  if (
+    !alarmExists ||
+    (alarmExists && (await CWAlarmNeedsUpdate(alarmName, props)))
+  ) {
     try {
       await cloudWatchClient.send(
         new PutMetricAlarmCommand({
@@ -210,8 +213,8 @@ export async function createOrUpdateAlarm(
   }
 }
 
-// This function is used to grab all active auto alarms for a given instance and then pushes those to the activeAutoAlarms array
-// which it returns to be used when the deleteAlarm function is called from within service module files.
+// This function is used to grab all active CW auto alarms for a given instance and then pushes those to the activeAutoAlarms array
+// which it returns to be used when the deleteCWAlarm function is called from within service module files.
 // service identifier should be lowercase e.g. ec2, ecs, eks, rds, etc.
 // instance identifier should be the identifier that is use for cloudwatch to pull alarm information. When add a new service
 // list it here below:
@@ -219,7 +222,7 @@ export async function createOrUpdateAlarm(
 // ecs: ...
 // eks: ...
 // rds: ...
-export async function getAlarmsForInstance(
+export async function getCWAlarmsForInstance(
   serviceIdentifier: string,
   instanceIdentifier: string
 ): Promise<string[]> {
@@ -264,7 +267,7 @@ export async function getAlarmsForInstance(
   }
 }
 
-export async function deleteAlarm(
+export async function deleteCWAlarm(
   alarmName: string,
   instanceIdentifier: string
 ): Promise<void> {
