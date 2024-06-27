@@ -8,7 +8,6 @@ import {
   liveStates,
   deadStates,
 } from './ec2-modules';
-import {AlarmClassification} from './enums';
 
 const log = logging.getRootLogger();
 
@@ -34,9 +33,8 @@ async function processEC2Event(event: any) {
   if (instanceId && liveStates.has(state)) {
     //checking our liveStates set to see if the instance is in a state that we should be managing alarms for.
     //we are iterating over the AlarmClassification enum to manage alarms for each classification: 'Critical'|'Warning'.
-    for (const classification of Object.values(AlarmClassification)) {
-      await manageActiveInstanceAlarms(instanceId, tags, classification);
-    }
+
+    await manageActiveInstanceAlarms(instanceId, tags);
   } else if (deadStates.has(state)) {
     // TODO Do not delete alarms just because the instance is shutdown. You do delete them on terminate.
     await manageInactiveInstanceAlarms(instanceId);
@@ -48,9 +46,7 @@ async function processTagEvent(event: any) {
   //checking our liveStates set to see if the instance is in a state that we should be managing alarms for.
   if (instanceId && liveStates.has(state)) {
     const tags = await fetchInstanceTags(instanceId);
-    for (const classification of Object.values(AlarmClassification)) {
-      await manageActiveInstanceAlarms(instanceId, tags, classification);
-    }
+    await manageActiveInstanceAlarms(instanceId, tags);
   }
 }
 

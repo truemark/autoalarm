@@ -976,3 +976,85 @@ export async function managePromNameSpaceAlarms(
 
   log.info().msg('managePromNameSpaceAlarms completed');
 }
+
+// Function to delete Prometheus rules for a service. For this function, the folloiwng service identifiers are used:
+// ec2, ecs, eks, rds, etc. Lower case.
+// ec2 - instanceID
+// ecs - ...
+// eks - ...
+// rds - ...
+export async function deletePromRulesForService(
+  promWorkspaceId: string,
+  service: string,
+  serviceIdentifier: string
+): Promise<void> {
+  log
+    .info()
+    .str('promWorkspaceId', promWorkspaceId)
+    .str('service', service)
+    .str('serviceIdentifier', serviceIdentifier)
+    .msg('Starting deletePromRulesForService');
+
+  try {
+    const namespace = 'AutoAlarm';
+    const ruleGroupName = 'AutoAlarm';
+
+    // Describe the namespace to get its details
+    const nsDetails = await describeNamespace(promWorkspaceId, namespace);
+    if (!nsDetails || !isNamespaceDetails(nsDetails)) {
+      log
+        .warn()
+        .str('namespace', namespace)
+        .msg('Invalid or empty namespace details');
+      return;
+    }
+
+    const ruleGroup = nsDetails.groups.find(
+      (rg): rg is RuleGroup => rg.name === ruleGroupName
+    );
+
+    if (!ruleGroup) {
+      log
+        .info()
+        .str('ruleGroupName', ruleGroupName)
+        .msg('Rule group not found, nothing to delete');
+      return;
+    }
+
+    // Filter out rules associated with the instanceId
+    ruleGroup.rules = ruleGroup.rules.filter(
+      rule => !rule.alert.includes(serviceIdentifier)
+    );
+
+    if (ruleGroup.rules.length === 0) {
+      // If no rules are left, remove the rule group from the namespace
+      nsDetails.groups = nsDetails.groups.filter(
+        rg => rg.name !== ruleGroupName
+      );
+      log
+        .info()
+        .str('ruleGroupName', ruleGroupName)
+        .msg('No rules left, removing the rule group');
+    }
+
+    const updatedYaml = yaml.dump(nsDetails);
+    const updatedData = new TextEncoder().encode(updatedYaml);
+
+    const putCommand = new PutRuleGroupsNamespaceCommand({
+      workspaceId: promWorkspaceId,
+      name: namespace,
+      data: updatedData,
+    });
+
+    await client.send(putCommand);
+    log
+      .info()
+      .str('namespace', namespace)
+      .str('instanceId', serviceIdentifier)
+      .msg('Deleted rules associated with the instance');
+    await wait(90000); // Wait for 90 seconds after deleting the rules
+  } catch (error) {
+    log.error().err(error).msg('Error deleting rules');
+    throw error;
+  }
+}

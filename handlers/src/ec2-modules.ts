@@ -19,6 +19,7 @@ import {
   deleteCWAlarm,
   isPromEnabled,
   managePromNameSpaceAlarms,
+  deletePromRulesForService,
 } from './alarm-tools';
 
 const log: logging.Logger = logging.getRootLogger();
@@ -29,7 +30,7 @@ const prometheusWorkspaceId: string = process.env.PROMETHEUS_WORKSPACE_ID || '';
 
 // The following const and function are used to dynamically identify the alarm configuration tags and apply them to each alarm
 // that requires those configurations. The default threshold is set to 90 for critical alarms and 80 for warning alarms.
-// The main handler will call these alarm function twice, once for each alarm classification type 'Critical' and 'Warning'.
+// The manageActiveInstances function will call these alarm functions twice, once for each alarm classification type 'Critical' and 'Warning'.
 const defaultThreshold = (type: AlarmClassification) =>
   type === 'CRITICAL' ? 90 : 80;
 
@@ -486,8 +487,7 @@ async function checkAndManageStatusAlarm(instanceId: string, tags: Tag) {
  */
 export async function manageActiveInstanceAlarms(
   instanceId: string,
-  tags: Tag,
-  classification: AlarmClassification
+  tags: Tag
 ) {
   await checkAndManageStatusAlarm(instanceId, tags);
   // Loop through classifications and manage alarms
@@ -509,9 +509,10 @@ export async function manageInactiveInstanceAlarms(instanceId: string) {
       'ec2',
       instanceId
     );
-    await Promise.all(
-      activeAutoAlarms.map(alarmName => deleteCWAlarm(instanceId, alarmName))
-    );
+    await Promise.all([
+      activeAutoAlarms.map(alarmName => deleteCWAlarm(instanceId, alarmName)),
+      deletePromRulesForService(prometheusWorkspaceId, 'ec2', instanceId),
+    ]);
   } catch (e) {
     log.error().err(e).msg(`Error deleting alarms: ${e}`);
     throw new Error(`Error deleting alarms: ${e}`);
