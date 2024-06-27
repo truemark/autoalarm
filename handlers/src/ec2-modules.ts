@@ -229,7 +229,9 @@ export async function manageCPUUsageAlarmForInstance(
         'ec2',
         'cpu',
         alarmName,
-        'up'
+        'up', // change query to get cpu usage after testing
+        '5m',
+        type
       );
     } catch (e) {
       log
@@ -463,15 +465,15 @@ export async function manageActiveInstanceAlarms(
 ) {
   await checkAndManageStatusAlarm(instanceId, tags);
   // Loop through classifications and manage alarms
-  try {
-    await Promise.all([
-      manageCPUUsageAlarmForInstance(instanceId, tags, classification),
-      manageStorageAlarmForInstance(instanceId, tags, classification),
-      manageMemoryAlarmForInstance(instanceId, tags, classification),
-    ]);
-  } catch (e) {
-    log.error().err(e).msg('Error managing alarms for instance');
-    throw new Error(`Error managing alarms for instance: ${e}`);
+  for (const classification of Object.values(AlarmClassification)) {
+    try {
+      await manageCPUUsageAlarmForInstance(instanceId, tags, classification);
+      await manageStorageAlarmForInstance(instanceId, tags, classification);
+      await manageMemoryAlarmForInstance(instanceId, tags, classification);
+    } catch (e) {
+      log.error().err(e).msg('Error managing alarms for instance');
+      throw new Error(`Error managing alarms for instance: ${e}`);
+    }
   }
 }
 
