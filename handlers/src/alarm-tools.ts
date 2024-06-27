@@ -545,41 +545,25 @@ export async function isPromEnabled(
   }
 }
 
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+// Function to list namespaces
 const listNamespaces = async (
   workspaceId: string
 ): Promise<RuleGroupsNamespaceSummary[]> => {
-  const maxRetries = 2;
-  const retryDelay = 60000; // 60 seconds
   const command = new ListRuleGroupsNamespacesCommand({workspaceId});
-  let retryCount = 0;
-
-  while (retryCount < maxRetries) {
-    try {
-      const response = await client.send(command);
-      log
-        .info()
-        .str('response', JSON.stringify(response))
-        .msg('Successfully listed namespaces');
-      return response.ruleGroupsNamespaces ?? [];
-    } catch (error) {
-      retryCount++;
-      log
-        .warn()
-        .num('retryCount', retryCount)
-        .msg(
-          `Error listing namespaces, retrying in ${retryDelay / 1000} seconds`
-        );
-      await new Promise(resolve => setTimeout(resolve, retryDelay));
-      if (retryCount === maxRetries) {
-        log
-          .error()
-          .err(error)
-          .msg('Error listing namespaces after maximum retries');
-        throw error;
-      }
-    }
+  log.info().str('workspaceId', workspaceId).msg('Listing namespaces');
+  try {
+    const response = await client.send(command);
+    log
+      .info()
+      .str('response', JSON.stringify(response))
+      .msg('Successfully listed namespaces');
+    return response.ruleGroupsNamespaces ?? [];
+  } catch (error) {
+    log.error().err(error).msg('Error listing namespaces');
+    await wait(60000); // Wait for 60 seconds before retrying
+    return listNamespaces(workspaceId);
   }
-  return [];
 };
 
 const describeNamespace = async (workspaceId: string, namespace: string) => {
@@ -630,21 +614,31 @@ const describeNamespace = async (workspaceId: string, namespace: string) => {
   }
 };
 
-const createNamespace = async (workspaceId: string, namespace: string) => {
+// Function to create a new namespace
+const createNamespace = async (
+  workspaceId: string,
+  namespace: string,
+  alarmName: string,
+  alarmQuery: string,
+  duration: string,
+  severityType: string
+) => {
   const initialNamespace: NamespaceDetails = {
     groups: [
       {
-        name: 'initial_group',
+        name: 'AutoAlarm',
         rules: [
           {
-            alert: 'placeholder_alert',
-            expr: 'vector(1)',
-            for: '1m',
-            labels: {severity: 'info'},
+            alert: alarmName,
+            expr: alarmQuery,
+            for: duration,
+            labels: {
+              severity: severityType,
+            },
             annotations: {
-              summary: 'Placeholder alert',
+              summary: `${alarmName} alert triggered`,
               description:
-                'This is a placeholder alert to initialize the namespace.',
+                'The alert was triggered based on the specified query',
             },
           },
         ],
@@ -668,6 +662,7 @@ const createNamespace = async (workspaceId: string, namespace: string) => {
       .info()
       .str('namespace', namespace)
       .msg('Created new Prometheus namespace');
+    await wait(90000); // Wait for 90 seconds after creating the namespace
   } catch (error) {
     log.error().err(error).msg('Error creating namespace');
     throw error;
@@ -684,6 +679,7 @@ function isNamespaceDetails(obj: unknown): obj is NamespaceDetails {
   );
 }
 
+// Function to update or create a rule group within a namespace
 const putRuleGroupNamespace = async (
   workspaceId: string,
   namespace: string,
@@ -691,7 +687,7 @@ const putRuleGroupNamespace = async (
   alarmName: string,
   alarmQuery: string,
   duration: string,
-  severityType: AlarmClassification
+  severityType: string
 ): Promise<void> => {
   log
     .info()
@@ -701,8 +697,8 @@ const putRuleGroupNamespace = async (
     .str('alarmName', alarmName)
     .msg('Starting putRuleGroupNamespace');
 
-  const maxRetries = 5;
-  const retryDelay = 5000;
+  const maxRetries = 3;
+  const retryDelay = 90000;
   const command = new DescribeRuleGroupsNamespaceCommand({
     workspaceId,
     name: namespace,
@@ -733,20 +729,7 @@ const putRuleGroupNamespace = async (
           (rule): rule is Rule => rule.alert === alarmName
         );
         if (existingRuleIndex !== -1) {
-          // Remove the existing rule and add the new rule
-          ruleGroup.rules.splice(existingRuleIndex, 1, {
-            alert: alarmName,
-            expr: alarmQuery,
-            for: duration,
-            labels: {
-              severity: severityType,
-            },
-            annotations: {
-              summary: `${alarmName} alert triggered`,
-              description:
-                'The alert was triggered based on the specified query',
-            },
-          });
+          ruleGroup.rules[existingRuleIndex].expr = alarmQuery;
         } else {
           ruleGroup.rules.push({
             alert: alarmName,
@@ -777,13 +760,13 @@ const putRuleGroupNamespace = async (
           .info()
           .str('namespace', namespace)
           .msg('Updated rule group namespace');
+        await wait(90000); // Wait for 90 seconds after adding or updating a rule
         return;
       } else {
         log
           .warn()
           .str('namespace', namespace)
           .msg('No RuleGroupsNamespace found');
-        return; // Exit if no namespace is found
       }
     } catch (error) {
       retryCount++;
@@ -791,20 +774,20 @@ const putRuleGroupNamespace = async (
         .warn()
         .str('namespace', namespace)
         .num('retryCount', retryCount)
-        .msg('Error encountered, retrying after delay');
-      await new Promise(resolve => setTimeout(resolve, retryDelay));
+        .str('error', JSON.stringify(error))
+        .msg(
+          'Namespace is updating or running into another issue, retrying after delay'
+        );
+      await wait(retryDelay);
       if (retryCount === maxRetries) {
         log.error().err(error).msg('Error putting rule group namespace');
         throw error;
       }
     }
   }
-
-  throw new Error(
-    `Failed to update rule group namespace ${namespace} after ${maxRetries} retries`
-  );
 };
 
+// Function to manage Prometheus namespace alarms
 export async function managePromNameSpaceAlarms(
   promWorkspaceId: string,
   service: string,
@@ -812,7 +795,7 @@ export async function managePromNameSpaceAlarms(
   alarmName: string,
   alarmQuery: string,
   duration: string,
-  severityType: AlarmClassification
+  severityType: string
 ) {
   log
     .info()
@@ -823,37 +806,50 @@ export async function managePromNameSpaceAlarms(
     .str('alarmQuery', alarmQuery)
     .msg('Starting managePromNameSpaceAlarms');
 
-  const nsDelay = 60000; // 60 seconds to give namespace time to create if needed
-  // List all existing namespaces
-  const namespacesResult = await listNamespaces(promWorkspaceId);
-  const rootNamespace = `AutoAlarm-${service.toUpperCase()}-${metric.toUpperCase()}`;
+  // List all existing namespaces and count total rules
+  const namespaces = await listNamespaces(promWorkspaceId);
+  const rootNamespace = 'AutoAlarm';
 
-  // Type guard to ensure namespacesResult is an array
-  if (!Array.isArray(namespacesResult)) {
-    log
-      .error()
-      .str('namespacesResult', JSON.stringify(namespacesResult))
-      .msg('Expected an array of namespaces, but received a different type');
-    return;
-  }
-
-  const namespaces = namespacesResult;
   log
     .info()
     .num('totalNamespaces', namespaces.length)
     .str('rootNamespace', rootNamespace)
     .msg('Retrieved namespaces');
 
-  // If no namespaces exist, create a new one
-  if (namespaces.length === 0) {
-    log.info().msg('No namespaces found. Creating a new namespace.');
-    const newNamespace = `${rootNamespace}-1`;
-    await new Promise(resolve => setTimeout(resolve, nsDelay));
-    await createNamespace(promWorkspaceId, newNamespace);
-    await putRuleGroupNamespace(
+  let totalWSRules = 0;
+  // Count total rules across all namespaces
+  for (const ns of namespaces) {
+    const nsDetails = await describeNamespace(
       promWorkspaceId,
-      newNamespace,
-      `AutoAlarm-${service}-${metric}`,
+      ns.name as string
+    );
+    if (nsDetails && isNamespaceDetails(nsDetails)) {
+      totalWSRules += nsDetails.groups.reduce(
+        (count, group) => count + group.rules.length,
+        0
+      );
+    }
+  }
+  log.info().num('totalWSRules', totalWSRules).msg('Total rules in workspace');
+
+  // Check if total rules for workspace has less than 2000 rules
+  if (totalWSRules >= 2000) {
+    log
+      .error()
+      .msg('The workspace has 2000 or more rules. Halting Prometheus logic.');
+    throw new Error(
+      'The workspace has 2000 or more rules. Halting and falling back to CW Alarms.'
+    );
+  }
+
+  // Check if AutoAlarm namespace exists
+  const autoAlarmNamespace = namespaces.find(ns => ns.name === rootNamespace);
+
+  if (!autoAlarmNamespace) {
+    log.info().msg('No AutoAlarm namespace found. Creating a new namespace.');
+    await createNamespace(
+      promWorkspaceId,
+      rootNamespace,
       alarmName,
       alarmQuery,
       duration,
@@ -861,187 +857,111 @@ export async function managePromNameSpaceAlarms(
     );
     log
       .info()
-      .str('newNamespace', newNamespace)
+      .str('namespace', rootNamespace)
       .msg('Created new namespace and added rule');
     return;
   }
 
-  let maxNamespaceIndex = 0;
-  const ruleGroupName = `AutoAlarm-${service}-${metric}`;
-  let updated = false;
-
-  // Iterate through existing namespaces
-  for (const ns of namespaces) {
-    if (ns.name && ns.name.startsWith(rootNamespace)) {
-      log.info().str('namespace', ns.name).msg('Checking namespace');
-
-      // Keep track of the highest namespace index
-      const nsIndex = parseInt(ns.name.replace(`${rootNamespace}-`, ''), 10);
-      if (!isNaN(nsIndex) && nsIndex > maxNamespaceIndex) {
-        maxNamespaceIndex = nsIndex;
-        log
-          .info()
-          .num('maxNamespaceIndex', maxNamespaceIndex)
-          .msg('Updated maxNamespaceIndex');
-      }
-
-      // Describe the namespace to get its details
-      const nsDetails = await describeNamespace(promWorkspaceId, ns.name);
-      if (!nsDetails || !isNamespaceDetails(nsDetails)) {
-        log
-          .warn()
-          .str('namespace', ns.name)
-          .msg('Invalid or empty namespace details, skipping');
-        continue;
-      }
-
-      const rules = nsDetails.groups || [];
-      log
-        .info()
-        .str('namespace', ns.name)
-        .num('rulesCount', rules.length)
-        .msg('Checking if namespace has <1000 rules');
-
-      // Check if the namespace has less than 1000 rules
-      if (rules.length < 1000) {
-        log
-          .info()
-          .str('namespace', ns.name)
-          .msg('Namespace has < 1000 rules, checking for rule group');
-
-        // Check if the rule group already exists
-        let ruleGroup = rules.find(
-          (rg): rg is RuleGroup => rg.name === ruleGroupName
-        );
-        if (ruleGroup) {
-          log
-            .info()
-            .str('ruleGroupName', ruleGroupName)
-            .msg(
-              'Rule group found. Checking if rule query values match updated tags...'
-            );
-
-          const existingRuleIndex = ruleGroup.rules.findIndex(
-            (rule): rule is Rule => rule.alert === alarmName
-          );
-          if (existingRuleIndex !== -1) {
-            log
-              .info()
-              .str('alarmName', alarmName)
-              .msg('Rule already exists, replacing it');
-            ruleGroup.rules.splice(existingRuleIndex, 1);
-            ruleGroup.rules.push({
-              alert: alarmName,
-              expr: alarmQuery,
-              for: duration,
-              labels: {severity: severityType},
-              annotations: {
-                summary: `${alarmName} alert triggered`,
-                description:
-                  'The alert was triggered based on the specified query',
-              },
-            });
-            await putRuleGroupNamespace(
-              promWorkspaceId,
-              ns.name,
-              ruleGroupName,
-              alarmName,
-              alarmQuery,
-              duration,
-              severityType
-            );
-            log
-              .info()
-              .str('alarmName', alarmName)
-              .msg('Rule replaced successfully');
-            updated = true;
-            break;
-          } else {
-            // Add new rule to the existing rule group
-            log.info().msg('Attempting to add new rule to existing rule group');
-            ruleGroup.rules.push({
-              alert: alarmName,
-              expr: alarmQuery,
-              for: duration,
-              labels: {severity: severityType},
-              annotations: {
-                summary: `${alarmName} alert triggered`,
-                description:
-                  'The alert was triggered based on the specified query',
-              },
-            });
-            await putRuleGroupNamespace(
-              promWorkspaceId,
-              ns.name,
-              ruleGroupName,
-              alarmName,
-              alarmQuery,
-              duration,
-              severityType
-            );
-            log
-              .info()
-              .str('alarmName', alarmName)
-              .msg('New rule added to existing group successfully');
-            updated = true;
-            break;
-          }
-        } else {
-          // Add new rule group with the alarm
-          log
-            .info()
-            .str('ruleGroupName', ruleGroupName)
-            .msg('Rule group not found. Adding new rule group with alarm');
-          ruleGroup = {
-            name: ruleGroupName,
-            rules: [
-              {
-                alert: alarmName,
-                expr: alarmQuery,
-                for: duration,
-                labels: {severity: severityType},
-                annotations: {
-                  summary: `${alarmName} alert triggered`,
-                  description:
-                    'The alert was triggered based on the specified query',
-                },
-              },
-            ],
-          };
-          nsDetails.groups.push(ruleGroup);
-          await putRuleGroupNamespace(
-            promWorkspaceId,
-            ns.name,
-            ruleGroupName,
-            alarmName,
-            alarmQuery,
-            duration,
-            severityType
-          );
-          log
-            .info()
-            .str('ruleGroupName', ruleGroupName)
-            .str('alarmName', alarmName)
-            .msg('New rule group and alarm added successfully');
-          updated = true;
-          break;
-        }
-      }
-    }
+  // Describe the AutoAlarm namespace to get its details
+  const nsDetails = await describeNamespace(promWorkspaceId, rootNamespace);
+  if (!nsDetails || !isNamespaceDetails(nsDetails)) {
+    log
+      .warn()
+      .str('namespace', rootNamespace)
+      .msg('Invalid or empty namespace details, skipping');
+    return;
   }
 
-  // Create a new namespace if no suitable namespace was found or rule was not updated
-  if (!updated) {
-    log.info().msg('No suitable namespace found. Creating a new namespace');
-    const newNamespace = `${rootNamespace}-${maxNamespaceIndex + 1}`;
-    await createNamespace(promWorkspaceId, newNamespace);
-    log.info().str('newNamespace', newNamespace).msg('New namespace created');
+  const rules =
+    nsDetails.groups.find((rg): rg is RuleGroup => rg.name === 'AutoAlarm')
+      ?.rules || [];
+  log
+    .info()
+    .str('namespace', rootNamespace)
+    .num('rulesCount', rules.length)
+    .msg('Checking if namespace has <1000 rules');
 
-    // Create the new rule group in the new namespace
+  // Check if the namespace has less than 1000 rules
+  if (rules.length >= 1000) {
+    log
+      .error()
+      .msg(
+        'The AutoAlarm namespace has 1000 or more rules. Halting Prometheus logic.'
+      );
+    throw new Error('The AutoAlarm namespace has 1000 or more rules.');
+  }
+
+  // Check if the rule group already exists
+  const ruleGroup = nsDetails.groups.find(
+    (rg): rg is RuleGroup => rg.name === 'AutoAlarm'
+  );
+
+  if (ruleGroup) {
+    log
+      .info()
+      .str('ruleGroupName', 'AutoAlarm')
+      .msg(
+        'Rule group found. Checking if rule query values match updated tags...'
+      );
+
+    const existingRuleIndex = ruleGroup.rules.findIndex(
+      (rule): rule is Rule => rule.alert === alarmName
+    );
+    if (existingRuleIndex !== -1) {
+      log
+        .info()
+        .msg(
+          'Tag values differ from existing rule query. Updating the rule...'
+        );
+      // Remove the existing rule and add the new rule
+      ruleGroup.rules.splice(existingRuleIndex, 1);
+    }
+
+    ruleGroup.rules.push({
+      alert: alarmName,
+      expr: alarmQuery,
+      for: duration,
+      labels: {severity: severityType},
+      annotations: {
+        summary: `${alarmName} alert triggered`,
+        description: 'The alert was triggered based on the specified query',
+      },
+    });
     await putRuleGroupNamespace(
       promWorkspaceId,
-      newNamespace,
-      ruleGroupName,
+      rootNamespace,
+      'AutoAlarm',
+      alarmName,
+      alarmQuery,
+      duration,
+      severityType
+    );
+    log.info().str('alarmName', alarmName).msg('Rule updated successfully');
+  } else {
+    // Add new rule group with the alarm
+    log
+      .info()
+      .str('ruleGroupName', 'AutoAlarm')
+      .msg('Rule group not found. Adding new rule group with alarm');
+    nsDetails.groups.push({
+      name: 'AutoAlarm',
+      rules: [
+        {
+          alert: alarmName,
+          expr: alarmQuery,
+          for: duration,
+          labels: {severity: severityType},
+          annotations: {
+            summary: `${alarmName} alert triggered`,
+            description: 'The alert was triggered based on the specified query',
+          },
+        },
+      ],
+    });
+    await putRuleGroupNamespace(
+      promWorkspaceId,
+      rootNamespace,
+      'AutoAlarm',
       alarmName,
       alarmQuery,
       duration,
@@ -1049,10 +969,9 @@ export async function managePromNameSpaceAlarms(
     );
     log
       .info()
-      .str('newNamespace', newNamespace)
-      .str('ruleGroupName', ruleGroupName)
+      .str('ruleGroupName', 'AutoAlarm')
       .str('alarmName', alarmName)
-      .msg('New rule group and alarm added to new namespace');
+      .msg('New rule group and alarm added successfully');
   }
 
   log.info().msg('managePromNameSpaceAlarms completed');
