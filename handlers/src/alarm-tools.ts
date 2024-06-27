@@ -1017,7 +1017,7 @@ export async function deletePromRulesForService(
       log
         .info()
         .str('ruleGroupName', ruleGroupName)
-        .msg('Rule group not found, nothing to delete');
+        .msg('Prometheus Rule group not found, nothing to delete');
       return;
     }
 
@@ -1034,7 +1034,7 @@ export async function deletePromRulesForService(
       log
         .info()
         .str('ruleGroupName', ruleGroupName)
-        .msg('No rules left, removing the rule group');
+        .msg('No Prometheus rules left, removing the rule group');
     }
 
     const updatedYaml = yaml.dump(nsDetails);
@@ -1050,11 +1050,16 @@ export async function deletePromRulesForService(
     log
       .info()
       .str('namespace', namespace)
+      .str('service', service)
+      .str('serviceIdentifier', serviceIdentifier)
+      .str('ruleGroupName', ruleGroupName)
       .str('instanceId', serviceIdentifier)
-      .msg('Deleted rules associated with the instance');
+      .msg('Deleted prometheus rules associated with the service.');
     await wait(90000); // Wait for 90 seconds after deleting the rules
   } catch (error) {
     log.error().err(error).msg('Error deleting rules');
     throw error;
   }
 }
+
+//TODO: add logic to set up alertmanager and send to sns topic
