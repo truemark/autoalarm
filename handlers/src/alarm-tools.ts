@@ -12,10 +12,11 @@ import {
   PutRuleGroupsNamespaceCommand,
   RuleGroupsNamespaceSummary,
 } from '@aws-sdk/client-amp';
+import * as yaml from 'js-yaml';
 import * as aws4 from 'aws4';
 import {defaultProvider} from '@aws-sdk/credential-provider-node';
 import * as logging from '@nr1e/logging';
-import {AlarmProps, Tag} from './types';
+import {AlarmProps, Tag, RuleGroup, NamespaceDetails} from './types';
 import * as https from 'https';
 
 const log = logging.getRootLogger();
@@ -306,7 +307,7 @@ export async function deleteCWAlarm(
 }
 
 /*
- * All Fucntion Below this point are used to interact with Promehteus and check
+ * All Fucntions Below this point are used to interact with Promehteus and check
  */
 
 // We use the following const to make a signed http request for the prom APIs following patterns found in this example:
@@ -481,10 +482,6 @@ export async function queryPrometheusForService(
   }
 }
 
-/* TODO:  as well as check if our promethuesWorkspaceId is not empty. Also check if namespace has 1k or more rules. If
-    it does, create an incremented name space (e.g. AutoAlarm-EC2) with a for loop and add the rules to the new namespace.
- */
-
 // Check if the Prometheus tag is set to true and if metrics are being sent to Prometheus
 export async function isPromEnabled(
   instanceId: string,
@@ -581,14 +578,31 @@ const describeNamespace = async (workspaceId: string, namespace: string) => {
       const dataStr = new TextDecoder().decode(
         response.ruleGroupsNamespace.data
       );
-      const nsDetails = JSON.parse(dataStr);
-      log
-        .info()
-        .str('namespace', namespace)
-        .str('details', JSON.stringify(nsDetails))
-        .msg('Namespace described');
-      return nsDetails;
+      log.info().str('rawData', dataStr).msg('Raw data from API');
+      try {
+        const nsDetails = yaml.load(dataStr) as NamespaceDetails;
+        if (!isNamespaceDetails(nsDetails)) {
+          throw new Error('Invalid namespace details structure');
+        }
+        log
+          .info()
+          .str('namespace', namespace)
+          .str('details', JSON.stringify(nsDetails))
+          .msg('Namespace described');
+        return nsDetails;
+      } catch (parseError) {
+        log
+          .error()
+          .err(parseError)
+          .str('rawData', dataStr)
+          .msg('Failed to parse namespace data');
+        throw parseError;
+      }
     }
+    log
+      .warn()
+      .str('namespace', namespace)
+      .msg('No data returned for namespace');
     return null;
   } catch (error) {
     log.error().err(error).msg('Error describing namespace');
@@ -618,13 +632,23 @@ const createNamespace = async (workspaceId: string, namespace: string) => {
   }
 };
 
+// Helper function to ensure that the object is a NamespaceDetails interface
+function isNamespaceDetails(obj: unknown): obj is NamespaceDetails {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    'groups' in obj &&
+    Array.isArray((obj as NamespaceDetails).groups)
+  );
+}
+
 const putRuleGroupNamespace = async (
   workspaceId: string,
   namespace: string,
   ruleGroupName: string,
   alarmName: string,
   alarmQuery: string
-) => {
+): Promise<void> => {
   log
     .info()
     .str('workspaceId', workspaceId)
@@ -646,11 +670,36 @@ const putRuleGroupNamespace = async (
       const dataStr = new TextDecoder().decode(
         response.ruleGroupsNamespace.data
       );
-      const nsDetails = JSON.parse(dataStr);
-      log.info().msg('Namespace details parsed');
+      log.info().str('rawData', dataStr).msg('Raw data from API');
+
+      let parsedData: unknown;
+      try {
+        parsedData = yaml.load(dataStr);
+        log
+          .info()
+          .str('parsedDetails', JSON.stringify(parsedData))
+          .msg('Data parsed');
+      } catch (parseError) {
+        log
+          .error()
+          .err(parseError)
+          .str('rawData', dataStr)
+          .msg('Failed to parse data');
+        throw parseError;
+      }
+
+      if (!isNamespaceDetails(parsedData)) {
+        log
+          .error()
+          .str('parsedData', JSON.stringify(parsedData))
+          .msg('Parsed data does not match expected structure');
+        throw new Error('Invalid namespace details structure');
+      }
+
+      const nsDetails: NamespaceDetails = parsedData;
 
       const existingRuleGroup = nsDetails.groups.find(
-        (group: any) => group.name === ruleGroupName
+        group => group.name === ruleGroupName
       );
       if (existingRuleGroup) {
         log
@@ -658,7 +707,7 @@ const putRuleGroupNamespace = async (
           .str('ruleGroupName', ruleGroupName)
           .msg('Existing rule group found');
         const existingRule = existingRuleGroup.rules.find(
-          (rule: any) => rule.name === alarmName
+          rule => rule.name === alarmName
         );
         if (existingRule) {
           log.info().str('alarmName', alarmName).msg('Existing rule found');
@@ -687,7 +736,9 @@ const putRuleGroupNamespace = async (
       }
 
       log.info().msg('Encoding updated namespace details');
-      const updatedData = new TextEncoder().encode(JSON.stringify(nsDetails));
+      const updatedYaml = yaml.dump(nsDetails);
+      log.info().str('updatedYaml', updatedYaml).msg('Updated YAML');
+      const updatedData = new TextEncoder().encode(updatedYaml);
       const putCommand = new PutRuleGroupsNamespaceCommand({
         workspaceId,
         name: namespace,
@@ -710,6 +761,7 @@ const putRuleGroupNamespace = async (
     throw error;
   }
 };
+
 export async function managePromNameSpaceAlarms(
   promWorkspaceId: string,
   service: string,
@@ -756,7 +808,14 @@ export async function managePromNameSpaceAlarms(
       }
 
       const nsDetails = await describeNamespace(promWorkspaceId, ns.name);
-      const rules = nsDetails?.groups || [];
+      if (!nsDetails || !isNamespaceDetails(nsDetails)) {
+        log
+          .warn()
+          .str('namespace', ns.name)
+          .msg('Invalid or empty namespace details');
+        continue;
+      }
+      const rules = nsDetails.groups || [];
       log
         .info()
         .str('namespace', ns.name)

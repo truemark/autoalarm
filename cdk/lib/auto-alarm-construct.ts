@@ -32,8 +32,17 @@ export class AutoAlarmConstruct extends Construct {
     lambdaExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
-        actions: ['aps:QueryMetrics'],
-        resources: [prometheusArn],
+        actions: [
+          'aps:QueryMetrics',
+          'aps:ListRuleGroupsNamespaces',
+          'aps:DescribeRuleGroupsNamespace',
+          'aps:CreateRuleGroupsNamespace',
+          'aps:PutRuleGroupsNamespace',
+        ],
+        resources: [
+          prometheusArn,
+          `arn:aws:aps:${region}:${accountId}:*/${prometheusWorkspaceId}/*`,
+        ],
       })
     );
 
