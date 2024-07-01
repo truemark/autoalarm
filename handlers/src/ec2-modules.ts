@@ -506,13 +506,11 @@ export async function manageActiveInstanceAlarms(
 export async function manageInactiveInstanceAlarms(instanceId: string) {
   try {
     const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
-      'ec2',
+      'EC2',
       instanceId
     );
-    await Promise.all([
-      activeAutoAlarms.map(alarmName => deleteCWAlarm(instanceId, alarmName)),
-      deletePromRulesForService(prometheusWorkspaceId, 'ec2', instanceId),
-    ]);
+    activeAutoAlarms.map(alarmName => deleteCWAlarm(alarmName, instanceId));
+    await deletePromRulesForService(prometheusWorkspaceId, 'ec2', instanceId);
   } catch (e) {
     log.error().err(e).msg(`Error deleting alarms: ${e}`);
     throw new Error(`Error deleting alarms: ${e}`);

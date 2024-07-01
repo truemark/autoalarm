@@ -228,12 +228,13 @@ export async function createOrUpdateCWAlarm(
 // This function is used to grab all active CW auto alarms for a given instance and then pushes those to the activeAutoAlarms array
 // which it returns to be used when the deleteCWAlarm function is called from within service module files.
 // service identifier should be lowercase e.g. ec2, ecs, eks, rds, etc.
-// instance identifier should be the identifier that is use for cloudwatch to pull alarm information. When add a new service
+// serviceIdentifier should be all UPPER CASE
+// instance identifier should be the identifier that is use for cloudwatch to pull alarm information. When adding a new service
 // list it here below:
-// ec2: instanceID
-// ecs: ...
-// eks: ...
-// rds: ...
+// EC2: instanceID
+// ECS: ...
+// EKS: ...
+// RDS: ...
 export async function getCWAlarmsForInstance(
   serviceIdentifier: string,
   instanceIdentifier: string
@@ -247,6 +248,15 @@ export async function getCWAlarmsForInstance(
     const alarms = describeAlarmsResponse.MetricAlarms || [];
 
     // Filter alarms by name prefix
+    log
+      .info()
+      .str('serviceIdentifier', serviceIdentifier)
+      .str('instanceIdentifier', instanceIdentifier)
+      .str(
+        'alarm prefix',
+        `AutoAlarm-${serviceIdentifier}-${instanceIdentifier}`
+      )
+      .msg('Filtering alarms by name');
     const instanceAlarms = alarms.filter(
       alarm =>
         alarm.AlarmName &&
@@ -1061,5 +1071,3 @@ export async function deletePromRulesForService(
     throw error;
   }
 }
-
-
