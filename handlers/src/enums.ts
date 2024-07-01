@@ -10,3 +10,28 @@ export enum AlarmClassification {
   Critical = 'CRITICAL',
   Warning = 'WARNING',
 }
+
+export enum ValidAlbState {
+  Active = 'active',
+  Provisioning = 'provisioning',
+  Failed = 'failed',
+  Deleted = 'deleted',
+}
+
+export enum ValidTargetGroupState {
+  Active = 'active',
+  Initial = 'initial',
+  Draining = 'draining',
+  Deleted = 'deleted',
+}
+
+export enum ValidSqsState {
+  Active = 'active',
+  Deleted = 'deleted',
+}
+
+export enum ValidOpenSearchState {
+  Active = 'active',
+  Processing = 'processing',
+  Deleted = 'deleted',
+}
