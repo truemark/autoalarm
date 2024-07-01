@@ -43,9 +43,14 @@ async function processEC2Event(event: any) {
 
 async function processTagEvent(event: any) {
   const {instanceId, state} = await getEC2IdAndState(event);
-  //checking our liveStates set to see if the instance is in a state that we should be managing alarms for.
-  if (instanceId && liveStates.has(state)) {
-    const tags = await fetchInstanceTags(instanceId);
+  const tags = await fetchInstanceTags(instanceId);
+  if (tags['autoalarm:disabled'] === 'true') {
+    await manageInactiveInstanceAlarms(instanceId);
+  } else if (
+    tags['autoalarm:disabled'] === 'false' &&
+    instanceId &&
+    liveStates.has(state)
+  ) {
     await manageActiveInstanceAlarms(instanceId, tags);
   }
 }
