@@ -195,7 +195,38 @@ async function getInstanceDetails(
   }
 }
 
-//manages the CPU Alarm creation
+async function createCloudWatchAlarms(
+  instanceId: string,
+  alarmName: string,
+  metricName: string,
+  namespace: string,
+  dimensions: any[],
+  type: AlarmClassification,
+  tags: Tag,
+  thresholdKey: string,
+  durationTimeKey: string,
+  durationPeriodsKey: string
+): Promise<void> {
+  const alarmProps = {
+    threshold: defaultThreshold(type),
+    period: 60,
+    namespace: namespace,
+    evaluationPeriods: 5,
+    metricName: metricName,
+    dimensions: dimensions,
+  };
+
+  await createOrUpdateCWAlarm(
+    alarmName,
+    instanceId,
+    alarmProps,
+    tags,
+    thresholdKey,
+    durationTimeKey,
+    durationPeriodsKey
+  );
+}
+
 export async function manageCPUUsageAlarmForInstance(
   instanceId: string,
   tags: Tag,
@@ -208,6 +239,7 @@ export async function manageCPUUsageAlarmForInstance(
     durationPeriodsKey,
     ec2Metadata,
   } = await getAlarmConfig(instanceId, type, 'cpu');
+
   const usePrometheus = await isPromEnabled(
     instanceId,
     'ec2',
@@ -215,6 +247,7 @@ export async function manageCPUUsageAlarmForInstance(
     prometheusWorkspaceId,
     tags
   );
+
   if (usePrometheus) {
     try {
       log
@@ -229,30 +262,24 @@ export async function manageCPUUsageAlarmForInstance(
         'ec2',
         'cpu',
         alarmName,
-        `100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > ${tags[thresholdKey]}`, // change query to get cpu usage after testing
+        `100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > ${tags[thresholdKey]}`,
         '5m',
         type
       );
-      deleteCWAlarm(instanceId, alarmName); // we need to delete the CW alarm if it exists if we're replacing it with a prometheus alarm
+      await deleteCWAlarm(alarmName, instanceId); // ensure correct order
     } catch (e) {
       log
         .info()
         .err(e)
         .msg('Error managing Prometheus alarms. Falling back to CW Alarms');
       await deletePromRulesForService(prometheusWorkspaceId, 'ec2', instanceId);
-      const alarmProps: AlarmProps = {
-        threshold: defaultThreshold(type),
-        period: 60,
-        namespace: 'AWS/EC2',
-        evaluationPeriods: 5,
-        metricName: 'CPUUtilization',
-        dimensions: [{Name: 'InstanceId', Value: instanceId}],
-      };
-
-      await createOrUpdateCWAlarm(
-        alarmName,
+      await createCloudWatchAlarms(
         instanceId,
-        alarmProps,
+        alarmName,
+        'CPUUtilization',
+        'AWS/EC2',
+        [{Name: 'InstanceId', Value: instanceId}],
+        type,
         tags,
         thresholdKey,
         durationTimeKey,
@@ -260,19 +287,21 @@ export async function manageCPUUsageAlarmForInstance(
       );
     }
   } else {
-    const alarmProps: AlarmProps = {
-      threshold: defaultThreshold(type),
-      period: 60,
-      namespace: 'AWS/EC2',
-      evaluationPeriods: 5,
-      metricName: 'CPUUtilization',
-      dimensions: [{Name: 'InstanceId', Value: instanceId}],
-    };
-
-    await createOrUpdateCWAlarm(
-      alarmName,
+    log
+      .info()
+      .str('pometheus tag', tags['Prometheus:'])
+      .str('instanceId', instanceId)
+      .msg(
+        'Prometheus tag set to false. Deleting prometheus rules and creating CW alarms.'
+      );
+    await deletePromRulesForService(prometheusWorkspaceId, 'ec2', instanceId);
+    await createCloudWatchAlarms(
       instanceId,
-      alarmProps,
+      alarmName,
+      'CPUUtilization',
+      'AWS/EC2',
+      [{Name: 'InstanceId', Value: instanceId}],
+      type,
       tags,
       thresholdKey,
       durationTimeKey,
@@ -293,7 +322,7 @@ export async function manageStorageAlarmForInstance(
     durationPeriodsKey,
     ec2Metadata,
   } = await getAlarmConfig(instanceId, type, 'storage');
-  // Check if the platform is Windows
+
   const isWindows = ec2Metadata.platform
     ? ec2Metadata.platform.toLowerCase().includes('windows')
     : false;
@@ -332,37 +361,24 @@ export async function manageStorageAlarmForInstance(
         .info()
         .err(e)
         .msg('Error managing Prometheus alarms. Falling back to CW Alarms');
-      //Fetch storage paths and their associated dimensions for cloudwatch alarms
+
+      await deletePromRulesForService(prometheusWorkspaceId, 'ec2', instanceId);
       const storagePaths = await getStoragePathsFromCloudWatch(
         instanceId,
         metricName
       );
-
       const paths = Object.keys(storagePaths);
       if (paths.length > 0) {
         for (const path of paths) {
           const dimensions_props = storagePaths[path];
-          log
-            .info()
-            .str('instanceId', instanceId)
-            .str('path', path)
-            .str('dimensions', JSON.stringify(dimensions_props))
-            .msg('found dimensions for storage path');
-
           const storageAlarmName = `${alarmName}-${path}`;
-          const alarmProps = {
-            threshold: defaultThreshold(type),
-            period: 60,
-            namespace: 'CWAgent',
-            evaluationPeriods: 5,
-            metricName: metricName,
-            dimensions: dimensions_props, // Use the dimensions directly from storage Paths
-          };
-
-          await createOrUpdateCWAlarm(
-            storageAlarmName,
+          await createCloudWatchAlarms(
             instanceId,
-            alarmProps,
+            storageAlarmName,
+            metricName,
+            'CWAgent',
+            dimensions_props,
+            type,
             tags,
             thresholdKey,
             durationTimeKey,
@@ -379,37 +395,30 @@ export async function manageStorageAlarmForInstance(
       }
     }
   } else {
-    //Fetch storage paths and their associated dimensions for cloudwatch alarms
+    log
+      .info()
+      .str('pometheus tag', tags['Prometheus:'])
+      .str('instanceId', instanceId)
+      .msg(
+        'Prometheus tag set to false. Deleting prometheus rules and creating CW alarms.'
+      );
+    await deletePromRulesForService(prometheusWorkspaceId, 'ec2', instanceId);
     const storagePaths = await getStoragePathsFromCloudWatch(
       instanceId,
       metricName
     );
-
     const paths = Object.keys(storagePaths);
     if (paths.length > 0) {
       for (const path of paths) {
         const dimensions_props = storagePaths[path];
-        log
-          .info()
-          .str('instanceId', instanceId)
-          .str('path', path)
-          .str('dimensions', JSON.stringify(dimensions_props))
-          .msg('found dimensions for storage path');
-
         const storageAlarmName = `${alarmName}-${path}`;
-        const alarmProps = {
-          threshold: defaultThreshold(type),
-          period: 60,
-          namespace: 'CWAgent',
-          evaluationPeriods: 5,
-          metricName: metricName,
-          dimensions: dimensions_props, // Use the dimensions directly from storage Paths
-        };
-
-        await createOrUpdateCWAlarm(
-          storageAlarmName,
+        await createCloudWatchAlarms(
           instanceId,
-          alarmProps,
+          storageAlarmName,
+          metricName,
+          'CWAgent',
+          dimensions_props,
+          type,
           tags,
           thresholdKey,
           durationTimeKey,
@@ -439,8 +448,7 @@ export async function manageMemoryAlarmForInstance(
     durationPeriodsKey,
     ec2Metadata,
   } = await getAlarmConfig(instanceId, type, 'memory');
-  // Check if the platform is Windows
-  const privateIp = ec2Metadata.privateIp;
+
   const isWindows = ec2Metadata.platform
     ? ec2Metadata.platform.toLowerCase().includes('windows')
     : false;
@@ -448,32 +456,74 @@ export async function manageMemoryAlarmForInstance(
     ? 'Memory % Committed Bytes In Use'
     : 'mem_used_percent';
 
-  //const usePrometheus = isPromEnabled('');
-
-  const alarmProps: AlarmProps = {
-    metricName: metricName,
-    namespace: 'CWAgent',
-    threshold: defaultThreshold(type), // Default thresholds
-    period: 60, // Default period in seconds
-    evaluationPeriods: 5, // Default number of evaluation periods
-    dimensions: [{Name: 'InstanceId', Value: instanceId}],
-  };
-
-  //if (usePrometheus) {
-  //  log
-  //    .info()
-  //    .str('instanceId', instanceId)
-  //    .msg('Prometheus metrics enabled. Skipping CloudWatch alarm creation');
-  //}
-  await createOrUpdateCWAlarm(
-    alarmName,
+  const usePrometheus = await isPromEnabled(
     instanceId,
-    alarmProps,
-    tags,
-    thresholdKey,
-    durationTimeKey,
-    durationPeriodsKey
+    'ec2',
+    ec2Metadata.privateIp ? ec2Metadata.privateIp : '',
+    prometheusWorkspaceId,
+    tags
   );
+
+  if (usePrometheus) {
+    try {
+      log
+        .info()
+        .str('instanceId', instanceId)
+        .msg(
+          'Prometheus metrics enabled. Skipping CloudWatch alarm creation and using Prometheus metrics instead' +
+            ` and prometheus workspace id is ${prometheusWorkspaceId}`
+        );
+      await managePromNameSpaceAlarms(
+        prometheusWorkspaceId,
+        'ec2',
+        'memory',
+        alarmName,
+        'up', // change query to get memory usage after testing
+        '5m',
+        type
+      );
+    } catch (e) {
+      log
+        .info()
+        .err(e)
+        .msg('Error managing Prometheus alarms. Falling back to CW Alarms');
+
+      await deletePromRulesForService(prometheusWorkspaceId, 'ec2', instanceId);
+      await createCloudWatchAlarms(
+        instanceId,
+        alarmName,
+        metricName,
+        'CWAgent',
+        [{Name: 'InstanceId', Value: instanceId}],
+        type,
+        tags,
+        thresholdKey,
+        durationTimeKey,
+        durationPeriodsKey
+      );
+    }
+  } else {
+    log
+      .info()
+      .str('pometheus tag', tags['Prometheus:'])
+      .str('instanceId', instanceId)
+      .msg(
+        'Prometheus tag set to false. Deleting prometheus rules and creating CW alarms.'
+      );
+    await deletePromRulesForService(prometheusWorkspaceId, 'ec2', instanceId);
+    await createCloudWatchAlarms(
+      instanceId,
+      alarmName,
+      metricName,
+      'CWAgent',
+      [{Name: 'InstanceId', Value: instanceId}],
+      type,
+      tags,
+      thresholdKey,
+      durationTimeKey,
+      durationPeriodsKey
+    );
+  }
 }
 
 export async function createStatusAlarmForInstance(
@@ -555,7 +605,9 @@ export async function manageInactiveInstanceAlarms(instanceId: string) {
       'EC2',
       instanceId
     );
-    activeAutoAlarms.map(alarmName => deleteCWAlarm(alarmName, instanceId));
+    await Promise.all(
+      activeAutoAlarms.map(alarmName => deleteCWAlarm(alarmName, instanceId))
+    );
     await deletePromRulesForService(prometheusWorkspaceId, 'ec2', instanceId);
   } catch (e) {
     log.error().err(e).msg(`Error deleting alarms: ${e}`);
