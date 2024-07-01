@@ -832,8 +832,8 @@ export async function managePromNameSpaceAlarms(
   }
   log.info().num('totalWSRules', totalWSRules).msg('Total rules in workspace');
 
-  // Check if total rules for workspace has less than 1000 rules
-  if (totalWSRules >= 1000) {
+  // Check if total rules for workspace has less than 2000 rules
+  if (totalWSRules >= 2000) {
     log
       .error()
       .msg('The workspace has 2000 or more rules. Halting Prometheus logic.');
