@@ -239,6 +239,7 @@ export async function manageCPUUsageAlarmForInstance(
         .info()
         .err(e)
         .msg('Error managing Prometheus alarms. Falling back to CW Alarms');
+      await deletePromRulesForService(prometheusWorkspaceId, 'ec2', instanceId);
       const alarmProps: AlarmProps = {
         threshold: defaultThreshold(type),
         period: 60,
@@ -331,6 +332,51 @@ export async function manageStorageAlarmForInstance(
         .info()
         .err(e)
         .msg('Error managing Prometheus alarms. Falling back to CW Alarms');
+      //Fetch storage paths and their associated dimensions for cloudwatch alarms
+      const storagePaths = await getStoragePathsFromCloudWatch(
+        instanceId,
+        metricName
+      );
+
+      const paths = Object.keys(storagePaths);
+      if (paths.length > 0) {
+        for (const path of paths) {
+          const dimensions_props = storagePaths[path];
+          log
+            .info()
+            .str('instanceId', instanceId)
+            .str('path', path)
+            .str('dimensions', JSON.stringify(dimensions_props))
+            .msg('found dimensions for storage path');
+
+          const storageAlarmName = `${alarmName}-${path}`;
+          const alarmProps = {
+            threshold: defaultThreshold(type),
+            period: 60,
+            namespace: 'CWAgent',
+            evaluationPeriods: 5,
+            metricName: metricName,
+            dimensions: dimensions_props, // Use the dimensions directly from storage Paths
+          };
+
+          await createOrUpdateCWAlarm(
+            storageAlarmName,
+            instanceId,
+            alarmProps,
+            tags,
+            thresholdKey,
+            durationTimeKey,
+            durationPeriodsKey
+          );
+        }
+      } else {
+        log
+          .info()
+          .str('instanceId', instanceId)
+          .msg(
+            'CloudWatch metrics not found for storage paths. Skipping alarm creation.'
+          );
+      }
     }
   } else {
     //Fetch storage paths and their associated dimensions for cloudwatch alarms
