@@ -1,27 +1,19 @@
-import {
-  DescribeAlarmsCommand,
-  PutMetricAlarmCommand,
-  DeleteAlarmsCommand,
-  CloudWatchClient,
-} from '@aws-sdk/client-cloudwatch';
+import {SQSClient, ListQueueTagsCommand} from '@aws-sdk/client-sqs';
 import * as logging from '@nr1e/logging';
 import {AlarmProps, Tag} from './types';
-import {AlarmClassification} from './enums';
+import {AlarmClassification, ValidSqsState} from './enums';
+import {
+  createOrUpdateCWAlarm,
+  getCWAlarmsForInstance,
+  deleteCWAlarm,
+} from './alarm-tools';
 
 const log: logging.Logger = logging.getRootLogger();
-const cloudWatchClient: CloudWatchClient = new CloudWatchClient({});
+const sqsClient: SQSClient = new SQSClient({});
 
-const defaultThresholds: {
-  [key in AlarmClassification]: {[metricName: string]: number};
-} = {
-  [AlarmClassification.Critical]: {
-    ApproximateNumberOfMessagesVisible: 1000,
-    ApproximateAgeOfOldestMessage: 300,
-  },
-  [AlarmClassification.Warning]: {
-    ApproximateNumberOfMessagesVisible: 500,
-    ApproximateAgeOfOldestMessage: 150,
-  },
+const defaultThresholds: {[key in AlarmClassification]: number} = {
+  [AlarmClassification.Critical]: 1000,
+  [AlarmClassification.Warning]: 500,
 };
 
 const metricConfigs = [
@@ -30,7 +22,7 @@ const metricConfigs = [
 ];
 
 async function getAlarmConfig(
-  queueName: string,
+  queueUrl: string,
   type: AlarmClassification,
   metricName: string
 ): Promise<{
@@ -44,270 +36,95 @@ async function getAlarmConfig(
   const durationPeriodsKey = `autoalarm:${metricName}-percent-duration-periods`;
 
   return {
-    alarmName: `AutoAlarm-SQS-${queueName}-${type}-${metricName}`,
+    alarmName: `AutoAlarm-SQS-${queueUrl}-${type}-${metricName}`,
     thresholdKey,
     durationTimeKey,
     durationPeriodsKey,
   };
 }
 
+async function fetchSQSTags(queueUrl: string): Promise<Tag> {
+  try {
+    const command = new ListQueueTagsCommand({QueueUrl: queueUrl});
+    const response = await sqsClient.send(command);
+    const tags: Tag = response.Tags || {};
+
+    log
+      .info()
+      .str('queueUrl', queueUrl)
+      .str('tags', JSON.stringify(tags))
+      .msg('Fetched SQS tags');
+
+    return tags;
+  } catch (error) {
+    log
+      .error()
+      .err(error)
+      .str('queueUrl', queueUrl)
+      .msg('Error fetching SQS tags');
+    return {};
+  }
+}
+
 export async function manageSQSAlarms(
-  queueName: string,
-  tags: Tag,
-  type: AlarmClassification
+  queueUrl: string,
+  tags: Tag
 ): Promise<void> {
   for (const config of metricConfigs) {
     const {metricName, namespace} = config;
-    const {alarmName, thresholdKey, durationTimeKey, durationPeriodsKey} =
-      await getAlarmConfig(queueName, type, metricName);
-
-    const alarmProps: AlarmProps = {
-      threshold: defaultThresholds[type][metricName],
-      period: 60,
-      namespace: namespace,
-      evaluationPeriods: 5,
-      metricName: metricName,
-      dimensions: [{Name: 'QueueName', Value: queueName}],
-    };
-
-    await createOrUpdateCWAlarm(
-      alarmName,
-      queueName,
-      alarmProps,
-      tags,
-      thresholdKey,
-      durationTimeKey,
-      durationPeriodsKey
-    );
-  }
-}
-
-async function doesAlarmExist(alarmName: string): Promise<boolean> {
-  const response = await cloudWatchClient.send(
-    new DescribeAlarmsCommand({AlarmNames: [alarmName]})
-  );
-  return (response.MetricAlarms?.length ?? 0) > 0;
-}
-
-async function CWAlarmNeedsUpdate(
-  alarmName: string,
-  newProps: AlarmProps
-): Promise<boolean> {
-  try {
-    const existingAlarm = await cloudWatchClient.send(
-      new DescribeAlarmsCommand({AlarmNames: [alarmName]})
-    );
-
-    if (existingAlarm.MetricAlarms && existingAlarm.MetricAlarms.length > 0) {
-      const existingProps = existingAlarm.MetricAlarms[0];
-
-      if (
-        Number(existingProps.Threshold) !== newProps.threshold ||
-        Number(existingProps.EvaluationPeriods) !==
-          newProps.evaluationPeriods ||
-        Number(existingProps.Period) !== newProps.period
-      ) {
-        log.info().str('alarmName', alarmName).msg('Alarm needs update');
-        return true;
-      }
-    } else {
-      log.info().str('alarmName', alarmName).msg('Alarm does not exist');
-      return true;
-    }
-
-    log.info().str('alarmName', alarmName).msg('Alarm does not need update');
-    return false;
-  } catch (e) {
-    log.error().err(e).msg('Failed to determine if alarm needs update:');
-    return false;
-  }
-}
-
-function configureAlarmPropsFromTags(
-  alarmProps: AlarmProps,
-  tags: Tag,
-  thresholdKey: string,
-  durationTimeKey: string,
-  durationPeriodsKey: string
-): void {
-  // Adjust threshold based on tags or use default if not present as defined in alarm props
-  if (tags[thresholdKey]) {
-    const parsedThreshold = parseFloat(tags[thresholdKey]);
-    if (!isNaN(parsedThreshold)) {
-      alarmProps.threshold = parsedThreshold;
-      log
-        .info()
-        .str('tag', thresholdKey)
-        .num('threshold', parsedThreshold)
-        .msg('Adjusted threshold based on tag');
-    } else {
-      log
-        .warn()
-        .str('tag', thresholdKey)
-        .str('value', tags[thresholdKey])
-        .msg('Invalid threshold value in tag, using default');
-    }
-  } else {
-    log.info().msg('Threshold tag not found, using default');
-  }
-
-  // Adjust period based on tags or use default if not present as defined in alarm props
-  if (tags[durationTimeKey]) {
-    let parsedPeriod = parseInt(tags[durationTimeKey], 10);
-    if (!isNaN(parsedPeriod)) {
-      if (parsedPeriod < 10) {
-        parsedPeriod = 10;
-        log
-          .info()
-          .str('tag', durationTimeKey)
-          .num('period', parsedPeriod)
-          .msg(
-            'Period value less than 10 is not allowed, must be 10. Using default value of 10'
-          );
-      } else if (parsedPeriod < 30) {
-        parsedPeriod = 30;
-        log
-          .info()
-          .str('tag', durationTimeKey)
-          .num('period', parsedPeriod)
-          .msg(
-            'Period value less than 30 and not 10 is adjusted to 30. Using default value of 30'
-          );
-      } else {
-        parsedPeriod = Math.ceil(parsedPeriod / 60) * 60;
-        log
-          .info()
-          .str('tag', durationTimeKey)
-          .num('period', parsedPeriod)
-          .msg(
-            'Period value not 10 or 30 must be multiple of 60. Adjusted to nearest multiple of 60'
-          );
-      }
-      alarmProps.period = parsedPeriod;
-    } else {
-      log
-        .warn()
-        .str('tag', durationTimeKey)
-        .str('value', tags[durationTimeKey])
-        .msg('Invalid period value in tag, using default 60 seconds');
-    }
-  } else {
-    log.info().msg('Period tag not found, using default');
-  }
-
-  // Adjust evaluation periods based on tags or use default if not present as defined in alarm props
-  if (tags[durationPeriodsKey]) {
-    const parsedEvaluationPeriods = parseInt(tags[durationPeriodsKey], 10);
-    if (!isNaN(parsedEvaluationPeriods)) {
-      alarmProps.evaluationPeriods = parsedEvaluationPeriods;
-      log
-        .info()
-        .str('tag', durationPeriodsKey)
-        .num('evaluationPeriods', parsedEvaluationPeriods)
-        .msg('Adjusted evaluation periods based on tag');
-    } else {
-      log
-        .warn()
-        .str('tag', durationPeriodsKey)
-        .str('value', tags[durationPeriodsKey])
-        .msg('Invalid evaluation periods value in tag, using default 5');
-    }
-  } else {
-    log.info().msg('Evaluation periods tag not found, using default');
-  }
-}
-
-async function createOrUpdateCWAlarm(
-  alarmName: string,
-  queueName: string,
-  props: AlarmProps,
-  tags: Tag,
-  thresholdKey: string,
-  durationTimeKey: string,
-  durationPeriodsKey: string
-) {
-  try {
-    log
-      .info()
-      .str('alarmName', alarmName)
-      .str('queueName', queueName)
-      .msg('Configuring alarm props from tags');
-    configureAlarmPropsFromTags(
-      props,
-      tags,
-      thresholdKey,
-      durationTimeKey,
-      durationPeriodsKey
-    );
-  } catch (e) {
-    log.error().err(e).msg('Error configuring alarm props from tags');
-    throw new Error('Error configuring alarm props from tags');
-  }
-  const alarmExists = await doesAlarmExist(alarmName);
-  if (
-    !alarmExists ||
-    (alarmExists && (await CWAlarmNeedsUpdate(alarmName, props)))
-  ) {
-    try {
-      await cloudWatchClient.send(
-        new PutMetricAlarmCommand({
-          AlarmName: alarmName,
-          ComparisonOperator: 'GreaterThanThreshold',
-          EvaluationPeriods: props.evaluationPeriods,
-          MetricName: props.metricName,
-          Namespace: props.namespace,
-          Period: props.period,
-          Statistic: 'Average',
-          Threshold: props.threshold,
-          ActionsEnabled: false,
-          Dimensions: props.dimensions,
-        })
-      );
-      log
-        .info()
-        .str('alarmName', alarmName)
-        .str('queueName', queueName)
-        .num('threshold', props.threshold)
-        .num('period', props.period)
-        .num('evaluationPeriods', props.evaluationPeriods)
-        .msg(`${alarmName} Alarm configured or updated.`);
-    } catch (e) {
-      log
-        .error()
-        .err(e)
-        .str('alarmName', alarmName)
-        .str('queueName', queueName)
-        .msg(
-          `Failed to create or update ${alarmName} alarm due to an error ${e}`
+    for (const classification of Object.values(AlarmClassification)) {
+      const {alarmName, thresholdKey, durationTimeKey, durationPeriodsKey} =
+        await getAlarmConfig(
+          queueUrl,
+          classification as AlarmClassification,
+          metricName
         );
+
+      const alarmProps: AlarmProps = {
+        threshold: defaultThresholds[classification as AlarmClassification],
+        period: 60,
+        namespace: namespace,
+        evaluationPeriods: 5,
+        metricName: metricName,
+        dimensions: [{Name: 'QueueUrl', Value: queueUrl}],
+      };
+
+      await createOrUpdateCWAlarm(
+        alarmName,
+        queueUrl,
+        alarmProps,
+        tags,
+        thresholdKey,
+        durationTimeKey,
+        durationPeriodsKey
+      );
     }
   }
 }
 
-export async function deleteCWAlarm(
-  alarmName: string,
-  queueName: string
-): Promise<void> {
-  const alarmExists = await doesAlarmExist(alarmName);
-  if (alarmExists) {
-    log
-      .info()
-      .str('alarmName', alarmName)
-      .str('queueName', queueName)
-      .msg('Attempting to delete alarm');
-    await cloudWatchClient.send(
-      new DeleteAlarmsCommand({AlarmNames: [alarmName]})
+export async function manageInactiveSQSAlarms(queueUrl: string) {
+  try {
+    const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
+      'sqs',
+      queueUrl
     );
-    log
-      .info()
-      .str('alarmName', alarmName)
-      .str('queueName', queueName)
-      .msg('Deleted alarm');
-  } else {
-    log
-      .info()
-      .str('alarmName', alarmName)
-      .str('queueName', queueName)
-      .msg('Alarm does not exist for queue');
+    await Promise.all(
+      activeAutoAlarms.map(alarmName => deleteCWAlarm(alarmName, queueUrl))
+    );
+  } catch (e) {
+    log.error().err(e).msg(`Error deleting SQS alarms: ${e}`);
+    throw new Error(`Error deleting SQS alarms: ${e}`);
+  }
+}
+
+export async function processSQSEvent(event: any) {
+  const queueUrl = event.detail['queue-url'];
+  const state = event.detail.state;
+  const tags = await fetchSQSTags(queueUrl);
+
+  if (queueUrl && state === ValidSqsState.Active) {
+    await manageSQSAlarms(queueUrl, tags);
+  } else if (state === ValidSqsState.Deleted) {
+    await manageInactiveSQSAlarms(queueUrl);
   }
 }
