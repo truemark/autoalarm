@@ -344,6 +344,14 @@ const makeSignedRequest = async (
     },
   };
 
+  // Log the request details before signing
+  log
+    .info()
+    .str('hostname', hostname)
+    .str('path', path)
+    .str('region', region)
+    .msg('Request details before signing');
+
   // Sign the request using aws4
   const signer = aws4.sign(
     {
@@ -380,6 +388,10 @@ const makeSignedRequest = async (
 
         try {
           const parsedData = JSON.parse(data);
+          log
+            .info()
+            .str('parsedData', JSON.stringify(parsedData, null, 2))
+            .msg('Parsed response data');
           resolve(parsedData);
         } catch (error) {
           log
@@ -436,6 +448,7 @@ export async function queryPrometheusForService(
           .str('region', region)
           .msg('Querying Prometheus for EC2 instances');
 
+        // Use a 5-minute range to catch instances that might have just come online or gone offline
         query = 'up{job="ec2"}';
 
         log
@@ -448,6 +461,14 @@ export async function queryPrometheusForService(
           region
         );
 
+        log
+          .info()
+          .str('serviceType', serviceType)
+          .str('Prometheus Workspace ID', promWorkspaceID)
+          .str('region', region)
+          .str('response', JSON.stringify(response, null, 2))
+          .msg('Raw Prometheus query result');
+
         if (response.status !== 'success') {
           log
             .warn()
@@ -457,27 +478,40 @@ export async function queryPrometheusForService(
             .msg(
               'Prometheus query failed. Defaulting to CW Alarms if possible...'
             );
-          return {data: {result: []}}; // Return an empty result on failure
+          return {data: {result: []}};
         }
+
+        // Extract unique instances from the range vector result
+        const instances = new Set();
+        response.data.result.forEach((item: any) => {
+          const instance = item.metric.instance.split(':')[0];
+          instances.add(instance);
+        });
 
         log
           .info()
           .str('serviceType', serviceType)
           .str('Prometheus Workspace ID', promWorkspaceID)
-          .str('region', region)
-          .str('response', JSON.stringify(response, null, 2))
-          .msg(
-            'Prometheus query successful. Monitored EC2 Instances found and returned'
-          );
-        return response;
+          .str('instances', JSON.stringify(Array.from(instances)))
+          .msg('Unique instances extracted from Prometheus response');
+
+        // Modify the response to match the expected format
+        const modifiedResponse = {
+          data: {
+            result: Array.from(instances).map(instance => ({
+              metric: {instance: `${instance}:9100`},
+            })),
+          },
+        };
+
+        return modifiedResponse;
       }
-      // Add more cases here for other service types
       default: {
         log
           .warn()
           .str('serviceType', serviceType)
           .msg('Unsupported service type. Defaulting to CW Alarms if possible');
-        return {data: {result: []}}; // Return an empty result on unsupported service type
+        return {data: {result: []}};
       }
     }
   } catch (error) {
@@ -488,7 +522,7 @@ export async function queryPrometheusForService(
       .str('Prometheus Workspace ID', promWorkspaceID)
       .str('region', region)
       .msg('Error querying Prometheus');
-    return {data: {result: []}}; // Return an empty result on error
+    return {data: {result: []}};
   }
 }
 
@@ -501,9 +535,16 @@ export async function isPromEnabled(
 ): Promise<boolean> {
   try {
     const prometheusTag = tags['Prometheus'];
+    log
+      .info()
+      .str('function', 'isPromEnabled')
+      .str('Prometheus tag', prometheusTag)
+      .msg('Found Prometheus tag value');
     if (prometheusTag === 'true') {
       log
         .info()
+        .str('function', 'isPromEnabled')
+        .str('prometheusTag', prometheusTag)
         .str('instanceId', instanceId)
         .msg(
           'Prometheus tag found. Checking if metrics are being sent to Prometheus'
@@ -686,7 +727,6 @@ function isNamespaceDetails(obj: unknown): obj is NamespaceDetails {
   );
 }
 
-// Function to manage Prometheus namespace alarms
 /**
  * Function to manage Prometheus namespace alarms.
  * @param promWorkspaceId - The Prometheus workspace ID.
@@ -709,12 +749,11 @@ export async function managePromNamespaceAlarms(
 
   // List all existing namespaces and count total rules
   const namespaces = await listNamespaces(promWorkspaceId);
-  const rootNamespace = 'AutoAlarm';
 
   log
     .info()
     .num('totalNamespaces', namespaces.length)
-    .str('rootNamespace', rootNamespace)
+    .str('namespace', namespace)
     .msg('Retrieved namespaces');
 
   let totalWSRules = 0;
@@ -743,14 +782,16 @@ export async function managePromNamespaceAlarms(
     );
   }
 
-  // Check if AutoAlarm namespace exists
-  const autoAlarmNamespace = namespaces.find(ns => ns.name === rootNamespace);
+  // Check if the namespace exists
+  const specificNamespace = namespaces.find(ns => ns.name === namespace);
 
-  if (!autoAlarmNamespace) {
-    log.info().msg('No AutoAlarm namespace found. Creating a new namespace.');
+  if (!specificNamespace) {
+    log
+      .info()
+      .msg(`No ${namespace} namespace found. Creating a new namespace.`);
     await createNamespace(
       promWorkspaceId,
-      rootNamespace,
+      namespace,
       alarmConfigs[0].alarmName,
       alarmConfigs[0].alarmQuery,
       alarmConfigs[0].duration,
@@ -758,17 +799,17 @@ export async function managePromNamespaceAlarms(
     );
     log
       .info()
-      .str('namespace', rootNamespace)
+      .str('namespace', namespace)
       .msg('Created new namespace and added rule');
     return;
   }
 
-  // Describe the AutoAlarm namespace to get its details
-  const nsDetails = await describeNamespace(promWorkspaceId, rootNamespace);
+  // Describe the specific namespace to get its details
+  const nsDetails = await describeNamespace(promWorkspaceId, namespace);
   if (!nsDetails || !isNamespaceDetails(nsDetails)) {
     log
       .warn()
-      .str('namespace', rootNamespace)
+      .str('namespace', namespace)
       .msg('Invalid or empty namespace details, skipping');
     return;
   }
@@ -826,7 +867,7 @@ export async function deletePromRulesForService(
   serviceIdentifier: string
 ): Promise<void> {
   try {
-    const namespace = 'AutoAlarm';
+    const namespace = `AutoAlarm-${service.toUpperCase()}`;
     const ruleGroupName = 'AutoAlarm';
 
     // Describe the namespace to get its details
@@ -846,6 +887,7 @@ export async function deletePromRulesForService(
     if (!ruleGroup) {
       log
         .info()
+        .str('function', 'deletePromRulesForService')
         .str('ruleGroupName', ruleGroupName)
         .msg('Prometheus Rule group not found, nothing to delete');
       return;
@@ -863,11 +905,13 @@ export async function deletePromRulesForService(
       );
       log
         .info()
+        .str('function', 'deletePromRulesForService')
         .str('ruleGroupName', ruleGroupName)
         .msg('No Prometheus rules left, removing the rule group');
     }
     log
       .info()
+      .str('function', 'deletePromRulesForService')
       .str('promWorkspaceId', promWorkspaceId)
       .str('service', service)
       .str('serviceIdentifier', serviceIdentifier)
@@ -888,6 +932,7 @@ export async function deletePromRulesForService(
     await client.send(putCommand);
     log
       .info()
+      .str('function', 'deletePromRulesForService')
       .str('namespace', namespace)
       .str('service', service)
       .str('serviceIdentifier', serviceIdentifier)
