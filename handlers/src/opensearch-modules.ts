@@ -46,7 +46,7 @@ async function getAlarmConfig(
   };
 }
 
-async function fetchOpenSearchTags(domainArn: string): Promise<Tag> {
+export async function fetchOpenSearchTags(domainArn: string): Promise<Tag> {
   try {
     const command = new ListTagsCommand({
       ARN: domainArn,
@@ -77,40 +77,58 @@ async function fetchOpenSearchTags(domainArn: string): Promise<Tag> {
   }
 }
 
+async function checkAndManageOpenSearchStatusAlarms(
+  domainName: string,
+  tags: Tag
+) {
+  if (tags['autoalarm:disabled'] === 'true') {
+    const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
+      'opensearch',
+      domainName
+    );
+    await Promise.all(
+      activeAutoAlarms.map(alarmName => deleteCWAlarm(alarmName, domainName))
+    );
+    log.info().msg('Status check alarm creation skipped due to tag settings.');
+  } else {
+    for (const config of metricConfigs) {
+      const {metricName, namespace} = config;
+      for (const classification of Object.values(AlarmClassification)) {
+        const {alarmName, thresholdKey, durationTimeKey, durationPeriodsKey} =
+          await getAlarmConfig(
+            domainName,
+            classification as AlarmClassification,
+            metricName
+          );
+
+        const alarmProps: AlarmProps = {
+          threshold: defaultThresholds[classification as AlarmClassification],
+          period: 60,
+          namespace: namespace,
+          evaluationPeriods: 5,
+          metricName: metricName,
+          dimensions: [{Name: 'DomainName', Value: domainName}],
+        };
+
+        await createOrUpdateCWAlarm(
+          alarmName,
+          domainName,
+          alarmProps,
+          tags,
+          thresholdKey,
+          durationTimeKey,
+          durationPeriodsKey
+        );
+      }
+    }
+  }
+}
+
 export async function manageOpenSearchAlarms(
   domainName: string,
   tags: Tag
 ): Promise<void> {
-  for (const config of metricConfigs) {
-    const {metricName, namespace} = config;
-    for (const classification of Object.values(AlarmClassification)) {
-      const {alarmName, thresholdKey, durationTimeKey, durationPeriodsKey} =
-        await getAlarmConfig(
-          domainName,
-          classification as AlarmClassification,
-          metricName
-        );
-
-      const alarmProps: AlarmProps = {
-        threshold: defaultThresholds[classification as AlarmClassification],
-        period: 60,
-        namespace: namespace,
-        evaluationPeriods: 5,
-        metricName: metricName,
-        dimensions: [{Name: 'DomainName', Value: domainName}],
-      };
-
-      await createOrUpdateCWAlarm(
-        alarmName,
-        domainName,
-        alarmProps,
-        tags,
-        thresholdKey,
-        durationTimeKey,
-        durationPeriodsKey
-      );
-    }
-  }
+  await checkAndManageOpenSearchStatusAlarms(domainName, tags);
 }
 
 export async function manageInactiveOpenSearchAlarms(domainName: string) {
@@ -128,7 +146,9 @@ export async function manageInactiveOpenSearchAlarms(domainName: string) {
   }
 }
 
-export async function processOpenSearchEvent(event: any) {
+export async function getOpenSearchState(
+  event: any
+): Promise<{domainArn: string; state: ValidOpenSearchState; tags: Tag}> {
   const domainArn = event.detail['domain-arn'];
   const state = event.detail.state;
   const tags = await fetchOpenSearchTags(domainArn);
@@ -138,4 +158,6 @@ export async function processOpenSearchEvent(event: any) {
   } else if (state === ValidOpenSearchState.Deleted) {
     await manageInactiveOpenSearchAlarms(domainArn);
   }
+
+  return {domainArn, state, tags};
 }
