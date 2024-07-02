@@ -7,7 +7,6 @@ import {
   CloudWatchClient,
   ListMetricsCommand,
   PutMetricAlarmCommand,
-  DescribeAlarmsCommand,
 } from '@aws-sdk/client-cloudwatch';
 import * as logging from '@nr1e/logging';
 import {AlarmClassification, ValidInstanceState} from './enums';
@@ -17,7 +16,6 @@ import {
   createOrUpdateCWAlarm,
   getCWAlarmsForInstance,
   deleteCWAlarm,
-  isPromEnabled,
   queryPrometheusForService,
   managePromNamespaceAlarms,
   deletePromRulesForService,
@@ -164,9 +162,10 @@ async function batchUpdatePromRules(
   service: string,
   instanceIds: string[]
 ) {
-  if (!shouldUpdatePromRules) {
+  if (shouldUpdatePromRules !== true) {
     log
       .info()
+      .str('function', 'batchUpdatePromRules')
       .str('shouldUpdatePromRules', 'false')
       .msg(
         'Prometheus rules have not been marked for update or creation. Skipping batch update.'
@@ -175,6 +174,11 @@ async function batchUpdatePromRules(
   }
 
   // Fetch private IPs and tags for all instances
+  log
+    .info()
+    .str('function', 'batchUpdatePromRules')
+    .str('instanceIds', JSON.stringify(instanceIds))
+    .msg('Fetching instance details and tags');
   const instanceDetailsPromises = instanceIds.map(async instanceId => {
     const tags = await fetchInstanceTags(instanceId);
     const ec2Metadata = await getInstanceDetails(instanceId);
@@ -184,20 +188,26 @@ async function batchUpdatePromRules(
   const instanceDetails = await Promise.all(instanceDetailsPromises);
 
   // Filter instances that have Prometheus tag set to true and autoalarm:disabled set to false
+  log
+    .info()
+    .str('function', 'batchUpdatePromRules')
+    .msg('Filtering instances based on tags');
   const instancesToCheck = instanceDetails.filter(
     details =>
       details.tags['Prometheus'] === 'true' &&
-      details.tags['autoalarm:disabled'] !== 'true'
+      details.tags['autoalarm:disabled'] === 'false'
   );
 
-  const reportingInstances = await queryPrometheusForService(
+  log
+    .info()
+    .str('function', 'batchUpdatePromRules')
+    .str('instancesToCheck', JSON.stringify(instancesToCheck))
+    .msg('Instances to check for Prometheus rules');
+
+  const reportingInstanceIps = await queryPrometheusForService(
     'ec2',
     prometheusWorkspaceId,
     region
-  );
-  // Strip ports from IP addresses if present and normalize them
-  const reportingInstanceIps = reportingInstances.data.result.map(
-    (result: any) => result.metric.instance.split(':')[0]
   );
 
   // Filter instances that are confirmed to be reporting metrics to Prometheus
@@ -234,7 +244,10 @@ async function batchUpdatePromRules(
     alarmConfigs
   );
 
-  log.info().msg('Batch update of Prometheus rules completed.');
+  log
+    .info()
+    .str('function', 'batchUpdatePromRules')
+    .msg('Batch update of Prometheus rules completed.');
 }
 
 // The following const and function are used to dynamically identify the alarm configuration tags and apply them to each alarm
@@ -441,50 +454,23 @@ export async function manageCPUUsageAlarmForInstance(
   instanceId: string,
   tags: Tag,
   type: AlarmClassification,
-  isCloudWatch: boolean
+  usePrometheus: boolean
 ): Promise<void> {
   const {alarmName, thresholdKey, durationTimeKey, durationPeriodsKey} =
     await getAlarmConfig(instanceId, type, 'cpu');
-  let usePrometheus = false;
-
-  log
-    .info()
-    .str('function', 'manageCPUUsageAlarmForInstance')
-    .str('instanceId', instanceId)
-    .str('Prometheus', tags['Prometheus'])
-    .msg('Prometheus tag fetched.');
   //we should consolidate the promethues tag check and the iscloudwatch check into manage active isntances and instead pass a boolean to this function and create prom alarms based of that.
-  if (tags['Prometheus'] === 'true') {
-    usePrometheus = await isPromEnabled(
-      instanceId,
-      'ec2',
-      prometheusWorkspaceId,
-      tags
-    );
-  }
-
-  log
-    .info()
-    .str('function', 'manageCPUUsageAlarmForInstance')
-    .str('instanceId', instanceId)
-    .str('Prometheus', tags['Prometheus'])
-    .str('usePrometheus', usePrometheus.toString())
-    .str('isCloudWatch', isCloudWatch.toString())
-    .msg(
-      'Checking if prometheus metrics are enabled and isCloudWatch is false.'
-    );
-
-  if (usePrometheus && isCloudWatch !== true) {
+  if (usePrometheus) {
     log
       .info()
       .str('function', 'manageCPUUsageAlarmForInstance')
-      .str('AlarmName', alarmName)
-      .str('prometheus tag', tags['Prometheus'])
       .str('instanceId', instanceId)
+      .str('Prometheus', tags['Prometheus'])
+      .str('usePrometheus', usePrometheus.toString())
+      .str('isCloudWatch', isCloudWatch.toString())
       .msg(
-        'Prometheus metrics enabled. Flipping shouldUpdatePromRules flag to true'
+        'Prometheus Metrics being recieved from instance. Skipping CloudWatch alarm creation.'
       );
-    shouldUpdatePromRules = true;
+    return;
   } else {
     log
       .info()
@@ -493,9 +479,8 @@ export async function manageCPUUsageAlarmForInstance(
       .str('prometheus tag', tags['Prometheus'])
       .str('instanceId', instanceId)
       .msg(
-        'Prometheus tag set to false. Deleting prometheus rules and creating CW alarms.'
+        'Prometheus tag set to false or metrics not being reported to Prometheus. Deleting prometheus rules and creating CW alarms.'
       );
-    shouldDeletePromAlarm = true; // set to true to delete prometheus rules when managing instance alarms
     await createCloudWatchAlarms(
       instanceId,
       alarmName,
@@ -515,7 +500,7 @@ export async function manageStorageAlarmForInstance(
   instanceId: string,
   tags: Tag,
   type: AlarmClassification,
-  isCloudWatch: boolean
+  usePrometheus: boolean
 ): Promise<void> {
   const {
     alarmName,
@@ -530,44 +515,18 @@ export async function manageStorageAlarmForInstance(
   const metricName = isWindows
     ? 'LogicalDisk % Free Space'
     : 'disk_used_percent';
-  let usePrometheus = false;
-  log
-    .info()
-    .str('function', 'manageStorageAlarmForInstance')
-    .str('instanceId', instanceId)
-    .str('Prometheus', tags['Prometheus'])
-    .msg('Prometheus tag fetched.');
-  if (tags['Prometheus'] === 'true') {
-    usePrometheus = await isPromEnabled(
-      instanceId,
-      'ec2',
-      prometheusWorkspaceId,
-      tags
-    );
-  }
-
-  log
-    .info()
-    .str('function', 'manageStorageAlarmForInstance')
-    .str('instanceId', instanceId)
-    .str('Prometheus', tags['Prometheus'])
-    .str('usePrometheus', usePrometheus.toString())
-    .str('isCloudWatch', isCloudWatch.toString())
-    .msg(
-      'Checking if prometheus metrics are enabled and isCloudWatch is false.'
-    );
-
-  if (usePrometheus && isCloudWatch !== true) {
+  if (usePrometheus) {
     log
       .info()
       .str('function', 'manageStorageAlarmForInstance')
-      .str('AlarmName', alarmName)
-      .str('prometheus tag', tags['Prometheus'])
       .str('instanceId', instanceId)
+      .str('Prometheus', tags['Prometheus'])
+      .str('usePrometheus', usePrometheus.toString())
+      .str('isCloudWatch', isCloudWatch.toString())
       .msg(
-        'Prometheus metrics enabled. Flipping shouldUpdatePromRules flag to true'
+        'Prometheus Metrics being recieved from instance. Skipping CloudWatch alarm creation.'
       );
-    shouldUpdatePromRules = true;
+    return;
   } else {
     log
       .info()
@@ -576,9 +535,8 @@ export async function manageStorageAlarmForInstance(
       .str('prometheus tag', tags['Prometheus'])
       .str('instanceId', instanceId)
       .msg(
-        'Prometheus tag set to false. Deleting prometheus rules and creating CW alarms.'
+        'Prometheus tag set to false or metrics not being reported to Prometheus. Deleting prometheus rules and creating CW alarms.'
       );
-    shouldDeletePromAlarm = true; // set to true to delete prometheus rules when managing instance alarms
     const storagePaths = await getStoragePathsFromCloudWatch(
       instanceId,
       metricName
@@ -617,7 +575,7 @@ export async function manageMemoryAlarmForInstance(
   instanceId: string,
   tags: Tag,
   type: AlarmClassification,
-  isCloudWatch: boolean
+  usePrometheus: boolean
 ): Promise<void> {
   const {
     alarmName,
@@ -633,45 +591,18 @@ export async function manageMemoryAlarmForInstance(
   const metricName = isWindows
     ? 'Memory % Committed Bytes In Use'
     : 'mem_used_percent';
-  let usePrometheus = false;
-
-  log
-    .info()
-    .str('function', 'manageMemoryAlarmForInstance')
-    .str('instanceId', instanceId)
-    .str('Prometheus', tags['Prometheus'])
-    .msg('Prometheus tag fetched.');
-  if (tags['Prometheus'] === 'true') {
-    usePrometheus = await isPromEnabled(
-      instanceId,
-      'ec2',
-      prometheusWorkspaceId,
-      tags
-    );
-  }
-
-  log
-    .info()
-    .str('function', 'manageMemoryAlarmForInstance')
-    .str('instanceId', instanceId)
-    .str('Prometheus', tags['Prometheus'])
-    .str('usePrometheus', usePrometheus.toString())
-    .str('isCloudWatch', isCloudWatch.toString())
-    .msg(
-      'Checking if prometheus metrics are enabled and isCloudWatch is false.'
-    );
-
-  if (usePrometheus && isCloudWatch !== true) {
+  if (usePrometheus) {
     log
       .info()
       .str('function', 'manageMemoryAlarmForInstance')
-      .str('AlarmName', alarmName)
-      .str('prometheus tag', tags['Prometheus'])
       .str('instanceId', instanceId)
+      .str('Prometheus', tags['Prometheus'])
+      .str('usePrometheus', usePrometheus.toString())
+      .str('isCloudWatch', isCloudWatch.toString())
       .msg(
-        'Prometheus metrics enabled. Flipping shouldUpdatePromRules flag to true'
+        'Prometheus Metrics being recieved from instance. Skipping CloudWatch alarm creation.'
       );
-    shouldUpdatePromRules = true;
+    return;
   } else {
     log
       .info()
@@ -680,10 +611,8 @@ export async function manageMemoryAlarmForInstance(
       .str('prometheus tag', tags['Prometheus'])
       .str('instanceId', instanceId)
       .msg(
-        'Prometheus tag set to false. Deleting prometheus rules and creating CW alarms.'
+        'Prometheus tag set to false or metrics not being reported to Prometheus. Deleting prometheus rules and creating CW alarms.'
       );
-
-    shouldDeletePromAlarm = true; // set to true to delete prometheus rules when managing instance alarms
     await createCloudWatchAlarms(
       instanceId,
       alarmName,
@@ -780,8 +709,32 @@ export async function manageActiveInstanceAlarms(
     prometheusWorkspaceId,
     region
   );
-  await alarmFavor(instanceId, reportingInstances); // This sets our boolean isCloudWatch to false if the instance that triggered the eventbridge rule is reporting to prometheus
   await checkAndManageStatusAlarm(instanceId, tags);
+  await alarmFavor(instanceId, reportingInstances); // This sets our boolean isCloudWatch to false if the instance that triggered the eventbridge rule is reporting to prometheus
+
+  if (tags['Prometheus'] === 'true' && isCloudWatch !== true) {
+    log
+      .info()
+      .str('function', 'manageActiveInstanceAlarms')
+      .str('instanceId', instanceId)
+      .str('isCloudWatch', isCloudWatch.toString())
+      .str('Prometheus', tags['Prometheus'])
+      .msg(
+        'Instance that triggered eventbridge rule is configured for and reporting to Prometheus. Setting shouldUpdatePromRules flag to true.'
+      );
+    shouldUpdatePromRules = true;
+  } else {
+    log
+      .info()
+      .str('function', 'manageActiveInstanceAlarms')
+      .str('instanceId', instanceId)
+      .str('isCloudWatch', isCloudWatch.toString())
+      .str('Prometheus', tags['Prometheus'])
+      .msg(
+        'Instance that triggered eventbridge rule is not configured for Prometheus. Setting shouldDeletePromAlarm flag to true.'
+      );
+    shouldDeletePromAlarm = true;
+  }
 
   for (const classification of Object.values(AlarmClassification)) {
     try {
@@ -789,19 +742,19 @@ export async function manageActiveInstanceAlarms(
         instanceId,
         tags,
         classification,
-        isCloudWatch
+        shouldUpdatePromRules
       );
       await manageStorageAlarmForInstance(
         instanceId,
         tags,
         classification,
-        isCloudWatch
+        shouldUpdatePromRules
       );
       await manageMemoryAlarmForInstance(
         instanceId,
         tags,
         classification,
-        isCloudWatch
+        shouldUpdatePromRules
       );
     } catch (e) {
       log
@@ -815,7 +768,7 @@ export async function manageActiveInstanceAlarms(
 
   // Call batch update for Prometheus rules
   try {
-    if (!isCloudWatch && tags['Prometheus'] === 'true') {
+    if (shouldUpdatePromRules) {
       const instanceIds = await getAllInstanceIdsInRegion();
       await batchUpdatePromRules(
         shouldUpdatePromRules,
@@ -825,8 +778,10 @@ export async function manageActiveInstanceAlarms(
       );
       log
         .info()
-        .str('instanceId', instanceId)
         .str('function', 'manageActiveInstanceAlarms')
+        .str('instanceId', instanceId)
+        .str('isCloudWatch', isCloudWatch.toString())
+        .str('Prometheus', tags['Prometheus'])
         .msg(
           'Instance that triggered eventbridge rule is reporting to Prometheus. Deleting CloudWatch alarms for instance'
         );
@@ -849,6 +804,8 @@ export async function manageActiveInstanceAlarms(
         .str('function', 'manageActiveInstanceAlarms')
         .str('instanceId', instanceId)
         .str('isCloudWatch', isCloudWatch.toString())
+        .str('Prometheus', tags['Prometheus'])
+        .str('isCloudWatch', isCloudWatch.toString())
         .msg(
           ' isCloudWatch is true. Deleting Prometheus alarm rules for instance'
         );
@@ -860,14 +817,15 @@ export async function manageActiveInstanceAlarms(
       );
     }
   } catch (e) {
-    isCloudWatch = true;
+    shouldUpdatePromRules = false;
+    shouldDeletePromAlarm = true;
     log
       .error()
       .str('instanceId', instanceId)
       .str('function', 'manageActiveInstanceAlarms')
       .err(e)
       .msg(
-        'Error updating Prometheus rules for instances falling back to CW alarms.'
+        'Error updating Prometheus rules for instances falling back to CW alarms. Setting shouldDeletePromAlarm flag to true.'
       );
     for (const classification of Object.values(AlarmClassification)) {
       try {
@@ -875,19 +833,25 @@ export async function manageActiveInstanceAlarms(
           instanceId,
           tags,
           classification,
-          isCloudWatch
+          shouldUpdatePromRules
         );
         await manageStorageAlarmForInstance(
           instanceId,
           tags,
           classification,
-          isCloudWatch
+          shouldUpdatePromRules
         );
         await manageMemoryAlarmForInstance(
           instanceId,
           tags,
           classification,
-          isCloudWatch
+          shouldUpdatePromRules
+        );
+        await batchPromRulesDeletion(
+          shouldDeletePromAlarm,
+          prometheusWorkspaceId,
+          'ec2',
+          instanceId
         );
       } catch (e) {
         log

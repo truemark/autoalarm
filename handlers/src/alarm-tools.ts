@@ -425,7 +425,6 @@ const makeSignedRequest = async (
 /**
  * Function to query Prometheus for services.
  * @param serviceType - The type of service (e.g., 'ec2').
- * @param serviceIdentifiers - Array of service identifiers (e.g., IP addresses).
  * @param promWorkspaceID - The Prometheus workspace ID.
  * @param region - The AWS region.
  * @returns Promise resolving to Prometheus query result.
@@ -434,7 +433,7 @@ export async function queryPrometheusForService(
   serviceType: string,
   promWorkspaceID: string,
   region: string
-): Promise<{data: {result: {metric: {instance: string}}[]}}> {
+): Promise<string[]> {
   const queryPath = `/workspaces/${promWorkspaceID}/api/v1/query?query=`;
 
   try {
@@ -443,16 +442,17 @@ export async function queryPrometheusForService(
       case 'ec2': {
         log
           .info()
+          .str('function', 'queryPrometheusForService')
           .str('serviceType', serviceType)
           .str('promWorkspaceID', promWorkspaceID)
           .str('region', region)
           .msg('Querying Prometheus for EC2 instances');
 
-        // Use a 5-minute range to catch instances that might have just come online or gone offline
         query = 'up{job="ec2"}';
 
         log
           .info()
+          .str('function', 'queryPrometheusForService')
           .str('fullQueryPath', queryPath + encodeURIComponent(query))
           .msg('Full query path');
 
@@ -463,26 +463,33 @@ export async function queryPrometheusForService(
 
         log
           .info()
+          .str('function', 'queryPrometheusForService')
           .str('serviceType', serviceType)
           .str('Prometheus Workspace ID', promWorkspaceID)
           .str('region', region)
           .str('response', JSON.stringify(response, null, 2))
           .msg('Raw Prometheus query result');
 
-        if (response.status !== 'success') {
+        if (
+          !response ||
+          response.status !== 'success' ||
+          !response.data ||
+          !response.data.result
+        ) {
           log
             .warn()
+            .str('function', 'queryPrometheusForService')
             .str('serviceType', serviceType)
             .str('Prometheus Workspace ID', promWorkspaceID)
             .str('response', JSON.stringify(response, null, 2))
             .msg(
-              'Prometheus query failed. Defaulting to CW Alarms if possible...'
+              'Prometheus query failed or returned unexpected structure. Defaulting to CW Alarms if possible...'
             );
-          return {data: {result: []}};
+          return [];
         }
 
-        // Extract unique instances from the range vector result
-        const instances = new Set();
+        // Extract unique instances private IPs from query results
+        const instances = new Set<string>();
         response.data.result.forEach((item: any) => {
           const instance = item.metric.instance.split(':')[0];
           instances.add(instance);
@@ -490,106 +497,33 @@ export async function queryPrometheusForService(
 
         log
           .info()
+          .str('function', 'queryPrometheusForService')
           .str('serviceType', serviceType)
           .str('Prometheus Workspace ID', promWorkspaceID)
           .str('instances', JSON.stringify(Array.from(instances)))
           .msg('Unique instances extracted from Prometheus response');
 
-        // Modify the response to match the expected format
-        const modifiedResponse = {
-          data: {
-            result: Array.from(instances).map(instance => ({
-              metric: {instance: `${instance}:9100`},
-            })),
-          },
-        };
-
-        return modifiedResponse;
+        return Array.from(instances);
       }
       default: {
         log
           .warn()
+          .str('function', 'queryPrometheusForService')
           .str('serviceType', serviceType)
           .msg('Unsupported service type. Defaulting to CW Alarms if possible');
-        return {data: {result: []}};
+        return [];
       }
     }
   } catch (error) {
     log
       .error()
       .err(error)
+      .str('function', 'queryPrometheusForService')
       .str('serviceType', serviceType)
       .str('Prometheus Workspace ID', promWorkspaceID)
       .str('region', region)
       .msg('Error querying Prometheus');
-    return {data: {result: []}};
-  }
-}
-
-// Check if the Prometheus tag is set to true and if metrics are being sent to Prometheus
-export async function isPromEnabled(
-  instanceId: string,
-  serviceType: string,
-  promWorkspaceId: string,
-  tags: {[key: string]: string}
-): Promise<boolean> {
-  try {
-    const prometheusTag = tags['Prometheus'];
-    log
-      .info()
-      .str('function', 'isPromEnabled')
-      .str('Prometheus tag', prometheusTag)
-      .msg('Found Prometheus tag value');
-    if (prometheusTag === 'true') {
-      log
-        .info()
-        .str('function', 'isPromEnabled')
-        .str('prometheusTag', prometheusTag)
-        .str('instanceId', instanceId)
-        .msg(
-          'Prometheus tag found. Checking if metrics are being sent to Prometheus'
-        );
-      const useProm = await queryPrometheusForService(
-        serviceType,
-        promWorkspaceId,
-        region
-      );
-      /* The following conditional is used to check if the useProm variable is true or false. This will be used to
-      determine if metrics are being sent to Prometheus. Specifically, since we use the privet IP address of the instance
-      to verify we can match up instances with alarms, this also confirms we are abel to pull the required metadata to
-      create alarms for the instances that are triggering the lambda.
-       */
-      if (useProm.data.result.length < 1) {
-        log
-          .warn()
-          .str('instanceId', instanceId)
-          .msg('Metrics are not being sent to Prometheus');
-        return false;
-      }
-      log
-        .info()
-        .str('instanceId', instanceId)
-        .msg(`Prometheus metrics enabled=${useProm}`);
-      return true; // Return true if metrics are being sent to Prometheus
-    } else if (prometheusTag === 'false' || !prometheusTag) {
-      log
-        .info()
-        .str('instanceId', instanceId)
-        .str('tags', JSON.stringify(tags))
-        .msg('Prometheus tag not found or not set to true');
-      return false;
-    } else {
-      return false;
-    }
-  } catch (error) {
-    log
-      .error()
-      .err(error)
-      .str('instanceId', instanceId)
-      .msg('Failed to check Prometheus tag');
-    throw new Error(
-      `Failed to check Prometheus tag for instance ${instanceId}: ${error}`
-    );
+    return [];
   }
 }
 
