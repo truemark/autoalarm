@@ -48,11 +48,11 @@ async function getAlarmConfig(
   };
 }
 
-async function fetchTargetGroupTags(targetGroupArn: string): Promise<Tag> {
+export async function fetchTargetGroupTags(
+  targetGroupArn: string
+): Promise<Tag> {
   try {
-    const command = new DescribeTagsCommand({
-      ResourceArns: [targetGroupArn],
-    });
+    const command = new DescribeTagsCommand({ResourceArns: [targetGroupArn]});
     const response = await elbClient.send(command);
     const tags: Tag = {};
 
@@ -81,40 +81,60 @@ async function fetchTargetGroupTags(targetGroupArn: string): Promise<Tag> {
   }
 }
 
+async function checkAndManageTargetGroupStatusAlarms(
+  targetGroupName: string,
+  tags: Tag
+) {
+  if (tags['autoalarm:disabled'] === 'true') {
+    const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
+      'targetgroup',
+      targetGroupName
+    );
+    await Promise.all(
+      activeAutoAlarms.map(alarmName =>
+        deleteCWAlarm(alarmName, targetGroupName)
+      )
+    );
+    log.info().msg('Status check alarm creation skipped due to tag settings.');
+  } else {
+    for (const config of metricConfigs) {
+      const {metricName, namespace} = config;
+      for (const classification of Object.values(AlarmClassification)) {
+        const {alarmName, thresholdKey, durationTimeKey, durationPeriodsKey} =
+          await getAlarmConfig(
+            targetGroupName,
+            classification as AlarmClassification,
+            metricName
+          );
+
+        const alarmProps: AlarmProps = {
+          threshold: defaultThresholds[classification as AlarmClassification],
+          period: 60,
+          namespace: namespace,
+          evaluationPeriods: 5,
+          metricName: metricName,
+          dimensions: [{Name: 'TargetGroup', Value: targetGroupName}],
+        };
+
+        await createOrUpdateCWAlarm(
+          alarmName,
+          targetGroupName,
+          alarmProps,
+          tags,
+          thresholdKey,
+          durationTimeKey,
+          durationPeriodsKey
+        );
+      }
+    }
+  }
+}
+
 export async function manageTargetGroupAlarms(
   targetGroupName: string,
   tags: Tag
 ): Promise<void> {
-  for (const config of metricConfigs) {
-    const {metricName, namespace} = config;
-    for (const classification of Object.values(AlarmClassification)) {
-      const {alarmName, thresholdKey, durationTimeKey, durationPeriodsKey} =
-        await getAlarmConfig(
-          targetGroupName,
-          classification as AlarmClassification,
-          metricName
-        );
-
-      const alarmProps: AlarmProps = {
-        threshold: defaultThresholds[classification as AlarmClassification],
-        period: 60,
-        namespace: namespace,
-        evaluationPeriods: 5,
-        metricName: metricName,
-        dimensions: [{Name: 'TargetGroup', Value: targetGroupName}],
-      };
-
-      await createOrUpdateCWAlarm(
-        alarmName,
-        targetGroupName,
-        alarmProps,
-        tags,
-        thresholdKey,
-        durationTimeKey,
-        durationPeriodsKey
-      );
-    }
-  }
+  await checkAndManageTargetGroupStatusAlarms(targetGroupName, tags);
 }
 
 export async function manageInactiveTargetGroupAlarms(targetGroupName: string) {
@@ -134,7 +154,9 @@ export async function manageInactiveTargetGroupAlarms(targetGroupName: string) {
   }
 }
 
-export async function processTargetGroupEvent(event: any) {
+export async function getTargetGroupState(
+  event: any
+): Promise<{targetGroupArn: string; state: ValidTargetGroupState; tags: Tag}> {
   const targetGroupArn = event.detail['target-group-arn'];
   const state = event.detail.state;
   const tags = await fetchTargetGroupTags(targetGroupArn);
@@ -144,4 +166,6 @@ export async function processTargetGroupEvent(event: any) {
   } else if (state === ValidTargetGroupState.Deleted) {
     await manageInactiveTargetGroupAlarms(targetGroupArn);
   }
+
+  return {targetGroupArn, state, tags};
 }

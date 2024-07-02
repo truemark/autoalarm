@@ -43,7 +43,7 @@ async function getAlarmConfig(
   };
 }
 
-async function fetchSQSTags(queueUrl: string): Promise<Tag> {
+export async function fetchSQSTags(queueUrl: string): Promise<Tag> {
   try {
     const command = new ListQueueTagsCommand({QueueUrl: queueUrl});
     const response = await sqsClient.send(command);
@@ -66,40 +66,55 @@ async function fetchSQSTags(queueUrl: string): Promise<Tag> {
   }
 }
 
+async function checkAndManageSQSStatusAlarms(queueUrl: string, tags: Tag) {
+  if (tags['autoalarm:disabled'] === 'true') {
+    const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
+      'sqs',
+      queueUrl
+    );
+    await Promise.all(
+      activeAutoAlarms.map(alarmName => deleteCWAlarm(alarmName, queueUrl))
+    );
+    log.info().msg('Status check alarm creation skipped due to tag settings.');
+  } else {
+    for (const config of metricConfigs) {
+      const {metricName, namespace} = config;
+      for (const classification of Object.values(AlarmClassification)) {
+        const {alarmName, thresholdKey, durationTimeKey, durationPeriodsKey} =
+          await getAlarmConfig(
+            queueUrl,
+            classification as AlarmClassification,
+            metricName
+          );
+
+        const alarmProps: AlarmProps = {
+          threshold: defaultThresholds[classification as AlarmClassification],
+          period: 60,
+          namespace: namespace,
+          evaluationPeriods: 5,
+          metricName: metricName,
+          dimensions: [{Name: 'QueueUrl', Value: queueUrl}],
+        };
+
+        await createOrUpdateCWAlarm(
+          alarmName,
+          queueUrl,
+          alarmProps,
+          tags,
+          thresholdKey,
+          durationTimeKey,
+          durationPeriodsKey
+        );
+      }
+    }
+  }
+}
+
 export async function manageSQSAlarms(
   queueUrl: string,
   tags: Tag
 ): Promise<void> {
-  for (const config of metricConfigs) {
-    const {metricName, namespace} = config;
-    for (const classification of Object.values(AlarmClassification)) {
-      const {alarmName, thresholdKey, durationTimeKey, durationPeriodsKey} =
-        await getAlarmConfig(
-          queueUrl,
-          classification as AlarmClassification,
-          metricName
-        );
-
-      const alarmProps: AlarmProps = {
-        threshold: defaultThresholds[classification as AlarmClassification],
-        period: 60,
-        namespace: namespace,
-        evaluationPeriods: 5,
-        metricName: metricName,
-        dimensions: [{Name: 'QueueUrl', Value: queueUrl}],
-      };
-
-      await createOrUpdateCWAlarm(
-        alarmName,
-        queueUrl,
-        alarmProps,
-        tags,
-        thresholdKey,
-        durationTimeKey,
-        durationPeriodsKey
-      );
-    }
-  }
+  await checkAndManageSQSStatusAlarms(queueUrl, tags);
 }
 
 export async function manageInactiveSQSAlarms(queueUrl: string) {
@@ -117,7 +132,9 @@ export async function manageInactiveSQSAlarms(queueUrl: string) {
   }
 }
 
-export async function processSQSEvent(event: any) {
+export async function getSqsState(
+  event: any
+): Promise<{queueUrl: string; state: ValidSqsState; tags: Tag}> {
   const queueUrl = event.detail['queue-url'];
   const state = event.detail.state;
   const tags = await fetchSQSTags(queueUrl);
@@ -127,4 +144,6 @@ export async function processSQSEvent(event: any) {
   } else if (state === ValidSqsState.Deleted) {
     await manageInactiveSQSAlarms(queueUrl);
   }
+
+  return {queueUrl, state, tags};
 }

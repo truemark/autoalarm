@@ -1,6 +1,7 @@
 import {
   ElasticLoadBalancingV2Client,
   DescribeTagsCommand,
+  DescribeLoadBalancersCommand,
 } from '@aws-sdk/client-elastic-load-balancing-v2';
 import * as logging from '@nr1e/logging';
 import {AlarmProps, Tag} from './types';
@@ -46,7 +47,7 @@ async function getAlarmConfig(
   };
 }
 
-async function fetchALBTags(loadBalancerArn: string): Promise<Tag> {
+export async function fetchALBTags(loadBalancerArn: string): Promise<Tag> {
   try {
     const command = new DescribeTagsCommand({
       ResourceArns: [loadBalancerArn],
@@ -79,40 +80,60 @@ async function fetchALBTags(loadBalancerArn: string): Promise<Tag> {
   }
 }
 
+async function checkAndManageALBStatusAlarms(
+  loadBalancerName: string,
+  tags: Tag
+) {
+  if (tags['autoalarm:disabled'] === 'true') {
+    const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
+      'alb',
+      loadBalancerName
+    );
+    await Promise.all(
+      activeAutoAlarms.map(alarmName =>
+        deleteCWAlarm(alarmName, loadBalancerName)
+      )
+    );
+    log.info().msg('Status check alarm creation skipped due to tag settings.');
+  } else {
+    for (const config of metricConfigs) {
+      const {metricName, namespace} = config;
+      for (const classification of Object.values(AlarmClassification)) {
+        const {alarmName, thresholdKey, durationTimeKey, durationPeriodsKey} =
+          await getAlarmConfig(
+            loadBalancerName,
+            classification as AlarmClassification,
+            metricName
+          );
+
+        const alarmProps: AlarmProps = {
+          threshold: defaultThresholds[classification as AlarmClassification],
+          period: 60,
+          namespace: namespace,
+          evaluationPeriods: 5,
+          metricName: metricName,
+          dimensions: [{Name: 'LoadBalancer', Value: loadBalancerName}],
+        };
+
+        await createOrUpdateCWAlarm(
+          alarmName,
+          loadBalancerName,
+          alarmProps,
+          tags,
+          thresholdKey,
+          durationTimeKey,
+          durationPeriodsKey
+        );
+      }
+    }
+  }
+}
+
 export async function manageALBAlarms(
   loadBalancerName: string,
   tags: Tag
 ): Promise<void> {
-  for (const config of metricConfigs) {
-    const {metricName, namespace} = config;
-    for (const classification of Object.values(AlarmClassification)) {
-      const {alarmName, thresholdKey, durationTimeKey, durationPeriodsKey} =
-        await getAlarmConfig(
-          loadBalancerName,
-          classification as AlarmClassification,
-          metricName
-        );
-
-      const alarmProps: AlarmProps = {
-        threshold: defaultThresholds[classification as AlarmClassification],
-        period: 60,
-        namespace: namespace,
-        evaluationPeriods: 5,
-        metricName: metricName,
-        dimensions: [{Name: 'LoadBalancer', Value: loadBalancerName}],
-      };
-
-      await createOrUpdateCWAlarm(
-        alarmName,
-        loadBalancerName,
-        alarmProps,
-        tags,
-        thresholdKey,
-        durationTimeKey,
-        durationPeriodsKey
-      );
-    }
-  }
+  await checkAndManageALBStatusAlarms(loadBalancerName, tags);
 }
 
 export async function manageInactiveALBAlarms(loadBalancerName: string) {
@@ -132,14 +153,25 @@ export async function manageInactiveALBAlarms(loadBalancerName: string) {
   }
 }
 
-export async function processALBEvent(event: any) {
-  const loadBalancerArn = event.detail['load-balancer-arn'];
-  const state = event.detail.state;
+export async function getAlbState(
+  event: any
+): Promise<{loadBalancerArn: string; state: ValidAlbState; tags: Tag}> {
+  const loadBalancerArn = event.resources[0];
+  log
+    .info()
+    .str('loadBalancerArn', loadBalancerArn)
+    .msg('Processing tag event');
+
+  const describeLoadBalancersResponse = await elbClient.send(
+    new DescribeLoadBalancersCommand({
+      LoadBalancerArns: [loadBalancerArn],
+    })
+  );
+
+  const loadBalancer = describeLoadBalancersResponse.LoadBalancers?.[0];
+  const state =
+    (loadBalancer?.State?.Code as ValidAlbState) || ValidAlbState.Active;
   const tags = await fetchALBTags(loadBalancerArn);
 
-  if (loadBalancerArn && state === ValidAlbState.Active) {
-    await manageALBAlarms(loadBalancerArn, tags);
-  } else if (state === ValidAlbState.Deleted) {
-    await manageInactiveALBAlarms(loadBalancerArn);
-  }
+  return {loadBalancerArn, state, tags};
 }
