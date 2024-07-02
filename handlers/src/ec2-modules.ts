@@ -27,6 +27,30 @@ const ec2Client: EC2Client = new EC2Client({});
 const cloudWatchClient: CloudWatchClient = new CloudWatchClient({});
 //the follwing environment variables are used to get the prometheus workspace id and the region
 const prometheusWorkspaceId: string = process.env.PROMETHEUS_WORKSPACE_ID || '';
+//this is used to determine if we should delete the prometheus alarm and to do so all at once to avoid unnecessary duplicate calls to the prometheus API
+let shouldDeletePromAlarm = false;
+
+async function batchPromRulesDeletion(
+  shouldDeletePromAlarm: boolean,
+  prometheusWorkspaceId: string,
+  service: string,
+  instanceId: string
+) {
+  if (shouldDeletePromAlarm) {
+    log
+      .info()
+      .str('shouldDeletePromAlarm', 'true')
+      .msg(
+        'Pometheus rules have been marked for deletion. Deleting prometheus rules'
+      );
+    await deletePromRulesForService(prometheusWorkspaceId, service, instanceId);
+  } else {
+    log
+      .info()
+      .str('shouldDeletePromAlarm', 'false')
+      .msg('Prometheus rules have not been marked for deletion');
+  }
+}
 
 // The following const and function are used to dynamically identify the alarm configuration tags and apply them to each alarm
 // that requires those configurations. The default threshold is set to 90 for critical alarms and 80 for warning alarms.
@@ -51,7 +75,7 @@ async function getAlarmConfig(
   const ec2Metadata = await getInstanceDetails(instanceId);
 
   return {
-    alarmName: `AutoAlarm-EC2-${instanceId}-${type}${metric}Utilization`,
+    alarmName: `AutoAlarm-EC2-${instanceId}-${type}${metric.toUpperCase()}Utilization`,
     thresholdKey,
     durationTimeKey,
     durationPeriodsKey,
@@ -195,6 +219,7 @@ async function getInstanceDetails(
   }
 }
 
+//this function is used to create the CloudWatch alarms for CPU, Memory, and Storage in addition to reducing redundant logic needed across those 3 functions
 async function createCloudWatchAlarms(
   instanceId: string,
   alarmName: string,
@@ -271,8 +296,10 @@ export async function manageCPUUsageAlarmForInstance(
       log
         .info()
         .err(e)
-        .msg('Error managing Prometheus alarms. Falling back to CW Alarms');
-      await deletePromRulesForService(prometheusWorkspaceId, 'ec2', instanceId);
+        .msg(
+          'Error managing Prometheus alarms. Falling back to CW Alarms and deleting prometheus rules'
+        );
+      shouldDeletePromAlarm = true; // set to true to delete prometheus rules when managing instance alarms
       await createCloudWatchAlarms(
         instanceId,
         alarmName,
@@ -289,12 +316,12 @@ export async function manageCPUUsageAlarmForInstance(
   } else {
     log
       .info()
-      .str('pometheus tag', tags['Prometheus:'])
+      .str('prometheus tag', tags['Prometheus'])
       .str('instanceId', instanceId)
       .msg(
         'Prometheus tag set to false. Deleting prometheus rules and creating CW alarms.'
       );
-    await deletePromRulesForService(prometheusWorkspaceId, 'ec2', instanceId);
+    shouldDeletePromAlarm = true; // set to true to delete prometheus rules when managing instance alarms
     await createCloudWatchAlarms(
       instanceId,
       alarmName,
@@ -362,7 +389,7 @@ export async function manageStorageAlarmForInstance(
         .err(e)
         .msg('Error managing Prometheus alarms. Falling back to CW Alarms');
 
-      await deletePromRulesForService(prometheusWorkspaceId, 'ec2', instanceId);
+      shouldDeletePromAlarm = true; // set to true to delete prometheus rules when managing instance alarms
       const storagePaths = await getStoragePathsFromCloudWatch(
         instanceId,
         metricName
@@ -397,12 +424,12 @@ export async function manageStorageAlarmForInstance(
   } else {
     log
       .info()
-      .str('pometheus tag', tags['Prometheus:'])
+      .str('prometheus tag', tags['Prometheus'])
       .str('instanceId', instanceId)
       .msg(
         'Prometheus tag set to false. Deleting prometheus rules and creating CW alarms.'
       );
-    await deletePromRulesForService(prometheusWorkspaceId, 'ec2', instanceId);
+    shouldDeletePromAlarm = true; // set to true to delete prometheus rules when managing instance alarms
     const storagePaths = await getStoragePathsFromCloudWatch(
       instanceId,
       metricName
@@ -488,7 +515,7 @@ export async function manageMemoryAlarmForInstance(
         .err(e)
         .msg('Error managing Prometheus alarms. Falling back to CW Alarms');
 
-      await deletePromRulesForService(prometheusWorkspaceId, 'ec2', instanceId);
+      shouldDeletePromAlarm = true; // set to true to delete prometheus rules when managing instance alarms
       await createCloudWatchAlarms(
         instanceId,
         alarmName,
@@ -505,12 +532,12 @@ export async function manageMemoryAlarmForInstance(
   } else {
     log
       .info()
-      .str('pometheus tag', tags['Prometheus:'])
+      .str('prometheus tag', tags['Prometheus'])
       .str('instanceId', instanceId)
       .msg(
         'Prometheus tag set to false. Deleting prometheus rules and creating CW alarms.'
       );
-    await deletePromRulesForService(prometheusWorkspaceId, 'ec2', instanceId);
+    shouldDeletePromAlarm = true; // set to true to delete prometheus rules when managing instance alarms
     await createCloudWatchAlarms(
       instanceId,
       alarmName,
@@ -577,10 +604,6 @@ async function checkAndManageStatusAlarm(instanceId: string, tags: Tag) {
     await createStatusAlarmForInstance(instanceId, doesAlarmExist);
   }
 }
-
-/* TODO: move active and inactive instance alarm management to a separate module to alarm tools and make more module
- *  for all services. This will allow for better organization and easier testing.
- */
 export async function manageActiveInstanceAlarms(
   instanceId: string,
   tags: Tag
@@ -592,6 +615,13 @@ export async function manageActiveInstanceAlarms(
       await manageCPUUsageAlarmForInstance(instanceId, tags, classification);
       await manageStorageAlarmForInstance(instanceId, tags, classification);
       await manageMemoryAlarmForInstance(instanceId, tags, classification);
+      // delete prometheus rules if they have been marked for deletion using batchPromRulesDeletion in favor of cloudwatch alarms
+      await batchPromRulesDeletion(
+        shouldDeletePromAlarm, //this is a boolean that is set to true if any prometheus rules have been marked for deletion in favor of cloudwatch alarms
+        prometheusWorkspaceId,
+        'ec2',
+        instanceId
+      );
     } catch (e) {
       log.error().err(e).msg('Error managing alarms for instance');
       throw new Error(`Error managing alarms for instance: ${e}`);
@@ -608,7 +638,12 @@ export async function manageInactiveInstanceAlarms(instanceId: string) {
     await Promise.all(
       activeAutoAlarms.map(alarmName => deleteCWAlarm(alarmName, instanceId))
     );
-    await deletePromRulesForService(prometheusWorkspaceId, 'ec2', instanceId);
+    await batchPromRulesDeletion(
+      shouldDeletePromAlarm, //this is a boolean that is set to true if any prometheus rules have been marked for deletion in favor of cloudwatch alarms
+      prometheusWorkspaceId,
+      'ec2',
+      instanceId
+    );
   } catch (e) {
     log.error().err(e).msg(`Error deleting alarms: ${e}`);
     throw new Error(`Error deleting alarms: ${e}`);

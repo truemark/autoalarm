@@ -109,7 +109,7 @@ export class AutoAlarmConstruct extends Construct {
             'autoalarm:memory-percent-duration-time',
             'autoalarm:memory-percent-duration-periods',
             'autoalarm:selective-storage', //true or false
-            'Prometheus:',
+            'Prometheus',
           ],
         },
       },

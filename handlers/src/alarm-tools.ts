@@ -998,13 +998,6 @@ export async function deletePromRulesForService(
   service: string,
   serviceIdentifier: string
 ): Promise<void> {
-  log
-    .info()
-    .str('promWorkspaceId', promWorkspaceId)
-    .str('service', service)
-    .str('serviceIdentifier', serviceIdentifier)
-    .msg('Starting deletePromRulesForService');
-
   try {
     const namespace = 'AutoAlarm';
     const ruleGroupName = 'AutoAlarm';
@@ -1046,7 +1039,16 @@ export async function deletePromRulesForService(
         .str('ruleGroupName', ruleGroupName)
         .msg('No Prometheus rules left, removing the rule group');
     }
+    log
+      .info()
+      .str('promWorkspaceId', promWorkspaceId)
+      .str('service', service)
+      .str('serviceIdentifier', serviceIdentifier)
+      .msg(
+        'Waiting 90 seconds to allow any rule updates to finish and then starting deletePromRulesForService'
+      );
 
+    await wait(90000); // Wait for 90 seconds before deleting the rules
     const updatedYaml = yaml.dump(nsDetails);
     const updatedData = new TextEncoder().encode(updatedYaml);
 
