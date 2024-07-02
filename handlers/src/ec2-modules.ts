@@ -18,7 +18,8 @@ import {
   getCWAlarmsForInstance,
   deleteCWAlarm,
   isPromEnabled,
-  managePromNameSpaceAlarms,
+  queryPrometheusForService,
+  managePromNamespaceAlarms,
   deletePromRulesForService,
 } from './alarm-tools';
 
@@ -27,8 +28,11 @@ const ec2Client: EC2Client = new EC2Client({});
 const cloudWatchClient: CloudWatchClient = new CloudWatchClient({});
 //the follwing environment variables are used to get the prometheus workspace id and the region
 const prometheusWorkspaceId: string = process.env.PROMETHEUS_WORKSPACE_ID || '';
-//this is used to determine if we should delete the prometheus alarm and to do so all at once to avoid unnecessary duplicate calls to the prometheus API
+const region: string = process.env.AWS_REGION || '';
+
 let shouldDeletePromAlarm = false;
+let shouldUpdatePromRules = false;
+let isCloudWatch = true;
 
 async function batchPromRulesDeletion(
   shouldDeletePromAlarm: boolean,
@@ -50,6 +54,155 @@ async function batchPromRulesDeletion(
       .str('shouldDeletePromAlarm', 'false')
       .msg('Prometheus rules have not been marked for deletion');
   }
+}
+
+/**
+ * Get alarm configurations for prometheus alarms. Specifically, for an instance based on its tags and classification.
+ * @param instanceId - The EC2 instance ID.
+ * @param tags - The tags associated with the EC2 instance.
+ * @param classification - The alarm classification (e.g., CRITICAL, WARNING).
+ * @returns Array of alarm configurations.
+ */
+async function getPromAlarmConfigs(
+  instanceId: string,
+  tags: Tag,
+  classification: AlarmClassification
+): Promise<any[]> {
+  const configs = [];
+
+  const {alarmName: cpuAlarmName, thresholdKey: cpuThresholdKey} =
+    await getAlarmConfig(instanceId, classification, 'cpu');
+  configs.push({
+    instanceId,
+    type: classification,
+    alarmName: cpuAlarmName,
+    alarmQuery: `100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > ${tags[cpuThresholdKey]}`,
+    duration: '5m',
+    severityType: classification.toLowerCase(),
+  });
+
+  const {alarmName: memAlarmName, thresholdKey: memThresholdKey} =
+    await getAlarmConfig(instanceId, classification, 'memory');
+  configs.push({
+    instanceId,
+    type: classification,
+    alarmName: memAlarmName,
+    alarmQuery: `100 - (avg by (instance) (rate(node_memory_MemAvailable_bytes[5m])) * 100) > ${tags[memThresholdKey]}`,
+    duration: '5m',
+    severityType: classification.toLowerCase(),
+  });
+
+  const {alarmName: storageAlarmName, thresholdKey: storageThresholdKey} =
+    await getAlarmConfig(instanceId, classification, 'storage');
+  configs.push({
+    instanceId,
+    type: classification,
+    alarmName: storageAlarmName,
+    alarmQuery: `100 - (avg by (instance) (rate(node_filesystem_avail_bytes{fstype!="tmpfs"}[5m])) * 100) > ${tags[storageThresholdKey]}`,
+    duration: '5m',
+    severityType: classification.toLowerCase(),
+  });
+
+  return configs;
+}
+
+// Function used to get all ec2 instances reporting to prometheus and return a boolean used later in the manageActiveInstanceAlarms function
+// to determine if we should use cloudwatch alarms or prometheus alarms for the instance that triggered the eventbridge rule.
+
+const reportingInstances = await queryPrometheusForService(
+  'ec2',
+  prometheusWorkspaceId,
+  region
+);
+async function alarmFavor(instanceId: string) {
+  const instanceIdEc2Metadata = await getInstanceDetails(instanceId);
+  const TriggeredInstanceIP = instanceIdEc2Metadata.privateIp;
+  const reportingInstanceIps = reportingInstances.data.result.map(
+    (result: any) => result.metric.instance.split(':')[0]
+  );
+  if (reportingInstanceIps.includes(TriggeredInstanceIP)) {
+    isCloudWatch = false;
+  }
+}
+
+/**
+ * Batch update Prometheus rules for all EC2 instances with the necessary tags and metrics reporting.
+ * This function serves two purposes: First to manage all EC2 instances with Prometheus tags set to true and autoalarm:disabled set to false.
+ * secondly, we indicate if the instanceId is in the list of instances that have been updated. If it is, we update the
+ * favorPromAlarmsForInstance to true in order to delete the cloudwatch alarms for that instance in the
+ * manageActiveInstanceAlarms function.
+ * @param shouldUpdatePromRules - Boolean flag to indicate if Prometheus rules should be updated.
+ * @param prometheusWorkspaceId - The Prometheus workspace ID.
+ * @param service - The service name.
+ * @param instanceIds - Array of EC2 instance IDs.
+ */
+async function batchUpdatePromRules(
+  shouldUpdatePromRules: boolean,
+  prometheusWorkspaceId: string,
+  instanceIds: string[]
+) {
+  if (!shouldUpdatePromRules) {
+    log
+      .info()
+      .str('shouldUpdatePromRules', 'false')
+      .msg(
+        'Prometheus rules have not been marked for update or creation. Skipping batch update.'
+      );
+    return;
+  }
+
+  // Fetch private IPs and tags for all instances
+  const instanceDetailsPromises = instanceIds.map(async instanceId => {
+    const tags = await fetchInstanceTags(instanceId);
+    const ec2Metadata = await getInstanceDetails(instanceId);
+    return {instanceId, tags, privateIp: ec2Metadata.privateIp};
+  });
+
+  const instanceDetails = await Promise.all(instanceDetailsPromises);
+
+  // Filter instances that have Prometheus tag set to true and autoalarm:disabled set to false
+  const instancesToCheck = instanceDetails.filter(
+    details =>
+      details.tags['Prometheus'] === 'true' &&
+      details.tags['autoalarm:disabled'] !== 'true'
+  );
+
+  // Strip ports from IP addresses if present and normalize them
+  const reportingInstanceIps = reportingInstances.data.result.map(
+    (result: any) => result.metric.instance.split(':')[0]
+  );
+
+  // Filter instances that are confirmed to be reporting metrics to Prometheus
+  const instancesToUpdate = instancesToCheck.filter(details =>
+    reportingInstanceIps.includes(details.privateIp)
+  );
+
+  // Consolidate alarm configurations for all instances
+  const alarmConfigs: any[] = [];
+  for (const {instanceId, tags} of instancesToUpdate) {
+    for (const classification of Object.values(AlarmClassification)) {
+      const configs = await getPromAlarmConfigs(
+        instanceId,
+        tags,
+        classification
+      );
+      alarmConfigs.push(...configs);
+    }
+  }
+
+  // Update Prometheus rules in batch
+  const namespace = 'AutoAlarm-EC2';
+  const ruleGroupName = 'AutoAlarm';
+
+  log.info().msg('Updating Prometheus rules for all instances in batch.');
+  await managePromNamespaceAlarms(
+    prometheusWorkspaceId,
+    namespace,
+    ruleGroupName,
+    alarmConfigs
+  );
+
+  log.info().msg('Batch update of Prometheus rules completed.');
 }
 
 // The following const and function are used to dynamically identify the alarm configuration tags and apply them to each alarm
@@ -75,7 +228,7 @@ async function getAlarmConfig(
   const ec2Metadata = await getInstanceDetails(instanceId);
 
   return {
-    alarmName: `AutoAlarm-EC2-${instanceId}-${type}${metric.toUpperCase()}Utilization`,
+    alarmName: `AutoAlarm-EC2-${instanceId}-${type}-${metric.toUpperCase()}-Utilization`,
     thresholdKey,
     durationTimeKey,
     durationPeriodsKey,
@@ -255,67 +408,36 @@ async function createCloudWatchAlarms(
 export async function manageCPUUsageAlarmForInstance(
   instanceId: string,
   tags: Tag,
-  type: AlarmClassification
+  type: AlarmClassification,
+  isCloudWatch: boolean
 ): Promise<void> {
-  const {
-    alarmName,
-    thresholdKey,
-    durationTimeKey,
-    durationPeriodsKey,
-    ec2Metadata,
-  } = await getAlarmConfig(instanceId, type, 'cpu');
+  const {alarmName, thresholdKey, durationTimeKey, durationPeriodsKey} =
+    await getAlarmConfig(instanceId, type, 'cpu');
+  let usePrometheus = false;
 
-  const usePrometheus = await isPromEnabled(
-    instanceId,
-    'ec2',
-    ec2Metadata.privateIp ? ec2Metadata.privateIp : '',
-    prometheusWorkspaceId,
-    tags
-  );
+  if (tags['Prometheus'] === 'true') {
+    usePrometheus = await isPromEnabled(
+      instanceId,
+      'ec2',
+      prometheusWorkspaceId,
+      tags
+    );
+  }
 
-  if (usePrometheus) {
-    try {
-      log
-        .info()
-        .str('instanceId', instanceId)
-        .msg(
-          'Prometheus metrics enabled. Skipping CloudWatch alarm creation and using Prometheus metrics instead' +
-            ` and prometheus workspace id is ${prometheusWorkspaceId}`
-        );
-      await managePromNameSpaceAlarms(
-        prometheusWorkspaceId,
-        'ec2',
-        'cpu',
-        alarmName,
-        `100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > ${tags[thresholdKey]}`,
-        '5m',
-        type
+  if (usePrometheus && !isCloudWatch) {
+    log
+      .info()
+      .str('AlarmName', alarmName)
+      .str('prometheus tag', tags['Prometheus'])
+      .str('instanceId', instanceId)
+      .msg(
+        'Prometheus metrics enabled. Flipping shouldUpdatePromRules flag to true'
       );
-      await deleteCWAlarm(alarmName, instanceId); // ensure correct order
-    } catch (e) {
-      log
-        .info()
-        .err(e)
-        .msg(
-          'Error managing Prometheus alarms. Falling back to CW Alarms and deleting prometheus rules'
-        );
-      shouldDeletePromAlarm = true; // set to true to delete prometheus rules when managing instance alarms
-      await createCloudWatchAlarms(
-        instanceId,
-        alarmName,
-        'CPUUtilization',
-        'AWS/EC2',
-        [{Name: 'InstanceId', Value: instanceId}],
-        type,
-        tags,
-        thresholdKey,
-        durationTimeKey,
-        durationPeriodsKey
-      );
-    }
+    shouldUpdatePromRules = true;
   } else {
     log
       .info()
+      .str('AlarmName', alarmName)
       .str('prometheus tag', tags['Prometheus'])
       .str('instanceId', instanceId)
       .msg(
@@ -340,7 +462,8 @@ export async function manageCPUUsageAlarmForInstance(
 export async function manageStorageAlarmForInstance(
   instanceId: string,
   tags: Tag,
-  type: AlarmClassification
+  type: AlarmClassification,
+  isCloudWatch: boolean
 ): Promise<void> {
   const {
     alarmName,
@@ -349,81 +472,37 @@ export async function manageStorageAlarmForInstance(
     durationPeriodsKey,
     ec2Metadata,
   } = await getAlarmConfig(instanceId, type, 'storage');
-
   const isWindows = ec2Metadata.platform
     ? ec2Metadata.platform.toLowerCase().includes('windows')
     : false;
   const metricName = isWindows
     ? 'LogicalDisk % Free Space'
     : 'disk_used_percent';
+  let usePrometheus = false;
 
-  const usePrometheus = await isPromEnabled(
-    instanceId,
-    'ec2',
-    ec2Metadata.privateIp ? ec2Metadata.privateIp : '',
-    prometheusWorkspaceId,
-    tags
-  );
+  if (tags['Prometheus'] === 'true') {
+    usePrometheus = await isPromEnabled(
+      instanceId,
+      'ec2',
+      prometheusWorkspaceId,
+      tags
+    );
+  }
 
-  if (usePrometheus) {
-    try {
-      log
-        .info()
-        .str('instanceId', instanceId)
-        .msg(
-          'Prometheus metrics enabled. Skipping CloudWatch alarm creation and using Prometheus metrics instead' +
-            ` and prometheus workspace id is ${prometheusWorkspaceId}`
-        );
-      await managePromNameSpaceAlarms(
-        prometheusWorkspaceId,
-        'ec2',
-        'storage',
-        alarmName,
-        'up', // change query to get cpu usage after testing
-        '5m',
-        type
+  if (usePrometheus && !isCloudWatch) {
+    log
+      .info()
+      .str('AlarmName', alarmName)
+      .str('prometheus tag', tags['Prometheus'])
+      .str('instanceId', instanceId)
+      .msg(
+        'Prometheus metrics enabled. Flipping shouldUpdatePromRules flag to true'
       );
-    } catch (e) {
-      log
-        .info()
-        .err(e)
-        .msg('Error managing Prometheus alarms. Falling back to CW Alarms');
-
-      shouldDeletePromAlarm = true; // set to true to delete prometheus rules when managing instance alarms
-      const storagePaths = await getStoragePathsFromCloudWatch(
-        instanceId,
-        metricName
-      );
-      const paths = Object.keys(storagePaths);
-      if (paths.length > 0) {
-        for (const path of paths) {
-          const dimensions_props = storagePaths[path];
-          const storageAlarmName = `${alarmName}-${path}`;
-          await createCloudWatchAlarms(
-            instanceId,
-            storageAlarmName,
-            metricName,
-            'CWAgent',
-            dimensions_props,
-            type,
-            tags,
-            thresholdKey,
-            durationTimeKey,
-            durationPeriodsKey
-          );
-        }
-      } else {
-        log
-          .info()
-          .str('instanceId', instanceId)
-          .msg(
-            'CloudWatch metrics not found for storage paths. Skipping alarm creation.'
-          );
-      }
-    }
+    shouldUpdatePromRules = true;
   } else {
     log
       .info()
+      .str('AlarmName', alarmName)
       .str('prometheus tag', tags['Prometheus'])
       .str('instanceId', instanceId)
       .msg(
@@ -466,7 +545,8 @@ export async function manageStorageAlarmForInstance(
 export async function manageMemoryAlarmForInstance(
   instanceId: string,
   tags: Tag,
-  type: AlarmClassification
+  type: AlarmClassification,
+  isCloudWatch: boolean
 ): Promise<void> {
   const {
     alarmName,
@@ -482,61 +562,37 @@ export async function manageMemoryAlarmForInstance(
   const metricName = isWindows
     ? 'Memory % Committed Bytes In Use'
     : 'mem_used_percent';
+  let usePrometheus = false;
 
-  const usePrometheus = await isPromEnabled(
-    instanceId,
-    'ec2',
-    ec2Metadata.privateIp ? ec2Metadata.privateIp : '',
-    prometheusWorkspaceId,
-    tags
-  );
+  if (tags['Prometheus'] === 'true') {
+    usePrometheus = await isPromEnabled(
+      instanceId,
+      'ec2',
+      prometheusWorkspaceId,
+      tags
+    );
+  }
 
-  if (usePrometheus) {
-    try {
-      log
-        .info()
-        .str('instanceId', instanceId)
-        .msg(
-          'Prometheus metrics enabled. Skipping CloudWatch alarm creation and using Prometheus metrics instead' +
-            ` and prometheus workspace id is ${prometheusWorkspaceId}`
-        );
-      await managePromNameSpaceAlarms(
-        prometheusWorkspaceId,
-        'ec2',
-        'memory',
-        alarmName,
-        'up', // change query to get memory usage after testing
-        '5m',
-        type
+  if (usePrometheus && !isCloudWatch) {
+    log
+      .info()
+      .str('AlarmName', alarmName)
+      .str('prometheus tag', tags['Prometheus'])
+      .str('instanceId', instanceId)
+      .msg(
+        'Prometheus metrics enabled. Flipping shouldUpdatePromRules flag to true'
       );
-    } catch (e) {
-      log
-        .info()
-        .err(e)
-        .msg('Error managing Prometheus alarms. Falling back to CW Alarms');
-
-      shouldDeletePromAlarm = true; // set to true to delete prometheus rules when managing instance alarms
-      await createCloudWatchAlarms(
-        instanceId,
-        alarmName,
-        metricName,
-        'CWAgent',
-        [{Name: 'InstanceId', Value: instanceId}],
-        type,
-        tags,
-        thresholdKey,
-        durationTimeKey,
-        durationPeriodsKey
-      );
-    }
+    shouldUpdatePromRules = true;
   } else {
     log
       .info()
+      .str('AlarmName', alarmName)
       .str('prometheus tag', tags['Prometheus'])
       .str('instanceId', instanceId)
       .msg(
         'Prometheus tag set to false. Deleting prometheus rules and creating CW alarms.'
       );
+
     shouldDeletePromAlarm = true; // set to true to delete prometheus rules when managing instance alarms
     await createCloudWatchAlarms(
       instanceId,
@@ -604,27 +660,116 @@ async function checkAndManageStatusAlarm(instanceId: string, tags: Tag) {
     await createStatusAlarmForInstance(instanceId, doesAlarmExist);
   }
 }
+
+/**
+ * Function to get all EC2 instance IDs in the region.
+ * @returns Array of EC2 instance IDs.
+ */
+async function getAllInstanceIdsInRegion(): Promise<string[]> {
+  const command = new DescribeInstancesCommand({});
+  const response = await ec2Client.send(command);
+  const instanceIds: string[] = [];
+
+  for (const reservation of response.Reservations || []) {
+    for (const instance of reservation.Instances || []) {
+      if (instance.InstanceId) {
+        instanceIds.push(instance.InstanceId);
+      }
+    }
+  }
+
+  return instanceIds;
+}
+
 export async function manageActiveInstanceAlarms(
   instanceId: string,
   tags: Tag
 ) {
+  await alarmFavor(instanceId); // This sets our boolean isCloudWatch to false if the instance that triggered the eventbridge rule is reporting to prometheus
   await checkAndManageStatusAlarm(instanceId, tags);
-  // Loop through classifications and manage alarms
+
   for (const classification of Object.values(AlarmClassification)) {
     try {
-      await manageCPUUsageAlarmForInstance(instanceId, tags, classification);
-      await manageStorageAlarmForInstance(instanceId, tags, classification);
-      await manageMemoryAlarmForInstance(instanceId, tags, classification);
-      // delete prometheus rules if they have been marked for deletion using batchPromRulesDeletion in favor of cloudwatch alarms
-      await batchPromRulesDeletion(
-        shouldDeletePromAlarm, //this is a boolean that is set to true if any prometheus rules have been marked for deletion in favor of cloudwatch alarms
-        prometheusWorkspaceId,
-        'ec2',
-        instanceId
+      await manageCPUUsageAlarmForInstance(
+        instanceId,
+        tags,
+        classification,
+        isCloudWatch
+      );
+      await manageStorageAlarmForInstance(
+        instanceId,
+        tags,
+        classification,
+        isCloudWatch
+      );
+      await manageMemoryAlarmForInstance(
+        instanceId,
+        tags,
+        classification,
+        isCloudWatch
       );
     } catch (e) {
       log.error().err(e).msg('Error managing alarms for instance');
       throw new Error(`Error managing alarms for instance: ${e}`);
+    }
+  }
+
+  // Call batch update for Prometheus rules
+  try {
+    const instanceIds = await getAllInstanceIdsInRegion();
+    await batchUpdatePromRules(
+      shouldUpdatePromRules,
+      prometheusWorkspaceId,
+      instanceIds
+    );
+    // here we delete all cloudwatch Alarms associated with the instance if we're able to create prom alarms for the
+    // instance that triggered the eventbridge rule.
+    if (!isCloudWatch) {
+      log
+        .info()
+        .msg(
+          'Instance that triggered eventbridge rule is reporting to Prometheus. Deleting CloudWatch alarms for instance'
+        );
+      const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
+        'EC2',
+        instanceId
+      );
+      await Promise.all(
+        activeAutoAlarms.map(alarmName => deleteCWAlarm(alarmName, instanceId))
+      );
+    }
+  } catch (e) {
+    isCloudWatch = true;
+    log
+      .error()
+      .err(e)
+      .msg(
+        'Error updating Prometheus rules for instances falling back to CW alarms.'
+      );
+    for (const classification of Object.values(AlarmClassification)) {
+      try {
+        await manageCPUUsageAlarmForInstance(
+          instanceId,
+          tags,
+          classification,
+          isCloudWatch
+        );
+        await manageStorageAlarmForInstance(
+          instanceId,
+          tags,
+          classification,
+          isCloudWatch
+        );
+        await manageMemoryAlarmForInstance(
+          instanceId,
+          tags,
+          classification,
+          isCloudWatch
+        );
+      } catch (e) {
+        log.error().err(e).msg('Error managing alarms for instance');
+        throw new Error(`Error managing alarms for instance: ${e}`);
+      }
     }
   }
 }

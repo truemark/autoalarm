@@ -410,12 +410,19 @@ const makeSignedRequest = async (
  * QueryMetrics API documentation can be found here: https://docs.aws.amazon.com/prometheus/latest/userguide/AMP-APIReference-QueryMetrics.html
  */
 
+/**
+ * Function to query Prometheus for services.
+ * @param serviceType - The type of service (e.g., 'ec2').
+ * @param serviceIdentifiers - Array of service identifiers (e.g., IP addresses).
+ * @param promWorkspaceID - The Prometheus workspace ID.
+ * @param region - The AWS region.
+ * @returns Promise resolving to Prometheus query result.
+ */
 export async function queryPrometheusForService(
   serviceType: string,
-  serviceIdentifier: string,
   promWorkspaceID: string,
   region: string
-): Promise<boolean> {
+): Promise<{data: {result: {metric: {instance: string}}[]}}> {
   const queryPath = `/workspaces/${promWorkspaceID}/api/v1/query?query=`;
 
   try {
@@ -425,7 +432,6 @@ export async function queryPrometheusForService(
         log
           .info()
           .str('serviceType', serviceType)
-          .str('serviceIdentifier', serviceIdentifier)
           .str('promWorkspaceID', promWorkspaceID)
           .str('region', region)
           .msg('Querying Prometheus for EC2 instances');
@@ -446,30 +452,24 @@ export async function queryPrometheusForService(
           log
             .warn()
             .str('serviceType', serviceType)
-            .str('serviceIdentifier', serviceIdentifier)
             .str('Prometheus Workspace ID', promWorkspaceID)
             .str('response', JSON.stringify(response, null, 2))
             .msg(
               'Prometheus query failed. Defaulting to CW Alarms if possible...'
             );
-          return false;
+          return {data: {result: []}}; // Return an empty result on failure
         }
-
-        const ipAddresses = response.data.result.map((item: any) => {
-          const instance = item.metric.instance;
-          const ipAddr = instance.split(':')[0];
-          return ipAddr;
-        });
 
         log
           .info()
           .str('serviceType', serviceType)
-          .str('serviceIdentifier', serviceIdentifier)
           .str('Prometheus Workspace ID', promWorkspaceID)
-          .str('ipAddresses', JSON.stringify(ipAddresses))
-          .msg('IP addresses extracted from Prometheus response.');
-
-        return ipAddresses.includes(serviceIdentifier);
+          .str('region', region)
+          .str('response', JSON.stringify(response, null, 2))
+          .msg(
+            'Prometheus query successful. Monitored EC2 Instances found and returned'
+          );
+        return response;
       }
       // Add more cases here for other service types
       default: {
@@ -477,7 +477,7 @@ export async function queryPrometheusForService(
           .warn()
           .str('serviceType', serviceType)
           .msg('Unsupported service type. Defaulting to CW Alarms if possible');
-        return false;
+        return {data: {result: []}}; // Return an empty result on unsupported service type
       }
     }
   } catch (error) {
@@ -485,11 +485,10 @@ export async function queryPrometheusForService(
       .error()
       .err(error)
       .str('serviceType', serviceType)
-      .str('serviceIdentifier', serviceIdentifier)
       .str('Prometheus Workspace ID', promWorkspaceID)
       .str('region', region)
       .msg('Error querying Prometheus');
-    return false;
+    return {data: {result: []}}; // Return an empty result on error
   }
 }
 
@@ -497,7 +496,6 @@ export async function queryPrometheusForService(
 export async function isPromEnabled(
   instanceId: string,
   serviceType: string,
-  serviceIdentifier: string,
   promWorkspaceId: string,
   tags: {[key: string]: string}
 ): Promise<boolean> {
@@ -512,7 +510,6 @@ export async function isPromEnabled(
         );
       const useProm = await queryPrometheusForService(
         serviceType,
-        serviceIdentifier,
         promWorkspaceId,
         region
       );
@@ -521,7 +518,7 @@ export async function isPromEnabled(
       to verify we can match up instances with alarms, this also confirms we are abel to pull the required metadata to
       create alarms for the instances that are triggering the lambda.
        */
-      if (!useProm) {
+      if (useProm.data.result.length < 1) {
         log
           .warn()
           .str('instanceId', instanceId)
@@ -532,7 +529,7 @@ export async function isPromEnabled(
         .info()
         .str('instanceId', instanceId)
         .msg(`Prometheus metrics enabled=${useProm}`);
-      return true; //this will be used for the useProm variable once we finish testing the initial logic
+      return true; // Return true if metrics are being sent to Prometheus
     } else if (prometheusTag === 'false' || !prometheusTag) {
       log
         .info()
@@ -798,23 +795,25 @@ const putRuleGroupNamespace = async (
 };
 
 // Function to manage Prometheus namespace alarms
-export async function managePromNameSpaceAlarms(
+/**
+ * Function to manage Prometheus namespace alarms.
+ * @param promWorkspaceId - The Prometheus workspace ID.
+ * @param namespace - The namespace name.
+ * @param ruleGroupName - The rule group name.
+ * @param alarmConfigs - Array of alarm configurations.
+ */
+export async function managePromNamespaceAlarms(
   promWorkspaceId: string,
-  service: string,
-  metric: string,
-  alarmName: string,
-  alarmQuery: string,
-  duration: string,
-  severityType: string
+  namespace: string,
+  ruleGroupName: string,
+  alarmConfigs: any[]
 ) {
   log
     .info()
     .str('promWorkspaceId', promWorkspaceId)
-    .str('service', service)
-    .str('metric', metric)
-    .str('alarmName', alarmName)
-    .str('alarmQuery', alarmQuery)
-    .msg('Starting managePromNameSpaceAlarms');
+    .str('namespace', namespace)
+    .str('ruleGroupName', ruleGroupName)
+    .msg('Starting managePromNamespaceAlarms');
 
   // List all existing namespaces and count total rules
   const namespaces = await listNamespaces(promWorkspaceId);
@@ -860,10 +859,10 @@ export async function managePromNameSpaceAlarms(
     await createNamespace(
       promWorkspaceId,
       rootNamespace,
-      alarmName,
-      alarmQuery,
-      duration,
-      severityType
+      alarmConfigs[0].alarmName,
+      alarmConfigs[0].alarmQuery,
+      alarmConfigs[0].duration,
+      alarmConfigs[0].severityType
     );
     log
       .info()
@@ -882,109 +881,45 @@ export async function managePromNameSpaceAlarms(
     return;
   }
 
-  const rules =
-    nsDetails.groups.find((rg): rg is RuleGroup => rg.name === 'AutoAlarm')
-      ?.rules || [];
-  log
-    .info()
-    .str('namespace', rootNamespace)
-    .num('rulesCount', rules.length)
-    .msg('Checking if namespace has <1000 rules');
-
-  // Check if the namespace has less than 1000 rules
-  if (rules.length >= 1000) {
-    log
-      .error()
-      .msg(
-        'The AutoAlarm namespace has 1000 or more rules. Halting Prometheus logic.'
-      );
-    throw new Error('The AutoAlarm namespace has 1000 or more rules.');
-  }
-
-  // Check if the rule group already exists
   const ruleGroup = nsDetails.groups.find(
-    (rg): rg is RuleGroup => rg.name === 'AutoAlarm'
-  );
+    (rg): rg is RuleGroup => rg.name === ruleGroupName
+  ) || {name: ruleGroupName, rules: []};
 
-  if (ruleGroup) {
-    log
-      .info()
-      .str('ruleGroupName', 'AutoAlarm')
-      .msg(
-        'Rule group found. Checking if rule query values match updated tags...'
-      );
-
+  for (const config of alarmConfigs) {
     const existingRuleIndex = ruleGroup.rules.findIndex(
-      (rule): rule is Rule => rule.alert === alarmName
+      (rule): rule is Rule => rule.alert === config.alarmName
     );
-    if (existingRuleIndex !== -1) {
-      log
-        .info()
-        .msg(
-          'Tag values differ from existing rule query. Updating the rule...'
-        );
-      // Remove the existing rule and add the new rule
-      ruleGroup.rules.splice(existingRuleIndex, 1);
-    }
 
-    ruleGroup.rules.push({
-      alert: alarmName,
-      expr: alarmQuery,
-      for: duration,
-      labels: {severity: severityType},
-      annotations: {
-        summary: `${alarmName} alert triggered`,
-        description: 'The alert was triggered based on the specified query',
-      },
-    });
-    await putRuleGroupNamespace(
-      promWorkspaceId,
-      rootNamespace,
-      'AutoAlarm',
-      alarmName,
-      alarmQuery,
-      duration,
-      severityType
-    );
-    log.info().str('alarmName', alarmName).msg('Rule updated successfully');
-  } else {
-    // Add new rule group with the alarm
-    log
-      .info()
-      .str('ruleGroupName', 'AutoAlarm')
-      .msg('Rule group not found. Adding new rule group with alarm');
-    nsDetails.groups.push({
-      name: 'AutoAlarm',
-      rules: [
-        {
-          alert: alarmName,
-          expr: alarmQuery,
-          for: duration,
-          labels: {severity: severityType},
-          annotations: {
-            summary: `${alarmName} alert triggered`,
-            description: 'The alert was triggered based on the specified query',
-          },
+    if (existingRuleIndex !== -1) {
+      if (ruleGroup.rules[existingRuleIndex].expr !== config.alarmQuery) {
+        ruleGroup.rules[existingRuleIndex].expr = config.alarmQuery;
+      }
+    } else {
+      ruleGroup.rules.push({
+        alert: config.alarmName,
+        expr: config.alarmQuery,
+        for: config.duration,
+        labels: {severity: config.severityType},
+        annotations: {
+          summary: `${config.alarmName} alert triggered`,
+          description: 'The alert was triggered based on the specified query',
         },
-      ],
-    });
-    await putRuleGroupNamespace(
-      promWorkspaceId,
-      rootNamespace,
-      'AutoAlarm',
-      alarmName,
-      alarmQuery,
-      duration,
-      severityType
-    );
-    log
-      .info()
-      .str('ruleGroupName', 'AutoAlarm')
-      .str('alarmName', alarmName)
-      .msg('New rule group and alarm added successfully');
+      });
+    }
   }
 
-  log.info().msg('managePromNameSpaceAlarms completed');
+  const updatedYaml = yaml.dump(nsDetails);
+  const updatedData = new TextEncoder().encode(updatedYaml);
+
+  const putCommand = new PutRuleGroupsNamespaceCommand({
+    workspaceId: promWorkspaceId,
+    name: namespace,
+    data: updatedData,
+  });
+
+  await client.send(putCommand);
+  log.info().str('namespace', namespace).msg('Updated rule group namespace');
+  await wait(90000); // Wait for 90 seconds after adding or updating a rule
 }
 
 // Function to delete Prometheus rules for a service. For this function, the folloiwng service identifiers are used:
