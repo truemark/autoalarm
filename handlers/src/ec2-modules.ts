@@ -435,16 +435,7 @@ async function getInstanceDetails(
           .str('instanceId', instanceId)
           .msg('No platform details found');
         throw new Error('No platform details found');
-      } else {
-        log
-          .info()
-          .str('function', 'getInstanceDetails')
-          .str('instanceId', instanceId)
-          .str('platform', platform)
-          .str('privateIp', privateIp)
-          .msg('EC2 instance details found');
       }
-
       return {platform, privateIp};
     } else {
       log
