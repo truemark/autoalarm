@@ -5,7 +5,7 @@ import {
 } from '@aws-sdk/client-elastic-load-balancing-v2';
 import * as logging from '@nr1e/logging';
 import {AlarmProps, Tag} from './types';
-import {AlarmClassification, ValidAlbState} from './enums';
+import {AlarmClassification, ValidAlbEvent} from './enums';
 import {
   createOrUpdateCWAlarm,
   getCWAlarmsForInstance,
@@ -86,7 +86,7 @@ async function checkAndManageALBStatusAlarms(
 ) {
   if (tags['autoalarm:disabled'] === 'true') {
     const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
-      'alb',
+      'ALB',
       loadBalancerName
     );
     await Promise.all(
@@ -139,7 +139,7 @@ export async function manageALBAlarms(
 export async function manageInactiveALBAlarms(loadBalancerName: string) {
   try {
     const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
-      'alb',
+      'ALB',
       loadBalancerName
     );
     await Promise.all(
@@ -153,25 +153,24 @@ export async function manageInactiveALBAlarms(loadBalancerName: string) {
   }
 }
 
-export async function getAlbState(
+export async function getAlbEvent(
   event: any
-): Promise<{loadBalancerArn: string; state: ValidAlbState; tags: Tag}> {
-  const loadBalancerArn = event.resources[0];
+): Promise<{loadBalancerArn: string; eventName: ValidAlbEvent; tags: Tag}> {
+  const loadBalancerArn =
+    event.detail.responseElements?.loadBalancers[0]?.loadBalancerArn;
+  const eventName = event.detail.eventName as ValidAlbEvent;
   log
     .info()
     .str('loadBalancerArn', loadBalancerArn)
-    .msg('Processing tag event');
-
-  const describeLoadBalancersResponse = await elbClient.send(
-    new DescribeLoadBalancersCommand({
-      LoadBalancerArns: [loadBalancerArn],
-    })
-  );
-
-  const loadBalancer = describeLoadBalancersResponse.LoadBalancers?.[0];
-  const state =
-    (loadBalancer?.State?.Code as ValidAlbState) || ValidAlbState.Active;
+    .str('eventName', eventName)
+    .msg('Processing ALB event');
   const tags = await fetchALBTags(loadBalancerArn);
 
-  return {loadBalancerArn, state, tags};
+  if (loadBalancerArn && eventName === ValidAlbEvent.Active) {
+    await manageALBAlarms(loadBalancerArn, tags);
+  } else if (eventName === ValidAlbEvent.Deleted) {
+    await manageInactiveALBAlarms(loadBalancerArn);
+  }
+
+  return {loadBalancerArn, eventName, tags};
 }

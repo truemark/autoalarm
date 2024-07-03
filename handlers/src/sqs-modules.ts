@@ -1,7 +1,7 @@
 import {SQSClient, ListQueueTagsCommand} from '@aws-sdk/client-sqs';
 import * as logging from '@nr1e/logging';
 import {AlarmProps, Tag} from './types';
-import {AlarmClassification, ValidSqsState} from './enums';
+import {AlarmClassification, ValidSqsEvent} from './enums';
 import {
   createOrUpdateCWAlarm,
   getCWAlarmsForInstance,
@@ -21,8 +21,13 @@ const metricConfigs = [
   {metricName: 'ApproximateAgeOfOldestMessage', namespace: 'AWS/SQS'},
 ];
 
+function extractQueueName(queueUrl: string): string {
+  const parts = queueUrl.split('/');
+  return parts[parts.length - 1];
+}
+
 async function getAlarmConfig(
-  queueUrl: string,
+  queueName: string,
   type: AlarmClassification,
   metricName: string
 ): Promise<{
@@ -36,7 +41,7 @@ async function getAlarmConfig(
   const durationPeriodsKey = `autoalarm:${metricName}-percent-duration-periods`;
 
   return {
-    alarmName: `AutoAlarm-SQS-${queueUrl}-${type}-${metricName}`,
+    alarmName: `AutoAlarm-SQS-${queueName}-${type}-${metricName}`,
     thresholdKey,
     durationTimeKey,
     durationPeriodsKey,
@@ -67,13 +72,14 @@ export async function fetchSQSTags(queueUrl: string): Promise<Tag> {
 }
 
 async function checkAndManageSQSStatusAlarms(queueUrl: string, tags: Tag) {
+  const queueName = extractQueueName(queueUrl);
   if (tags['autoalarm:disabled'] === 'true') {
     const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
-      'sqs',
-      queueUrl
+      'SQS',
+      queueName
     );
     await Promise.all(
-      activeAutoAlarms.map(alarmName => deleteCWAlarm(alarmName, queueUrl))
+      activeAutoAlarms.map(alarmName => deleteCWAlarm(alarmName, queueName))
     );
     log.info().msg('Status check alarm creation skipped due to tag settings.');
   } else {
@@ -82,7 +88,7 @@ async function checkAndManageSQSStatusAlarms(queueUrl: string, tags: Tag) {
       for (const classification of Object.values(AlarmClassification)) {
         const {alarmName, thresholdKey, durationTimeKey, durationPeriodsKey} =
           await getAlarmConfig(
-            queueUrl,
+            queueName,
             classification as AlarmClassification,
             metricName
           );
@@ -93,12 +99,12 @@ async function checkAndManageSQSStatusAlarms(queueUrl: string, tags: Tag) {
           namespace: namespace,
           evaluationPeriods: 5,
           metricName: metricName,
-          dimensions: [{Name: 'QueueUrl', Value: queueUrl}],
+          dimensions: [{Name: 'QueueName', Value: queueName}],
         };
 
         await createOrUpdateCWAlarm(
           alarmName,
-          queueUrl,
+          queueName,
           alarmProps,
           tags,
           thresholdKey,
@@ -118,13 +124,14 @@ export async function manageSQSAlarms(
 }
 
 export async function manageInactiveSQSAlarms(queueUrl: string) {
+  const queueName = extractQueueName(queueUrl);
   try {
     const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
-      'sqs',
-      queueUrl
+      'SQS',
+      queueName
     );
     await Promise.all(
-      activeAutoAlarms.map(alarmName => deleteCWAlarm(alarmName, queueUrl))
+      activeAutoAlarms.map(alarmName => deleteCWAlarm(alarmName, queueName))
     );
   } catch (e) {
     log.error().err(e).msg(`Error deleting SQS alarms: ${e}`);
@@ -132,18 +139,24 @@ export async function manageInactiveSQSAlarms(queueUrl: string) {
   }
 }
 
-export async function getSqsState(
+export async function getSqsEvent(
   event: any
-): Promise<{queueUrl: string; state: ValidSqsState; tags: Tag}> {
-  const queueUrl = event.detail['queue-url'];
-  const state = event.detail.state;
+): Promise<{queueUrl: string; eventName: ValidSqsEvent; tags: Tag}> {
+  const queueUrl = event.detail.responseElements.queueUrl;
+  const eventName = event.detail.eventName as ValidSqsEvent;
+  log
+    .info()
+    .str('queueUrl', queueUrl)
+    .str('eventName', eventName)
+    .msg('Processing SQS event');
+
   const tags = await fetchSQSTags(queueUrl);
 
-  if (queueUrl && state === ValidSqsState.Active) {
+  if (queueUrl && eventName === ValidSqsEvent.CreateQueue) {
     await manageSQSAlarms(queueUrl, tags);
-  } else if (state === ValidSqsState.Deleted) {
+  } else if (eventName === ValidSqsEvent.DeleteQueue) {
     await manageInactiveSQSAlarms(queueUrl);
   }
 
-  return {queueUrl, state, tags};
+  return {queueUrl, eventName, tags};
 }

@@ -83,7 +83,7 @@ async function checkAndManageOpenSearchStatusAlarms(
 ) {
   if (tags['autoalarm:disabled'] === 'true') {
     const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
-      'opensearch',
+      'OpenSearch',
       domainName
     );
     await Promise.all(
@@ -134,7 +134,7 @@ export async function manageOpenSearchAlarms(
 export async function manageInactiveOpenSearchAlarms(domainName: string) {
   try {
     const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
-      'opensearch',
+      'OpenSearch',
       domainName
     );
     await Promise.all(

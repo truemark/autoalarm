@@ -4,7 +4,7 @@ import {
 } from '@aws-sdk/client-elastic-load-balancing-v2';
 import * as logging from '@nr1e/logging';
 import {AlarmProps, Tag} from './types';
-import {AlarmClassification, ValidTargetGroupState} from './enums';
+import {AlarmClassification, ValidTargetGroupEvent} from './enums';
 import {
   createOrUpdateCWAlarm,
   getCWAlarmsForInstance,
@@ -22,6 +22,7 @@ const defaultThresholds: {[key in AlarmClassification]: number} = {
 
 const metricConfigs = [
   {metricName: 'TargetResponseTime', namespace: 'AWS/ApplicationELB'},
+  {metricName: 'RequestCountPerTarget', namespace: 'AWS/ApplicationELB'},
   {metricName: 'HTTPCode_Target_4XX_Count', namespace: 'AWS/ApplicationELB'},
   {metricName: 'HTTPCode_Target_5XX_Count', namespace: 'AWS/ApplicationELB'},
 ];
@@ -83,11 +84,12 @@ export async function fetchTargetGroupTags(
 
 async function checkAndManageTargetGroupStatusAlarms(
   targetGroupName: string,
+  loadBalancerName: string,
   tags: Tag
 ) {
   if (tags['autoalarm:disabled'] === 'true') {
     const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
-      'targetgroup',
+      'TargetGroup',
       targetGroupName
     );
     await Promise.all(
@@ -113,7 +115,10 @@ async function checkAndManageTargetGroupStatusAlarms(
           namespace: namespace,
           evaluationPeriods: 5,
           metricName: metricName,
-          dimensions: [{Name: 'TargetGroup', Value: targetGroupName}],
+          dimensions: [
+            {Name: 'TargetGroup', Value: targetGroupName},
+            {Name: 'LoadBalancer', Value: loadBalancerName},
+          ],
         };
 
         await createOrUpdateCWAlarm(
@@ -132,15 +137,20 @@ async function checkAndManageTargetGroupStatusAlarms(
 
 export async function manageTargetGroupAlarms(
   targetGroupName: string,
+  loadBalancerName: string,
   tags: Tag
 ): Promise<void> {
-  await checkAndManageTargetGroupStatusAlarms(targetGroupName, tags);
+  await checkAndManageTargetGroupStatusAlarms(
+    targetGroupName,
+    loadBalancerName,
+    tags
+  );
 }
 
 export async function manageInactiveTargetGroupAlarms(targetGroupName: string) {
   try {
     const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
-      'targetgroup',
+      'TargetGroup',
       targetGroupName
     );
     await Promise.all(
@@ -154,18 +164,31 @@ export async function manageInactiveTargetGroupAlarms(targetGroupName: string) {
   }
 }
 
-export async function getTargetGroupState(
-  event: any
-): Promise<{targetGroupArn: string; state: ValidTargetGroupState; tags: Tag}> {
-  const targetGroupArn = event.detail['target-group-arn'];
-  const state = event.detail.state;
+export async function getTargetGroupEvent(event: any): Promise<{
+  targetGroupArn: string;
+  loadBalancerName: string;
+  eventName: ValidTargetGroupEvent;
+  tags: Tag;
+}> {
+  const targetGroupArn =
+    event.detail.responseElements?.targetGroups[0]?.targetGroupArn;
+  const loadBalancerName =
+    event.detail.responseElements?.loadBalancers[0]?.loadBalancerName;
+  const eventName = event.detail.eventName as ValidTargetGroupEvent;
+
+  log
+    .info()
+    .str('targetGroupArn', targetGroupArn)
+    .str('loadBalancerName', loadBalancerName)
+    .str('eventName', eventName)
+    .msg('Processing Target Group event');
   const tags = await fetchTargetGroupTags(targetGroupArn);
 
-  if (targetGroupArn && state === ValidTargetGroupState.Active) {
-    await manageTargetGroupAlarms(targetGroupArn, tags);
-  } else if (state === ValidTargetGroupState.Deleted) {
+  if (targetGroupArn && eventName === ValidTargetGroupEvent.Active) {
+    await manageTargetGroupAlarms(targetGroupArn, loadBalancerName, tags);
+  } else if (eventName === ValidTargetGroupEvent.Deleted) {
     await manageInactiveTargetGroupAlarms(targetGroupArn);
   }
 
-  return {targetGroupArn, state, tags};
+  return {targetGroupArn, loadBalancerName, eventName, tags};
 }
