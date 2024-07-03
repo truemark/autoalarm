@@ -11,23 +11,19 @@ export enum AlarmClassification {
   Warning = 'WARNING',
 }
 
-export enum ValidAlbState {
-  Active = 'active',
-  Provisioning = 'provisioning',
-  Failed = 'failed',
-  Deleted = 'deleted',
+export enum ValidAlbEvent {
+  Active = 'CreateLoadBalancer',
+  Deleted = 'DeleteLoadBalancer',
 }
 
-export enum ValidTargetGroupState {
-  Active = 'active',
-  Initial = 'initial',
-  Draining = 'draining',
-  Deleted = 'deleted',
+export enum ValidTargetGroupEvent {
+  Active = 'CreateTargetGroup',
+  Deleted = 'DeleteTargetGroup',
 }
 
-export enum ValidSqsState {
-  Active = 'active',
-  Deleted = 'deleted',
+export enum ValidSqsEvent {
+  CreateQueue = 'CreateQueue',
+  DeleteQueue = 'DeleteQueue',
 }
 
 export enum ValidOpenSearchState {
