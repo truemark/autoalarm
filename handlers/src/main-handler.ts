@@ -8,6 +8,36 @@ import {
   liveStates,
   deadStates,
 } from './ec2-modules';
+import {
+  ValidAlbEvent,
+  ValidTargetGroupEvent,
+  ValidSqsEvent,
+  ValidOpenSearchState,
+} from './enums';
+import {
+  getAlbEvent,
+  fetchALBTags,
+  manageALBAlarms,
+  manageInactiveALBAlarms,
+} from './alb-modules';
+import {
+  fetchTargetGroupTags,
+  manageTargetGroupAlarms,
+  manageInactiveTargetGroupAlarms,
+  getTargetGroupEvent,
+} from './targetgroup-modules';
+import {
+  fetchSQSTags,
+  manageSQSAlarms,
+  manageInactiveSQSAlarms,
+  getSqsEvent,
+} from './sqs-modules';
+import {
+  fetchOpenSearchTags,
+  manageOpenSearchAlarms,
+  manageInactiveOpenSearchAlarms,
+  getOpenSearchState,
+} from './opensearch-modules';
 
 const log = logging.getRootLogger();
 
@@ -41,7 +71,7 @@ async function processEC2Event(event: any) {
   }
 }
 
-async function processTagEvent(event: any) {
+async function processEC2TagEvent(event: any) {
   const {instanceId, state} = await getEC2IdAndState(event);
   const tags = await fetchInstanceTags(instanceId);
   if (tags['autoalarm:disabled'] === 'true') {
@@ -52,6 +82,140 @@ async function processTagEvent(event: any) {
     liveStates.has(state)
   ) {
     await manageActiveInstanceAlarms(instanceId, tags);
+  }
+}
+
+export async function processALBEvent(event: any) {
+  const eventName = event.detail.eventName;
+  if (eventName === ValidAlbEvent.Active) {
+    const loadBalancerArn =
+      event.detail.responseElements?.loadBalancers[0]?.loadBalancerArn;
+    const tags = await fetchALBTags(loadBalancerArn);
+    await manageALBAlarms(loadBalancerArn, tags);
+  } else if (eventName === ValidAlbEvent.Deleted) {
+    const loadBalancerArn = event.detail.requestParameters?.loadBalancerArn;
+    await manageInactiveALBAlarms(loadBalancerArn);
+  }
+}
+
+export async function processALBTagEvent(event: any) {
+  const {loadBalancerArn, eventName, tags} = await getAlbEvent(event);
+
+  if (tags['autoalarm:disabled'] === 'true') {
+    await manageInactiveALBAlarms(loadBalancerArn);
+  } else if (
+    tags['autoalarm:disabled'] === 'false' &&
+    loadBalancerArn &&
+    eventName === ValidAlbEvent.Active
+  ) {
+    await manageALBAlarms(loadBalancerArn, tags);
+  }
+}
+
+export async function processTargetGroupEvent(event: any) {
+  const eventName = event.detail.eventName;
+
+  if (eventName === ValidTargetGroupEvent.Active) {
+    const targetGroupArn =
+      event.detail.responseElements?.targetGroups[0]?.targetGroupArn;
+    const tags = await fetchTargetGroupTags(targetGroupArn);
+    const loadBalancerName =
+      event.detail.responseElements?.loadBalancers[0]?.loadBalancerName;
+    await manageTargetGroupAlarms(loadBalancerName, targetGroupArn, tags);
+  } else if (eventName === ValidTargetGroupEvent.Deleted) {
+    const targetGroupArn = event.detail.requestParameters?.targetGroupArn;
+    await manageInactiveTargetGroupAlarms(targetGroupArn);
+  }
+}
+
+export async function processTargetGroupTagEvent(event: any) {
+  const {loadBalancerName, targetGroupArn, eventName, tags} =
+    await getTargetGroupEvent(event);
+
+  if (tags['autoalarm:disabled'] === 'true') {
+    await manageInactiveTargetGroupAlarms(targetGroupArn);
+  } else if (
+    tags['autoalarm:disabled'] === 'false' &&
+    targetGroupArn &&
+    eventName === ValidTargetGroupEvent.Active
+  ) {
+    await manageTargetGroupAlarms(loadBalancerName, targetGroupArn, tags);
+  }
+}
+
+export async function processSQSEvent(event: any) {
+  const eventName = event.detail.eventName;
+  if (eventName === ValidSqsEvent.CreateQueue) {
+    const queueUrl = event.detail.responseElements.queueUrl;
+    const tags = await fetchSQSTags(queueUrl);
+    await manageSQSAlarms(queueUrl, tags);
+  } else if (eventName === ValidSqsEvent.DeleteQueue) {
+    const queueUrl = event.detail.requestParameters?.queueUrl;
+    await manageInactiveSQSAlarms(queueUrl);
+  }
+}
+
+export async function processSQSTagEvent(event: any) {
+  const {queueUrl, eventName, tags} = await getSqsEvent(event);
+
+  if (tags['autoalarm:disabled'] === 'true') {
+    await manageInactiveSQSAlarms(queueUrl);
+  } else if (
+    tags['autoalarm:disabled'] === 'false' &&
+    queueUrl &&
+    eventName === ValidSqsEvent.CreateQueue
+  ) {
+    await manageSQSAlarms(queueUrl, tags);
+  }
+}
+
+export async function processOpenSearchEvent(event: any) {
+  const domainName = event.detail['domain-name'];
+  const state = event.detail.state;
+  const tags = await fetchOpenSearchTags(domainName);
+
+  if (domainName && state === ValidOpenSearchState.Active) {
+    await manageOpenSearchAlarms(domainName, tags);
+  } else if (state === ValidOpenSearchState.Deleted) {
+    await manageInactiveOpenSearchAlarms(domainName);
+  }
+}
+
+export async function processOpenSearchTagEvent(event: any) {
+  const {domainArn, state, tags} = await getOpenSearchState(event);
+
+  if (tags['autoalarm:disabled'] === 'true') {
+    await manageInactiveOpenSearchAlarms(domainArn);
+  } else if (
+    tags['autoalarm:disabled'] === 'false' &&
+    domainArn &&
+    state === ValidOpenSearchState.Active
+  ) {
+    await manageOpenSearchAlarms(domainArn, tags);
+  }
+}
+
+async function routeTagEvent(event: any) {
+  const detail = event.detail;
+  const resourceType = detail['resource-type'];
+  const service = detail.service;
+
+  if (resourceType === 'instance') {
+    await processEC2TagEvent(event);
+  } else if (service === 'elasticloadbalancing') {
+    if (resourceType === 'load-balancer') {
+      await processALBTagEvent(event);
+    } else if (resourceType === 'target-group') {
+      await processTargetGroupTagEvent(event);
+    }
+  } else if (service === 'sqs') {
+    await processSQSTagEvent(event);
+  } else if (service === 'es') {
+    await processOpenSearchTagEvent(event);
+  } else {
+    log
+      .warn()
+      .msg(`Unhandled resource type or service: ${resourceType}, ${service}`);
   }
 }
 
@@ -66,7 +230,28 @@ export const handler: Handler = async (event: any): Promise<void> => {
         await processEC2Event(event);
         break;
       case 'aws.tag':
-        await processTagEvent(event);
+        await routeTagEvent(event);
+        break;
+      case 'aws.elasticloadbalancing':
+        if (
+          event.detail.eventName === 'CreateLoadBalancer' ||
+          event.detail.eventName === 'DeleteLoadBalancer'
+        ) {
+          await processALBEvent(event);
+        } else if (
+          event.detail.eventName === 'CreateTargetGroup' ||
+          event.detail.eventName === 'DeleteTargetGroup'
+        ) {
+          await processTargetGroupEvent(event);
+        } else {
+          log.warn().msg('Unhandled event name for aws.elasticloadbalancing');
+        }
+        break;
+      case 'aws.sqs':
+        await processSQSEvent(event);
+        break;
+      case 'aws.opensearch':
+        await processOpenSearchEvent(event);
         break;
       default:
         log.warn().msg('Unhandled event source');
