@@ -15,6 +15,7 @@
     "watch-handlers": "cd handlers && pnpm run watch",
     "watch-cdk": "cd cdk && cdk watch",
     "deploy-cdk": "cd cdk && cdk deploy",
+    "destroy-cdk": "cd cdk && cdk destroy",
     "watch": "concurrently \"pnpm:watch-handlers\" \"pnpm:watch-cdk\" -c blue,green"
   },
   "devDependencies": {
