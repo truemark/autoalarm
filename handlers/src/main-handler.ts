@@ -119,9 +119,7 @@ export async function processTargetGroupEvent(event: any) {
     const targetGroupArn =
       event.detail.responseElements?.targetGroups[0]?.targetGroupArn;
     const tags = await fetchTargetGroupTags(targetGroupArn);
-    const loadBalancerName =
-      event.detail.responseElements?.loadBalancers[0]?.loadBalancerName;
-    await manageTargetGroupAlarms(loadBalancerName, targetGroupArn, tags);
+    await manageTargetGroupAlarms(targetGroupArn, tags);
   } else if (eventName === ValidTargetGroupEvent.Deleted) {
     const targetGroupArn = event.detail.requestParameters?.targetGroupArn;
     await manageInactiveTargetGroupAlarms(targetGroupArn);
@@ -129,8 +127,7 @@ export async function processTargetGroupEvent(event: any) {
 }
 
 export async function processTargetGroupTagEvent(event: any) {
-  const {loadBalancerName, targetGroupArn, eventName, tags} =
-    await getTargetGroupEvent(event);
+  const {targetGroupArn, eventName, tags} = await getTargetGroupEvent(event);
 
   if (tags['autoalarm:disabled'] === 'true') {
     await manageInactiveTargetGroupAlarms(targetGroupArn);
@@ -139,7 +136,7 @@ export async function processTargetGroupTagEvent(event: any) {
     targetGroupArn &&
     eventName === ValidTargetGroupEvent.Active
   ) {
-    await manageTargetGroupAlarms(loadBalancerName, targetGroupArn, tags);
+    await manageTargetGroupAlarms(targetGroupArn, tags);
   }
 }
 

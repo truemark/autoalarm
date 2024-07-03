@@ -84,7 +84,6 @@ export async function fetchTargetGroupTags(
 
 async function checkAndManageTargetGroupStatusAlarms(
   targetGroupName: string,
-  loadBalancerName: string,
   tags: Tag
 ) {
   if (tags['autoalarm:disabled'] === 'true') {
@@ -115,10 +114,7 @@ async function checkAndManageTargetGroupStatusAlarms(
           namespace: namespace,
           evaluationPeriods: 5,
           metricName: metricName,
-          dimensions: [
-            {Name: 'TargetGroup', Value: targetGroupName},
-            {Name: 'LoadBalancer', Value: loadBalancerName},
-          ],
+          dimensions: [{Name: 'TargetGroup', Value: targetGroupName}],
         };
 
         await createOrUpdateCWAlarm(
@@ -137,14 +133,9 @@ async function checkAndManageTargetGroupStatusAlarms(
 
 export async function manageTargetGroupAlarms(
   targetGroupName: string,
-  loadBalancerName: string,
   tags: Tag
 ): Promise<void> {
-  await checkAndManageTargetGroupStatusAlarms(
-    targetGroupName,
-    loadBalancerName,
-    tags
-  );
+  await checkAndManageTargetGroupStatusAlarms(targetGroupName, tags);
 }
 
 export async function manageInactiveTargetGroupAlarms(targetGroupName: string) {
@@ -166,29 +157,25 @@ export async function manageInactiveTargetGroupAlarms(targetGroupName: string) {
 
 export async function getTargetGroupEvent(event: any): Promise<{
   targetGroupArn: string;
-  loadBalancerName: string;
   eventName: ValidTargetGroupEvent;
   tags: Tag;
 }> {
   const targetGroupArn =
     event.detail.responseElements?.targetGroups[0]?.targetGroupArn;
-  const loadBalancerName =
-    event.detail.responseElements?.loadBalancers[0]?.loadBalancerName;
   const eventName = event.detail.eventName as ValidTargetGroupEvent;
 
   log
     .info()
     .str('targetGroupArn', targetGroupArn)
-    .str('loadBalancerName', loadBalancerName)
     .str('eventName', eventName)
     .msg('Processing Target Group event');
   const tags = await fetchTargetGroupTags(targetGroupArn);
 
   if (targetGroupArn && eventName === ValidTargetGroupEvent.Active) {
-    await manageTargetGroupAlarms(targetGroupArn, loadBalancerName, tags);
+    await manageTargetGroupAlarms(targetGroupArn, tags);
   } else if (eventName === ValidTargetGroupEvent.Deleted) {
     await manageInactiveTargetGroupAlarms(targetGroupArn);
   }
 
-  return {targetGroupArn, loadBalancerName, eventName, tags};
+  return {targetGroupArn, eventName, tags};
 }
