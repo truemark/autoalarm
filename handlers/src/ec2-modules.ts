@@ -17,6 +17,7 @@ import {
   getCWAlarmsForInstance,
   deleteCWAlarm,
   queryPrometheusForService,
+  describeNamespace,
   managePromNamespaceAlarms,
   deletePromRulesForService,
 } from './alarm-tools';
@@ -109,7 +110,7 @@ async function getPromAlarmConfigs(
 // Function used to get all ec2 instances reporting to prometheus and return a boolean used later in the manageActiveInstanceAlarms function
 // to determine if we should use cloudwatch alarms or prometheus alarms for the instance that triggered the eventbridge rule.
 
-async function alarmFavor(instanceId: string, reportingInstances: any) {
+async function alarmFavor(instanceId: string, reportingInstances: string[]) {
   const instanceIdEc2Metadata = await getInstanceDetails(instanceId);
   const TriggeredInstanceIP = instanceIdEc2Metadata.privateIp;
 
@@ -120,23 +121,22 @@ async function alarmFavor(instanceId: string, reportingInstances: any) {
     .str('TriggeredInstanceIP', TriggeredInstanceIP)
     .msg('Fetched instance details');
 
-  const reportingInstanceIps = reportingInstances.data.result.map(
-    (result: any) => result.metric.instance.split(':')[0]
-  );
-
   log
     .info()
     .str('function', 'alarmFavor')
-    .str('reportingInstanceIps', JSON.stringify(reportingInstanceIps))
+    .str('reportingInstanceIps', JSON.stringify(reportingInstances))
     .msg('List of reporting instance IPs');
 
-  if (reportingInstanceIps.includes(TriggeredInstanceIP)) {
+  if (reportingInstances.includes(TriggeredInstanceIP)) {
     log
       .info()
       .str('function', 'alarmFavor')
       .str('instanceId', instanceId)
+      .str('reporting instances', JSON.stringify(reportingInstances))
       .str('TriggeredInstanceIP', TriggeredInstanceIP)
-      .msg('Instance is reporting to Prometheus');
+      .msg(
+        'Instance is reporting to Prometheus. Setting isCloudWatch to false'
+      );
     isCloudWatch = false;
   } else {
     log
@@ -144,7 +144,9 @@ async function alarmFavor(instanceId: string, reportingInstances: any) {
       .str('function', 'alarmFavor')
       .str('instanceId', instanceId)
       .str('TriggeredInstanceIP', TriggeredInstanceIP)
-      .msg('Instance is not reporting to Prometheus');
+      .msg(
+        'Instance is not reporting to Prometheus. Setting isCloudWatch to true'
+      );
     isCloudWatch = true;
   }
 }
@@ -154,15 +156,17 @@ async function alarmFavor(instanceId: string, reportingInstances: any) {
  * @param shouldUpdatePromRules - Boolean flag to indicate if Prometheus rules should be updated.
  * @param prometheusWorkspaceId - The Prometheus workspace ID.
  * @param service - The service name.
+ * @param region - The AWS region passed by an environment variable.
  * @param instanceIds - Array of EC2 instance IDs.
  */
 async function batchUpdatePromRules(
   shouldUpdatePromRules: boolean,
   prometheusWorkspaceId: string,
   service: string,
-  instanceIds: string[]
+  instanceIds: string[],
+  region: string
 ) {
-  if (shouldUpdatePromRules !== true) {
+  if (!shouldUpdatePromRules) {
     log
       .info()
       .str('function', 'batchUpdatePromRules')
@@ -173,81 +177,120 @@ async function batchUpdatePromRules(
     return;
   }
 
-  // Fetch private IPs and tags for all instances
   log
     .info()
     .str('function', 'batchUpdatePromRules')
     .str('instanceIds', JSON.stringify(instanceIds))
     .msg('Fetching instance details and tags');
-  const instanceDetailsPromises = instanceIds.map(async instanceId => {
-    const tags = await fetchInstanceTags(instanceId);
-    const ec2Metadata = await getInstanceDetails(instanceId);
-    return {instanceId, tags, privateIp: ec2Metadata.privateIp};
-  });
 
-  const instanceDetails = await Promise.all(instanceDetailsPromises);
+  try {
+    const instanceDetailsPromises = instanceIds.map(async instanceId => {
+      const tags = await fetchInstanceTags(instanceId);
+      const ec2Metadata = await getInstanceDetails(instanceId);
+      return {instanceId, tags, privateIp: ec2Metadata.privateIp};
+    });
 
-  // Filter instances that have Prometheus tag set to true and autoalarm:disabled set to false
-  log
-    .info()
-    .str('function', 'batchUpdatePromRules')
-    .msg('Filtering instances based on tags');
-  const instancesToCheck = instanceDetails.filter(
-    details =>
-      details.tags['Prometheus'] === 'true' &&
-      details.tags['autoalarm:disabled'] === 'false'
-  );
+    const instanceDetails = await Promise.all(instanceDetailsPromises);
 
-  log
-    .info()
-    .str('function', 'batchUpdatePromRules')
-    .str('instancesToCheck', JSON.stringify(instancesToCheck))
-    .msg('Instances to check for Prometheus rules');
+    log
+      .info()
+      .str('function', 'batchUpdatePromRules')
+      .msg('Filtering instances based on tags');
 
-  const reportingInstanceIps = await queryPrometheusForService(
-    'ec2',
-    prometheusWorkspaceId,
-    region
-  );
-
-  // Filter instances that are confirmed to be reporting metrics to Prometheus
-  const instancesToUpdate = instancesToCheck.filter(details =>
-    reportingInstanceIps.includes(details.privateIp)
-  );
-
-  // Consolidate alarm configurations for all instances
-  const alarmConfigs: any[] = [];
-  for (const {instanceId, tags} of instancesToUpdate) {
-    for (const classification of Object.values(AlarmClassification)) {
-      const configs = await getPromAlarmConfigs(
-        instanceId,
-        tags,
-        classification
-      );
-      alarmConfigs.push(...configs);
-    }
-  }
-
-  // Use a unique namespace for each service
-  const namespace = `AutoAlarm-${service.toUpperCase()}`;
-  const ruleGroupName = 'AutoAlarm';
-
-  log
-    .info()
-    .msg(
-      `Updating Prometheus rules for all instances in batch under namespace: ${namespace}`
+    const instancesToCheck = instanceDetails.filter(
+      details =>
+        details.tags['Prometheus'] === 'true' &&
+        details.tags['autoalarm:disabled'] === 'false'
     );
-  await managePromNamespaceAlarms(
-    prometheusWorkspaceId,
-    namespace,
-    ruleGroupName,
-    alarmConfigs
-  );
 
-  log
-    .info()
-    .str('function', 'batchUpdatePromRules')
-    .msg('Batch update of Prometheus rules completed.');
+    log
+      .info()
+      .str('function', 'batchUpdatePromRules')
+      .str('instancesToCheck', JSON.stringify(instancesToCheck))
+      .msg('Instances to check for Prometheus rules');
+
+    const reportingInstanceIps = await queryPrometheusForService(
+      'ec2',
+      prometheusWorkspaceId,
+      region
+    );
+
+    const instancesToUpdate = instancesToCheck.filter(details =>
+      reportingInstanceIps.includes(details.privateIp)
+    );
+
+    const alarmConfigs: any[] = [];
+    for (const {instanceId, tags} of instancesToUpdate) {
+      for (const classification of Object.values(AlarmClassification)) {
+        const configs = await getPromAlarmConfigs(
+          instanceId,
+          tags,
+          classification
+        );
+        alarmConfigs.push(...configs);
+      }
+    }
+
+    log
+      .info()
+      .str('function', 'batchUpdatePromRules')
+      .str('alarmConfigs', JSON.stringify(alarmConfigs))
+      .msg('Consolidated alarm configurations');
+
+    const namespace = `AutoAlarm-${service.toUpperCase()}`;
+    const ruleGroupName = 'AutoAlarm';
+
+    log
+      .info()
+      .str('function', 'batchUpdatePromRules')
+      .msg(
+        `Updating Prometheus rules for all instances in batch under namespace: ${namespace}`
+      );
+
+    await managePromNamespaceAlarms(
+      prometheusWorkspaceId,
+      namespace,
+      ruleGroupName,
+      alarmConfigs
+    );
+
+    log
+      .info()
+      .str('function', 'batchUpdatePromRules')
+      .msg('Batch update of Prometheus rules completed.');
+
+    await verifyNamespaceUpdate(prometheusWorkspaceId, namespace);
+  } catch (error) {
+    log
+      .error()
+      .str('function', 'batchUpdatePromRules')
+      .err(error)
+      .msg('Error during batch update of Prometheus rules');
+  }
+}
+
+async function verifyNamespaceUpdate(workspaceId: string, namespace: string) {
+  try {
+    const nsDetails = await describeNamespace(workspaceId, namespace);
+    if (nsDetails) {
+      log
+        .info()
+        .str('function', 'verifyNamespaceUpdate')
+        .obj('namespace details', nsDetails)
+        .msg('Namespace update verified');
+    } else {
+      log
+        .warn()
+        .str('function', 'verifyNamespaceUpdate')
+        .msg('Namespace update verification failed');
+    }
+  } catch (error) {
+    log
+      .error()
+      .str('function', 'verifyNamespaceUpdate')
+      .err(error)
+      .msg('Error verifying namespace update');
+  }
 }
 
 // The following const and function are used to dynamically identify the alarm configuration tags and apply them to each alarm
@@ -319,6 +362,7 @@ async function getStoragePathsFromCloudWatch(
   const metrics = response.Metrics || [];
   log
     .info()
+    .str('function', 'getStoragePathsFromCloudWatch')
     .str('instanceId', instanceId)
     .str('metricName', metricName)
     .str('metrics', JSON.stringify(metrics))
@@ -386,6 +430,7 @@ async function getInstanceDetails(
       if (!platform) {
         log
           .info()
+          .str('function', 'getInstanceDetails')
           .err('No platform details found')
           .str('instanceId', instanceId)
           .msg('No platform details found');
@@ -393,6 +438,7 @@ async function getInstanceDetails(
       } else {
         log
           .info()
+          .str('function', 'getInstanceDetails')
           .str('instanceId', instanceId)
           .str('platform', platform)
           .str('privateIp', privateIp)
@@ -403,6 +449,7 @@ async function getInstanceDetails(
     } else {
       log
         .info()
+        .str('function', 'getInstanceDetails')
         .str('instanceId', instanceId)
         .msg('No reservations found or no instances in reservation');
       return {platform: null, privateIp: ''};
@@ -410,6 +457,7 @@ async function getInstanceDetails(
   } catch (error) {
     log
       .error()
+      .str('function', 'getInstanceDetails')
       .err(error)
       .str('instanceId', instanceId)
       .msg('Failed to fetch instance details');
@@ -479,7 +527,7 @@ export async function manageCPUUsageAlarmForInstance(
       .str('prometheus tag', tags['Prometheus'])
       .str('instanceId', instanceId)
       .msg(
-        'Prometheus tag set to false or metrics not being reported to Prometheus. Deleting prometheus rules and creating CW alarms.'
+        'Prometheus tag set to false or metrics not being reported to Prometheus. Skipping prometheus rules and creating CW alarms.'
       );
     await createCloudWatchAlarms(
       instanceId,
@@ -535,7 +583,7 @@ export async function manageStorageAlarmForInstance(
       .str('prometheus tag', tags['Prometheus'])
       .str('instanceId', instanceId)
       .msg(
-        'Prometheus tag set to false or metrics not being reported to Prometheus. Deleting prometheus rules and creating CW alarms.'
+        'Prometheus tag set to false or metrics not being reported to Prometheus. Skipping prometheus rules and creating CW alarms.'
       );
     const storagePaths = await getStoragePathsFromCloudWatch(
       instanceId,
@@ -611,7 +659,7 @@ export async function manageMemoryAlarmForInstance(
       .str('prometheus tag', tags['Prometheus'])
       .str('instanceId', instanceId)
       .msg(
-        'Prometheus tag set to false or metrics not being reported to Prometheus. Deleting prometheus rules and creating CW alarms.'
+        'Prometheus tag set to false or metrics not being reported to Prometheus. Skipping prometheus rules and creating CW alarms.'
       );
     await createCloudWatchAlarms(
       instanceId,
@@ -651,12 +699,14 @@ export async function createStatusAlarmForInstance(
     );
     log
       .info()
+      .str('function', 'createStatusAlarmForInstance')
       .str('alarmName', alarmName)
       .str('instanceId', instanceId)
       .msg('Created alarm');
   } else {
     log
       .info()
+      .str('function', 'createStatusAlarmForInstance')
       .str('alarmName', alarmName)
       .str('instanceId', instanceId)
       .msg('Alarm already exists for instance');
@@ -673,6 +723,7 @@ async function checkAndManageStatusAlarm(instanceId: string, tags: Tag) {
   } else if (tags['autoalarm:disabled'] in tags) {
     log
       .warn()
+      .str('function', 'checkAndManageStatusAlarm')
       .msg(
         'autoalarm:disabled tag exists but has unexpected value. checking for alarm and creating if it does not exist'
       );
@@ -704,15 +755,21 @@ export async function manageActiveInstanceAlarms(
   instanceId: string,
   tags: Tag
 ) {
-  const reportingInstances = await queryPrometheusForService(
-    'ec2',
-    prometheusWorkspaceId,
-    region
-  );
+  if (tags['Prometheus'] === 'true') {
+    const reportingInstances = await queryPrometheusForService(
+      'ec2',
+      prometheusWorkspaceId,
+      region
+    );
+    await alarmFavor(instanceId, reportingInstances); // This sets our boolean isCloudWatch to false if the instance that triggered the eventbridge rule is reporting to prometheus
+  }
   await checkAndManageStatusAlarm(instanceId, tags);
-  await alarmFavor(instanceId, reportingInstances); // This sets our boolean isCloudWatch to false if the instance that triggered the eventbridge rule is reporting to prometheus
 
-  if (tags['Prometheus'] === 'true' && isCloudWatch !== true) {
+  if (
+    tags['Prometheus'] &&
+    tags['Prometheus'] === 'true' &&
+    isCloudWatch !== true
+  ) {
     log
       .info()
       .str('function', 'manageActiveInstanceAlarms')
@@ -774,7 +831,8 @@ export async function manageActiveInstanceAlarms(
         shouldUpdatePromRules,
         prometheusWorkspaceId,
         'ec2',
-        instanceIds
+        instanceIds,
+        region
       );
       log
         .info()
@@ -785,14 +843,29 @@ export async function manageActiveInstanceAlarms(
         .msg(
           'Instance that triggered eventbridge rule is reporting to Prometheus. Deleting CloudWatch alarms for instance'
         );
+
       const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
         'EC2',
         instanceId
       );
+      log
+        .info()
+        .str('function', 'manageActiveInstanceAlarms')
+        .str('instanceId', instanceId)
+        .obj('activeAutoAlarms', activeAutoAlarms)
+        .msg('Grabbing all AutoAlarm CloudWatch alarms for instance.');
       //filter out status check alarm from deletion as the status check alarm should always be live
       const filteredAutoAlarms = activeAutoAlarms.filter(
         alarm => !alarm.includes('StatusCheckFailed')
       );
+      log
+        .info()
+        .str('function', 'manageActiveInstanceAlarms')
+        .str('instanceId', instanceId)
+        .obj('filteredAutoAlarms', filteredAutoAlarms)
+        .msg(
+          'Filtering out StatusCheckFailed alarm from deletion and deleting all other cloudwatch alarms.'
+        );
       await Promise.all(
         filteredAutoAlarms.map(alarmName =>
           deleteCWAlarm(alarmName, instanceId)
@@ -866,6 +939,7 @@ export async function manageActiveInstanceAlarms(
 }
 
 export async function manageInactiveInstanceAlarms(instanceId: string) {
+  shouldDeletePromAlarm = true;
   try {
     const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
       'EC2',
@@ -881,7 +955,11 @@ export async function manageInactiveInstanceAlarms(instanceId: string) {
       instanceId
     );
   } catch (e) {
-    log.error().err(e).msg(`Error deleting alarms: ${e}`);
+    log
+      .error()
+      .str('function', 'manageInactiveInstanceAlarms')
+      .err(e)
+      .msg(`Error deleting alarms: ${e}`);
     throw new Error(`Error deleting alarms: ${e}`);
   }
 }

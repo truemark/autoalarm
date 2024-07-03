@@ -297,6 +297,7 @@ export async function deleteCWAlarm(
   if (alarmExists) {
     log
       .info()
+      .str('function', 'deleteCWAlarm')
       .str('alarmName', alarmName)
       .str('instanceId', instanceIdentifier)
       .msg('Attempting to delete alarm');
@@ -305,12 +306,14 @@ export async function deleteCWAlarm(
     );
     log
       .info()
+      .str('function', 'deleteCWAlarm')
       .str('alarmName', alarmName)
       .str('instanceId', instanceIdentifier)
       .msg('Deleted alarm');
   } else {
     log
       .info()
+      .str('function', 'deleteCWAlarm')
       .str('alarmName', alarmName)
       .str('instanceId', instanceIdentifier)
       .msg('Alarm does not exist for instance');
@@ -548,108 +551,134 @@ const listNamespaces = async (
   }
 };
 
-const describeNamespace = async (workspaceId: string, namespace: string) => {
+// Function to describe a namespace
+export const describeNamespace = async (
+  workspaceId: string,
+  namespace: string,
+  retries = 2
+): Promise<NamespaceDetails | null> => {
   const command = new DescribeRuleGroupsNamespaceCommand({
     workspaceId,
     name: namespace,
   });
   log
     .info()
+    .str('function', 'describeNamespace')
     .str('workspaceId', workspaceId)
     .str('namespace', namespace)
     .msg('Describing namespace');
-  try {
-    const response = await client.send(command);
-    if (response.ruleGroupsNamespace) {
-      const dataStr = new TextDecoder().decode(
-        response.ruleGroupsNamespace.data
-      );
-      log.info().str('rawData', dataStr).msg('Raw data from API');
-      try {
-        const nsDetails = yaml.load(dataStr) as NamespaceDetails;
-        if (!isNamespaceDetails(nsDetails)) {
-          throw new Error('Invalid namespace details structure');
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const response = await client.send(command);
+      if (response.ruleGroupsNamespace) {
+        const dataStr = new TextDecoder().decode(
+          response.ruleGroupsNamespace.data
+        );
+        log.info().str('rawData', dataStr).msg('Raw data from API');
+        try {
+          const nsDetails = yaml.load(dataStr) as NamespaceDetails;
+          if (!isNamespaceDetails(nsDetails)) {
+            throw new Error('Invalid namespace details structure');
+          }
+          log
+            .info()
+            .str('function', 'describeNamespace')
+            .str('namespace', namespace)
+            .str('details', JSON.stringify(nsDetails))
+            .msg('Namespace described');
+          return nsDetails;
+        } catch (parseError) {
+          log
+            .error()
+            .str('function', 'describeNamespace')
+            .err(parseError)
+            .str('rawData', dataStr)
+            .msg('Failed to parse namespace data');
+          throw parseError;
         }
+      }
+      log
+        .warn()
+        .str('function', 'describeNamespace')
+        .str('namespace', namespace)
+        .msg('No data returned for namespace');
+      return null;
+    } catch (error) {
+      log
+        .error()
+        .str('function', 'describeNamespace')
+        .err(error)
+        .msg(
+          `Error describing namespace, attempt ${attempt + 1} of ${retries + 1}`
+        );
+      if (attempt < retries) {
         log
           .info()
-          .str('namespace', namespace)
-          .str('details', JSON.stringify(nsDetails))
-          .msg('Namespace described');
-        return nsDetails;
-      } catch (parseError) {
+          .str('function', 'describeNamespace')
+          .msg('Retrying in 90 seconds...');
+        await new Promise(resolve => setTimeout(resolve, 90 * 1000)); // Wait for 90 seconds before retrying
+      } else {
         log
           .error()
-          .err(parseError)
-          .str('rawData', dataStr)
-          .msg('Failed to parse namespace data');
-        throw parseError;
+          .str('function', 'describeNamespace')
+          .str('namespace', namespace)
+          .msg('Ran out of attempts');
+        throw error; // If it's the last attempt, rethrow the error
       }
     }
-    log
-      .warn()
-      .str('namespace', namespace)
-      .msg('No data returned for namespace');
-    return null;
-  } catch (error) {
-    log.error().err(error).msg('Error describing namespace');
-    throw error;
   }
+  return null; // Ensure that the function always returns a value
 };
 
 // Function to create a new namespace
-const createNamespace = async (
-  workspaceId: string,
+async function createNamespace(
+  promWorkspaceId: string,
   namespace: string,
-  alarmName: string,
-  alarmQuery: string,
-  duration: string,
-  severityType: string
-) => {
-  const initialNamespace: NamespaceDetails = {
+  alarmConfigs: any[]
+) {
+  log
+    .info()
+    .str('function', 'createNamespace')
+    .str('promWorkspaceId', promWorkspaceId)
+    .str('namespace', namespace)
+    .msg('Creating new Prometheus namespace with rules');
+
+  const nsDetails = {
     groups: [
       {
         name: 'AutoAlarm',
-        rules: [
-          {
-            alert: alarmName,
-            expr: alarmQuery,
-            for: duration,
-            labels: {
-              severity: severityType,
-            },
-            annotations: {
-              summary: `${alarmName} alert triggered`,
-              description:
-                'The alert was triggered based on the specified query',
-            },
+        rules: alarmConfigs.map(config => ({
+          alert: config.alarmName,
+          expr: config.alarmQuery,
+          for: config.duration,
+          labels: {severity: config.severityType},
+          annotations: {
+            summary: `${config.alarmName} alert triggered`,
+            description: 'The alert was triggered based on the specified query',
           },
-        ],
+        })),
       },
     ],
   };
-  const initialYaml = yaml.dump(initialNamespace);
 
-  const command = new CreateRuleGroupsNamespaceCommand({
-    workspaceId,
+  const updatedYaml = yaml.dump(nsDetails);
+  const updatedData = new TextEncoder().encode(updatedYaml);
+
+  const putCommand = new PutRuleGroupsNamespaceCommand({
+    workspaceId: promWorkspaceId,
     name: namespace,
-    data: new TextEncoder().encode(initialYaml),
+    data: updatedData,
   });
+
+  await client.send(putCommand);
+
   log
     .info()
+    .str('function', 'createNamespace')
     .str('namespace', namespace)
-    .msg('Creating new Prometheus namespace');
-  try {
-    await client.send(command);
-    log
-      .info()
-      .str('namespace', namespace)
-      .msg('Created new Prometheus namespace');
-    await wait(90000); // Wait for 90 seconds after creating the namespace
-  } catch (error) {
-    log.error().err(error).msg('Error creating namespace');
-    throw error;
-  }
-};
+    .msg('Created new namespace and added rules');
+}
 
 // Helper function to ensure that the object is a NamespaceDetails interface
 function isNamespaceDetails(obj: unknown): obj is NamespaceDetails {
@@ -676,6 +705,7 @@ export async function managePromNamespaceAlarms(
 ) {
   log
     .info()
+    .str('function', 'managePromNamespaceAlarms')
     .str('promWorkspaceId', promWorkspaceId)
     .str('namespace', namespace)
     .str('ruleGroupName', ruleGroupName)
@@ -686,6 +716,7 @@ export async function managePromNamespaceAlarms(
 
   log
     .info()
+    .str('function', 'managePromNamespaceAlarms')
     .num('totalNamespaces', namespaces.length)
     .str('namespace', namespace)
     .msg('Retrieved namespaces');
@@ -704,12 +735,17 @@ export async function managePromNamespaceAlarms(
       );
     }
   }
-  log.info().num('totalWSRules', totalWSRules).msg('Total rules in workspace');
+  log
+    .info()
+    .str('function', 'managePromNamespaceAlarms')
+    .num('totalWSRules', totalWSRules)
+    .msg('Total rules in workspace');
 
   // Check if total rules for workspace has less than 2000 rules
   if (totalWSRules >= 2000) {
     log
       .error()
+      .str('function', 'managePromNamespaceAlarms')
       .msg('The workspace has 2000 or more rules. Halting Prometheus logic.');
     throw new Error(
       'The workspace has 2000 or more rules. Halting and falling back to CW Alarms.'
@@ -722,17 +758,12 @@ export async function managePromNamespaceAlarms(
   if (!specificNamespace) {
     log
       .info()
+      .str('function', 'managePromNamespaceAlarms')
       .msg(`No ${namespace} namespace found. Creating a new namespace.`);
-    await createNamespace(
-      promWorkspaceId,
-      namespace,
-      alarmConfigs[0].alarmName,
-      alarmConfigs[0].alarmQuery,
-      alarmConfigs[0].duration,
-      alarmConfigs[0].severityType
-    );
+    await createNamespace(promWorkspaceId, namespace, alarmConfigs);
     log
       .info()
+      .str('function', 'managePromNamespaceAlarms')
       .str('namespace', namespace)
       .msg('Created new namespace and added rule');
     return;
@@ -743,6 +774,7 @@ export async function managePromNamespaceAlarms(
   if (!nsDetails || !isNamespaceDetails(nsDetails)) {
     log
       .warn()
+      .str('function', 'managePromNamespaceAlarms')
       .str('namespace', namespace)
       .msg('Invalid or empty namespace details, skipping');
     return;
@@ -785,7 +817,11 @@ export async function managePromNamespaceAlarms(
   });
 
   await client.send(putCommand);
-  log.info().str('namespace', namespace).msg('Updated rule group namespace');
+  log
+    .info()
+    .str('function', 'managePromNamespaceAlarms')
+    .str('namespace', namespace)
+    .msg('Updated rule group namespace');
   await wait(90000); // Wait for 90 seconds after adding or updating a rule
 }
 
