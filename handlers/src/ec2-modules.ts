@@ -10,7 +10,7 @@ import {
 } from '@aws-sdk/client-cloudwatch';
 import * as logging from '@nr1e/logging';
 import {AlarmClassification, ValidInstanceState} from './enums';
-import {AlarmProps, Tag, Dimension, PathMetrics} from './types'; //need to investigate what we were doing with Dimension.
+import {Tag, PathMetrics} from './types'; //need to investigate what we were doing with Dimension.
 import {
   doesAlarmExist,
   createOrUpdateCWAlarm,
@@ -121,43 +121,76 @@ async function getPromAlarmConfigs(
   return configs;
 }
 
-// Function used to get all ec2 instances reporting to prometheus and return a boolean used later in the manageActiveInstanceAlarms function
-// to determine if we should use cloudwatch alarms or prometheus alarms for the instance that triggered the eventbridge rule.
+/**
+ * This function checks if a specific EC2 instance is reporting metrics to Prometheus.
+ * It fetches the instance details and compares the instance's private IP against a list
+ * of IPs currently reporting to Prometheus. If the instance is not reporting, the function
+ * will retry the check up to 8 times, with a 1-minute delay between each attempt.
+ *
+ * If after 8 attempts the instance is still not reporting to Prometheus, the function sets
+ * the `isCloudWatch` flag to true, indicating that CloudWatch should be used for monitoring
+ * instead of Prometheus.
+ *
+ * The purpose of this function is to ensure that instances that are expected to report to
+ * Prometheus are given ample time and retries to start reporting before falling back to
+ * CloudWatch for monitoring.
+ *
+ * @param {string} instanceId - The ID of the EC2 instance to check.
+ * @param {string[]} reportingInstances - An array of IPs currently reporting to Prometheus.
+ */
 
 async function alarmFavor(instanceId: string, reportingInstances: string[]) {
-  const instanceIdEc2Metadata = await getInstanceDetails(instanceId);
-  const TriggeredInstanceIP = instanceIdEc2Metadata.privateIp;
+  const retryLimit = 8;
+  const retryDelay = 60000; // 1 minute in milliseconds
+
+  let instanceIdEc2Metadata = await getInstanceDetails(instanceId);
+  let TriggeredInstanceIP = instanceIdEc2Metadata.privateIp;
+
+  for (let attempt = 0; attempt < retryLimit; attempt++) {
+    log
+      .info()
+      .str('function', 'alarmFavor')
+      .str('instanceIdMetadata', JSON.stringify(instanceIdEc2Metadata))
+      .str('TriggeredInstanceIP', TriggeredInstanceIP)
+      .str('reportingInstanceIps', JSON.stringify(reportingInstances))
+      .num('attempt', attempt + 1)
+      .msg('Fetched instance details and list of reporting instance IPs');
+
+    if (reportingInstances.includes(TriggeredInstanceIP)) {
+      log
+        .info()
+        .str('function', 'alarmFavor')
+        .str('instanceId', instanceId)
+        .str('reporting instances', JSON.stringify(reportingInstances))
+        .str('TriggeredInstanceIP', TriggeredInstanceIP)
+        .msg(
+          'Instance is reporting to Prometheus. Setting isCloudWatch to false'
+        );
+      isCloudWatch = false;
+      return;
+    } else if (attempt < retryLimit - 1) {
+      log
+        .warn()
+        .str('function', 'alarmFavor')
+        .str('instanceId', instanceId)
+        .str('TriggeredInstanceIP', TriggeredInstanceIP)
+        .num('attempt', attempt + 1)
+        .msg('Instance is not reporting to Prometheus. Retrying after delay');
+      await new Promise(resolve => setTimeout(resolve, retryDelay));
+      instanceIdEc2Metadata = await getInstanceDetails(instanceId);
+      TriggeredInstanceIP = instanceIdEc2Metadata.privateIp;
+    }
+  }
 
   log
     .info()
     .str('function', 'alarmFavor')
-    .str('instanceIdMetadata', JSON.stringify(instanceIdEc2Metadata))
+    .str('instanceId', instanceId)
     .str('TriggeredInstanceIP', TriggeredInstanceIP)
-    .str('reportingInstanceIps', JSON.stringify(reportingInstances))
-    .msg('Fetched instance details and list of reporting instance IPs');
-
-  if (reportingInstances.includes(TriggeredInstanceIP)) {
-    log
-      .info()
-      .str('function', 'alarmFavor')
-      .str('instanceId', instanceId)
-      .str('reporting instances', JSON.stringify(reportingInstances))
-      .str('TriggeredInstanceIP', TriggeredInstanceIP)
-      .msg(
-        'Instance is reporting to Prometheus. Setting isCloudWatch to false'
-      );
-    isCloudWatch = false;
-  } else {
-    log
-      .info()
-      .str('function', 'alarmFavor')
-      .str('instanceId', instanceId)
-      .str('TriggeredInstanceIP', TriggeredInstanceIP)
-      .msg(
-        'Instance is not reporting to Prometheus. Setting isCloudWatch to true'
-      );
-    isCloudWatch = true;
-  }
+    .msg(
+      'Instance is not reporting to Prometheus after max retries. Setting isCloudWatch to true'
+    );
+  isCloudWatch = true;
 }
 
 /**
