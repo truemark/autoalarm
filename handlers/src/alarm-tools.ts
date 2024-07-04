@@ -665,13 +665,22 @@ async function createNamespace(
   const updatedYaml = yaml.dump(nsDetails);
   const updatedData = new TextEncoder().encode(updatedYaml);
 
-  const putCommand = new PutRuleGroupsNamespaceCommand({
+  const input = {
     workspaceId: promWorkspaceId,
     name: namespace,
     data: updatedData,
-  });
+  };
 
-  await client.send(putCommand);
+  try {
+    const command = new CreateRuleGroupsNamespaceCommand(input);
+    await client.send(command);
+  } catch (error) {
+    log
+      .error()
+      .str('function', 'createNamespace')
+      .err(error)
+      .msg('Failed to create namespace');
+  }
 
   log
     .info()
@@ -729,6 +738,7 @@ export async function managePromNamespaceAlarms(
       ns.name as string
     );
     if (nsDetails && isNamespaceDetails(nsDetails)) {
+      // Add the number of rules in the current namespace to the total count
       totalWSRules += nsDetails.groups.reduce(
         (count, group) => count + group.rules.length,
         0
@@ -765,7 +775,10 @@ export async function managePromNamespaceAlarms(
       .info()
       .str('function', 'managePromNamespaceAlarms')
       .str('namespace', namespace)
-      .msg('Created new namespace and added rule');
+      .msg(
+        'Created new namespace and added rules. Waiting 90 seconds to allow namespace to propagate.'
+      );
+    await wait(90000); // Wait for 90 seconds after creating the namespace
     return;
   }
 
@@ -780,20 +793,25 @@ export async function managePromNamespaceAlarms(
     return;
   }
 
+  // Find the rule group within the namespace or create a new one
   const ruleGroup = nsDetails.groups.find(
     (rg): rg is RuleGroup => rg.name === ruleGroupName
   ) || {name: ruleGroupName, rules: []};
 
+  // Iterate over the alarm configurations and update or add rules
   for (const config of alarmConfigs) {
+    // Find the index of the existing rule with the same name
     const existingRuleIndex = ruleGroup.rules.findIndex(
       (rule): rule is Rule => rule.alert === config.alarmName
     );
 
     if (existingRuleIndex !== -1) {
+      // If the rule exists, update its expression if it has changed
       if (ruleGroup.rules[existingRuleIndex].expr !== config.alarmQuery) {
         ruleGroup.rules[existingRuleIndex].expr = config.alarmQuery;
       }
     } else {
+      // If the rule does not exist, add a new rule to the rule group
       ruleGroup.rules.push({
         alert: config.alarmName,
         expr: config.alarmQuery,
@@ -807,22 +825,27 @@ export async function managePromNamespaceAlarms(
     }
   }
 
+  // Convert the updated namespace details to YAML and encode it
   const updatedYaml = yaml.dump(nsDetails);
   const updatedData = new TextEncoder().encode(updatedYaml);
 
+  // Create a PutRuleGroupsNamespaceCommand to update the namespace
   const putCommand = new PutRuleGroupsNamespaceCommand({
     workspaceId: promWorkspaceId,
     name: namespace,
     data: updatedData,
   });
 
+  // Send the command to update the namespace
   await client.send(putCommand);
   log
     .info()
     .str('function', 'managePromNamespaceAlarms')
     .str('namespace', namespace)
     .msg('Updated rule group namespace');
-  await wait(90000); // Wait for 90 seconds after adding or updating a rule
+
+  // Wait for 90 seconds after adding or updating a rule to allow for propagation
+  await wait(90000);
 }
 
 // Function to delete Prometheus rules for a service. For this function, the folloiwng service identifiers are used:
