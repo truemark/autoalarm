@@ -870,11 +870,16 @@ async function callAlarmFunctions(
   }
 }
 
+//need to review this fucntion for logic flow and resetting and setting out 3 global variables can likely be removed from the global scop and consolidated to this function
 export async function manageActiveInstanceAlarms(
   instanceId: string,
   tags: Tag
 ) {
   await loggingSetup();
+  // Initialize global variables at the start of function so lambda doesn't reuse values from previous invocations
+  shouldDeletePromAlarm = false;
+  shouldUpdatePromRules = false;
+  isCloudWatch = true;
   log
     .info()
     .str('function', 'manageActiveInstanceAlarms')
