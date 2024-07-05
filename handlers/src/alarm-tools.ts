@@ -346,14 +346,6 @@ const makeSignedRequest = async (
     },
   };
 
-  // Log the request details before signing
-  log
-    .info()
-    .str('hostname', hostname)
-    .str('path', path)
-    .str('region', region)
-    .msg('Request details before signing');
-
   // Sign the request using aws4
   const signer = aws4.sign(
     {
@@ -383,21 +375,24 @@ const makeSignedRequest = async (
       res.on('end', () => {
         log
           .info()
+          .str('function', 'makeSignedRequest')
           .num('statusCode', res.statusCode || 0)
-          .str('headers', JSON.stringify(res.headers, null, 2))
-          .str('body', data)
           .msg('Response received');
 
         try {
           const parsedData = JSON.parse(data);
           log
             .info()
+            .str('function', 'makeSignedRequest')
+            .num('statusCode', res.statusCode || 0)
             .str('parsedData', JSON.stringify(parsedData, null, 2))
             .msg('Parsed response data');
           resolve(parsedData);
         } catch (error) {
           log
             .error()
+            .str('function', 'makeSignedRequest')
+            .num('statusCode', res.statusCode || 0)
             .err(error)
             .str('rawData', data)
             .msg('Failed to parse response data');
@@ -407,7 +402,11 @@ const makeSignedRequest = async (
     });
 
     req.on('error', error => {
-      log.error().err(error).msg('Request error');
+      log
+        .error()
+        .str('function', 'makeSignedRequest')
+        .err(error)
+        .msg('Request error');
       reject(error);
     });
 
@@ -452,25 +451,19 @@ export async function queryPrometheusForService(
 
         query = 'up{job="ec2"}';
 
-        log
-          .info()
-          .str('function', 'queryPrometheusForService')
-          .str('fullQueryPath', queryPath + encodeURIComponent(query))
-          .msg('Full query path');
-
         const response = await makeSignedRequest(
           queryPath + encodeURIComponent(query),
           region
         );
 
-        log
-          .info()
-          .str('function', 'queryPrometheusForService')
-          .str('serviceType', serviceType)
-          .str('Prometheus Workspace ID', promWorkspaceID)
-          .str('region', region)
-          .str('response', JSON.stringify(response, null, 2))
-          .msg('Raw Prometheus query result');
+        //log
+        //  .info()
+        //  .str('function', 'queryPrometheusForService')
+        //  .str('serviceType', serviceType)
+        //  .str('Prometheus Workspace ID', promWorkspaceID)
+        //  .str('region', region)
+        //  .str('response', JSON.stringify(response, null, 2))
+        //  .msg('Raw Prometheus query result');
 
         if (
           !response ||
@@ -502,7 +495,7 @@ export async function queryPrometheusForService(
           .str('function', 'queryPrometheusForService')
           .str('serviceType', serviceType)
           .str('Prometheus Workspace ID', promWorkspaceID)
-          .str('instances', JSON.stringify(Array.from(instances)))
+          //.str('instances', JSON.stringify(Array.from(instances)))
           .msg('Unique instances extracted from Prometheus response');
 
         return Array.from(instances);
@@ -574,7 +567,11 @@ export const describeNamespace = async (
         const dataStr = new TextDecoder().decode(
           response.ruleGroupsNamespace.data
         );
-        log.info().str('rawData', dataStr).msg('Raw data from API');
+        log
+          .info()
+          .str('function', 'describeNamespace')
+          .str('rawData', dataStr)
+          .msg('Raw data from API');
         try {
           const nsDetails = yaml.load(dataStr) as NamespaceDetails;
           if (!isNamespaceDetails(nsDetails)) {
@@ -859,15 +856,22 @@ export async function managePromNamespaceAlarms(
   });
 
   // Send the command to update the namespace
-  await client.send(putCommand);
-  log
-    .info()
-    .str('function', 'managePromNamespaceAlarms')
-    .str('namespace', namespace)
-    .msg('Updated rule group namespace');
-
-  // Wait for 90 seconds after adding or updating a rule to allow for propagation
-  await wait(90000);
+  try {
+    await client.send(putCommand);
+    log
+      .info()
+      .str('function', 'managePromNamespaceAlarms')
+      .str('namespace', namespace)
+      .msg('Updated rule group namespace');
+  } catch (error) {
+    log
+      .error()
+      .str('function', 'managePromNamespaceAlarms')
+      .str('namespace', namespace)
+      .err(error)
+      .msg('Failed to update rule group namespace');
+    throw new Error(`Failed to update rule group namespace: ${error}`);
+  }
 }
 
 // Function to delete Prometheus rules for a service. For this function, the folloiwng service identifiers are used:
@@ -879,7 +883,7 @@ export async function managePromNamespaceAlarms(
 export async function deletePromRulesForService(
   promWorkspaceId: string,
   service: string,
-  serviceIdentifier: string
+  serviceIdentifiers: string[]
 ): Promise<void> {
   try {
     const namespace = `AutoAlarm-${service.toUpperCase()}`;
@@ -941,9 +945,9 @@ export async function deletePromRulesForService(
       return;
     }
 
-    // Filter out rules associated with the instanceId
+    // Filter out rules associated with any of the serviceIdentifiers
     ruleGroup.rules = ruleGroup.rules.filter(
-      rule => !rule.alert.includes(serviceIdentifier)
+      rule => !serviceIdentifiers.some(id => rule.alert.includes(id))
     );
 
     if (ruleGroup.rules.length === 0) {
@@ -977,9 +981,8 @@ export async function deletePromRulesForService(
           .str('function', 'deletePromRulesForService')
           .str('namespace', namespace)
           .str('service', service)
-          .str('serviceIdentifier', serviceIdentifier)
+          .str('serviceIdentifiers', JSON.stringify(serviceIdentifiers))
           .str('ruleGroupName', ruleGroupName)
-          .str('instanceId', serviceIdentifier)
           .msg('Deleted Prometheus rules associated with the service.');
         break;
       } catch (error) {

@@ -50,24 +50,60 @@ let isCloudWatch = true;
 async function batchPromRulesDeletion(
   shouldDeletePromAlarm: boolean,
   prometheusWorkspaceId: string,
-  service: string,
-  instanceId: string
+  service: string
 ) {
-  if (shouldDeletePromAlarm) {
-    log
-      .info()
-      .str('function', 'batchPromRulesDeletion')
-      .str('shouldDeletePromAlarm', 'true')
-      .msg(
-        'Pometheus rules have been marked for deletion. Deleting prometheus rules'
-      );
-    await deletePromRulesForService(prometheusWorkspaceId, service, instanceId);
-  } else {
+  if (!shouldDeletePromAlarm) {
     log
       .info()
       .str('function', 'batchPromRulesDeletion')
       .str('shouldDeletePromAlarm', 'false')
       .msg('Prometheus rules have not been marked for deletion');
+    return;
+  }
+
+  log
+    .info()
+    .str('function', 'batchPromRulesDeletion')
+    .str('shouldDeletePromAlarm', 'true')
+    .msg('Prometheus rules have been marked for deletion. Fetching instances.');
+
+  const instanceIds = await getAllInstanceIdsInRegion();
+
+  const instanceDetailsPromises = instanceIds.map(async instanceId => {
+    const tags = await fetchInstanceTags(instanceId);
+    return {instanceId, tags};
+  });
+
+  const instanceDetails = await Promise.all(instanceDetailsPromises);
+
+  const instancesToDelete = instanceDetails
+    .filter(
+      details =>
+        (details.tags['Prometheus'] === 'false' &&
+          details.tags['autoalarm:disabled']) ||
+        details.tags['autoalarm:disabled'] === 'true'
+    )
+    .map(details => details.instanceId);
+
+  log
+    .info()
+    .str('function', 'batchPromRulesDeletion')
+    .str('instancesToDelete', JSON.stringify(instancesToDelete))
+    .msg('Instances to delete Prometheus rules for');
+
+  // Delete Prometheus rules for all relevant instances at once
+  try {
+    await deletePromRulesForService(
+      prometheusWorkspaceId,
+      service,
+      instancesToDelete
+    );
+  } catch (error) {
+    log
+      .error()
+      .str('function', 'batchPromRulesDeletion')
+      .err(error)
+      .msg('Error deleting Prometheus rules');
   }
 }
 
@@ -898,6 +934,7 @@ export async function manageActiveInstanceAlarms(
       );
     await alarmFavor(instanceId); // Sets isCloudWatch to false if reporting to Prometheus
   }
+
   await checkAndManageStatusAlarm(instanceId, tags);
 
   if (isCloudWatch !== true) {
@@ -926,8 +963,7 @@ export async function manageActiveInstanceAlarms(
 
   await callAlarmFunctions(instanceId, tags, shouldUpdatePromRules);
 
-  // Call batch update for Prometheus rules
-  if (shouldUpdatePromRules && shouldDeletePromAlarm !== true) {
+  if (shouldUpdatePromRules && !shouldDeletePromAlarm) {
     try {
       await batchUpdatePromRules(
         shouldUpdatePromRules,
@@ -955,7 +991,8 @@ export async function manageActiveInstanceAlarms(
         .str('instanceId', instanceId)
         .obj('activeAutoAlarms', activeAutoAlarms)
         .msg('Grabbing all AutoAlarm CloudWatch alarms for instance.');
-      // filter out status check alarm from deletion as the status check alarm should always be live
+
+      // Filter out status check alarm from deletion as the status check alarm should always be live
       const filteredAutoAlarms = activeAutoAlarms.filter(
         alarm => !alarm.includes('StatusCheckFailed')
       );
@@ -985,7 +1022,12 @@ export async function manageActiveInstanceAlarms(
             'flag to true and shouldUpdatePromRules flag to false. Deleting Prometheus alarm rules for instance'
         );
       await callAlarmFunctions(instanceId, tags, shouldUpdatePromRules);
-      await deletePromRulesForService(prometheusWorkspaceId, 'ec2', instanceId);
+      const promInstancesToDelete = [instanceId]; // we only want to delete the prometheus rules for the instance that failed to update
+      await deletePromRulesForService(
+        prometheusWorkspaceId,
+        'ec2',
+        promInstancesToDelete
+      );
     }
   } else {
     log
@@ -999,11 +1041,11 @@ export async function manageActiveInstanceAlarms(
         'isCloudWatch is true. Deleting Prometheus alarm rules for instance'
       );
     await callAlarmFunctions(instanceId, tags, shouldUpdatePromRules);
+    shouldDeletePromAlarm = true;
     await batchPromRulesDeletion(
       shouldDeletePromAlarm,
       prometheusWorkspaceId,
-      'ec2',
-      instanceId
+      'ec2'
     );
   }
 }
@@ -1022,8 +1064,7 @@ export async function manageInactiveInstanceAlarms(instanceId: string) {
     await batchPromRulesDeletion(
       shouldDeletePromAlarm, //this is a boolean that is set to true if any prometheus rules have been marked for deletion in favor of cloudwatch alarms
       prometheusWorkspaceId,
-      'ec2',
-      instanceId
+      'ec2'
     );
   } catch (e) {
     log
