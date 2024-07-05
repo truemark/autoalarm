@@ -140,8 +140,8 @@ async function getPromAlarmConfigs(
  */
 
 async function alarmFavor(instanceId: string) {
-  const retryLimit = 8;
-  const retryDelay = 60000; // 1 minute in milliseconds
+  const retryLimit = 96; //96 retries at 5 second intervals = 8 minutes
+  const retryDelay = 5000; // 5 seconds in milliseconds
 
   let instanceIdEc2Metadata = await getInstanceDetails(instanceId);
   let TriggeredInstanceIP = instanceIdEc2Metadata.privateIp;
@@ -181,7 +181,7 @@ async function alarmFavor(instanceId: string) {
         .str('TriggeredInstanceIP', TriggeredInstanceIP)
         .num('attempt', attempt + 1)
         .msg(
-          'Instance is not reporting to Prometheus. Retrying after a 60 second delay'
+          'Instance is not reporting to Prometheus. Retrying after a 5 second delay'
         );
       await new Promise(resolve => setTimeout(resolve, retryDelay));
       instanceIdEc2Metadata = await getInstanceDetails(instanceId);
@@ -201,6 +201,26 @@ async function alarmFavor(instanceId: string) {
 }
 
 /**
+ * Function to get all EC2 instance IDs in the region.
+ * @returns Array of EC2 instance IDs.
+ */
+async function getAllInstanceIdsInRegion(): Promise<string[]> {
+  const command = new DescribeInstancesCommand({});
+  const response = await ec2Client.send(command);
+  const instanceIds: string[] = [];
+
+  for (const reservation of response.Reservations || []) {
+    for (const instance of reservation.Instances || []) {
+      if (instance.InstanceId) {
+        instanceIds.push(instance.InstanceId);
+      }
+    }
+  }
+
+  return instanceIds;
+}
+
+/**
  * Batch update Prometheus rules for all EC2 instances with the necessary tags and metrics reporting.
  * @param shouldUpdatePromRules - Boolean flag to indicate if Prometheus rules should be updated.
  * @param prometheusWorkspaceId - The Prometheus workspace ID.
@@ -212,9 +232,9 @@ async function batchUpdatePromRules(
   shouldUpdatePromRules: boolean,
   prometheusWorkspaceId: string,
   service: string,
-  instanceIds: string[],
   region: string
 ) {
+  const instanceIds = await getAllInstanceIdsInRegion();
   if (!shouldUpdatePromRules) {
     log
       .info()
@@ -226,6 +246,12 @@ async function batchUpdatePromRules(
     return;
   }
 
+  const maxRetries = 60; // Maximum number of retries
+  const retryDelay = 5000; // Delay between retries in milliseconds (5 seconds)
+  const totalRetryTimeMinutes = (maxRetries * retryDelay) / 60000; // Total retry time in minutes
+
+  let retryCount = 0;
+
   log
     .info()
     .str('function', 'batchUpdatePromRules')
@@ -233,82 +259,107 @@ async function batchUpdatePromRules(
     .msg('Fetching instance details and tags');
 
   try {
-    const instanceDetailsPromises = instanceIds.map(async instanceId => {
-      const tags = await fetchInstanceTags(instanceId);
-      const ec2Metadata = await getInstanceDetails(instanceId);
-      return {instanceId, tags, privateIp: ec2Metadata.privateIp};
-    });
+    let instanceDetails = [];
 
-    const instanceDetails = await Promise.all(instanceDetailsPromises);
+    // Retry logic for fetching instance details and tags
+    while (retryCount < maxRetries) {
+      try {
+        const instanceDetailsPromises = instanceIds.map(async instanceId => {
+          const tags = await fetchInstanceTags(instanceId);
+          const ec2Metadata = await getInstanceDetails(instanceId);
+          return {instanceId, tags, privateIp: ec2Metadata.privateIp};
+        });
 
-    log
-      .info()
-      .str('function', 'batchUpdatePromRules')
-      .msg('Filtering instances based on tags');
+        instanceDetails = await Promise.all(instanceDetailsPromises);
 
-    const instancesToCheck = instanceDetails.filter(
-      details =>
-        details.tags['Prometheus'] === 'true' &&
-        details.tags['autoalarm:disabled'] === 'false'
-    );
+        log
+          .info()
+          .str('function', 'batchUpdatePromRules')
+          .msg('Filtering instances based on tags');
 
-    log
-      .info()
-      .str('function', 'batchUpdatePromRules')
-      .str('instancesToCheck', JSON.stringify(instancesToCheck))
-      .msg('Instances to check for Prometheus rules');
-
-    const reportingInstanceIps = await queryPrometheusForService(
-      'ec2',
-      prometheusWorkspaceId,
-      region
-    );
-
-    const instancesToUpdate = instancesToCheck.filter(details =>
-      reportingInstanceIps.includes(details.privateIp)
-    );
-
-    const alarmConfigs: any[] = [];
-    for (const {instanceId, tags} of instancesToUpdate) {
-      for (const classification of Object.values(AlarmClassification)) {
-        const configs = await getPromAlarmConfigs(
-          instanceId,
-          tags,
-          classification
+        const instancesToCheck = instanceDetails.filter(
+          details =>
+            details.tags['Prometheus'] === 'true' &&
+            details.tags['autoalarm:disabled'] === 'false'
         );
-        alarmConfigs.push(...configs);
+
+        log
+          .info()
+          .str('function', 'batchUpdatePromRules')
+          .str('instancesToCheck', JSON.stringify(instancesToCheck))
+          .msg('Instances to check for Prometheus rules');
+
+        const reportingInstanceIps = await queryPrometheusForService(
+          'ec2',
+          prometheusWorkspaceId,
+          region
+        );
+
+        const instancesToUpdate = instancesToCheck.filter(details =>
+          reportingInstanceIps.includes(details.privateIp)
+        );
+
+        const alarmConfigs: any[] = [];
+        for (const {instanceId, tags} of instancesToUpdate) {
+          for (const classification of Object.values(AlarmClassification)) {
+            const configs = await getPromAlarmConfigs(
+              instanceId,
+              tags,
+              classification
+            );
+            alarmConfigs.push(...configs);
+          }
+        }
+
+        log
+          .info()
+          .str('function', 'batchUpdatePromRules')
+          .str('alarmConfigs', JSON.stringify(alarmConfigs))
+          .msg('Consolidated alarm configurations');
+
+        const namespace = `AutoAlarm-${service.toUpperCase()}`;
+        const ruleGroupName = 'AutoAlarm';
+
+        log
+          .info()
+          .str('function', 'batchUpdatePromRules')
+          .msg(
+            `Updating Prometheus rules for all instances in batch under namespace: ${namespace}`
+          );
+
+        await managePromNamespaceAlarms(
+          prometheusWorkspaceId,
+          namespace,
+          ruleGroupName,
+          alarmConfigs
+        );
+
+        log
+          .info()
+          .str('function', 'batchUpdatePromRules')
+          .msg('Batch update of Prometheus rules completed.');
+
+        await verifyNamespaceUpdate(prometheusWorkspaceId, namespace);
+        break;
+      } catch (error) {
+        retryCount++;
+        log
+          .warn()
+          .str('function', 'batchUpdatePromRules')
+          .num('retryCount', retryCount)
+          .msg(
+            `Retry ${retryCount}/${maxRetries} failed. Retrying in ${retryDelay / 1000} seconds...`
+          );
+
+        if (retryCount >= maxRetries) {
+          throw new Error(
+            `Error during batch update of Prometheus rules after ${maxRetries} retries (${totalRetryTimeMinutes} minutes): ${error}`
+          );
+        }
+
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
       }
     }
-
-    log
-      .info()
-      .str('function', 'batchUpdatePromRules')
-      .str('alarmConfigs', JSON.stringify(alarmConfigs))
-      .msg('Consolidated alarm configurations');
-
-    const namespace = `AutoAlarm-${service.toUpperCase()}`;
-    const ruleGroupName = 'AutoAlarm';
-
-    log
-      .info()
-      .str('function', 'batchUpdatePromRules')
-      .msg(
-        `Updating Prometheus rules for all instances in batch under namespace: ${namespace}`
-      );
-
-    await managePromNamespaceAlarms(
-      prometheusWorkspaceId,
-      namespace,
-      ruleGroupName,
-      alarmConfigs
-    );
-
-    log
-      .info()
-      .str('function', 'batchUpdatePromRules')
-      .msg('Batch update of Prometheus rules completed.');
-
-    await verifyNamespaceUpdate(prometheusWorkspaceId, namespace);
   } catch (error) {
     log
       .error()
@@ -819,26 +870,6 @@ async function callAlarmFunctions(
   }
 }
 
-/**
- * Function to get all EC2 instance IDs in the region.
- * @returns Array of EC2 instance IDs.
- */
-async function getAllInstanceIdsInRegion(): Promise<string[]> {
-  const command = new DescribeInstancesCommand({});
-  const response = await ec2Client.send(command);
-  const instanceIds: string[] = [];
-
-  for (const reservation of response.Reservations || []) {
-    for (const instance of reservation.Instances || []) {
-      if (instance.InstanceId) {
-        instanceIds.push(instance.InstanceId);
-      }
-    }
-  }
-
-  return instanceIds;
-}
-
 export async function manageActiveInstanceAlarms(
   instanceId: string,
   tags: Tag
@@ -893,12 +924,10 @@ export async function manageActiveInstanceAlarms(
   // Call batch update for Prometheus rules
   if (shouldUpdatePromRules && shouldDeletePromAlarm !== true) {
     try {
-      const instanceIds = await getAllInstanceIdsInRegion();
       await batchUpdatePromRules(
         shouldUpdatePromRules,
         prometheusWorkspaceId,
         'ec2',
-        instanceIds,
         region
       );
       log
@@ -947,16 +976,11 @@ export async function manageActiveInstanceAlarms(
         .str('function', 'manageActiveInstanceAlarms')
         .err(e)
         .msg(
-          'Error updating Prometheus rules for instances. Falling back to CW alarms. Setting shouldDeletePromAlarm flag to true.' +
-            'Deleting Prometheus alarm rules for instance'
+          'Error updating Prometheus rules for instances. Falling back to CW alarms. Setting shouldDeletePromAlarm' +
+            'flag to true and shouldUpdatePromRules flag to false. Deleting Prometheus alarm rules for instance'
         );
       await callAlarmFunctions(instanceId, tags, shouldUpdatePromRules);
-      await batchPromRulesDeletion(
-        shouldDeletePromAlarm,
-        prometheusWorkspaceId,
-        'ec2',
-        instanceId
-      );
+      await deletePromRulesForService(prometheusWorkspaceId, 'ec2', instanceId);
     }
   } else {
     log

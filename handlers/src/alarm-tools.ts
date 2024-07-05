@@ -885,8 +885,41 @@ export async function deletePromRulesForService(
     const namespace = `AutoAlarm-${service.toUpperCase()}`;
     const ruleGroupName = 'AutoAlarm';
 
-    // Describe the namespace to get its details
-    const nsDetails = await describeNamespace(promWorkspaceId, namespace);
+    const maxRetries = 60;
+    const retryDelay = 5000; // 5 seconds in milliseconds
+    const totalRetryTimeMinutes = (maxRetries * retryDelay) / 60000; // Total retry time in minutes
+
+    let retryCount = 0;
+    let nsDetails;
+
+    // Retry logic for describing namespace
+    while (retryCount < maxRetries) {
+      try {
+        nsDetails = await describeNamespace(promWorkspaceId, namespace);
+        if (nsDetails && isNamespaceDetails(nsDetails)) {
+          break;
+        }
+      } catch (error) {
+        log
+          .warn()
+          .str('function', 'deletePromRulesForService')
+          .num('retryCount', retryCount + 1)
+          .msg(
+            `Retry ${retryCount + 1}/${maxRetries} failed to describe namespace. Retrying in ${
+              retryDelay / 1000
+            } seconds...`
+          );
+
+        if (++retryCount >= maxRetries) {
+          throw new Error(
+            `Failed to describe namespace after ${maxRetries} retries (${totalRetryTimeMinutes} minutes).`
+          );
+        }
+
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      }
+    }
+
     if (!nsDetails || !isNamespaceDetails(nsDetails)) {
       log
         .warn()
@@ -924,17 +957,7 @@ export async function deletePromRulesForService(
         .str('ruleGroupName', ruleGroupName)
         .msg('No Prometheus rules left, removing the rule group');
     }
-    log
-      .info()
-      .str('function', 'deletePromRulesForService')
-      .str('promWorkspaceId', promWorkspaceId)
-      .str('service', service)
-      .str('serviceIdentifier', serviceIdentifier)
-      .msg(
-        'Waiting 90 seconds to allow any rule updates to finish and then starting deletePromRulesForService'
-      );
 
-    await wait(90000); // Wait for 90 seconds before deleting the rules
     const updatedYaml = yaml.dump(nsDetails);
     const updatedData = new TextEncoder().encode(updatedYaml);
 
@@ -944,17 +967,41 @@ export async function deletePromRulesForService(
       data: updatedData,
     });
 
-    await client.send(putCommand);
-    log
-      .info()
-      .str('function', 'deletePromRulesForService')
-      .str('namespace', namespace)
-      .str('service', service)
-      .str('serviceIdentifier', serviceIdentifier)
-      .str('ruleGroupName', ruleGroupName)
-      .str('instanceId', serviceIdentifier)
-      .msg('Deleted prometheus rules associated with the service.');
-    await wait(90000); // Wait for 90 seconds after deleting the rules
+    // Retry logic for sending the command
+    retryCount = 0;
+    while (retryCount < maxRetries) {
+      try {
+        await client.send(putCommand);
+        log
+          .info()
+          .str('function', 'deletePromRulesForService')
+          .str('namespace', namespace)
+          .str('service', service)
+          .str('serviceIdentifier', serviceIdentifier)
+          .str('ruleGroupName', ruleGroupName)
+          .str('instanceId', serviceIdentifier)
+          .msg('Deleted Prometheus rules associated with the service.');
+        break;
+      } catch (error) {
+        log
+          .warn()
+          .str('function', 'deletePromRulesForService')
+          .num('retryCount', retryCount + 1)
+          .msg(
+            `Retry ${retryCount + 1}/${maxRetries} failed to send command. Retrying in ${
+              retryDelay / 1000
+            } seconds...`
+          );
+
+        if (++retryCount >= maxRetries) {
+          throw new Error(
+            `Failed to send command after ${maxRetries} retries (${totalRetryTimeMinutes} minutes).`
+          );
+        }
+
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      }
+    }
   } catch (error) {
     log.error().err(error).msg('Error deleting rules');
     throw error;
