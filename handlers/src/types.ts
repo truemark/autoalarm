@@ -46,4 +46,3 @@ export interface Rule {
 export interface NamespaceDetails {
   groups: RuleGroup[];
 }
-

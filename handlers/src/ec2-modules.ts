@@ -125,7 +125,7 @@ async function getPromAlarmConfigs(
  * This function checks if a specific EC2 instance is reporting metrics to Prometheus.
  * It fetches the instance details and compares the instance's private IP against a list
  * of IPs currently reporting to Prometheus. If the instance is not reporting, the function
- * will retry the check up to 8 times, with a 1-minute delay between each attempt.
+ * will retry the check-up to 8 times, with a 1-minute delay between each attempt.
  *
  * If after 8 attempts the instance is still not reporting to Prometheus, the function sets
  * the `isCloudWatch` flag to true, indicating that CloudWatch should be used for monitoring
@@ -139,7 +139,7 @@ async function getPromAlarmConfigs(
  * @param {string[]} reportingInstances - An array of IPs currently reporting to Prometheus.
  */
 
-async function alarmFavor(instanceId: string, reportingInstances: string[]) {
+async function alarmFavor(instanceId: string) {
   const retryLimit = 8;
   const retryDelay = 60000; // 1 minute in milliseconds
 
@@ -147,6 +147,11 @@ async function alarmFavor(instanceId: string, reportingInstances: string[]) {
   let TriggeredInstanceIP = instanceIdEc2Metadata.privateIp;
 
   for (let attempt = 0; attempt < retryLimit; attempt++) {
+    const reportingInstances = await queryPrometheusForService(
+      'ec2',
+      prometheusWorkspaceId,
+      region
+    );
     log
       .info()
       .str('function', 'alarmFavor')
@@ -175,7 +180,9 @@ async function alarmFavor(instanceId: string, reportingInstances: string[]) {
         .str('instanceId', instanceId)
         .str('TriggeredInstanceIP', TriggeredInstanceIP)
         .num('attempt', attempt + 1)
-        .msg('Instance is not reporting to Prometheus. Retrying after delay');
+        .msg(
+          'Instance is not reporting to Prometheus. Retrying after a 60 second delay'
+        );
       await new Promise(resolve => setTimeout(resolve, retryDelay));
       instanceIdEc2Metadata = await getInstanceDetails(instanceId);
       TriggeredInstanceIP = instanceIdEc2Metadata.privateIp;
@@ -853,12 +860,7 @@ export async function manageActiveInstanceAlarms(
       .msg(
         'Instance is configured for Prometheus. Getting list of all instances reporting to Prometheus'
       );
-    const reportingInstances = await queryPrometheusForService(
-      'ec2',
-      prometheusWorkspaceId,
-      region
-    );
-    await alarmFavor(instanceId, reportingInstances); // Sets isCloudWatch to false if reporting to Prometheus
+    await alarmFavor(instanceId); // Sets isCloudWatch to false if reporting to Prometheus
   }
   await checkAndManageStatusAlarm(instanceId, tags);
 

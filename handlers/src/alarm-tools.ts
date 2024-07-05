@@ -18,7 +18,6 @@ import {defaultProvider} from '@aws-sdk/credential-provider-node';
 import * as logging from '@nr1e/logging';
 import {AlarmProps, Tag, RuleGroup, NamespaceDetails, Rule} from './types';
 import * as https from 'https';
-import {AlarmClassification} from './enums';
 
 const log = logging.getRootLogger();
 const cloudWatchClient = new CloudWatchClient({});
@@ -722,7 +721,6 @@ export async function managePromNamespaceAlarms(
 
   // List all existing namespaces and count total rules
   const namespaces = await listNamespaces(promWorkspaceId);
-
   log
     .info()
     .str('function', 'managePromNamespaceAlarms')
@@ -808,10 +806,34 @@ export async function managePromNamespaceAlarms(
     if (existingRuleIndex !== -1) {
       // If the rule exists, update its expression if it has changed
       if (ruleGroup.rules[existingRuleIndex].expr !== config.alarmQuery) {
+        log
+          .info()
+          .str('function', 'managePromNamespaceAlarms')
+          .str('namespace', namespace)
+          .str('ruleGroupName', ruleGroupName)
+          .str('alarmName', config.alarmName)
+          .msg(
+            'Rule exists but expression has changed. Updating the rule expression.'
+          );
         ruleGroup.rules[existingRuleIndex].expr = config.alarmQuery;
+      } else {
+        log
+          .info()
+          .str('function', 'managePromNamespaceAlarms')
+          .str('namespace', namespace)
+          .str('ruleGroupName', ruleGroupName)
+          .str('alarmName', config.alarmName)
+          .msg('Rule exists and expression is unchanged. No update needed.');
       }
     } else {
       // If the rule does not exist, add a new rule to the rule group
+      log
+        .info()
+        .str('function', 'managePromNamespaceAlarms')
+        .str('namespace', namespace)
+        .str('ruleGroupName', ruleGroupName)
+        .str('alarmName', config.alarmName)
+        .msg('Rule does not exist. Adding new rule to the rule group.');
       ruleGroup.rules.push({
         alert: config.alarmName,
         expr: config.alarmQuery,
