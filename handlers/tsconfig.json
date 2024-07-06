@@ -5,6 +5,5 @@
     "target": "esnext",
     "moduleResolution": "node"
   },
-  "include": ["src/**/*.ts"],
-
+  "include": ["src/**/*.ts"]
 }
