@@ -163,27 +163,28 @@ export async function createOrUpdateCWAlarm(
   instanceId: string,
   props: AlarmProps,
   tags: Tag,
-  thresholdKey: string,
-  durationTimeKey: string,
-  durationPeriodsKey: string
+  threshold: number,
+  durationTime: number,
+  durationPeriods: number
 ) {
   try {
     log
       .info()
       .str('alarmName', alarmName)
       .str('instanceId', instanceId)
-      .msg('Configuring alarm props from tags');
-    configureAlarmPropsFromTags(
-      props,
-      tags,
-      thresholdKey,
-      durationTimeKey,
-      durationPeriodsKey
-    );
+      .msg('Configuring alarm props from provided values');
+
+    // Update the props directly with the provided values
+    props.threshold = threshold;
+    props.evaluationPeriods = durationPeriods;
   } catch (e) {
-    log.error().err(e).msg('Error configuring alarm props from tags');
-    throw new Error('Error configuring alarm props from tags');
+    log
+      .error()
+      .err(e)
+      .msg('Error configuring alarm props from provided values');
+    throw new Error('Error configuring alarm props from provided values');
   }
+
   const alarmExists = await doesAlarmExist(alarmName);
   if (
     !alarmExists ||

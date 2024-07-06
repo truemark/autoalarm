@@ -121,36 +121,45 @@ async function getPromAlarmConfigs(
 ): Promise<any[]> {
   const configs = [];
 
-  const {alarmName: cpuAlarmName, thresholdKey: cpuThresholdKey} =
-    await getAlarmConfig(instanceId, classification, 'cpu');
+  const {
+    alarmName: cpuAlarmName,
+    threshold: cpuThreshold,
+    durationTime: cpuDurationTime,
+  } = await getAlarmConfig(instanceId, classification, 'cpu');
   configs.push({
     instanceId,
     type: classification,
     alarmName: cpuAlarmName,
-    alarmQuery: `100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > ${tags[cpuThresholdKey]}`,
-    duration: '5m',
+    alarmQuery: `100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > ${cpuThreshold}`,
+    duration: `${cpuDurationTime / 60}m`,
     severityType: classification.toLowerCase(),
   });
 
-  const {alarmName: memAlarmName, thresholdKey: memThresholdKey} =
-    await getAlarmConfig(instanceId, classification, 'memory');
+  const {
+    alarmName: memAlarmName,
+    threshold: memThreshold,
+    durationTime: memDurationTime,
+  } = await getAlarmConfig(instanceId, classification, 'memory');
   configs.push({
     instanceId,
     type: classification,
     alarmName: memAlarmName,
-    alarmQuery: `100 - (avg by (instance) (rate(node_memory_MemAvailable_bytes[5m])) * 100) > ${tags[memThresholdKey]}`,
-    duration: '5m',
+    alarmQuery: `100 - (avg by (instance) (rate(node_memory_MemAvailable_bytes[5m])) * 100) > ${memThreshold}`,
+    duration: `${memDurationTime / 60}m`,
     severityType: classification.toLowerCase(),
   });
 
-  const {alarmName: storageAlarmName, thresholdKey: storageThresholdKey} =
-    await getAlarmConfig(instanceId, classification, 'storage');
+  const {
+    alarmName: storageAlarmName,
+    threshold: storageThreshold,
+    durationTime: storageDurationTime,
+  } = await getAlarmConfig(instanceId, classification, 'storage');
   configs.push({
     instanceId,
     type: classification,
     alarmName: storageAlarmName,
-    alarmQuery: `100 - (avg by (instance) (rate(node_filesystem_avail_bytes{fstype!="tmpfs"}[5m])) * 100) > ${tags[storageThresholdKey]}`,
-    duration: '5m',
+    alarmQuery: `100 - (avg by (instance) (rate(node_filesystem_avail_bytes{fstype!="tmpfs"}[5m])) * 100) > ${storageThreshold}`,
+    duration: `${storageDurationTime / 60}m`,
     severityType: classification.toLowerCase(),
   });
 
@@ -613,6 +622,8 @@ async function getInstanceDetails(
 }
 
 //this function is used to create the CloudWatch alarms for CPU, Memory, and Storage in addition to reducing redundant logic needed across those 3 functions
+// This function is used to create the CloudWatch alarms for CPU, Memory, and Storage
+// in addition to reducing redundant logic needed across those 3 functions
 async function createCloudWatchAlarms(
   instanceId: string,
   alarmName: string,
@@ -621,15 +632,15 @@ async function createCloudWatchAlarms(
   dimensions: any[],
   type: AlarmClassification,
   tags: Tag,
-  thresholdKey: string,
-  durationTimeKey: string,
-  durationPeriodsKey: string
+  threshold: number,
+  durationTime: number,
+  durationPeriods: number
 ): Promise<void> {
   const alarmProps = {
-    threshold: defaultThreshold(type),
+    threshold: threshold,
     period: 60,
     namespace: namespace,
-    evaluationPeriods: 5,
+    evaluationPeriods: durationPeriods,
     metricName: metricName,
     dimensions: dimensions,
   };
@@ -639,9 +650,9 @@ async function createCloudWatchAlarms(
     instanceId,
     alarmProps,
     tags,
-    thresholdKey,
-    durationTimeKey,
-    durationPeriodsKey
+    threshold,
+    durationTime,
+    durationPeriods
   );
 }
 
@@ -651,8 +662,9 @@ export async function manageCPUUsageAlarmForInstance(
   type: AlarmClassification,
   usePrometheus: boolean
 ): Promise<void> {
-  const {alarmName, thresholdKey, durationTimeKey, durationPeriodsKey} =
+  const {alarmName, threshold, durationTime, durationPeriods, ec2Metadata} =
     await getAlarmConfig(instanceId, type, 'cpu');
+
   //we should consolidate the promethues tag check and the iscloudwatch check into manage active isntances and instead pass a boolean to this function and create prom alarms based of that.
   if (usePrometheus) {
     log
@@ -685,9 +697,9 @@ export async function manageCPUUsageAlarmForInstance(
       [{Name: 'InstanceId', Value: instanceId}],
       type,
       tags,
-      thresholdKey,
-      durationTimeKey,
-      durationPeriodsKey
+      threshold,
+      durationTime,
+      durationPeriods
     );
   }
 }
@@ -698,13 +710,8 @@ export async function manageStorageAlarmForInstance(
   type: AlarmClassification,
   usePrometheus: boolean
 ): Promise<void> {
-  const {
-    alarmName,
-    thresholdKey,
-    durationTimeKey,
-    durationPeriodsKey,
-    ec2Metadata,
-  } = await getAlarmConfig(instanceId, type, 'storage');
+  const {alarmName, threshold, durationTime, durationPeriods, ec2Metadata} =
+    await getAlarmConfig(instanceId, type, 'storage');
   const isWindows = ec2Metadata.platform
     ? ec2Metadata.platform.toLowerCase().includes('windows')
     : false;
@@ -757,9 +764,9 @@ export async function manageStorageAlarmForInstance(
           dimensions_props,
           type,
           tags,
-          thresholdKey,
-          durationTimeKey,
-          durationPeriodsKey
+          threshold,
+          durationTime,
+          durationPeriods
         );
       }
     } else {
@@ -780,13 +787,8 @@ export async function manageMemoryAlarmForInstance(
   type: AlarmClassification,
   usePrometheus: boolean
 ): Promise<void> {
-  const {
-    alarmName,
-    thresholdKey,
-    durationTimeKey,
-    durationPeriodsKey,
-    ec2Metadata,
-  } = await getAlarmConfig(instanceId, type, 'memory');
+  const {alarmName, threshold, durationTime, durationPeriods, ec2Metadata} =
+    await getAlarmConfig(instanceId, type, 'memory');
 
   const isWindows = ec2Metadata.platform
     ? ec2Metadata.platform.toLowerCase().includes('windows')
@@ -826,9 +828,9 @@ export async function manageMemoryAlarmForInstance(
       [{Name: 'InstanceId', Value: instanceId}],
       type,
       tags,
-      thresholdKey,
-      durationTimeKey,
-      durationPeriodsKey
+      threshold,
+      durationTime,
+      durationPeriods
     );
   }
 }
