@@ -131,7 +131,7 @@ async function getPromAlarmConfigs(
     type: classification,
     alarmName: cpuAlarmName,
     alarmQuery: `100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > ${cpuThreshold}`,
-    duration: `${cpuDurationTime / 60}m`,
+    duration: `${Math.floor(cpuDurationTime / 60)}m`, // Ensuring whole numbers for duration
     severityType: classification.toLowerCase(),
   });
 
@@ -145,7 +145,7 @@ async function getPromAlarmConfigs(
     type: classification,
     alarmName: memAlarmName,
     alarmQuery: `100 - (avg by (instance) (rate(node_memory_MemAvailable_bytes[5m])) * 100) > ${memThreshold}`,
-    duration: `${memDurationTime / 60}m`,
+    duration: `${Math.floor(memDurationTime / 60)}m`, // Ensuring whole numbers for duration
     severityType: classification.toLowerCase(),
   });
 
@@ -159,7 +159,7 @@ async function getPromAlarmConfigs(
     type: classification,
     alarmName: storageAlarmName,
     alarmQuery: `100 - (avg by (instance) (rate(node_filesystem_avail_bytes{fstype!="tmpfs"}[5m])) * 100) > ${storageThreshold}`,
-    duration: `${storageDurationTime / 60}m`,
+    duration: `${Math.floor(storageDurationTime / 60)}m`, // Ensuring whole numbers for duration
     severityType: classification.toLowerCase(),
   });
 
