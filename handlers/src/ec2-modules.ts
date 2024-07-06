@@ -436,27 +436,46 @@ async function verifyNamespaceUpdate(workspaceId: string, namespace: string) {
 const defaultThreshold = (type: AlarmClassification) =>
   type === 'CRITICAL' ? 90 : 80;
 
+// Default values for duration and periods
+const defaultDurationTime = 300; // e.g., 300 seconds
+const defaultDurationPeriods = 5; // e.g., 5 periods
+
 async function getAlarmConfig(
   instanceId: string,
   type: AlarmClassification,
   metric: string
 ): Promise<{
   alarmName: string;
-  thresholdKey: string;
-  durationTimeKey: string;
-  durationPeriodsKey: string;
+  threshold: number;
+  durationTime: number;
+  durationPeriods: number;
   ec2Metadata: {platform: string | null; privateIp: string | null};
 }> {
   const thresholdKey = `autoalarm:${metric}-percent-above-${type.toLowerCase()}`;
   const durationTimeKey = `autoalarm:${metric}-percent-duration-time`;
   const durationPeriodsKey = `autoalarm:${metric}-percent-duration-periods`;
+
+  // Fetch instance tags
+  const tags = await fetchInstanceTags(instanceId);
+
+  // Get threshold, duration time, and duration periods from tags or use default values
+  const threshold = tags[thresholdKey]
+    ? parseInt(tags[thresholdKey], 10)
+    : defaultThreshold(type);
+  const durationTime = tags[durationTimeKey]
+    ? parseInt(tags[durationTimeKey], 10)
+    : defaultDurationTime;
+  const durationPeriods = tags[durationPeriodsKey]
+    ? parseInt(tags[durationPeriodsKey], 10)
+    : defaultDurationPeriods;
+
   const ec2Metadata = await getInstanceDetails(instanceId);
 
   return {
     alarmName: `AutoAlarm-EC2-${instanceId}-${type}-${metric.toUpperCase()}-Utilization`,
-    thresholdKey,
-    durationTimeKey,
-    durationPeriodsKey,
+    threshold,
+    durationTime,
+    durationPeriods,
     ec2Metadata,
   };
 }
