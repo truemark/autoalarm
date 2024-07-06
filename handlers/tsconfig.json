@@ -5,5 +5,11 @@
     "target": "esnext",
     "moduleResolution": "node"
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts"],
+  "exclude": [
+    "src/alb-modules.ts",
+    "src/opensearch-modules.ts",
+    "src/sqs-modules.ts",
+    "src/targetgroup-modules.ts"
+  ]
 }
