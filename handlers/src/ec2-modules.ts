@@ -43,8 +43,8 @@ const prometheusWorkspaceId: string = process.env.PROMETHEUS_WORKSPACE_ID || '';
 const region: string = process.env.AWS_REGION || '';
 
 //these vars are used in the prometheus alarm logic.
-let shouldDeletePromAlarm = false;
 let shouldUpdatePromRules = false;
+let shouldDeletePromAlarm = false;
 let isCloudWatch = true;
 
 async function batchPromRulesDeletion(
@@ -911,6 +911,10 @@ export async function manageActiveInstanceAlarms(
   tags: Tag
 ) {
   await loggingSetup();
+  // Reset flags so prior lambda runs don't carry over old values
+  shouldDeletePromAlarm = false;
+  shouldUpdatePromRules = false;
+  isCloudWatch = true;
   log
     .info()
     .str('function', 'manageActiveInstanceAlarms')
@@ -1017,6 +1021,8 @@ export async function manageActiveInstanceAlarms(
             'flag to true and shouldUpdatePromRules flag to false. Deleting Prometheus alarm rules for instance'
         );
       await callAlarmFunctions(instanceId, tags, shouldUpdatePromRules);
+      // Here we delete just prom rules for the instance that triggered the eventbridge rule, so we don't try to update
+      // en masse if there is a larger general issue. Subsequent runs will try to update again for other isntances.
       const promInstancesToDelete = [instanceId]; // we only want to delete the prometheus rules for the instance that failed to update
       await deletePromRulesForService(
         prometheusWorkspaceId,
@@ -1024,6 +1030,7 @@ export async function manageActiveInstanceAlarms(
         promInstancesToDelete
       );
     }
+    // If isCloudWatch is true, we will delete the prometheus rules for the instance
   } else {
     log
       .info()
@@ -1035,6 +1042,7 @@ export async function manageActiveInstanceAlarms(
       .msg(
         'isCloudWatch is true. Deleting Prometheus alarm rules for instance'
       );
+    shouldUpdatePromRules = false;
     await callAlarmFunctions(instanceId, tags, shouldUpdatePromRules);
     shouldDeletePromAlarm = true;
     await batchPromRulesDeletion(

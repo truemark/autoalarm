@@ -11,6 +11,7 @@ import {
   CreateRuleGroupsNamespaceCommand,
   PutRuleGroupsNamespaceCommand,
   RuleGroupsNamespaceSummary,
+  DeleteRuleGroupsNamespaceCommand,
 } from '@aws-sdk/client-amp';
 import * as yaml from 'js-yaml';
 import * as aws4 from 'aws4';
@@ -788,6 +789,49 @@ export async function managePromNamespaceAlarms(
     return;
   }
 
+  // Sanity check: if namespace is empty, delete and recreate it
+  if (nsDetails.groups.length === 0) {
+    log
+      .warn()
+      .str('function', 'managePromNamespaceAlarms')
+      .str('namespace', namespace)
+      .msg(
+        'Namespace is empty. Deleting and recreating it with updated rules.'
+      );
+
+    const deleteNamespaceCommand = new DeleteRuleGroupsNamespaceCommand({
+      workspaceId: promWorkspaceId,
+      name: namespace,
+    });
+
+    try {
+      await client.send(deleteNamespaceCommand);
+      log
+        .info()
+        .str('function', 'managePromNamespaceAlarms')
+        .str('namespace', namespace)
+        .msg('Deleted empty namespace.');
+
+      await createNamespace(promWorkspaceId, namespace, alarmConfigs);
+      log
+        .info()
+        .str('function', 'managePromNamespaceAlarms')
+        .str('namespace', namespace)
+        .msg('Recreated namespace with updated rules.');
+      return;
+    } catch (error) {
+      log
+        .error()
+        .str('function', 'managePromNamespaceAlarms')
+        .str('namespace', namespace)
+        .err(error)
+        .msg('Failed to delete empty namespace.');
+      throw new Error(
+        `Failed to delete empty namespace: ${error}. Function will be unable to proceed.`
+      );
+    }
+  }
+
   // Find the rule group within the namespace or create a new one
   const ruleGroup = nsDetails.groups.find(
     (rg): rg is RuleGroup => rg.name === ruleGroupName
@@ -885,96 +929,97 @@ export async function deletePromRulesForService(
   service: string,
   serviceIdentifiers: string[]
 ): Promise<void> {
-  try {
-    const namespace = `AutoAlarm-${service.toUpperCase()}`;
-    const ruleGroupName = 'AutoAlarm';
+  const namespace = `AutoAlarm-${service.toUpperCase()}`;
+  const ruleGroupName = 'AutoAlarm';
 
-    const maxRetries = 60;
-    const retryDelay = 5000; // 5 seconds in milliseconds
-    const totalRetryTimeMinutes = (maxRetries * retryDelay) / 60000; // Total retry time in minutes
+  const maxRetries = 60;
+  const retryDelay = 5000; // 5 seconds in milliseconds
+  const totalRetryTimeMinutes = (maxRetries * retryDelay) / 60000; // Total retry time in minutes
 
-    let retryCount = 0;
-    let nsDetails;
+  let retryCount = 0;
 
-    // Retry logic for describing namespace
-    while (retryCount < maxRetries) {
-      try {
-        nsDetails = await describeNamespace(promWorkspaceId, namespace);
-        if (nsDetails && isNamespaceDetails(nsDetails)) {
-          break;
-        }
-      } catch (error) {
+  while (retryCount < maxRetries) {
+    try {
+      const nsDetails = await describeNamespace(promWorkspaceId, namespace);
+      if (!nsDetails || !isNamespaceDetails(nsDetails)) {
         log
           .warn()
-          .str('function', 'deletePromRulesForService')
-          .num('retryCount', retryCount + 1)
-          .msg(
-            `Retry ${retryCount + 1}/${maxRetries} failed to describe namespace. Retrying in ${
-              retryDelay / 1000
-            } seconds...`
-          );
-
-        if (++retryCount >= maxRetries) {
-          throw new Error(
-            `Failed to describe namespace after ${maxRetries} retries (${totalRetryTimeMinutes} minutes).`
-          );
-        }
-
-        await new Promise(resolve => setTimeout(resolve, retryDelay));
+          .str('namespace', namespace)
+          .msg('Invalid or empty namespace details. Nothing to delete.');
+        return;
       }
-    }
 
-    if (!nsDetails || !isNamespaceDetails(nsDetails)) {
-      log
-        .warn()
-        .str('namespace', namespace)
-        .msg('Invalid or empty namespace details');
-      return;
-    }
-
-    const ruleGroup = nsDetails.groups.find(
-      (rg): rg is RuleGroup => rg.name === ruleGroupName
-    );
-
-    if (!ruleGroup) {
-      log
-        .info()
-        .str('function', 'deletePromRulesForService')
-        .str('ruleGroupName', ruleGroupName)
-        .msg('Prometheus Rule group not found, nothing to delete');
-      return;
-    }
-
-    // Filter out rules associated with any of the serviceIdentifiers
-    ruleGroup.rules = ruleGroup.rules.filter(
-      rule => !serviceIdentifiers.some(id => rule.alert.includes(id))
-    );
-
-    if (ruleGroup.rules.length === 0) {
-      // If no rules are left, remove the rule group from the namespace
-      nsDetails.groups = nsDetails.groups.filter(
-        rg => rg.name !== ruleGroupName
+      const ruleGroup = nsDetails.groups.find(
+        (rg): rg is RuleGroup => rg.name === ruleGroupName
       );
-      log
-        .info()
-        .str('function', 'deletePromRulesForService')
-        .str('ruleGroupName', ruleGroupName)
-        .msg('No Prometheus rules left, removing the rule group');
-    }
 
-    const updatedYaml = yaml.dump(nsDetails);
-    const updatedData = new TextEncoder().encode(updatedYaml);
+      if (!ruleGroup) {
+        log
+          .info()
+          .str('function', 'deletePromRulesForService')
+          .str('ruleGroupName', ruleGroupName)
+          .msg('Prometheus Rule group not found, nothing to delete');
+        return;
+      }
 
-    const putCommand = new PutRuleGroupsNamespaceCommand({
-      workspaceId: promWorkspaceId,
-      name: namespace,
-      data: updatedData,
-    });
+      // Filter out rules associated with any of the serviceIdentifiers
+      ruleGroup.rules = ruleGroup.rules.filter(
+        rule => !serviceIdentifiers.some(id => rule.alert.includes(id))
+      );
 
-    // Retry logic for sending the command
-    retryCount = 0;
-    while (retryCount < maxRetries) {
-      try {
+      if (ruleGroup.rules.length === 0) {
+        // If no rules are left, remove the rule group from the namespace
+        nsDetails.groups = nsDetails.groups.filter(
+          rg => rg.name !== ruleGroupName
+        );
+        log
+          .info()
+          .str('function', 'deletePromRulesForService')
+          .str('ruleGroupName', ruleGroupName)
+          .msg('No Prometheus rules left, removing the rule group');
+      }
+
+      const updatedYaml = yaml.dump(nsDetails);
+
+      if (updatedYaml === 'groups: []\n') {
+        // If updated YAML is empty, delete the namespace
+        log
+          .info()
+          .str('function', 'deletePromRulesForService')
+          .str('namespace', namespace)
+          .str('config YAML', updatedYaml)
+          .msg('No rules left in namespace, deleting the namespace');
+        const deleteNamespaceCommand = new DeleteRuleGroupsNamespaceCommand({
+          workspaceId: promWorkspaceId,
+          name: namespace,
+        });
+
+        try {
+          await client.send(deleteNamespaceCommand);
+          log
+            .info()
+            .str('function', 'deletePromRulesForService')
+            .str('namespace', namespace)
+            .msg('Namespace deleted as it has no rule groups left.');
+          return;
+        } catch (error) {
+          log
+            .error()
+            .str('function', 'deletePromRulesForService')
+            .str('namespace', namespace)
+            .err(error)
+            .msg('Failed to delete namespace');
+          throw new Error(`Failed to delete namespace: ${error}`);
+        }
+      } else {
+        const updatedData = new TextEncoder().encode(updatedYaml);
+
+        const putCommand = new PutRuleGroupsNamespaceCommand({
+          workspaceId: promWorkspaceId,
+          name: namespace,
+          data: updatedData,
+        });
+
         await client.send(putCommand);
         log
           .info()
@@ -984,29 +1029,27 @@ export async function deletePromRulesForService(
           .str('serviceIdentifiers', JSON.stringify(serviceIdentifiers))
           .str('ruleGroupName', ruleGroupName)
           .msg('Deleted Prometheus rules associated with the service.');
-        break;
-      } catch (error) {
-        log
-          .warn()
-          .str('function', 'deletePromRulesForService')
-          .num('retryCount', retryCount + 1)
-          .msg(
-            `Retry ${retryCount + 1}/${maxRetries} failed to send command. Retrying in ${
-              retryDelay / 1000
-            } seconds...`
-          );
-
-        if (++retryCount >= maxRetries) {
-          throw new Error(
-            `Failed to send command after ${maxRetries} retries (${totalRetryTimeMinutes} minutes).`
-          );
-        }
-
-        await new Promise(resolve => setTimeout(resolve, retryDelay));
+        return;
       }
+    } catch (error) {
+      log
+        .warn()
+        .str('function', 'deletePromRulesForService')
+        .num('retryCount', retryCount + 1)
+        .obj('error', error as object)
+        .msg(
+          `Retry ${retryCount + 1}/${maxRetries} failed. Retrying in ${
+            retryDelay / 1000
+          } seconds...`
+        );
+
+      if (++retryCount >= maxRetries) {
+        throw new Error(
+          `Failed to complete operation after ${maxRetries} retries (${totalRetryTimeMinutes} minutes): ${error}`
+        );
+      }
+
+      await new Promise(resolve => setTimeout(resolve, retryDelay));
     }
-  } catch (error) {
-    log.error().err(error).msg('Error deleting rules');
-    throw error;
   }
 }

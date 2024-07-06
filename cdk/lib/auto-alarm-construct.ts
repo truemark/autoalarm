@@ -38,6 +38,7 @@ export class AutoAlarmConstruct extends Construct {
           'aps:DescribeRuleGroupsNamespace',
           'aps:CreateRuleGroupsNamespace',
           'aps:PutRuleGroupsNamespace',
+          'aps:DeleteRuleGroupsNamespace',
         ],
         resources: [
           prometheusArn,
