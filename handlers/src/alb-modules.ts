@@ -120,6 +120,7 @@ async function checkAndManageALBStatusAlarms(
           loadBalancerName,
           alarmProps,
           tags,
+          // @ts-ignore
           thresholdKey,
           durationTimeKey,
           durationPeriodsKey

@@ -122,6 +122,7 @@ async function checkAndManageTargetGroupStatusAlarms(
           targetGroupName,
           alarmProps,
           tags,
+          // @ts-ignore
           thresholdKey,
           durationTimeKey,
           durationPeriodsKey

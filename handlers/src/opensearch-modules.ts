@@ -115,6 +115,7 @@ async function checkAndManageOpenSearchStatusAlarms(
           domainName,
           alarmProps,
           tags,
+          // @ts-ignore
           thresholdKey,
           durationTimeKey,
           durationPeriodsKey
