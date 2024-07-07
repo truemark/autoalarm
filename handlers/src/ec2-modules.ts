@@ -127,11 +127,16 @@ async function getPromAlarmConfigs(
     durationTime: cpuDurationTime,
     ec2Metadata: {platform, privateIp},
   } = await getAlarmConfig(instanceId, classification, 'cpu');
+
+  const cpuQuery = platform?.toLowerCase().includes('windows')
+    ? `100 - (rate(windows_cpu_time_total{instance="10.5.3.71:9100", mode="idle"}[30s]) * 100) > ${cpuThreshold}`
+    : `100 - (rate(node_cpu_seconds_total{mode="idle", instance="${privateIp}:9100"}[30s]) * 100) > ${cpuThreshold}`;
+
   configs.push({
     instanceId,
     type: classification,
     alarmName: cpuAlarmName,
-    alarmQuery: `100 - (rate(node_cpu_seconds_total{mode="idle", instance="${privateIp}"}[5m]) * 100) > ${cpuThreshold}`,
+    alarmQuery: cpuQuery,
     duration: `${Math.floor(cpuDurationTime / 60)}m`, // Ensuring whole numbers for duration
     severityType: classification.toLowerCase(),
   });
@@ -143,8 +148,8 @@ async function getPromAlarmConfigs(
   } = await getAlarmConfig(instanceId, classification, 'memory');
 
   const memQuery = platform?.toLowerCase().includes('windows')
-    ? `100 - (rate(windows_memory_available_bytes{instance="${privateIp}"}[5m]) * 100) > ${memThreshold}`
-    : `100 - (rate(node_memory_MemAvailable_bytes{instance="${privateIp}"}[5m]) * 100) > ${memThreshold}`;
+    ? `100 - ((windows_os_virtual_memory_free_bytes{instance="${privateIp}:9100",job="ec2"} / windows_os_virtual_memory_bytes{instance="${privateIp}:9100",job="ec2"}) * 100) > ${memThreshold}`
+    : `100 - ((node_memory_MemAvailable_bytes{instance="${privateIp}}:9100"} / node_memory_MemTotal_bytes{instance="${privateIp}}:9100"}) * 100) > ${memThreshold}`;
 
   configs.push({
     instanceId,
@@ -162,8 +167,8 @@ async function getPromAlarmConfigs(
   } = await getAlarmConfig(instanceId, classification, 'storage');
 
   const storageQuery = platform?.toLowerCase().includes('windows')
-    ? `100 - (rate(windows_logical_disk_free_bytes{instance="${privateIp}"}[5m]) * 100) > ${storageThreshold}`
-    : `100 - (rate(node_filesystem_avail_bytes{fstype!="tmpfs", instance="${privateIp}"}[5m]) * 100) > ${storageThreshold}`;
+    ? `100 - ((windows_logical_disk_free_bytes{instance="${privateIp}:9100"} / windows_logical_disk_size_bytes{instance="${privateIp}:9100"}) * 100) > ${storageThreshold}`
+    : `100 - ((node_filesystem_free_bytes{instance="${privateIp}:9100"} / node_filesystem_size_bytes{instance="${privateIp}:9100"}) * 100) > ${storageThreshold}`;
 
   configs.push({
     instanceId,
@@ -394,8 +399,6 @@ async function batchUpdatePromRules(
           .info()
           .str('function', 'batchUpdatePromRules')
           .msg('Batch update of Prometheus rules completed.');
-
-        await verifyNamespaceUpdate(prometheusWorkspaceId, namespace);
         break;
       } catch (error) {
         retryCount++;
@@ -423,30 +426,6 @@ async function batchUpdatePromRules(
       .err(error)
       .msg('Error during batch update of Prometheus rules');
     throw new Error(`Error during batch update of Prometheus rules: ${error}`);
-  }
-}
-
-async function verifyNamespaceUpdate(workspaceId: string, namespace: string) {
-  try {
-    const nsDetails = await describeNamespace(workspaceId, namespace);
-    if (nsDetails) {
-      log
-        .info()
-        .str('function', 'verifyNamespaceUpdate')
-        .obj('namespace details', nsDetails)
-        .msg('Namespace update verified');
-    } else {
-      log
-        .warn()
-        .str('function', 'verifyNamespaceUpdate')
-        .msg('Namespace update verification failed');
-    }
-  } catch (error) {
-    log
-      .error()
-      .str('function', 'verifyNamespaceUpdate')
-      .err(error)
-      .msg('Error verifying namespace update');
   }
 }
 
