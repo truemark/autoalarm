@@ -125,12 +125,13 @@ async function getPromAlarmConfigs(
     alarmName: cpuAlarmName,
     threshold: cpuThreshold,
     durationTime: cpuDurationTime,
+    ec2Metadata: {platform, privateIp},
   } = await getAlarmConfig(instanceId, classification, 'cpu');
   configs.push({
     instanceId,
     type: classification,
     alarmName: cpuAlarmName,
-    alarmQuery: `100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > ${cpuThreshold}`,
+    alarmQuery: `100 - (rate(node_cpu_seconds_total{mode="idle", instance="${privateIp}"}[5m]) * 100) > ${cpuThreshold}`,
     duration: `${Math.floor(cpuDurationTime / 60)}m`, // Ensuring whole numbers for duration
     severityType: classification.toLowerCase(),
   });
@@ -140,11 +141,16 @@ async function getPromAlarmConfigs(
     threshold: memThreshold,
     durationTime: memDurationTime,
   } = await getAlarmConfig(instanceId, classification, 'memory');
+
+  const memQuery = platform?.toLowerCase().includes('windows')
+    ? `100 - (rate(windows_memory_available_bytes{instance="${privateIp}"}[5m]) * 100) > ${memThreshold}`
+    : `100 - (rate(node_memory_MemAvailable_bytes{instance="${privateIp}"}[5m]) * 100) > ${memThreshold}`;
+
   configs.push({
     instanceId,
     type: classification,
     alarmName: memAlarmName,
-    alarmQuery: `100 - (avg by (instance) (rate(node_memory_MemAvailable_bytes[5m])) * 100) > ${memThreshold}`,
+    alarmQuery: memQuery,
     duration: `${Math.floor(memDurationTime / 60)}m`, // Ensuring whole numbers for duration
     severityType: classification.toLowerCase(),
   });
@@ -154,11 +160,16 @@ async function getPromAlarmConfigs(
     threshold: storageThreshold,
     durationTime: storageDurationTime,
   } = await getAlarmConfig(instanceId, classification, 'storage');
+
+  const storageQuery = platform?.toLowerCase().includes('windows')
+    ? `100 - (rate(windows_logical_disk_free_bytes{instance="${privateIp}"}[5m]) * 100) > ${storageThreshold}`
+    : `100 - (rate(node_filesystem_avail_bytes{fstype!="tmpfs", instance="${privateIp}"}[5m]) * 100) > ${storageThreshold}`;
+
   configs.push({
     instanceId,
     type: classification,
     alarmName: storageAlarmName,
-    alarmQuery: `100 - (avg by (instance) (rate(node_filesystem_avail_bytes{fstype!="tmpfs"}[5m])) * 100) > ${storageThreshold}`,
+    alarmQuery: storageQuery,
     duration: `${Math.floor(storageDurationTime / 60)}m`, // Ensuring whole numbers for duration
     severityType: classification.toLowerCase(),
   });
