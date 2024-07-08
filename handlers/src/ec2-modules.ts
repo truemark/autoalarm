@@ -437,7 +437,7 @@ const defaultThreshold = (type: AlarmClassification) =>
 
 // Default values for duration and periods
 const defaultDurationTime = 300; // e.g., 300 seconds
-const defaultDurationPeriods = 5; // e.g., 5 periods
+const defaultDurationPeriods = 2; // e.g., 5 periods
 
 async function getAlarmConfig(
   instanceId: string,
