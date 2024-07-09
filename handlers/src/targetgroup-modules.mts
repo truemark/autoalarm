@@ -1,32 +1,34 @@
 import {
   ElasticLoadBalancingV2Client,
   DescribeTagsCommand,
-  DescribeLoadBalancersCommand,
 } from '@aws-sdk/client-elastic-load-balancing-v2';
 import * as logging from '@nr1e/logging';
-import {AlarmProps, Tag} from './types';
-import {AlarmClassification, ValidAlbEvent} from './enums';
+import {AlarmProps, Tag} from './types.mjs';
+import {AlarmClassification, ValidTargetGroupEvent} from './enums.mjs';
 import {
   createOrUpdateCWAlarm,
   getCWAlarmsForInstance,
   deleteCWAlarm,
-} from './alarm-tools';
+} from './alarm-tools.mjs';
 
-const log: logging.Logger = logging.getRootLogger();
+const log: logging.Logger = logging.getLogger('targetgroup-modules');
 const elbClient: ElasticLoadBalancingV2Client =
   new ElasticLoadBalancingV2Client({});
+
 const defaultThresholds: {[key in AlarmClassification]: number} = {
-  [AlarmClassification.Critical]: 15000,
-  [AlarmClassification.Warning]: 10000,
+  [AlarmClassification.Critical]: 90,
+  [AlarmClassification.Warning]: 80,
 };
+
 const metricConfigs = [
-  {metricName: 'RequestCount', namespace: 'AWS/ApplicationELB'},
-  {metricName: 'HTTPCode_ELB_4XX_Count', namespace: 'AWS/ApplicationELB'},
-  {metricName: 'HTTPCode_ELB_5XX_Count', namespace: 'AWS/ApplicationELB'},
+  {metricName: 'TargetResponseTime', namespace: 'AWS/ApplicationELB'},
+  {metricName: 'RequestCountPerTarget', namespace: 'AWS/ApplicationELB'},
+  {metricName: 'HTTPCode_Target_4XX_Count', namespace: 'AWS/ApplicationELB'},
+  {metricName: 'HTTPCode_Target_5XX_Count', namespace: 'AWS/ApplicationELB'},
 ];
 
 async function getAlarmConfig(
-  loadBalancerName: string,
+  targetGroupName: string,
   type: AlarmClassification,
   metricName: string
 ): Promise<{
@@ -40,18 +42,18 @@ async function getAlarmConfig(
   const durationPeriodsKey = `autoalarm:${metricName}-percent-duration-periods`;
 
   return {
-    alarmName: `AutoAlarm-ALB-${loadBalancerName}-${type}-${metricName}`,
+    alarmName: `AutoAlarm-TargetGroup-${targetGroupName}-${type}-${metricName}`,
     thresholdKey,
     durationTimeKey,
     durationPeriodsKey,
   };
 }
 
-export async function fetchALBTags(loadBalancerArn: string): Promise<Tag> {
+export async function fetchTargetGroupTags(
+  targetGroupArn: string
+): Promise<Tag> {
   try {
-    const command = new DescribeTagsCommand({
-      ResourceArns: [loadBalancerArn],
-    });
+    const command = new DescribeTagsCommand({ResourceArns: [targetGroupArn]});
     const response = await elbClient.send(command);
     const tags: Tag = {};
 
@@ -65,33 +67,33 @@ export async function fetchALBTags(loadBalancerArn: string): Promise<Tag> {
 
     log
       .info()
-      .str('loadBalancerArn', loadBalancerArn)
+      .str('targetGroupArn', targetGroupArn)
       .str('tags', JSON.stringify(tags))
-      .msg('Fetched ALB tags');
+      .msg('Fetched Target Group tags');
 
     return tags;
   } catch (error) {
     log
       .error()
       .err(error)
-      .str('loadBalancerArn', loadBalancerArn)
-      .msg('Error fetching ALB tags');
+      .str('targetGroupArn', targetGroupArn)
+      .msg('Error fetching Target Group tags');
     return {};
   }
 }
 
-async function checkAndManageALBStatusAlarms(
-  loadBalancerName: string,
+async function checkAndManageTargetGroupStatusAlarms(
+  targetGroupName: string,
   tags: Tag
 ) {
   if (tags['autoalarm:disabled'] === 'true') {
     const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
-      'ALB',
-      loadBalancerName
+      'TargetGroup',
+      targetGroupName
     );
     await Promise.all(
       activeAutoAlarms.map(alarmName =>
-        deleteCWAlarm(alarmName, loadBalancerName)
+        deleteCWAlarm(alarmName, targetGroupName)
       )
     );
     log.info().msg('Status check alarm creation skipped due to tag settings.');
@@ -101,7 +103,7 @@ async function checkAndManageALBStatusAlarms(
       for (const classification of Object.values(AlarmClassification)) {
         const {alarmName, thresholdKey, durationTimeKey, durationPeriodsKey} =
           await getAlarmConfig(
-            loadBalancerName,
+            targetGroupName,
             classification as AlarmClassification,
             metricName
           );
@@ -112,12 +114,12 @@ async function checkAndManageALBStatusAlarms(
           namespace: namespace,
           evaluationPeriods: 5,
           metricName: metricName,
-          dimensions: [{Name: 'LoadBalancer', Value: loadBalancerName}],
+          dimensions: [{Name: 'TargetGroup', Value: targetGroupName}],
         };
 
         await createOrUpdateCWAlarm(
           alarmName,
-          loadBalancerName,
+          targetGroupName,
           alarmProps,
           tags,
           // @ts-ignore
@@ -130,48 +132,51 @@ async function checkAndManageALBStatusAlarms(
   }
 }
 
-export async function manageALBAlarms(
-  loadBalancerName: string,
+export async function manageTargetGroupAlarms(
+  targetGroupName: string,
   tags: Tag
 ): Promise<void> {
-  await checkAndManageALBStatusAlarms(loadBalancerName, tags);
+  await checkAndManageTargetGroupStatusAlarms(targetGroupName, tags);
 }
 
-export async function manageInactiveALBAlarms(loadBalancerName: string) {
+export async function manageInactiveTargetGroupAlarms(targetGroupName: string) {
   try {
     const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
-      'ALB',
-      loadBalancerName
+      'TargetGroup',
+      targetGroupName
     );
     await Promise.all(
       activeAutoAlarms.map(alarmName =>
-        deleteCWAlarm(alarmName, loadBalancerName)
+        deleteCWAlarm(alarmName, targetGroupName)
       )
     );
   } catch (e) {
-    log.error().err(e).msg(`Error deleting ALB alarms: ${e}`);
-    throw new Error(`Error deleting ALB alarms: ${e}`);
+    log.error().err(e).msg(`Error deleting Target Group alarms: ${e}`);
+    throw new Error(`Error deleting Target Group alarms: ${e}`);
   }
 }
 
-export async function getAlbEvent(
-  event: any
-): Promise<{loadBalancerArn: string; eventName: ValidAlbEvent; tags: Tag}> {
-  const loadBalancerArn =
-    event.detail.responseElements?.loadBalancers[0]?.loadBalancerArn;
-  const eventName = event.detail.eventName as ValidAlbEvent;
+export async function getTargetGroupEvent(event: any): Promise<{
+  targetGroupArn: string;
+  eventName: ValidTargetGroupEvent;
+  tags: Tag;
+}> {
+  const targetGroupArn =
+    event.detail.responseElements?.targetGroups[0]?.targetGroupArn;
+  const eventName = event.detail.eventName as ValidTargetGroupEvent;
+
   log
     .info()
-    .str('loadBalancerArn', loadBalancerArn)
+    .str('targetGroupArn', targetGroupArn)
     .str('eventName', eventName)
-    .msg('Processing ALB event');
-  const tags = await fetchALBTags(loadBalancerArn);
+    .msg('Processing Target Group event');
+  const tags = await fetchTargetGroupTags(targetGroupArn);
 
-  if (loadBalancerArn && eventName === ValidAlbEvent.Active) {
-    await manageALBAlarms(loadBalancerArn, tags);
-  } else if (eventName === ValidAlbEvent.Deleted) {
-    await manageInactiveALBAlarms(loadBalancerArn);
+  if (targetGroupArn && eventName === ValidTargetGroupEvent.Active) {
+    await manageTargetGroupAlarms(targetGroupArn, tags);
+  } else if (eventName === ValidTargetGroupEvent.Deleted) {
+    await manageInactiveTargetGroupAlarms(targetGroupArn);
   }
 
-  return {loadBalancerArn, eventName, tags};
+  return {targetGroupArn, eventName, tags};
 }

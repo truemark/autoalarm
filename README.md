@@ -28,16 +28,16 @@ The system is event-driven, responding to EC2 state change notifications and tag
 | Tag                                      | Description                                                                                              | Default Value |
 | ---------------------------------------- | -------------------------------------------------------------------------------------------------------- |---------------|
 | `autoalarm:disabled`                     | If set to "true", instance status check alarms will not be created for the resource. Default is "false". | `false`       |
-| `autoalarm:cpu-percent-above-critical`   | Threshold for critical CPU utilization alarm. If not set, a default threshold of 99% is used.            | `99%`         |
-| `autoalarm:cpu-percent-above-warning`    | Threshold for warning CPU utilization alarm. If not set, a default threshold of 97% is used.             | `97%`         |
+| `autoalarm:cpu-percent-above-critical`   | Threshold for critical CPU utilization alarm. If not set, a default threshold of 99% is used.            | `95%`         |
+| `autoalarm:cpu-percent-above-warning`    | Threshold for warning CPU utilization alarm. If not set, a default threshold of 97% is used.             | `90%`         |
 | `autoalarm:cpu-percent-duration-time`    | Duration in seconds for CPU utilization to exceed the threshold before triggering the alarm.             | `60 seconds`  |
 | `autoalarm:cpu-percent-duration-periods` | Number of consecutive periods over which data is evaluated against the specified threshold.              | `2 periods`   |
-| `autoalarm:storage-used-percent-critical`| Threshold for critical storage utilization alarm. If not set, a default threshold of 90% is used.         | `90%`         |
-| `autoalarm:storage-used-percent-warning` | Threshold for warning storage utilization alarm. If not set, a default threshold of 80% is used.          | `80%`         |
+| `autoalarm:storage-used-percent-critical`| Threshold for critical storage utilization alarm. If not set, a default threshold of 90% is used.         | `95%`         |
+| `autoalarm:storage-used-percent-warning` | Threshold for warning storage utilization alarm. If not set, a default threshold of 80% is used.          | `90%`         |
 | `autoalarm:storage-percent-duration-time`| Duration in seconds for storage utilization to exceed the threshold before triggering the alarm.          | `60 seconds`  |
 | `autoalarm:storage-percent-duration-periods`| Number of consecutive periods over which data is evaluated against the specified threshold.              | `2 periods`   |
-| `autoalarm:memory-percent-above-critical`| Threshold for critical memory utilization alarm. If not set, a default threshold of 90% is used.          | `90%`         |
-| `autoalarm:memory-percent-above-warning` | Threshold for warning memory utilization alarm. If not set, a default threshold of 80% is used.           | `80%`         |
+| `autoalarm:memory-percent-above-critical`| Threshold for critical memory utilization alarm. If not set, a default threshold of 90% is used.          | `95%`         |
+| `autoalarm:memory-percent-above-warning` | Threshold for warning memory utilization alarm. If not set, a default threshold of 80% is used.           | `90%`         |
 | `autoalarm:memory-percent-duration-time` | Duration in seconds for memory utilization to exceed the threshold before triggering the alarm.           | `60 seconds`  |
 | `autoalarm:memory-percent-duration-periods`| Number of consecutive periods over which data is evaluated against the specified threshold.              | `2 periods`   |
 | `autoalarm:selective-storage`            | If set to "true", selective storage monitoring will be enabled. Default is "false".                      | `false`       |

@@ -57,8 +57,8 @@ importers:
         specifier: 0.0.2-alpha.9
         version: 0.0.2-alpha.9
       '@nr1e/logging':
-        specifier: ^0.0.8
-        version: 0.0.8(pino@8.19.0)
+        specifier: ^1.1.0
+        version: 1.1.0(pino@8.19.0)
       '@smithy/protocol-http':
         specifier: ^4.0.2
         version: 4.0.2
@@ -673,10 +673,10 @@ packages:
   '@nr1e/commons@0.0.2-alpha.9':
     resolution: {integrity: sha512-zVFdmSXg7MnFBGFwTOnidW1r13LWOVY6+ZszQmkoXpEySPtfF1GkEQiuEvCZ+4g3ZMEwsavSb06J1scr9ruoiQ==}
 
-  '@nr1e/logging@0.0.8':
-    resolution: {integrity: sha512-cwbEpGkv0KqMYeO29zjxZl2fWwfrqFZHzmSkwzQ1xVqjOHfCmBNwwkz8qJV8UKJs9p10OiX9Kxp5mQwDLO6IOw==}
+  '@nr1e/logging@1.1.0':
+    resolution: {integrity: sha512-b0Y4kDwbVn4pfHaRNLGWjOz/Jf3rpk6yasLrCYszLc/BZYfy9Eah77JuXTisv3PDnMD4V1k+1LjXvxoQ3ZGzHA==}
     peerDependencies:
-      pino: ^8.17.2
+      pino: ^9.2.0
 
   '@pkgr/core@0.1.1':
     resolution: {integrity: sha512-cq8o4cWH0ibXh9VGi5P20Tu9XF/0fFXl9EUinr9QfTM7a7p0oTA4iJRCQWppXR1Pg8dSM0UCItCkPwsk9qWWYA==}
@@ -4294,7 +4294,7 @@ snapshots:
 
   '@nr1e/commons@0.0.2-alpha.9': {}
 
-  '@nr1e/logging@0.0.8(pino@8.19.0)':
+  '@nr1e/logging@1.1.0(pino@8.19.0)':
     dependencies:
       pino: 8.19.0
       pino-abstract-transport: 1.2.0

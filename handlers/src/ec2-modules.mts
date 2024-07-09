@@ -9,8 +9,8 @@ import {
   PutMetricAlarmCommand,
 } from '@aws-sdk/client-cloudwatch';
 import * as logging from '@nr1e/logging';
-import {AlarmClassification, ValidInstanceState} from './enums';
-import {Tag, PathMetrics} from './types'; //need to investigate what we were doing with Dimension.
+import {AlarmClassification, ValidInstanceState} from './enums.mjs';
+import {Tag, PathMetrics} from './types.mjs'; //need to investigate what we were doing with Dimension.
 import {
   doesAlarmExist,
   createOrUpdateCWAlarm,
@@ -20,22 +20,9 @@ import {
   describeNamespace,
   managePromNamespaceAlarms,
   deletePromRulesForService,
-} from './alarm-tools';
+} from './alarm-tools.mjs';
 
-const log: logging.Logger = logging.getRootLogger();
-async function loggingSetup() {
-  try {
-    await logging.initialize({
-      svc: 'AutoAlarm',
-      name: 'ec2-modules',
-      level: 'trace',
-    });
-  } catch (error) {
-    // Fallback logging initialization (e.g., to console)
-    console.error('Failed to initialize custom logger:', error);
-    throw new Error(`Failed to initialize custom logger: ${error}`);
-  }
-}
+const log: logging.Logger = logging.getLogger('ec2-modules');
 const ec2Client: EC2Client = new EC2Client({});
 const cloudWatchClient: CloudWatchClient = new CloudWatchClient({});
 //the follwing environment variables are used to get the prometheus workspace id and the region
@@ -433,7 +420,7 @@ async function batchUpdatePromRules(
 // that requires those configurations. The default threshold is set to 90 for critical alarms and 80 for warning alarms.
 // The manageActiveInstances function will call these alarm functions twice, once for each alarm classification type 'Critical' and 'Warning'.
 const defaultThreshold = (type: AlarmClassification) =>
-  type === 'CRITICAL' ? 99 : 97;
+  type === 'CRITICAL' ? 95 : 90;
 
 // Default values for duration and periods
 const defaultDurationTime = 60; // e.g., 300 seconds
@@ -921,7 +908,6 @@ export async function manageActiveInstanceAlarms(
   instanceId: string,
   tags: Tag
 ) {
-  await loggingSetup();
   // Reset flags so prior lambda runs don't carry over old values
   shouldDeletePromAlarm = false;
   shouldUpdatePromRules = false;
@@ -1065,7 +1051,6 @@ export async function manageActiveInstanceAlarms(
 }
 
 export async function manageInactiveInstanceAlarms(instanceId: string) {
-  await loggingSetup();
   shouldDeletePromAlarm = true;
   try {
     const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
