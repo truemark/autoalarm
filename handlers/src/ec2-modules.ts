@@ -433,7 +433,7 @@ async function batchUpdatePromRules(
 // that requires those configurations. The default threshold is set to 90 for critical alarms and 80 for warning alarms.
 // The manageActiveInstances function will call these alarm functions twice, once for each alarm classification type 'Critical' and 'Warning'.
 const defaultThreshold = (type: AlarmClassification) =>
-  type === 'CRITICAL' ? 90 : 80;
+  type === 'CRITICAL' ? 99 : 97;
 
 // Default values for duration and periods
 const defaultDurationTime = 300; // e.g., 300 seconds
