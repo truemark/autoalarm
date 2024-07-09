@@ -436,7 +436,7 @@ const defaultThreshold = (type: AlarmClassification) =>
   type === 'CRITICAL' ? 99 : 97;
 
 // Default values for duration and periods
-const defaultDurationTime = 300; // e.g., 300 seconds
+const defaultDurationTime = 60; // e.g., 300 seconds
 const defaultDurationPeriods = 2; // e.g., 5 periods
 
 async function getAlarmConfig(
