@@ -1,14 +1,14 @@
 import {SQSClient, ListQueueTagsCommand} from '@aws-sdk/client-sqs';
 import * as logging from '@nr1e/logging';
-import {AlarmProps, Tag} from './types';
-import {AlarmClassification, ValidSqsEvent} from './enums';
+import {AlarmProps, Tag} from './types.mjs';
+import {AlarmClassification, ValidSqsEvent} from './enums.mjs';
 import {
   createOrUpdateCWAlarm,
   getCWAlarmsForInstance,
   deleteCWAlarm,
-} from './alarm-tools';
+} from './alarm-tools.mjs';
 
-const log: logging.Logger = logging.getRootLogger();
+const log: logging.Logger = logging.getLogger('sqs-modules');
 const sqsClient: SQSClient = new SQSClient({});
 
 const defaultThresholds: {[key in AlarmClassification]: number} = {

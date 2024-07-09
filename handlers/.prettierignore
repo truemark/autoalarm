@@ -1,3 +1,5 @@
 pnpm-lock.yaml
 src/**/*.js
-src/**/*.d.ts
+src/**/*.mjs
+src/**/*.d.*
+src/**/*.map

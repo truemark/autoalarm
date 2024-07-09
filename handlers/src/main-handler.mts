@@ -7,53 +7,48 @@ import {
   fetchInstanceTags,
   liveStates,
   deadStates,
-} from './ec2-modules';
+} from './ec2-modules.mjs';
 import {
   ValidAlbEvent,
   ValidTargetGroupEvent,
   ValidSqsEvent,
   ValidOpenSearchState,
-} from './enums';
+} from './enums.mjs';
 import {
   getAlbEvent,
   fetchALBTags,
   manageALBAlarms,
   manageInactiveALBAlarms,
-} from './alb-modules';
+} from './alb-modules.mjs';
 import {
   fetchTargetGroupTags,
   manageTargetGroupAlarms,
   manageInactiveTargetGroupAlarms,
   getTargetGroupEvent,
-} from './targetgroup-modules';
+} from './targetgroup-modules.mjs';
 import {
   fetchSQSTags,
   manageSQSAlarms,
   manageInactiveSQSAlarms,
   getSqsEvent,
-} from './sqs-modules';
+} from './sqs-modules.mjs';
 import {
   fetchOpenSearchTags,
   manageOpenSearchAlarms,
   manageInactiveOpenSearchAlarms,
   getOpenSearchState,
-} from './opensearch-modules';
+} from './opensearch-modules.mjs';
 
-const log = logging.getRootLogger();
-
-async function loggingSetup() {
-  try {
-    await logging.initialize({
-      svc: 'AutoAlarm',
-      name: 'main-handler',
-      level: 'trace',
-    });
-  } catch (error) {
-    // Fallback logging initialization (e.g., to console)
-    console.error('Failed to initialize custom logger:', error);
-    throw new Error(`Failed to initialize custom logger: ${error}`);
-  }
+// Initialize logging
+const level = process.env.LOG_LEVEL || 'trace';
+if (!logging.isLevel(level)) {
+  throw new Error(`Invalid log level: ${level}`);
 }
+const log = logging.initialize({
+  svc: 'AutoAlarm',
+  name: 'main-handler',
+  level,
+});
 
 async function processEC2Event(event: any) {
   const instanceId = event.detail['instance-id'];
@@ -218,7 +213,6 @@ async function routeTagEvent(event: any) {
 
 // Handler function
 export const handler: Handler = async (event: any): Promise<void> => {
-  await loggingSetup();
   log.trace().unknown('event', event).msg('Received event');
 
   try {

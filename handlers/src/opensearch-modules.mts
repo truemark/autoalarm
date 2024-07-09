@@ -1,14 +1,14 @@
 import {OpenSearchClient, ListTagsCommand} from '@aws-sdk/client-opensearch';
 import * as logging from '@nr1e/logging';
-import {AlarmProps, Tag} from './types';
-import {AlarmClassification, ValidOpenSearchState} from './enums';
+import {AlarmProps, Tag} from './types.mjs';
+import {AlarmClassification, ValidOpenSearchState} from './enums.mjs';
 import {
   createOrUpdateCWAlarm,
   getCWAlarmsForInstance,
   deleteCWAlarm,
-} from './alarm-tools';
+} from './alarm-tools.mjs';
 
-const log: logging.Logger = logging.getRootLogger();
+const log: logging.Logger = logging.getLogger('opensearch-modules');
 const openSearchClient: OpenSearchClient = new OpenSearchClient({});
 
 const defaultThresholds: {[key in AlarmClassification]: number} = {

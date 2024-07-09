@@ -17,10 +17,10 @@ import * as yaml from 'js-yaml';
 import * as aws4 from 'aws4';
 import {defaultProvider} from '@aws-sdk/credential-provider-node';
 import * as logging from '@nr1e/logging';
-import {AlarmProps, Tag, RuleGroup, NamespaceDetails, Rule} from './types';
+import {AlarmProps, Tag, RuleGroup, NamespaceDetails, Rule} from './types.mjs';
 import * as https from 'https';
 
-const log = logging.getRootLogger();
+const log = logging.getLogger('alarm-tools');
 const cloudWatchClient = new CloudWatchClient({});
 const region: string = process.env.AWS_REGION || '';
 const client = new AmpClient({region, credentials: defaultProvider()}); //used for Prometheus
