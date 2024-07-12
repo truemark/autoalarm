@@ -33,11 +33,20 @@ let shouldUpdatePromRules = false;
 let shouldDeletePromAlarm = false;
 let isCloudWatch = true;
 
+/**
+ * This funciton is used to delete all prom rules in batch for instances that have been marked for Prom rule deletion.
+ * @param shouldDeletePromAlarm - boolean flag to indicate if prometheus rules should be deleted.
+ * @param prometheusWorkspaceId - The prometheus workspace id.
+ * @param service - The service name.
+ */
 async function batchPromRulesDeletion(
   shouldDeletePromAlarm: boolean,
   prometheusWorkspaceId: string,
   service: string
 ) {
+  const retryLimit = 60; // 60 retries at 5-second intervals = 5 minutes
+  const retryDelay = 5000; // 5 seconds in milliseconds
+
   if (!shouldDeletePromAlarm) {
     log
       .info()
@@ -53,56 +62,89 @@ async function batchPromRulesDeletion(
     .str('shouldDeletePromAlarm', 'true')
     .msg('Prometheus rules have been marked for deletion. Fetching instances.');
 
-  const instanceIds = await getAllInstanceIdsInRegion();
+  for (let attempt = 0; attempt < retryLimit; attempt++) {
+    try {
+      const instanceIds = await getAllInstanceIdsInRegion();
+      const instanceDetailsPromises = instanceIds.map(async instanceId => {
+        const tags = await fetchInstanceTags(instanceId);
+        return {instanceId, tags};
+      });
 
-  const instanceDetailsPromises = instanceIds.map(async instanceId => {
-    const tags = await fetchInstanceTags(instanceId);
-    return {instanceId, tags};
-  });
+      const instanceDetails = await Promise.all(instanceDetailsPromises);
 
-  const instanceDetails = await Promise.all(instanceDetailsPromises);
+      const instancesToDelete = instanceDetails
+        .filter(
+          details =>
+            details.tags['Prometheus'] === 'false' &&
+            details.tags['autoalarm:disabled'] &&
+            details.tags['autoalarm:disabled'] === 'true'
+        )
+        .map(details => details.instanceId);
 
-  const instancesToDelete = instanceDetails
-    .filter(
-      details =>
-        details.tags['Prometheus'] === 'false' &&
-        details.tags['autoalarm:disabled'] &&
-        details.tags['autoalarm:disabled'] === 'true'
-    )
-    .map(details => details.instanceId);
+      log
+        .info()
+        .str('function', 'batchPromRulesDeletion')
+        .str('instancesToDelete', JSON.stringify(instancesToDelete))
+        .msg('Instances to delete Prometheus rules for');
 
-  log
-    .info()
-    .str('function', 'batchPromRulesDeletion')
-    .str('instancesToDelete', JSON.stringify(instancesToDelete))
-    .msg('Instances to delete Prometheus rules for');
+      if (instancesToDelete.length > 0) {
+        // Delete Prometheus rules for all relevant instances at once
+        await deletePromRulesForService(
+          prometheusWorkspaceId,
+          service,
+          instancesToDelete
+        );
+        log
+          .info()
+          .str('function', 'batchPromRulesDeletion')
+          .msg(
+            'Prometheus rules deleted successfully in batch or no rules to delete'
+          );
+        break; // Exit loop if successful
+      } else {
+        log
+          .info()
+          .str('function', 'batchPromRulesDeletion')
+          .msg('No instances found to delete Prometheus rules for');
+        break; //break loop if no instances found
+      }
+    } catch (error) {
+      log
+        .error()
+        .str('function', 'batchPromRulesDeletion')
+        .err(error)
+        .num('attempt', attempt + 1)
+        .msg('Error deleting Prometheus rules. Trying again in 5 seconds...');
 
-  // Delete Prometheus rules for all relevant instances at once
-  try {
-    await deletePromRulesForService(
-      prometheusWorkspaceId,
-      service,
-      instancesToDelete
-    );
-  } catch (error) {
-    log
-      .error()
-      .str('function', 'batchPromRulesDeletion')
-      .err(error)
-      .msg('Error deleting Prometheus rules');
+      if (attempt < retryLimit - 1) {
+        log
+          .warn()
+          .str('function', 'batchPromRulesDeletion')
+          .num('attempt', attempt + 1)
+          .msg(
+            `Retry ${attempt + 1}/${retryLimit} failed. Retrying after a 5-second delay...`
+          );
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      } else {
+        log
+          .error()
+          .str('function', 'batchPromRulesDeletion')
+          .msg(
+            `Error deleting Prometheus rules after ${retryLimit} retries. Please investigate.`
+          );
+      }
+    }
   }
 }
 
 /**
  * Get alarm configurations for prometheus alarms. Specifically, for an instance based on its tags and classification.
  * @param instanceId - The EC2 instance ID.
- * @param tags - The tags associated with the EC2 instance.
  * @param classification - The alarm classification (e.g., CRITICAL, WARNING).
  * @returns Array of alarm configurations.
  */
 async function getPromAlarmConfigs(
   instanceId: string,
-  tags: Tag,
   classification: AlarmClassification
 ): Promise<any[]> {
   const configs = [];
@@ -346,11 +388,10 @@ async function batchUpdatePromRules(
         );
 
         const alarmConfigs: any[] = [];
-        for (const {instanceId, tags} of instancesToUpdate) {
+        for (const {instanceId} of instancesToUpdate) {
           for (const classification of Object.values(AlarmClassification)) {
             const configs = await getPromAlarmConfigs(
               instanceId,
-              tags,
               classification
             );
             alarmConfigs.push(...configs);
@@ -435,6 +476,14 @@ async function getAlarmConfig(
   durationPeriods: number;
   ec2Metadata: {platform: string | null; privateIp: string | null};
 }> {
+  log
+    .info()
+    .str('function', 'getAlarmConfig')
+    .str('instanceId', instanceId)
+    .str('type', type)
+    .str('metric', metric)
+    .msg('Fetching alarm configuration');
+
   const thresholdKey = `autoalarm:${metric}-percent-above-${type.toLowerCase()}`;
   const durationTimeKey = `autoalarm:${metric}-percent-duration-time`;
   const durationPeriodsKey = `autoalarm:${metric}-percent-duration-periods`;
@@ -442,19 +491,43 @@ async function getAlarmConfig(
   // Fetch instance tags
   const tags = await fetchInstanceTags(instanceId);
 
+  log
+    .info()
+    .str('function', 'getAlarmConfig')
+    .str('instanceId', instanceId)
+    .str('tags', JSON.stringify(tags))
+    .msg('Fetched instance tags');
+
   // Get threshold, duration time, and duration periods from tags or use default values
-  const threshold = tags[thresholdKey]
-    ? parseInt(tags[thresholdKey], 10)
-    : defaultThreshold(type);
-  const durationTime = tags[durationTimeKey]
-    ? parseInt(tags[durationTimeKey], 10)
-    : defaultDurationTime;
-  const durationPeriods = tags[durationPeriodsKey]
-    ? parseInt(tags[durationPeriodsKey], 10)
-    : defaultDurationPeriods;
+  const threshold =
+    tags[thresholdKey] !== undefined
+      ? parseInt(tags[thresholdKey], 10)
+      : defaultThreshold(type);
+  const durationTime =
+    tags[durationTimeKey] !== undefined
+      ? parseInt(tags[durationTimeKey], 10)
+      : defaultDurationTime;
+  const durationPeriods =
+    tags[durationPeriodsKey] !== undefined
+      ? parseInt(tags[durationPeriodsKey], 10)
+      : defaultDurationPeriods;
 
   const ec2Metadata = await getInstanceDetails(instanceId);
-
+  log
+    .info()
+    .str('function', 'getAlarmConfig')
+    .str(
+      'alarmName',
+      `AutoAlarm-EC2-${instanceId}-${type}-${metric.toUpperCase()}-Utilization`
+    )
+    .str('instanceId', instanceId)
+    .str('thresholdKey', thresholdKey)
+    .num('threshold', threshold)
+    .str('durationTimeKey', durationTimeKey)
+    .num('durationTime', durationTime)
+    .str('durationPeriodsKey', durationPeriodsKey)
+    .num('durationPeriods', durationPeriods)
+    .msg('Fetched alarm configuration');
   return {
     alarmName: `AutoAlarm-EC2-${instanceId}-${type}-${metric.toUpperCase()}-Utilization`,
     threshold,
@@ -605,7 +678,7 @@ async function createCloudWatchAlarms(
   metricName: string,
   namespace: string,
   dimensions: any[],
-  tags: Tag,
+  tags: Tag, // get rid of this.
   threshold: number,
   durationTime: number,
   durationPeriods: number
@@ -623,7 +696,6 @@ async function createCloudWatchAlarms(
     alarmName,
     instanceId,
     alarmProps,
-    tags,
     threshold,
     durationTime,
     durationPeriods
@@ -1041,6 +1113,12 @@ export async function manageActiveInstanceAlarms(
       prometheusWorkspaceId,
       'ec2'
     );
+    log
+      .info()
+      .str('function', 'manageActiveInstanceAlarms')
+      .str('instanceId', instanceId)
+      .str('isCloudWatch', isCloudWatch.toString())
+      .msg('Successfully finished managing active instance alarms');
   }
 }
 
@@ -1059,6 +1137,12 @@ export async function manageInactiveInstanceAlarms(instanceId: string) {
       prometheusWorkspaceId,
       'ec2'
     );
+    log
+      .info()
+      .str('function', 'manageInactiveInstanceAlarms')
+      .str('instanceId', instanceId)
+      .str('isCloudWatch', isCloudWatch.toString())
+      .msg('Successfully finished managing inactive instance alarms');
   } catch (e) {
     log
       .error()

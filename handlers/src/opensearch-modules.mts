@@ -118,6 +118,7 @@ async function checkAndManageOpenSearchStatusAlarms(
           // @ts-ignore
           thresholdKey,
           durationTimeKey,
+          // @ts-ignore
           durationPeriodsKey
         );
       }

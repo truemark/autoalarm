@@ -12,12 +12,14 @@ import {
   PutRuleGroupsNamespaceCommand,
   RuleGroupsNamespaceSummary,
   DeleteRuleGroupsNamespaceCommand,
+  DescribeWorkspaceCommand,
+  DescribeWorkspaceCommandInput,
 } from '@aws-sdk/client-amp';
 import * as yaml from 'js-yaml';
 import * as aws4 from 'aws4';
 import {defaultProvider} from '@aws-sdk/credential-provider-node';
 import * as logging from '@nr1e/logging';
-import {AlarmProps, Tag, RuleGroup, NamespaceDetails, Rule} from './types.mjs';
+import {AlarmProps, RuleGroup, NamespaceDetails, Rule} from './types.mjs';
 import * as https from 'https';
 
 const log = logging.getLogger('alarm-tools');
@@ -32,6 +34,7 @@ export async function doesAlarmExist(alarmName: string): Promise<boolean> {
   return (response.MetricAlarms?.length ?? 0) > 0;
 }
 
+// returns true if the alarm needs to be updated whether it exists or does not.
 export async function CWAlarmNeedsUpdate(
   alarmName: string,
   newProps: AlarmProps
@@ -68,7 +71,6 @@ export async function CWAlarmNeedsUpdate(
 
 export function configureAlarmPropsFromTags(
   alarmProps: AlarmProps,
-  tags: Tag,
   threshold: number,
   durationTime: number,
   durationPeriods: number
@@ -99,7 +101,7 @@ export function configureAlarmPropsFromTags(
         'Period value less than 30 and not 10 is adjusted to 30. Using default value of 30'
       );
   } else {
-    durationPeriods = Math.ceil(durationTime / 60) * 60;
+    durationTime = Math.ceil(durationTime / 60) * 60;
     log
       .info()
       .str('function', 'configureAlarmPropsFromTags')
@@ -109,6 +111,11 @@ export function configureAlarmPropsFromTags(
       );
   }
   alarmProps.period = durationTime;
+  log
+    .info()
+    .str('function', 'configureAlarmPropsFromTags')
+    .num('period', durationTime)
+    .msg('Adjusted period based on tag');
 
   // Adjust evaluation periods based on tags or use default if not present as defined in alarm props
 
@@ -124,7 +131,6 @@ export async function createOrUpdateCWAlarm(
   alarmName: string,
   instanceId: string,
   props: AlarmProps,
-  tags: Tag,
   threshold: number,
   durationTime: number,
   durationPeriods: number
@@ -132,24 +138,30 @@ export async function createOrUpdateCWAlarm(
   try {
     log
       .info()
+      .str('function', 'createOrUpdateCWAlarm')
       .str('alarmName', alarmName)
       .str('instanceId', instanceId)
       .msg('Configuring alarm props from provided values');
 
     configureAlarmPropsFromTags(
       props,
-      tags,
       threshold,
       durationTime,
       durationPeriods
     );
-
-    // Update the props directly with the provided values
-    props.threshold = threshold;
-    props.evaluationPeriods = durationPeriods;
+    log
+      .info()
+      .str('function', 'createOrUpdateCWAlarm')
+      .str('alarmName', alarmName)
+      .str('instanceId', instanceId)
+      .num('threshold', props.threshold)
+      .num('period', props.period)
+      .num('evaluationPeriods', props.evaluationPeriods)
+      .msg('Alarm props configured from provided values');
   } catch (e) {
     log
       .error()
+      .str('function', 'createOrUpdateCWAlarm')
       .err(e)
       .msg('Error configuring alarm props from provided values');
     throw new Error('Error configuring alarm props from provided values');
@@ -177,6 +189,7 @@ export async function createOrUpdateCWAlarm(
       );
       log
         .info()
+        .str('function', 'createOrUpdateCWAlarm')
         .str('alarmName', alarmName)
         .str('instanceId', instanceId)
         .num('threshold', props.threshold)
@@ -186,6 +199,7 @@ export async function createOrUpdateCWAlarm(
     } catch (e) {
       log
         .error()
+        .str('function', 'createOrUpdateCWAlarm')
         .err(e)
         .str('alarmName', alarmName)
         .str('instanceId', instanceId)
@@ -518,8 +532,7 @@ const listNamespaces = async (
 // Function to describe a namespace
 export const describeNamespace = async (
   workspaceId: string,
-  namespace: string,
-  retries = 2
+  namespace: string
 ): Promise<NamespaceDetails | null> => {
   const command = new DescribeRuleGroupsNamespaceCommand({
     workspaceId,
@@ -532,71 +545,53 @@ export const describeNamespace = async (
     .str('namespace', namespace)
     .msg('Describing namespace');
 
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const response = await client.send(command);
-      if (response.ruleGroupsNamespace) {
-        const dataStr = new TextDecoder().decode(
-          response.ruleGroupsNamespace.data
-        );
-        log
-          .info()
-          .str('function', 'describeNamespace')
-          .str('rawData', dataStr)
-          .msg('Raw data from API');
-        try {
-          const nsDetails = yaml.load(dataStr) as NamespaceDetails;
-          if (!isNamespaceDetails(nsDetails)) {
-            throw new Error('Invalid namespace details structure');
-          }
-          log
-            .info()
-            .str('function', 'describeNamespace')
-            .str('namespace', namespace)
-            .str('details', JSON.stringify(nsDetails))
-            .msg('Namespace described');
-          return nsDetails;
-        } catch (parseError) {
-          log
-            .error()
-            .str('function', 'describeNamespace')
-            .err(parseError)
-            .str('rawData', dataStr)
-            .msg('Failed to parse namespace data');
-          throw parseError;
+  try {
+    const response = await client.send(command);
+    if (response.ruleGroupsNamespace) {
+      const dataStr = new TextDecoder().decode(
+        response.ruleGroupsNamespace.data
+      );
+      log
+        .info()
+        .str('function', 'describeNamespace')
+        .str('rawData', dataStr)
+        .msg('Raw data from API');
+      try {
+        const nsDetails = yaml.load(dataStr) as NamespaceDetails;
+        if (!isNamespaceDetails(nsDetails)) {
+          throw new Error('Invalid namespace details structure');
         }
-      }
-      log
-        .warn()
-        .str('function', 'describeNamespace')
-        .str('namespace', namespace)
-        .msg('No data returned for namespace');
-      return null;
-    } catch (error) {
-      log
-        .error()
-        .str('function', 'describeNamespace')
-        .err(error)
-        .msg(
-          `Error describing namespace, attempt ${attempt + 1} of ${retries + 1}`
-        );
-      if (attempt < retries) {
         log
           .info()
           .str('function', 'describeNamespace')
-          .msg('Retrying in 90 seconds...');
-        await new Promise(resolve => setTimeout(resolve, 90 * 1000)); // Wait for 90 seconds before retrying
-      } else {
+          .str('namespace', namespace)
+          .str('details', JSON.stringify(nsDetails))
+          .msg('Namespace described');
+        return nsDetails;
+      } catch (parseError) {
         log
           .error()
           .str('function', 'describeNamespace')
-          .str('namespace', namespace)
-          .msg('Ran out of attempts');
-        throw error; // If it's the last attempt, rethrow the error
+          .err(parseError)
+          .str('rawData', dataStr)
+          .msg('Failed to parse namespace data');
+        throw parseError;
       }
     }
+    log
+      .warn()
+      .str('function', 'describeNamespace')
+      .str('namespace', namespace)
+      .msg('No data returned for namespace');
+    return null;
+  } catch (error) {
+    log
+      .error()
+      .str('function', 'describeNamespace')
+      .err(error)
+      .msg('Error describing namespace');
+    return null; // Ensure that the function always returns a value
   }
-  return null; // Ensure that the function always returns a value
 };
 
 // Function to create a new namespace
@@ -667,6 +662,32 @@ function isNamespaceDetails(obj: unknown): obj is NamespaceDetails {
   );
 }
 
+// This function is used to verify that a workspace exists and is active.
+async function verifyPromWorkspace(promWorkspaceId: string) {
+  // we have to cast our promWorkspaceId to the DescribeWorkspaceCommandInput type in order to query for the workspace
+  const input: DescribeWorkspaceCommandInput = {
+    workspaceId: promWorkspaceId,
+  };
+  const command = new DescribeWorkspaceCommand(input);
+  const verifyWorkspace = await client.send(command);
+  if (!verifyWorkspace) {
+    log
+      .warn()
+      .str('function', 'deletePromRulesForService')
+      .str('promWorkspaceId', promWorkspaceId)
+      .msg('Invalid or empty workspace details. Nothing to delete.');
+    return;
+  } else {
+    log
+      .info()
+      .str('function', 'verifyPromWorkspace')
+      .str('promWorkspaceId', promWorkspaceId)
+      .obj('workspace', verifyWorkspace)
+      .msg('Workspace exists and is active');
+    return verifyWorkspace;
+  }
+}
+
 /**
  * Function to manage Prometheus namespace alarms.
  * @param promWorkspaceId - The Prometheus workspace ID.
@@ -686,7 +707,21 @@ export async function managePromNamespaceAlarms(
     .str('promWorkspaceId', promWorkspaceId)
     .str('namespace', namespace)
     .str('ruleGroupName', ruleGroupName)
-    .msg('Starting managePromNamespaceAlarms');
+    .msg(
+      'Starting managePromNamespaceAlarms and checking if workspace exists...'
+    );
+
+  const workspaceDescription: any = await verifyPromWorkspace(promWorkspaceId);
+  if (!workspaceDescription) {
+    log
+      .warn()
+      .str('function', 'managePromNamespaceAlarms')
+      .str('promWorkspaceId', promWorkspaceId)
+      .msg('Invalid or empty workspace details. Halting Prometheus logic.');
+    throw new Error(
+      'Invalid or empty workspace details. Halting Prometheus logic.'
+    );
+  }
 
   // List all existing namespaces and count total rules
   const namespaces = await listNamespaces(promWorkspaceId);
@@ -911,6 +946,17 @@ export async function deletePromRulesForService(
 
   while (retryCount < maxRetries) {
     try {
+      // checking if the workspace exists. If not, we can return early.
+      const workspaceDescription: any =
+        await verifyPromWorkspace(promWorkspaceId);
+      if (!workspaceDescription) {
+        log
+          .info()
+          .str('function', 'deletePromRulesForService')
+          .str('promWorkspaceId', promWorkspaceId)
+          .msg('Invalid or empty workspace details. Nothing to delete.');
+        return;
+      }
       const nsDetails = await describeNamespace(promWorkspaceId, namespace);
       if (!nsDetails || !isNamespaceDetails(nsDetails)) {
         log
