@@ -17,7 +17,6 @@ import {
   getCWAlarmsForInstance,
   deleteCWAlarm,
   queryPrometheusForService,
-  describeNamespace,
   managePromNamespaceAlarms,
   deletePromRulesForService,
 } from './alarm-tools.mjs';
@@ -66,8 +65,8 @@ async function batchPromRulesDeletion(
   const instancesToDelete = instanceDetails
     .filter(
       details =>
-        (details.tags['Prometheus'] === 'false' &&
-          details.tags['autoalarm:disabled']) &&
+        details.tags['Prometheus'] === 'false' &&
+        details.tags['autoalarm:disabled'] &&
         details.tags['autoalarm:disabled'] === 'true'
     )
     .map(details => details.instanceId);
@@ -184,7 +183,6 @@ async function getPromAlarmConfigs(
  * CloudWatch for monitoring.
  *
  * @param {string} instanceId - The ID of the EC2 instance to check.
- * @param {string[]} reportingInstances - An array of IPs currently reporting to Prometheus.
  */
 
 async function alarmFavor(instanceId: string) {
@@ -274,7 +272,6 @@ async function getAllInstanceIdsInRegion(): Promise<string[]> {
  * @param prometheusWorkspaceId - The Prometheus workspace ID.
  * @param service - The service name.
  * @param region - The AWS region passed by an environment variable.
- * @param instanceIds - Array of EC2 instance IDs.
  */
 async function batchUpdatePromRules(
   shouldUpdatePromRules: boolean,
@@ -327,8 +324,8 @@ async function batchUpdatePromRules(
 
         const instancesToCheck = instanceDetails.filter(
           details =>
-            (details.tags['Prometheus'] === 'true' &&
-              details.tags['autoalarm:disabled']) &&
+            details.tags['Prometheus'] === 'true' &&
+            details.tags['autoalarm:disabled'] &&
             details.tags['autoalarm:disabled'] === 'false'
         );
 
@@ -608,7 +605,6 @@ async function createCloudWatchAlarms(
   metricName: string,
   namespace: string,
   dimensions: any[],
-  type: AlarmClassification,
   tags: Tag,
   threshold: number,
   durationTime: number,
@@ -640,7 +636,7 @@ export async function manageCPUUsageAlarmForInstance(
   type: AlarmClassification,
   usePrometheus: boolean
 ): Promise<void> {
-  const {alarmName, threshold, durationTime, durationPeriods, ec2Metadata} =
+  const {alarmName, threshold, durationTime, durationPeriods} =
     await getAlarmConfig(instanceId, type, 'cpu');
 
   //we should consolidate the promethues tag check and the iscloudwatch check into manage active isntances and instead pass a boolean to this function and create prom alarms based of that.
@@ -673,7 +669,6 @@ export async function manageCPUUsageAlarmForInstance(
       'CPUUtilization',
       'AWS/EC2',
       [{Name: 'InstanceId', Value: instanceId}],
-      type,
       tags,
       threshold,
       durationTime,
@@ -740,7 +735,6 @@ export async function manageStorageAlarmForInstance(
           metricName,
           'CWAgent',
           dimensions_props,
-          type,
           tags,
           threshold,
           durationTime,
@@ -804,7 +798,6 @@ export async function manageMemoryAlarmForInstance(
       metricName,
       'CWAgent',
       [{Name: 'InstanceId', Value: instanceId}],
-      type,
       tags,
       threshold,
       durationTime,
@@ -852,7 +845,7 @@ export async function createStatusAlarmForInstance(
 
 async function checkAndManageStatusAlarm(instanceId: string, tags: Tag) {
   if (tags['autoalarm:disabled'] === 'true') {
-    deleteCWAlarm(instanceId, 'StatusCheckFailed');
+    await deleteCWAlarm(instanceId, 'StatusCheckFailed');
     log.info().msg('Status check alarm creation skipped due to tag settings.');
   } else if (tags['autoalarm:disabled'] === 'false') {
     // Create status check alarm if not disabled

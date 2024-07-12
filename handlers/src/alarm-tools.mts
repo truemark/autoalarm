@@ -69,93 +69,55 @@ export async function CWAlarmNeedsUpdate(
 export function configureAlarmPropsFromTags(
   alarmProps: AlarmProps,
   tags: Tag,
-  thresholdKey: string,
-  durationTimeKey: string,
-  durationPeriodsKey: string
+  threshold: number,
+  durationTime: number,
+  durationPeriods: number
 ): void {
-  // Adjust threshold based on tags or use default if not present as defined in alarm props
-  if (!tags[thresholdKey]) {
-    log.info().msg('Threshold tag not found, using default');
-  } else if (tags[thresholdKey]) {
-    const parsedThreshold = parseFloat(tags[thresholdKey]);
-    if (!isNaN(parsedThreshold)) {
-      alarmProps.threshold = parsedThreshold;
-      log
-        .info()
-        .str('tag', thresholdKey)
-        .num('threshold', parsedThreshold)
-        .msg('Adjusted threshold based on tag');
-    } else {
-      log
-        .warn()
-        .str('tag', thresholdKey)
-        .str('value', tags[thresholdKey])
-        .msg('Invalid threshold value in tag, using default');
-    }
-    // Adjust period based on tags or use default if not present as defined in alarm props
-    if (!tags[durationTimeKey]) {
-      log.info().msg('Period tag not found, using default');
-    } else if (tags[durationTimeKey]) {
-      let parsedPeriod = parseInt(tags[durationTimeKey], 10);
-      if (!isNaN(parsedPeriod)) {
-        if (parsedPeriod < 10) {
-          parsedPeriod = 10;
-          log
-            .info()
-            .str('tag', durationTimeKey)
-            .num('period', parsedPeriod)
-            .msg(
-              'Period value less than 10 is not allowed, must be 10. Using default value of 10'
-            );
-        } else if (parsedPeriod < 30) {
-          parsedPeriod = 30;
-          log
-            .info()
-            .str('tag', durationTimeKey)
-            .num('period', parsedPeriod)
-            .msg(
-              'Period value less than 30 and not 10 is adjusted to 30. Using default value of 30'
-            );
-        } else {
-          parsedPeriod = Math.ceil(parsedPeriod / 60) * 60;
-          log
-            .info()
-            .str('tag', durationTimeKey)
-            .num('period', parsedPeriod)
-            .msg(
-              'Period value not 10 or 30 must be multiple of 60. Adjusted to nearest multiple of 60'
-            );
-        }
-        alarmProps.period = parsedPeriod;
-      } else {
-        log
-          .warn()
-          .str('tag', durationTimeKey)
-          .str('value', tags[durationTimeKey])
-          .msg('Invalid period value in tag, using default 60 seconds');
-      }
-    }
-    // Adjust evaluation periods based on tags or use default if not present as defined in alarm props
-    if (!tags[durationPeriodsKey]) {
-      log.info().msg('Evaluation periods tag not found, using default');
-    } else if (tags[durationPeriodsKey]) {
-      const parsedEvaluationPeriods = parseInt(tags[durationPeriodsKey], 10);
-      if (!isNaN(parsedEvaluationPeriods)) {
-        alarmProps.evaluationPeriods = parsedEvaluationPeriods;
-        log
-          .info()
-          .str('tag', durationPeriodsKey)
-          .num('evaluationPeriods', parsedEvaluationPeriods)
-          .msg('Adjusted evaluation periods based on tag');
-      } else {
-        log
-          .warn()
-          .str('tag', durationPeriodsKey)
-          .str('value', tags[durationPeriodsKey])
-          .msg('Invalid evaluation periods value in tag, using default 5');
-      }
-    }
+  alarmProps.threshold = threshold;
+  log
+    .info()
+    .str('function', 'configureAlarmPropsFromTags')
+    .num('threshold', threshold)
+    .msg('Adjusted threshold based on tag');
+
+  if (durationTime < 10) {
+    durationTime = 10;
+    log
+      .info()
+      .str('function', 'configureAlarmPropsFromTags')
+      .num('period', durationTime)
+      .msg(
+        'Period value less than 10 is not allowed, must be 10. Using default value of 10'
+      );
+  } else if (durationTime < 30) {
+    durationTime = 30;
+    log
+      .info()
+      .str('function', 'configureAlarmPropsFromTags')
+      .num('period', durationTime)
+      .msg(
+        'Period value less than 30 and not 10 is adjusted to 30. Using default value of 30'
+      );
+  } else {
+    durationPeriods = Math.ceil(durationTime / 60) * 60;
+    log
+      .info()
+      .str('function', 'configureAlarmPropsFromTags')
+      .num('period', durationTime)
+      .msg(
+        'Period value not 10 or 30 must be multiple of 60. Adjusted to nearest multiple of 60'
+      );
   }
+  alarmProps.period = durationTime;
+
+  // Adjust evaluation periods based on tags or use default if not present as defined in alarm props
+
+  alarmProps.evaluationPeriods = durationPeriods;
+  log
+    .info()
+    .str('function', 'configureAlarmPropsFromTags')
+    .num('evaluationPeriods', durationPeriods)
+    .msg('Adjusted evaluation periods based on tag');
 }
 
 export async function createOrUpdateCWAlarm(
@@ -173,6 +135,14 @@ export async function createOrUpdateCWAlarm(
       .str('alarmName', alarmName)
       .str('instanceId', instanceId)
       .msg('Configuring alarm props from provided values');
+
+    configureAlarmPropsFromTags(
+      props,
+      tags,
+      threshold,
+      durationTime,
+      durationPeriods
+    );
 
     // Update the props directly with the provided values
     props.threshold = threshold;
