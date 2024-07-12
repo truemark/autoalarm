@@ -484,9 +484,20 @@ async function getAlarmConfig(
     .str('metric', metric)
     .msg('Fetching alarm configuration');
 
-  const thresholdKey = `autoalarm:${metric}-percent-above-${type.toLowerCase()}`;
-  const durationTimeKey = `autoalarm:${metric}-percent-duration-time`;
-  const durationPeriodsKey = `autoalarm:${metric}-percent-duration-periods`;
+  // Initialize variables with default values
+  let thresholdKey: string = '';
+  let durationTimeKey: string = '';
+  let durationPeriodsKey: string = '';
+
+  if (metric === 'cpu' || metric === 'memory') {
+    thresholdKey = `autoalarm:${metric}-percent-above-${type.toLowerCase()}`;
+    durationTimeKey = `autoalarm:${metric}-percent-duration-time`;
+    durationPeriodsKey = `autoalarm:${metric}-percent-duration-periods`;
+  } else if (metric === 'storage') {
+    thresholdKey = `autoalarm:${metric}-used-percent-${type.toLowerCase()}`;
+    durationTimeKey = 'autoalarm:storage-percent-duration-time';
+    durationPeriodsKey = 'autoalarm:storage-percent-duration-periods';
+  }
 
   // Fetch instance tags
   const tags = await fetchInstanceTags(instanceId);
@@ -528,6 +539,7 @@ async function getAlarmConfig(
     .str('durationPeriodsKey', durationPeriodsKey)
     .num('durationPeriods', durationPeriods)
     .msg('Fetched alarm configuration');
+
   return {
     alarmName: `AutoAlarm-EC2-${instanceId}-${type}-${metric.toUpperCase()}-Utilization`,
     threshold,
@@ -678,7 +690,6 @@ async function createCloudWatchAlarms(
   metricName: string,
   namespace: string,
   dimensions: any[],
-  tags: Tag, // get rid of this.
   threshold: number,
   durationTime: number,
   durationPeriods: number
@@ -741,7 +752,6 @@ export async function manageCPUUsageAlarmForInstance(
       'CPUUtilization',
       'AWS/EC2',
       [{Name: 'InstanceId', Value: instanceId}],
-      tags,
       threshold,
       durationTime,
       durationPeriods
@@ -807,7 +817,6 @@ export async function manageStorageAlarmForInstance(
           metricName,
           'CWAgent',
           dimensions_props,
-          tags,
           threshold,
           durationTime,
           durationPeriods
@@ -870,7 +879,6 @@ export async function manageMemoryAlarmForInstance(
       metricName,
       'CWAgent',
       [{Name: 'InstanceId', Value: instanceId}],
-      tags,
       threshold,
       durationTime,
       durationPeriods
