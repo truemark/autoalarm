@@ -67,7 +67,7 @@ async function batchPromRulesDeletion(
     .filter(
       details =>
         (details.tags['Prometheus'] === 'false' &&
-          details.tags['autoalarm:disabled']) ||
+          details.tags['autoalarm:disabled']) &&
         details.tags['autoalarm:disabled'] === 'true'
     )
     .map(details => details.instanceId);
@@ -327,7 +327,8 @@ async function batchUpdatePromRules(
 
         const instancesToCheck = instanceDetails.filter(
           details =>
-            details.tags['Prometheus'] === 'true' &&
+            (details.tags['Prometheus'] === 'true' &&
+              details.tags['autoalarm:disabled']) &&
             details.tags['autoalarm:disabled'] === 'false'
         );
 
