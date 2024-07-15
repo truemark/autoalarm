@@ -235,6 +235,7 @@ export async function getCWAlarmsForInstance(
     // Filter alarms by name prefix
     log
       .info()
+      .str('function', 'getCWAlarmsForInstance')
       .str('serviceIdentifier', serviceIdentifier)
       .str('instanceIdentifier', instanceIdentifier)
       .str(
@@ -259,6 +260,7 @@ export async function getCWAlarmsForInstance(
 
     log
       .info()
+      .str('function', 'getCWAlarmsForInstance')
       .str(`${serviceIdentifier}`, instanceIdentifier)
       .str('alarms', JSON.stringify(instanceAlarms))
       .msg('Fetched alarms for instance');
@@ -267,6 +269,7 @@ export async function getCWAlarmsForInstance(
   } catch (error) {
     log
       .error()
+      .str('function', 'getCWAlarmsForInstance')
       .err(error)
       .str(`${serviceIdentifier}`, instanceIdentifier)
       .msg('Failed to fetch alarms for instance');
