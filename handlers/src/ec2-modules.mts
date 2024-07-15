@@ -1212,12 +1212,12 @@ export async function fetchInstanceTags(
 
 export const liveStates: Set<ValidInstanceState> = new Set([
   ValidInstanceState.Running,
-  ValidInstanceState.Pending,
+  //ValidInstanceState.Pending,
 ]);
 
 export const deadStates: Set<ValidInstanceState> = new Set([
   ValidInstanceState.Terminated,
-  ValidInstanceState.Stopping, //for testing. to be removed
+  //ValidInstanceState.Stopping, //for testing. to be removed
   ValidInstanceState.Stopped, //for testing. to be removed
-  ValidInstanceState.ShuttingDown, //for testing. to be removed
+  //ValidInstanceState.ShuttingDown, //for testing. to be removed
 ]);
