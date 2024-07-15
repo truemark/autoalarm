@@ -125,6 +125,7 @@ async function checkAndManageTargetGroupStatusAlarms(
           // @ts-ignore
           thresholdKey,
           durationTimeKey,
+          // @ts-ignore
           durationPeriodsKey
         );
       }

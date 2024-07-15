@@ -55,12 +55,19 @@ async function processEC2Event(event: any) {
   const state = event.detail.state;
   const tags = await fetchInstanceTags(instanceId);
 
-  if (instanceId && liveStates.has(state)) {
-    //checking our liveStates set to see if the instance is in a state that we should be managing alarms for.
-    //we are iterating over the AlarmClassification enum to manage alarms for each classification: 'Critical'|'Warning'.
-
+  if (
+    instanceId &&
+    liveStates.has(state) &&
+    tags['autoalarm:disabled'] === 'false'
+  ) {
+    // checking our liveStates set to see if the instance is in a state that we should be managing alarms for.
+    // we are iterating over the AlarmClassification enum to manage alarms for each classification: 'Critical'|'Warning'.
     await manageActiveInstanceAlarms(instanceId, tags);
-  } else if (deadStates.has(state)) {
+  } else if (
+    (deadStates.has(state) && tags['autoalarm:disabled'] === 'true') ||
+    (tags['autoalarm:disabled'] === 'false' && deadStates.has(state)) ||
+    !tags['autoalarm:disabled']
+  ) {
     // TODO Do not delete alarms just because the instance is shutdown. You do delete them on terminate.
     await manageInactiveInstanceAlarms(instanceId);
   }
@@ -77,6 +84,11 @@ async function processEC2TagEvent(event: any) {
     liveStates.has(state)
   ) {
     await manageActiveInstanceAlarms(instanceId, tags);
+  } else if (!tags['autoalarm:disabled']) {
+    log
+      .info()
+      .str('function', 'processEC2TagEvent')
+      .msg('autoalarm:disabled tag not found. Skipping autoalarm processing');
   }
 }
 

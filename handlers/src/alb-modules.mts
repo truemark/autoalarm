@@ -123,6 +123,7 @@ async function checkAndManageALBStatusAlarms(
           // @ts-ignore
           thresholdKey,
           durationTimeKey,
+          // @ts-ignore
           durationPeriodsKey
         );
       }

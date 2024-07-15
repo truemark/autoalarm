@@ -110,6 +110,7 @@ async function checkAndManageSQSStatusAlarms(queueUrl: string, tags: Tag) {
           // @ts-ignore
           thresholdKey,
           durationTimeKey,
+          // @ts-ignore
           durationPeriodsKey
         );
       }
