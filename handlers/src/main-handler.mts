@@ -65,7 +65,8 @@ async function processEC2Event(event: any) {
     await manageActiveInstanceAlarms(instanceId, tags);
   } else if (
     (deadStates.has(state) && tags['autoalarm:disabled'] === 'true') ||
-    (tags['autoalarm:disabled'] === 'false' && deadStates.has(state))
+    (tags['autoalarm:disabled'] === 'false' && deadStates.has(state)) ||
+    !tags['autoalarm:disabled']
   ) {
     // TODO Do not delete alarms just because the instance is shutdown. You do delete them on terminate.
     await manageInactiveInstanceAlarms(instanceId);
