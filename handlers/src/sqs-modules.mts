@@ -10,11 +10,12 @@ import {
 
 const log: logging.Logger = logging.getLogger('sqs-modules');
 const sqsClient: SQSClient = new SQSClient({});
+const defaultThreshold = (type: AlarmClassification) =>
+  type === 'CRITICAL' ? 1000 : 500;
 
-const defaultThresholds: {[key in AlarmClassification]: number} = {
-  [AlarmClassification.Critical]: 1000,
-  [AlarmClassification.Warning]: 500,
-};
+// Default values for duration and periods
+const defaultDurationTime = 60; // e.g., 300 seconds
+const defaultDurationPeriods = 2; // e.g., 5 periods
 
 const metricConfigs = [
   {metricName: 'ApproximateNumberOfMessagesVisible', namespace: 'AWS/SQS'},
@@ -32,19 +33,34 @@ async function getAlarmConfig(
   metricName: string
 ): Promise<{
   alarmName: string;
-  thresholdKey: string;
-  durationTimeKey: string;
-  durationPeriodsKey: string;
+  threshold: number;
+  durationTime: number;
+  durationPeriods: number;
 }> {
+  const tags = await fetchSQSTags(queueName);
   const thresholdKey = `autoalarm:${metricName}-percent-above-${type.toLowerCase()}`;
   const durationTimeKey = `autoalarm:${metricName}-percent-duration-time`;
   const durationPeriodsKey = `autoalarm:${metricName}-percent-duration-periods`;
 
+  // Get threshold, duration time, and duration periods from tags or use default values
+  const threshold =
+    tags[thresholdKey] !== undefined
+      ? parseInt(tags[thresholdKey], 10)
+      : defaultThreshold(type);
+  const durationTime =
+    tags[durationTimeKey] !== undefined
+      ? parseInt(tags[durationTimeKey], 10)
+      : defaultDurationTime;
+  const durationPeriods =
+    tags[durationPeriodsKey] !== undefined
+      ? parseInt(tags[durationPeriodsKey], 10)
+      : defaultDurationPeriods;
+
   return {
     alarmName: `AutoAlarm-SQS-${queueName}-${type}-${metricName}`,
-    thresholdKey,
-    durationTimeKey,
-    durationPeriodsKey,
+    threshold,
+    durationTime,
+    durationPeriods,
   };
 }
 
@@ -86,15 +102,11 @@ async function checkAndManageSQSStatusAlarms(queueUrl: string, tags: Tag) {
     for (const config of metricConfigs) {
       const {metricName, namespace} = config;
       for (const classification of Object.values(AlarmClassification)) {
-        const {alarmName, thresholdKey, durationTimeKey, durationPeriodsKey} =
-          await getAlarmConfig(
-            queueName,
-            classification as AlarmClassification,
-            metricName
-          );
+        const {alarmName, threshold, durationTime, durationPeriods} =
+          await getAlarmConfig(queueName, classification, metricName);
 
         const alarmProps: AlarmProps = {
-          threshold: defaultThresholds[classification as AlarmClassification],
+          threshold: threshold,
           period: 60,
           namespace: namespace,
           evaluationPeriods: 5,
@@ -106,12 +118,9 @@ async function checkAndManageSQSStatusAlarms(queueUrl: string, tags: Tag) {
           alarmName,
           queueName,
           alarmProps,
-          tags,
-          // @ts-ignore
-          thresholdKey,
-          durationTimeKey,
-          // @ts-ignore
-          durationPeriodsKey
+          threshold,
+          durationTime,
+          durationPeriods
         );
       }
     }

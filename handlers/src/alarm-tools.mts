@@ -127,9 +127,10 @@ export function configureAlarmPropsFromTags(
     .msg('Adjusted evaluation periods based on tag');
 }
 
+// This function is used to create or update a CW alarm based on the provided values.
 export async function createOrUpdateCWAlarm(
   alarmName: string,
-  instanceId: string,
+  serviceIdentifier: string,
   props: AlarmProps,
   threshold: number,
   durationTime: number,
@@ -140,7 +141,7 @@ export async function createOrUpdateCWAlarm(
       .info()
       .str('function', 'createOrUpdateCWAlarm')
       .str('alarmName', alarmName)
-      .str('instanceId', instanceId)
+      .str('Service Identifier', serviceIdentifier)
       .msg('Configuring alarm props from provided values');
 
     configureAlarmPropsFromTags(
@@ -153,7 +154,7 @@ export async function createOrUpdateCWAlarm(
       .info()
       .str('function', 'createOrUpdateCWAlarm')
       .str('alarmName', alarmName)
-      .str('instanceId', instanceId)
+      .str('Service Identifier', serviceIdentifier)
       .num('threshold', props.threshold)
       .num('period', props.period)
       .num('evaluationPeriods', props.evaluationPeriods)
@@ -191,7 +192,7 @@ export async function createOrUpdateCWAlarm(
         .info()
         .str('function', 'createOrUpdateCWAlarm')
         .str('alarmName', alarmName)
-        .str('instanceId', instanceId)
+        .str('serviceIdentifier', serviceIdentifier)
         .num('threshold', props.threshold)
         .num('period', props.period)
         .num('evaluationPeriods', props.evaluationPeriods)
@@ -202,7 +203,7 @@ export async function createOrUpdateCWAlarm(
         .str('function', 'createOrUpdateCWAlarm')
         .err(e)
         .str('alarmName', alarmName)
-        .str('instanceId', instanceId)
+        .str('instanceId', serviceIdentifier)
         .msg(
           `Failed to create or update ${alarmName} alarm due to an error ${e}`
         );
