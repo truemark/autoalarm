@@ -106,14 +106,14 @@ export async function processALBEvent(event: any) {
 }
 
 export async function processALBTagEvent(event: any) {
-  const {loadBalancerArn, eventName, tags} = await getAlbEvent(event);
+  const {loadBalancerArn, eventType, tags} = await getAlbEvent(event);
 
   if (tags['autoalarm:disabled'] === 'true') {
     await manageInactiveALBAlarms(loadBalancerArn);
   } else if (
     tags['autoalarm:disabled'] === 'false' &&
     loadBalancerArn &&
-    eventName === ValidAlbEvent.Active
+    eventType === ValidAlbEvent.Active
   ) {
     await manageALBAlarms(loadBalancerArn, tags);
   }
@@ -207,7 +207,7 @@ async function routeTagEvent(event: any) {
   if (resourceType === 'instance') {
     await processEC2TagEvent(event);
   } else if (service === 'elasticloadbalancing') {
-    if (resourceType === 'load-balancer') {
+    if (resourceType === 'loadbalancer') {
       await processALBTagEvent(event);
     } else if (resourceType === 'target-group') {
       await processTargetGroupTagEvent(event);

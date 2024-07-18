@@ -150,7 +150,6 @@ export class AutoAlarmConstruct extends Construct {
             'autoalarm:memory-percent-above-warning',
             'autoalarm:memory-percent-duration-time',
             'autoalarm:memory-percent-duration-periods',
-            'autoalarm:selective-storage', //true or false
             'Prometheus',
           ],
         },
@@ -166,7 +165,7 @@ export class AutoAlarmConstruct extends Construct {
         detailType: ['Tag Change on Resource'],
         detail: {
           service: ['elasticloadbalancing'],
-          'resource-type': ['load-balancer'],
+          'resource-type': ['loadbalancer'],
           'changed-tag-keys': [
             'autoalarm:disabled',
             'autoalarm:request-count-above-critical',

@@ -4,7 +4,7 @@ import {
 } from '@aws-sdk/client-elastic-load-balancing-v2';
 import * as logging from '@nr1e/logging';
 import {AlarmProps, Tag} from './types.mjs';
-import {AlarmClassification, ValidAlbEvent} from './enums.mjs';
+import {AlarmClassification} from './enums.mjs';
 import {
   createOrUpdateCWAlarm,
   getCWAlarmsForInstance,
@@ -31,14 +31,14 @@ const defaultDurationPeriods = 2; // e.g., 5 periods
 async function getAlarmConfig(
   loadBalancerName: string,
   type: AlarmClassification,
-  metricName: string
+  metricName: string,
+  tags: Tag
 ): Promise<{
   alarmName: string;
   threshold: number;
   durationTime: number;
   durationPeriods: number;
 }> {
-  const tags = await fetchALBTags(loadBalancerName);
   const thresholdKey = `autoalarm:${metricName}-percent-above-${type.toLowerCase()}`;
   const durationTimeKey = `autoalarm:${metricName}-percent-duration-time`;
   const durationPeriodsKey = `autoalarm:${metricName}-percent-duration-periods`;
@@ -123,7 +123,8 @@ async function checkAndManageALBStatusAlarms(
           await getAlarmConfig(
             loadBalancerName,
             classification as AlarmClassification,
-            metricName
+            metricName,
+            tags
           );
 
         const alarmProps: AlarmProps = {
@@ -176,25 +177,114 @@ export async function manageInactiveALBAlarms(loadBalancerName: string) {
   }
 }
 
-export async function getAlbEvent(
-  event: any
-): Promise<{loadBalancerArn: string; eventName: ValidAlbEvent; tags: Tag}> {
-  const loadBalancerArn =
-    event.detail.responseElements?.loadBalancers[0]?.loadBalancerArn;
-  const eventName = event.detail.eventName as ValidAlbEvent;
+export async function getAlbEvent(event: any): Promise<{
+  loadBalancerArn: string;
+  eventType: string;
+  tags: Record<string, string>;
+}> {
+  let loadBalancerArn: string = '';
+  let eventType: string = '';
+  let tags: Record<string, string> = {};
+
+  switch (event['detail-type']) {
+    case 'Tag Change on Resource':
+      loadBalancerArn = event.resources[0];
+      eventType = 'TagChange';
+      tags = event.detail.tags || {};
+      log
+        .info()
+        .str('function', 'getAlbEvent')
+        .str('eventType', 'TagChange')
+        .str('loadBalancerArn', loadBalancerArn)
+        .str('changedTags', JSON.stringify(event.detail['changed-tag-keys']))
+        .msg('Processing Tag Change event');
+      break;
+
+    case 'AWS API Call via CloudTrail':
+      switch (event.detail.eventName) {
+        case 'CreateLoadBalancer':
+          loadBalancerArn =
+            event.detail.responseElements?.loadBalancers[0]?.loadBalancerArn;
+          eventType = 'Create';
+          log
+            .info()
+            .str('function', 'getAlbEvent')
+            .str('eventType', 'Create')
+            .str('loadBalancerArn', loadBalancerArn)
+            .str('requestId', event.detail.requestID)
+            .msg('Processing CreateLoadBalancer event');
+          if (loadBalancerArn) {
+            tags = await fetchALBTags(loadBalancerArn);
+            log
+              .info()
+              .str('function', 'getAlbEvent')
+              .str('loadBalancerArn', loadBalancerArn)
+              .str('tags', JSON.stringify(tags))
+              .msg('Fetched tags for new ALB');
+          } else {
+            log
+              .warn()
+              .str('function', 'getAlbEvent')
+              .str('eventType', 'Create')
+              .msg('LoadBalancerArn not found in CreateLoadBalancer event');
+          }
+          break;
+
+        case 'DeleteLoadBalancer':
+          loadBalancerArn = event.detail.requestParameters?.loadBalancerArn;
+          eventType = 'Delete';
+          log
+            .info()
+            .str('function', 'getAlbEvent')
+            .str('eventType', 'Delete')
+            .str('loadBalancerArn', loadBalancerArn)
+            .str('requestId', event.detail.requestID)
+            .msg('Processing DeleteLoadBalancer event');
+          break;
+
+        default:
+          log
+            .warn()
+            .str('function', 'getAlbEvent')
+            .str('eventName', event.detail.eventName)
+            .str('requestId', event.detail.requestID)
+            .msg('Unexpected CloudTrail event type');
+      }
+      break;
+
+    default:
+      log
+        .warn()
+        .str('function', 'getAlbEvent')
+        .str('detail-type', event['detail-type'])
+        .msg('Unexpected event type');
+  }
+
   log
     .info()
     .str('function', 'getAlbEvent')
     .str('loadBalancerArn', loadBalancerArn)
-    .str('eventName', eventName)
-    .msg('Processing ALB event');
-  const tags = await fetchALBTags(loadBalancerArn);
+    .str('eventType', eventType)
+    .msg('Finished processing ALB event');
 
-  if (loadBalancerArn && eventName === ValidAlbEvent.Active) {
+  if (
+    loadBalancerArn &&
+    (eventType === 'Create' || eventType === 'TagChange')
+  ) {
+    log
+      .info()
+      .str('function', 'getAlbEvent')
+      .str('loadBalancerArn', loadBalancerArn)
+      .msg('Starting to manage ALB alarms');
     await manageALBAlarms(loadBalancerArn, tags);
-  } else if (eventName === ValidAlbEvent.Deleted) {
+  } else if (eventType === 'Delete') {
+    log
+      .info()
+      .str('function', 'getAlbEvent')
+      .str('loadBalancerArn', loadBalancerArn)
+      .msg('Starting to manage inactive ALB alarms');
     await manageInactiveALBAlarms(loadBalancerArn);
   }
 
-  return {loadBalancerArn, eventName, tags};
+  return {loadBalancerArn, eventType, tags};
 }
