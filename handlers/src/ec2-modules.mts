@@ -549,6 +549,46 @@ async function getAlarmConfig(
   };
 }
 
+// This function is used to confirm that memory metrics are being reported for an instance
+async function getMemoryMetricsFromCloudWatch(
+  instanceId: string,
+  metricName: string
+): Promise<boolean> {
+  const params = {
+    Namespace: 'CWAgent',
+    MetricName: metricName,
+    Dimensions: [
+      {
+        Name: 'InstanceId',
+        Value: instanceId,
+      },
+    ],
+  };
+
+  const command = new ListMetricsCommand(params);
+  const response = await cloudWatchClient.send(command);
+  const metrics = response.Metrics || [];
+  log
+    .info()
+    .str('function', 'getMemoryMetricsFromCloudWatch')
+    .str('instanceId', instanceId)
+    .str('metricName', metricName)
+    .str('metrics', JSON.stringify(metrics))
+    .msg('Fetched CloudWatch metrics');
+
+  if (metrics.length >= 1) {
+    log
+      .info()
+      .str('function', 'getMemoryMetricsFromCloudWatch')
+      .str('instanceId', instanceId)
+      .str('metricName', metricName)
+      .msg('Memory metrics found for instance');
+    return true;
+  } else {
+    return false;
+  }
+}
+
 // This function is used to get the storage paths and their associated dimensions from CloudWatch for our ManageStorageAlarmForInstance function
 async function getStoragePathsFromCloudWatch(
   instanceId: string,
@@ -834,6 +874,7 @@ export async function manageStorageAlarmForInstance(
   }
 }
 
+//TODO: add logic to see if these metrics are being reported. If not we should skip creating the alarms. this requires the cloudwatch agent to be installed.
 export async function manageMemoryAlarmForInstance(
   instanceId: string,
   tags: Tag,
@@ -873,16 +914,32 @@ export async function manageMemoryAlarmForInstance(
       .msg(
         'Prometheus tag set to false or metrics not being reported to Prometheus. Skipping prometheus rules and creating CW alarms.'
       );
-    await createCloudWatchAlarms(
-      instanceId,
-      alarmName,
-      metricName,
-      'CWAgent',
-      [{Name: 'InstanceId', Value: instanceId}],
-      threshold,
-      durationTime,
-      durationPeriods
-    );
+    if (await getMemoryMetricsFromCloudWatch(instanceId, metricName)) {
+      log
+        .info()
+        .str('function', 'manageMemoryAlarmForInstance')
+        .str('instanceId', instanceId)
+        .str('metricName', metricName)
+        .msg('Memory metrics found. Creating CloudWatch alarm');
+
+      await createCloudWatchAlarms(
+        instanceId,
+        alarmName,
+        metricName,
+        'CWAgent',
+        [{Name: 'InstanceId', Value: instanceId}],
+        threshold,
+        durationTime,
+        durationPeriods
+      );
+    } else {
+      log
+        .info()
+        .str('function', 'manageMemoryAlarmForInstance')
+        .str('instanceId', instanceId)
+        .str('metricName', metricName)
+        .msg('Memory metrics not found. Skipping alarm creation.');
+    }
   }
 }
 
