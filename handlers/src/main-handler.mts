@@ -9,17 +9,11 @@ import {
   deadStates,
 } from './ec2-modules.mjs';
 import {
-  ValidAlbEvent,
   ValidTargetGroupEvent,
   ValidSqsEvent,
   ValidOpenSearchState,
 } from './enums.mjs';
-import {
-  getAlbEvent,
-  fetchALBTags,
-  manageALBAlarms,
-  manageInactiveALBAlarms,
-} from './alb-modules.mjs';
+import {parseALBEventAndCreateAlarms} from './alb-modules.mjs';
 import {
   fetchTargetGroupTags,
   manageTargetGroupAlarms,
@@ -93,30 +87,7 @@ async function processEC2TagEvent(event: any) {
 }
 
 export async function processALBEvent(event: any) {
-  const eventName = event.detail.eventName;
-  if (eventName === ValidAlbEvent.Active) {
-    const loadBalancerArn =
-      event.detail.responseElements?.loadBalancers[0]?.loadBalancerArn;
-    const tags = await fetchALBTags(loadBalancerArn);
-    await manageALBAlarms(loadBalancerArn, tags);
-  } else if (eventName === ValidAlbEvent.Deleted) {
-    const loadBalancerArn = event.detail.requestParameters?.loadBalancerArn;
-    await manageInactiveALBAlarms(loadBalancerArn);
-  }
-}
-
-export async function processALBTagEvent(event: any) {
-  const {loadBalancerArn, eventType, tags} = await getAlbEvent(event);
-
-  if (tags['autoalarm:disabled'] === 'true') {
-    await manageInactiveALBAlarms(loadBalancerArn);
-  } else if (
-    tags['autoalarm:disabled'] === 'false' &&
-    loadBalancerArn &&
-    eventType === ValidAlbEvent.Active
-  ) {
-    await manageALBAlarms(loadBalancerArn, tags);
-  }
+  await parseALBEventAndCreateAlarms(event);
 }
 
 export async function processTargetGroupEvent(event: any) {
@@ -208,7 +179,7 @@ async function routeTagEvent(event: any) {
     await processEC2TagEvent(event);
   } else if (service === 'elasticloadbalancing') {
     if (resourceType === 'loadbalancer') {
-      await processALBTagEvent(event);
+      await parseALBEventAndCreateAlarms(event);
     } else if (resourceType === 'target-group') {
       await processTargetGroupTagEvent(event);
     }
@@ -240,7 +211,7 @@ export const handler: Handler = async (event: any): Promise<void> => {
           event.detail.eventName === 'CreateLoadBalancer' ||
           event.detail.eventName === 'DeleteLoadBalancer'
         ) {
-          await processALBEvent(event);
+          await parseALBEventAndCreateAlarms(event);
         } else if (
           event.detail.eventName === 'CreateTargetGroup' ||
           event.detail.eventName === 'DeleteTargetGroup'

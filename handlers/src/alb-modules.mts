@@ -31,6 +31,7 @@ const defaultDurationPeriods = 2; // e.g., 5 periods
 async function getAlarmConfig(
   loadBalancerName: string,
   type: AlarmClassification,
+  service: string,
   metricName: string,
   tags: Tag
 ): Promise<{
@@ -39,9 +40,24 @@ async function getAlarmConfig(
   durationTime: number;
   durationPeriods: number;
 }> {
-  const thresholdKey = `autoalarm:${metricName}-percent-above-${type.toLowerCase()}`;
-  const durationTimeKey = `autoalarm:${metricName}-percent-duration-time`;
-  const durationPeriodsKey = `autoalarm:${metricName}-percent-duration-periods`;
+  const thresholdKey = `autoalarm:${service}-request-count-above-${type.toLowerCase()}`;
+  const durationTimeKey = `autoalarm:${service}-request-count-duration-time`;
+  const durationPeriodsKey = `autoalarm:${service}-request-count-duration-periods`;
+
+  log
+    .info()
+    .str('function', 'getAlarmConfig')
+    .str('loadBalancerName', loadBalancerName)
+    .str('type', type)
+    .str('service name', service)
+    .str('tags', JSON.stringify(tags))
+    .str('thresholdKey', thresholdKey)
+    .str('durationTimeKey', durationTimeKey)
+    .str('durationPeriodsKey', durationPeriodsKey)
+    .str('theshold value', tags[thresholdKey])
+    .str('durationTime value', tags[durationTimeKey])
+    .str('durationPeriods value', tags[durationPeriodsKey])
+    .msg('Fetched ALB tags');
 
   // Get threshold, duration time, and duration periods from tags or use default values
   const threshold =
@@ -123,6 +139,7 @@ async function checkAndManageALBStatusAlarms(
           await getAlarmConfig(
             loadBalancerName,
             classification as AlarmClassification,
+            'alb',
             metricName,
             tags
           );
@@ -150,6 +167,7 @@ async function checkAndManageALBStatusAlarms(
 }
 
 export async function manageALBAlarms(
+  loadBalancerArn: string,
   loadBalancerName: string,
   tags: Tag
 ): Promise<void> {
@@ -177,7 +195,12 @@ export async function manageInactiveALBAlarms(loadBalancerName: string) {
   }
 }
 
-export async function getAlbEvent(event: any): Promise<{
+function extractAlbNameFromArn(arn: string): string {
+  const regex = /\/app\/(.*?\/[^/]+)$/;
+  const match = arn.match(regex);
+  return match ? `app/${match[1]}` : '';
+}
+export async function parseALBEventAndCreateAlarms(event: any): Promise<{
   loadBalancerArn: string;
   eventType: string;
   tags: Record<string, string>;
@@ -193,7 +216,7 @@ export async function getAlbEvent(event: any): Promise<{
       tags = event.detail.tags || {};
       log
         .info()
-        .str('function', 'getAlbEvent')
+        .str('function', 'parseALBEventAndCreateAlarms')
         .str('eventType', 'TagChange')
         .str('loadBalancerArn', loadBalancerArn)
         .str('changedTags', JSON.stringify(event.detail['changed-tag-keys']))
@@ -208,7 +231,7 @@ export async function getAlbEvent(event: any): Promise<{
           eventType = 'Create';
           log
             .info()
-            .str('function', 'getAlbEvent')
+            .str('function', 'parseALBEventAndCreateAlarms')
             .str('eventType', 'Create')
             .str('loadBalancerArn', loadBalancerArn)
             .str('requestId', event.detail.requestID)
@@ -217,14 +240,14 @@ export async function getAlbEvent(event: any): Promise<{
             tags = await fetchALBTags(loadBalancerArn);
             log
               .info()
-              .str('function', 'getAlbEvent')
+              .str('function', 'parseALBEventAndCreateAlarms')
               .str('loadBalancerArn', loadBalancerArn)
               .str('tags', JSON.stringify(tags))
               .msg('Fetched tags for new ALB');
           } else {
             log
               .warn()
-              .str('function', 'getAlbEvent')
+              .str('function', 'parseALBEventAndCreateAlarms')
               .str('eventType', 'Create')
               .msg('LoadBalancerArn not found in CreateLoadBalancer event');
           }
@@ -235,7 +258,7 @@ export async function getAlbEvent(event: any): Promise<{
           eventType = 'Delete';
           log
             .info()
-            .str('function', 'getAlbEvent')
+            .str('function', 'parseALBEventAndCreateAlarms')
             .str('eventType', 'Delete')
             .str('loadBalancerArn', loadBalancerArn)
             .str('requestId', event.detail.requestID)
@@ -245,7 +268,7 @@ export async function getAlbEvent(event: any): Promise<{
         default:
           log
             .warn()
-            .str('function', 'getAlbEvent')
+            .str('function', 'parseALBEventAndCreateAlarms')
             .str('eventName', event.detail.eventName)
             .str('requestId', event.detail.requestID)
             .msg('Unexpected CloudTrail event type');
@@ -255,14 +278,14 @@ export async function getAlbEvent(event: any): Promise<{
     default:
       log
         .warn()
-        .str('function', 'getAlbEvent')
+        .str('function', 'parseALBEventAndCreateAlarms')
         .str('detail-type', event['detail-type'])
         .msg('Unexpected event type');
   }
 
   log
     .info()
-    .str('function', 'getAlbEvent')
+    .str('function', 'parseALBEventAndCreateAlarms')
     .str('loadBalancerArn', loadBalancerArn)
     .str('eventType', eventType)
     .msg('Finished processing ALB event');
@@ -273,17 +296,18 @@ export async function getAlbEvent(event: any): Promise<{
   ) {
     log
       .info()
-      .str('function', 'getAlbEvent')
+      .str('function', 'parseALBEventAndCreateAlarms')
       .str('loadBalancerArn', loadBalancerArn)
       .msg('Starting to manage ALB alarms');
-    await manageALBAlarms(loadBalancerArn, tags);
+    const loadBalancerName = extractAlbNameFromArn(loadBalancerArn);
+    await manageALBAlarms(loadBalancerArn, loadBalancerName, tags);
   } else if (eventType === 'Delete') {
     log
       .info()
-      .str('function', 'getAlbEvent')
+      .str('function', 'parseALBEventAndCreateAlarms')
       .str('loadBalancerArn', loadBalancerArn)
       .msg('Starting to manage inactive ALB alarms');
-    await manageInactiveALBAlarms(loadBalancerArn);
+    await manageInactiveALBAlarms(loadbalancerName);
   }
 
   return {loadBalancerArn, eventType, tags};
