@@ -120,7 +120,7 @@ async function checkAndManageALBStatusAlarms(
   loadBalancerName: string,
   tags: Tag
 ) {
-  if (tags['autoalarm:disabled'] === 'true') {
+  if (tags['autoalarm:disabled'] === 'true' || !tags['autoalarm:disabled']) {
     const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
       'ALB',
       loadBalancerName
@@ -131,6 +131,13 @@ async function checkAndManageALBStatusAlarms(
       )
     );
     log.info().msg('Status check alarm creation skipped due to tag settings.');
+  } else if (tags['autoalarm:disabled'] === undefined) {
+    log
+      .info()
+      .msg(
+        'Status check alarm creation skipped due to missing autoalarm:disabled tag.'
+      );
+    return;
   } else {
     for (const config of metricConfigs) {
       const {metricName, namespace} = config;
@@ -207,7 +214,6 @@ export async function parseALBEventAndCreateAlarms(event: any): Promise<{
   let loadBalancerArn: string = '';
   let eventType: string = '';
   let tags: Record<string, string> = {};
-  const loadbalancerName = extractAlbNameFromArn(loadBalancerArn);
 
   switch (event['detail-type']) {
     case 'Tag Change on Resource':
@@ -281,6 +287,15 @@ export async function parseALBEventAndCreateAlarms(event: any): Promise<{
         .str('function', 'parseALBEventAndCreateAlarms')
         .str('detail-type', event['detail-type'])
         .msg('Unexpected event type');
+  }
+
+  const loadbalancerName = extractAlbNameFromArn(loadBalancerArn);
+  if (!loadbalancerName) {
+    log
+      .error()
+      .str('function', 'parseALBEventAndCreateAlarms')
+      .str('loadBalancerArn', loadBalancerArn)
+      .msg('Extracted load balancer name is empty');
   }
 
   log
