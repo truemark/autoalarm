@@ -167,7 +167,6 @@ async function checkAndManageALBStatusAlarms(
 }
 
 export async function manageALBAlarms(
-  loadBalancerArn: string,
   loadBalancerName: string,
   tags: Tag
 ): Promise<void> {
@@ -208,6 +207,7 @@ export async function parseALBEventAndCreateAlarms(event: any): Promise<{
   let loadBalancerArn: string = '';
   let eventType: string = '';
   let tags: Record<string, string> = {};
+  const loadbalancerName = extractAlbNameFromArn(loadBalancerArn);
 
   switch (event['detail-type']) {
     case 'Tag Change on Resource':
@@ -299,8 +299,7 @@ export async function parseALBEventAndCreateAlarms(event: any): Promise<{
       .str('function', 'parseALBEventAndCreateAlarms')
       .str('loadBalancerArn', loadBalancerArn)
       .msg('Starting to manage ALB alarms');
-    const loadBalancerName = extractAlbNameFromArn(loadBalancerArn);
-    await manageALBAlarms(loadBalancerArn, loadBalancerName, tags);
+    await manageALBAlarms(loadbalancerName, tags);
   } else if (eventType === 'Delete') {
     log
       .info()
