@@ -469,7 +469,7 @@ async function getAlarmConfig(
   instanceId: string,
   type: AlarmClassification,
   metric: string,
-  tags: Tag
+  tags: Record<string, string>
 ): Promise<{
   alarmName: string;
   threshold: number;
@@ -486,19 +486,12 @@ async function getAlarmConfig(
     .msg('Fetching alarm configuration');
 
   // Initialize variables with default values
-  let thresholdKey: string = '';
-  let durationTimeKey: string = '';
-  let durationPeriodsKey: string = '';
+  let threshold = defaultThreshold(type);
+  let durationTime = defaultDurationTime;
+  let durationPeriods = defaultDurationPeriods;
 
-  if (metric === 'cpu' || metric === 'memory') {
-    thresholdKey = `autoalarm:${metric}-percent-above-${type.toLowerCase()}`;
-    durationTimeKey = `autoalarm:${metric}-percent-duration-time`;
-    durationPeriodsKey = `autoalarm:${metric}-percent-duration-periods`;
-  } else if (metric === 'storage') {
-    thresholdKey = `autoalarm:${metric}-used-percent-${type.toLowerCase()}`;
-    durationTimeKey = 'autoalarm:storage-percent-duration-time';
-    durationPeriodsKey = 'autoalarm:storage-percent-duration-periods';
-  }
+  // Define tag key based on metric
+  const tagKey = `autoalarm:${metric}`;
 
   log
     .info()
@@ -507,19 +500,23 @@ async function getAlarmConfig(
     .str('tags', JSON.stringify(tags))
     .msg('Fetched instance tags');
 
-  // Get threshold, duration time, and duration periods from tags or use default values
-  const threshold =
-    tags[thresholdKey] !== undefined
-      ? parseInt(tags[thresholdKey], 10)
-      : defaultThreshold(type);
-  const durationTime =
-    tags[durationTimeKey] !== undefined
-      ? parseInt(tags[durationTimeKey], 10)
-      : defaultDurationTime;
-  const durationPeriods =
-    tags[durationPeriodsKey] !== undefined
-      ? parseInt(tags[durationPeriodsKey], 10)
-      : defaultDurationPeriods;
+  // Extract and parse the tag value
+  if (tags[tagKey]) {
+    const values = tags[tagKey].split('|');
+
+    if (values[0]) {
+      threshold = parseInt(values[0], 10);
+    }
+    if (values[1]) {
+      threshold = parseInt(values[1], 10);
+    }
+    if (values[2]) {
+      durationTime = parseInt(values[2], 10);
+    }
+    if (values[3]) {
+      durationPeriods = parseInt(values[3], 10);
+    }
+  }
 
   const ec2Metadata = await getInstanceDetails(instanceId);
   log
@@ -530,11 +527,8 @@ async function getAlarmConfig(
       `AutoAlarm-EC2-${instanceId}-${type}-${metric.toUpperCase()}-Utilization`
     )
     .str('instanceId', instanceId)
-    .str('thresholdKey', thresholdKey)
     .num('threshold', threshold)
-    .str('durationTimeKey', durationTimeKey)
     .num('durationTime', durationTime)
-    .str('durationPeriodsKey', durationPeriodsKey)
     .num('durationPeriods', durationPeriods)
     .msg('Fetched alarm configuration');
 

@@ -22,7 +22,7 @@ const metricConfigs = [
 ];
 
 const defaultThreshold = (type: AlarmClassification) =>
-  type === 'CRITICAL' ? 15000 : 10000;
+  type === 'CRITICAL' ? 1500 : 1000;
 
 // Default values for duration and periods
 const defaultDurationTime = 60; // e.g., 300 seconds
