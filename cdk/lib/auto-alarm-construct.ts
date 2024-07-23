@@ -129,6 +129,8 @@ export class AutoAlarmConstruct extends Construct {
     });
 
     // Listen to tag changes related to AutoAlarm
+    // WARNING threshold num | CRITICAL threshold num | duration time num | duration periods num
+    // example: "90|95|60|2"
     const tagRule = new Rule(this, 'TagRule', {
       eventPattern: {
         source: ['aws.tag'],

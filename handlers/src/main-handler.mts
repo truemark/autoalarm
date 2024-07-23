@@ -52,15 +52,15 @@ async function processEC2Event(event: any) {
   if (
     instanceId &&
     liveStates.has(state) &&
-    tags['autoalarm:disabled'] === 'false'
+    tags['autoalarm:enabled'] === 'true'
   ) {
     // checking our liveStates set to see if the instance is in a state that we should be managing alarms for.
     // we are iterating over the AlarmClassification enum to manage alarms for each classification: 'Critical'|'Warning'.
     await manageActiveInstanceAlarms(instanceId, tags);
   } else if (
-    (deadStates.has(state) && tags['autoalarm:disabled'] === 'true') ||
-    (tags['autoalarm:disabled'] === 'false' && deadStates.has(state)) ||
-    !tags['autoalarm:disabled']
+    (deadStates.has(state) && tags['autoalarm:enabled'] === 'false') ||
+    (tags['autoalarm:enabled'] === 'true' && deadStates.has(state)) ||
+    !tags['autoalarm:enabled']
   ) {
     // TODO Do not delete alarms just because the instance is shutdown. You do delete them on terminate.
     await manageInactiveInstanceAlarms(instanceId);
@@ -70,19 +70,19 @@ async function processEC2Event(event: any) {
 async function processEC2TagEvent(event: any) {
   const {instanceId, state} = await getEC2IdAndState(event);
   const tags = await fetchInstanceTags(instanceId);
-  if (tags['autoalarm:disabled'] === 'true') {
+  if (tags['autoalarm:enabled'] === 'false') {
     await manageInactiveInstanceAlarms(instanceId);
   } else if (
-    tags['autoalarm:disabled'] === 'false' &&
+    tags['autoalarm:enabled'] === 'true' &&
     instanceId &&
     liveStates.has(state)
   ) {
     await manageActiveInstanceAlarms(instanceId, tags);
-  } else if (!tags['autoalarm:disabled']) {
+  } else if (!tags['autoalarm:enabled']) {
     log
       .info()
       .str('function', 'processEC2TagEvent')
-      .msg('autoalarm:disabled tag not found. Skipping autoalarm processing');
+      .msg('autoalarm:enabled tag not found. Skipping autoalarm processing');
   }
 }
 
@@ -107,10 +107,10 @@ export async function processTargetGroupEvent(event: any) {
 export async function processTargetGroupTagEvent(event: any) {
   const {targetGroupArn, eventName, tags} = await getTargetGroupEvent(event);
 
-  if (tags['autoalarm:disabled'] === 'true') {
+  if (tags['autoalarm:enabled'] === 'false') {
     await manageInactiveTargetGroupAlarms(targetGroupArn);
   } else if (
-    tags['autoalarm:disabled'] === 'false' &&
+    tags['autoalarm:enabled'] === 'true' &&
     targetGroupArn &&
     eventName === ValidTargetGroupEvent.Active
   ) {
@@ -133,10 +133,10 @@ export async function processSQSEvent(event: any) {
 export async function processSQSTagEvent(event: any) {
   const {queueUrl, eventName, tags} = await getSqsEvent(event);
 
-  if (tags['autoalarm:disabled'] === 'true') {
+  if (tags['autoalarm:enabled'] === 'false') {
     await manageInactiveSQSAlarms(queueUrl);
   } else if (
-    tags['autoalarm:disabled'] === 'false' &&
+    tags['autoalarm:enabled'] === 'true' &&
     queueUrl &&
     eventName === ValidSqsEvent.CreateQueue
   ) {
@@ -159,10 +159,10 @@ export async function processOpenSearchEvent(event: any) {
 export async function processOpenSearchTagEvent(event: any) {
   const {domainArn, state, tags} = await getOpenSearchState(event);
 
-  if (tags['autoalarm:disabled'] === 'true') {
+  if (tags['autoalarm:enabled'] === 'false') {
     await manageInactiveOpenSearchAlarms(domainArn);
   } else if (
-    tags['autoalarm:disabled'] === 'false' &&
+    tags['autoalarm:enabled'] === 'true' &&
     domainArn &&
     state === ValidOpenSearchState.Active
   ) {

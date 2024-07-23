@@ -134,7 +134,8 @@ export async function createOrUpdateCWAlarm(
   props: AlarmProps,
   threshold: number,
   durationTime: number,
-  durationPeriods: number
+  durationPeriods: number,
+  severityType: string
 ) {
   try {
     log
@@ -187,6 +188,7 @@ export async function createOrUpdateCWAlarm(
           Threshold: props.threshold,
           ActionsEnabled: false,
           Dimensions: props.dimensions,
+          Tags: [{Key: 'severity', Value: severityType.toLowerCase()}],
         })
       );
       log

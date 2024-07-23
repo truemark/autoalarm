@@ -76,8 +76,8 @@ async function batchPromRulesDeletion(
         .filter(
           details =>
             details.tags['Prometheus'] === 'false' &&
-            details.tags['autoalarm:disabled'] &&
-            details.tags['autoalarm:disabled'] === 'true'
+            details.tags['autoalarm:enabled'] &&
+            details.tags['autoalarm:enabled'] === 'false'
         )
         .map(details => details.instanceId);
 
@@ -153,12 +153,12 @@ async function getPromAlarmConfigs(
     alarmName: cpuAlarmName,
     threshold: cpuThreshold,
     durationTime: cpuDurationTime,
-    ec2Metadata: {platform, privateIp},
+    ec2Metadata: {platform},
   } = await getAlarmConfig(instanceId, classification, 'cpu', tags);
 
   const cpuQuery = platform?.toLowerCase().includes('windows')
-    ? `100 - (rate(windows_cpu_time_total{instance="10.5.3.71:9100", mode="idle"}[30s]) * 100) > ${cpuThreshold}`
-    : `100 - (rate(node_cpu_seconds_total{mode="idle", instance="${privateIp}:9100"}[30s]) * 100) > ${cpuThreshold}`;
+    ? `100 - (rate(windows_cpu_time_total{instance="${instanceId}", mode="idle"}[30s]) * 100) > ${cpuThreshold}`
+    : `100 - (rate(node_cpu_seconds_total{mode="idle", instance="${instanceId}"}[30s]) * 100) > ${cpuThreshold}`;
 
   configs.push({
     instanceId,
@@ -176,8 +176,8 @@ async function getPromAlarmConfigs(
   } = await getAlarmConfig(instanceId, classification, 'memory', tags);
 
   const memQuery = platform?.toLowerCase().includes('windows')
-    ? `100 - ((windows_os_virtual_memory_free_bytes{instance="${privateIp}:9100",job="ec2"} / windows_os_virtual_memory_bytes{instance="${privateIp}:9100",job="ec2"}) * 100) > ${memThreshold}`
-    : `100 - ((node_memory_MemAvailable_bytes{instance="${privateIp}}:9100"} / node_memory_MemTotal_bytes{instance="${privateIp}}:9100"}) * 100) > ${memThreshold}`;
+    ? `100 - ((windows_os_virtual_memory_free_bytes{instance="${instanceId}",job="ec2"} / windows_os_virtual_memory_bytes{instance="${instanceId}",job="ec2"}) * 100) > ${memThreshold}`
+    : `100 - ((node_memory_MemAvailable_bytes{instance="${instanceId}"} / node_memory_MemTotal_bytes{instance="${instanceId}"}) * 100) > ${memThreshold}`;
 
   configs.push({
     instanceId,
@@ -195,8 +195,8 @@ async function getPromAlarmConfigs(
   } = await getAlarmConfig(instanceId, classification, 'storage', tags);
 
   const storageQuery = platform?.toLowerCase().includes('windows')
-    ? `100 - ((windows_logical_disk_free_bytes{instance="${privateIp}:9100"} / windows_logical_disk_size_bytes{instance="${privateIp}:9100"}) * 100) > ${storageThreshold}`
-    : `100 - ((node_filesystem_free_bytes{instance="${privateIp}:9100"} / node_filesystem_size_bytes{instance="${privateIp}:9100"}) * 100) > ${storageThreshold}`;
+    ? `100 - ((windows_logical_disk_free_bytes{instance="${instanceId}"} / windows_logical_disk_size_bytes{instance="${instanceId}"}) * 100) > ${storageThreshold}`
+    : `100 - ((node_filesystem_free_bytes{instance="${instanceId}"} / node_filesystem_size_bytes{instance="${instanceId}"}) * 100) > ${storageThreshold}`;
 
   configs.push({
     instanceId,
@@ -367,8 +367,8 @@ async function batchUpdatePromRules(
         const instancesToCheck = instanceDetails.filter(
           details =>
             details.tags['Prometheus'] === 'true' &&
-            details.tags['autoalarm:disabled'] &&
-            details.tags['autoalarm:disabled'] === 'false'
+            details.tags['autoalarm:enabled'] &&
+            details.tags['autoalarm:enabled'] === 'true'
         );
 
         log
@@ -469,7 +469,7 @@ async function getAlarmConfig(
   instanceId: string,
   type: AlarmClassification,
   metric: string,
-  tags: Record<string, string>
+  tags: Tag
 ): Promise<{
   alarmName: string;
   threshold: number;
@@ -489,35 +489,6 @@ async function getAlarmConfig(
   let threshold = defaultThreshold(type);
   let durationTime = defaultDurationTime;
   let durationPeriods = defaultDurationPeriods;
-
-  // Define tag key based on metric
-  const tagKey = `autoalarm:${metric}`;
-
-  log
-    .info()
-    .str('function', 'getAlarmConfig')
-    .str('instanceId', instanceId)
-    .str('tags', JSON.stringify(tags))
-    .msg('Fetched instance tags');
-
-  // Extract and parse the tag value
-  if (tags[tagKey]) {
-    const values = tags[tagKey].split('|');
-
-    if (values[0]) {
-      threshold = parseInt(values[0], 10);
-    }
-    if (values[1]) {
-      threshold = parseInt(values[1], 10);
-    }
-    if (values[2]) {
-      durationTime = parseInt(values[2], 10);
-    }
-    if (values[3]) {
-      durationPeriods = parseInt(values[3], 10);
-    }
-  }
-
   const ec2Metadata = await getInstanceDetails(instanceId);
   log
     .info()
@@ -527,11 +498,66 @@ async function getAlarmConfig(
       `AutoAlarm-EC2-${instanceId}-${type}-${metric.toUpperCase()}-Utilization`
     )
     .str('instanceId', instanceId)
-    .num('threshold', threshold)
-    .num('durationTime', durationTime)
-    .num('durationPeriods', durationPeriods)
-    .msg('Fetched alarm configuration');
+    .msg('Fetching alarm configuration');
 
+  // Define tag key based on metric
+  const tagKey = `autoalarm:${metric}`;
+
+  log
+    .info()
+    .str('function', 'getAlarmConfig')
+    .str('instanceId', instanceId)
+    .str('tags', JSON.stringify(tags))
+    .str('tagKey', tagKey)
+    .str('tagValue', tags[tagKey])
+    .msg('Fetched instance tags');
+
+  // Extract and parse the tag value
+  if (tags[tagKey]) {
+    const values = tags[tagKey].split('|');
+    if (values.length < 1) {
+      log
+        .warn()
+        .str('function', 'getAlarmConfig')
+        .str('instanceId', instanceId)
+        .str('tagKey', tagKey)
+        .str('tagValue', tags[tagKey])
+        .msg(
+          'Invalid tag values/delimiters. Please use 4 values seperated by a "|". Using default values'
+        );
+    } else {
+      switch (type) {
+        case 'WARNING':
+          threshold =
+            values[0] !== undefined
+              ? parseInt(values[0], 10)
+              : defaultThreshold(type);
+          durationTime =
+            values[2] !== undefined
+              ? parseInt(values[2], 10)
+              : defaultDurationTime;
+          durationPeriods =
+            values[3] !== undefined
+              ? parseInt(values[3], 10)
+              : defaultDurationPeriods;
+          break;
+        case 'CRITICAL':
+          threshold =
+            values[1] !== undefined
+              ? parseInt(values[1], 10)
+              : defaultThreshold(type);
+          durationTime =
+            values[2] !== undefined
+              ? parseInt(values[2], 10)
+              : defaultDurationTime;
+          durationPeriods =
+            values[3] !== undefined
+              ? parseInt(values[3], 10)
+              : defaultDurationPeriods;
+          break;
+      }
+    }
+  }
   return {
     alarmName: `AutoAlarm-EC2-${instanceId}-${type}-${metric.toUpperCase()}-Utilization`,
     threshold,
@@ -724,7 +750,8 @@ async function createCloudWatchAlarms(
   dimensions: any[],
   threshold: number,
   durationTime: number,
-  durationPeriods: number
+  durationPeriods: number,
+  severityType: AlarmClassification
 ): Promise<void> {
   const alarmProps = {
     threshold: threshold,
@@ -741,7 +768,8 @@ async function createCloudWatchAlarms(
     alarmProps,
     threshold,
     durationTime,
-    durationPeriods
+    durationPeriods,
+    severityType
   );
 }
 
@@ -786,7 +814,8 @@ export async function manageCPUUsageAlarmForInstance(
       [{Name: 'InstanceId', Value: instanceId}],
       threshold,
       durationTime,
-      durationPeriods
+      durationPeriods,
+      type
     );
   }
 }
@@ -851,7 +880,8 @@ export async function manageStorageAlarmForInstance(
           dimensions_props,
           threshold,
           durationTime,
-          durationPeriods
+          durationPeriods,
+          type
         );
       }
     } else {
@@ -922,7 +952,8 @@ export async function manageMemoryAlarmForInstance(
         [{Name: 'InstanceId', Value: instanceId}],
         threshold,
         durationTime,
-        durationPeriods
+        durationPeriods,
+        type
       );
     } else {
       log
@@ -973,18 +1004,18 @@ export async function createStatusAlarmForInstance(
 }
 
 async function checkAndManageStatusAlarm(instanceId: string, tags: Tag) {
-  if (tags['autoalarm:disabled'] === 'true') {
+  if (tags['autoalarm:enabled'] === 'false') {
     await deleteCWAlarm(instanceId, 'StatusCheckFailed');
     log.info().msg('Status check alarm creation skipped due to tag settings.');
-  } else if (tags['autoalarm:disabled'] === 'false') {
+  } else if (tags['autoalarm:enabled'] === 'true') {
     // Create status check alarm if not disabled
     await createStatusAlarmForInstance(instanceId, doesAlarmExist);
-  } else if (tags['autoalarm:disabled'] in tags) {
+  } else if (tags['autoalarm:enabled'] in tags) {
     log
       .warn()
       .str('function', 'checkAndManageStatusAlarm')
       .msg(
-        'autoalarm:disabled tag exists but has unexpected value. checking for alarm and creating if it does not exist'
+        'autoalarm:enabled tag exists but has unexpected value. checking for alarm and creating if it does not exist'
       );
     await createStatusAlarmForInstance(instanceId, doesAlarmExist);
   }
