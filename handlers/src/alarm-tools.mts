@@ -173,6 +173,7 @@ export async function createOrUpdateCWAlarm(
     !alarmExists ||
     (alarmExists && (await CWAlarmNeedsUpdate(alarmName, props)))
   ) {
+    // TODO: add severity tag to putMetricAlarmCommand for alarm type (WARNING|Critical) Needs to be case insensative.
     try {
       await cloudWatchClient.send(
         new PutMetricAlarmCommand({

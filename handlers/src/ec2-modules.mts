@@ -148,13 +148,13 @@ async function getPromAlarmConfigs(
   classification: AlarmClassification
 ): Promise<any[]> {
   const configs = [];
-
+  const tags = await fetchInstanceTags(instanceId);
   const {
     alarmName: cpuAlarmName,
     threshold: cpuThreshold,
     durationTime: cpuDurationTime,
     ec2Metadata: {platform, privateIp},
-  } = await getAlarmConfig(instanceId, classification, 'cpu');
+  } = await getAlarmConfig(instanceId, classification, 'cpu', tags);
 
   const cpuQuery = platform?.toLowerCase().includes('windows')
     ? `100 - (rate(windows_cpu_time_total{instance="10.5.3.71:9100", mode="idle"}[30s]) * 100) > ${cpuThreshold}`
@@ -173,7 +173,7 @@ async function getPromAlarmConfigs(
     alarmName: memAlarmName,
     threshold: memThreshold,
     durationTime: memDurationTime,
-  } = await getAlarmConfig(instanceId, classification, 'memory');
+  } = await getAlarmConfig(instanceId, classification, 'memory', tags);
 
   const memQuery = platform?.toLowerCase().includes('windows')
     ? `100 - ((windows_os_virtual_memory_free_bytes{instance="${privateIp}:9100",job="ec2"} / windows_os_virtual_memory_bytes{instance="${privateIp}:9100",job="ec2"}) * 100) > ${memThreshold}`
@@ -192,7 +192,7 @@ async function getPromAlarmConfigs(
     alarmName: storageAlarmName,
     threshold: storageThreshold,
     durationTime: storageDurationTime,
-  } = await getAlarmConfig(instanceId, classification, 'storage');
+  } = await getAlarmConfig(instanceId, classification, 'storage', tags);
 
   const storageQuery = platform?.toLowerCase().includes('windows')
     ? `100 - ((windows_logical_disk_free_bytes{instance="${privateIp}:9100"} / windows_logical_disk_size_bytes{instance="${privateIp}:9100"}) * 100) > ${storageThreshold}`
@@ -468,7 +468,8 @@ const defaultDurationPeriods = 2; // e.g., 5 periods
 async function getAlarmConfig(
   instanceId: string,
   type: AlarmClassification,
-  metric: string
+  metric: string,
+  tags: Tag
 ): Promise<{
   alarmName: string;
   threshold: number;
@@ -498,9 +499,6 @@ async function getAlarmConfig(
     durationTimeKey = 'autoalarm:storage-percent-duration-time';
     durationPeriodsKey = 'autoalarm:storage-percent-duration-periods';
   }
-
-  // Fetch instance tags
-  const tags = await fetchInstanceTags(instanceId);
 
   log
     .info()
@@ -760,7 +758,7 @@ export async function manageCPUUsageAlarmForInstance(
   usePrometheus: boolean
 ): Promise<void> {
   const {alarmName, threshold, durationTime, durationPeriods} =
-    await getAlarmConfig(instanceId, type, 'cpu');
+    await getAlarmConfig(instanceId, type, 'cpu', tags);
 
   //we should consolidate the promethues tag check and the iscloudwatch check into manage active isntances and instead pass a boolean to this function and create prom alarms based of that.
   if (usePrometheus) {
@@ -806,7 +804,7 @@ export async function manageStorageAlarmForInstance(
   usePrometheus: boolean
 ): Promise<void> {
   const {alarmName, threshold, durationTime, durationPeriods, ec2Metadata} =
-    await getAlarmConfig(instanceId, type, 'storage');
+    await getAlarmConfig(instanceId, type, 'storage', tags);
   const isWindows = ec2Metadata.platform
     ? ec2Metadata.platform.toLowerCase().includes('windows')
     : false;
@@ -882,7 +880,7 @@ export async function manageMemoryAlarmForInstance(
   usePrometheus: boolean
 ): Promise<void> {
   const {alarmName, threshold, durationTime, durationPeriods, ec2Metadata} =
-    await getAlarmConfig(instanceId, type, 'memory');
+    await getAlarmConfig(instanceId, type, 'memory', tags);
 
   const isWindows = ec2Metadata.platform
     ? ec2Metadata.platform.toLowerCase().includes('windows')
