@@ -132,7 +132,8 @@ async function checkAndManageOpenSearchStatusAlarms(
           alarmProps,
           threshold,
           durationTime,
-          durationPeriods
+          durationPeriods,
+          classification
         );
       }
     }

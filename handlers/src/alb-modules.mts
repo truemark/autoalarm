@@ -166,7 +166,8 @@ async function checkAndManageALBStatusAlarms(
           alarmProps,
           threshold,
           durationTime,
-          durationPeriods
+          durationPeriods,
+          classification
         );
       }
     }

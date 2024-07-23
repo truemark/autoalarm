@@ -120,7 +120,8 @@ async function checkAndManageSQSStatusAlarms(queueUrl: string, tags: Tag) {
           alarmProps,
           threshold,
           durationTime,
-          durationPeriods
+          durationPeriods,
+          classification
         );
       }
     }

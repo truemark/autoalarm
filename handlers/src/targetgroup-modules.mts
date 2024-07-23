@@ -140,7 +140,8 @@ async function checkAndManageTargetGroupStatusAlarms(
           alarmProps,
           threshold,
           durationTime,
-          durationPeriods
+          durationPeriods,
+          classification
         );
       }
     }
