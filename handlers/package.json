@@ -54,7 +54,7 @@
     "typescript": "~5.1.6"
   },
   "engines": {
-    "pnpm": "^9.1.1",
+    "pnpm": "9.1.4",
     "node": ">=18",
     "yarn": "forbidden, use pnpm",
     "npm": "forbidden, use pnpm"
