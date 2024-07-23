@@ -501,7 +501,7 @@ async function getAlarmConfig(
     .msg('Fetching alarm configuration');
 
   // Define tag key based on metric
-  const tagKey = `autoalarm:${metric}`;
+  const tagKey = `autoalarm:ec2-${metric}`;
 
   log
     .info()
@@ -515,7 +515,7 @@ async function getAlarmConfig(
   // Extract and parse the tag value
   if (tags[tagKey]) {
     const values = tags[tagKey].split('|');
-    if (values.length < 1) {
+    if (values.length < 1 || values.length > 4) {
       log
         .warn()
         .str('function', 'getAlarmConfig')
@@ -528,32 +528,26 @@ async function getAlarmConfig(
     } else {
       switch (type) {
         case 'WARNING':
-          threshold =
-            values[0] !== undefined
-              ? parseInt(values[0], 10)
-              : defaultThreshold(type);
-          durationTime =
-            values[2] !== undefined
-              ? parseInt(values[2], 10)
-              : defaultDurationTime;
-          durationPeriods =
-            values[3] !== undefined
-              ? parseInt(values[3], 10)
-              : defaultDurationPeriods;
+          threshold = !isNaN(parseInt(values[0]))
+            ? parseInt(values[0], 10)
+            : defaultThreshold(type);
+          durationTime = !isNaN(parseInt(values[2]))
+            ? parseInt(values[2], 10)
+            : defaultDurationTime;
+          durationPeriods = !isNaN(parseInt(values[3]))
+            ? parseInt(values[3], 10)
+            : defaultDurationPeriods;
           break;
         case 'CRITICAL':
-          threshold =
-            values[1] !== undefined
-              ? parseInt(values[1], 10)
-              : defaultThreshold(type);
-          durationTime =
-            values[2] !== undefined
-              ? parseInt(values[2], 10)
-              : defaultDurationTime;
-          durationPeriods =
-            values[3] !== undefined
-              ? parseInt(values[3], 10)
-              : defaultDurationPeriods;
+          threshold = !isNaN(parseInt(values[1]))
+            ? parseInt(values[1], 10)
+            : defaultThreshold(type);
+          durationTime = !isNaN(parseInt(values[2]))
+            ? parseInt(values[2], 10)
+            : defaultDurationTime;
+          durationPeriods = !isNaN(parseInt(values[3]))
+            ? parseInt(values[3], 10)
+            : defaultDurationPeriods;
           break;
       }
     }

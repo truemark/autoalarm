@@ -140,9 +140,9 @@ export class AutoAlarmConstruct extends Construct {
           'resource-type': ['instance'],
           'changed-tag-keys': [
             'autoalarm:enabled',
-            'autoalarm:cpu',
-            'autoalarm:storage',
-            'autoalarm:memory',
+            'autoalarm:ec2-cpu',
+            'autoalarm:ec2-storage',
+            'autoalarm:ec2-memory',
             'Prometheus',
           ],
         },
