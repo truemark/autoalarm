@@ -14,12 +14,7 @@ import {
   ValidOpenSearchState,
 } from './enums.mjs';
 import {parseALBEventAndCreateAlarms} from './alb-modules.mjs';
-import {
-  fetchTargetGroupTags,
-  manageTargetGroupAlarms,
-  manageInactiveTargetGroupAlarms,
-  getTargetGroupEvent,
-} from './targetgroup-modules.mjs';
+import {parseTGEventAndCreateAlarms} from './targetgroup-modules.mjs';
 import {
   fetchSQSTags,
   manageSQSAlarms,
@@ -94,27 +89,7 @@ export async function processTargetGroupEvent(event: any) {
   const eventName = event.detail.eventName;
 
   if (eventName === ValidTargetGroupEvent.Active) {
-    const targetGroupArn =
-      event.detail.responseElements?.targetGroups[0]?.targetGroupArn;
-    const tags = await fetchTargetGroupTags(targetGroupArn);
-    await manageTargetGroupAlarms(targetGroupArn, tags);
-  } else if (eventName === ValidTargetGroupEvent.Deleted) {
-    const targetGroupArn = event.detail.requestParameters?.targetGroupArn;
-    await manageInactiveTargetGroupAlarms(targetGroupArn);
-  }
-}
-
-export async function processTargetGroupTagEvent(event: any) {
-  const {targetGroupArn, eventName, tags} = await getTargetGroupEvent(event);
-
-  if (tags['autoalarm:enabled'] === 'false') {
-    await manageInactiveTargetGroupAlarms(targetGroupArn);
-  } else if (
-    tags['autoalarm:enabled'] === 'true' &&
-    targetGroupArn &&
-    eventName === ValidTargetGroupEvent.Active
-  ) {
-    await manageTargetGroupAlarms(targetGroupArn, tags);
+    parseTGEventAndCreateAlarms(event);
   }
 }
 
@@ -181,7 +156,7 @@ async function routeTagEvent(event: any) {
     if (resourceType === 'loadbalancer') {
       await parseALBEventAndCreateAlarms(event);
     } else if (resourceType === 'target-group') {
-      await processTargetGroupTagEvent(event);
+      await parseTGEventAndCreateAlarms(event);
     }
   } else if (service === 'sqs') {
     await processSQSTagEvent(event);

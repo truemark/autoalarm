@@ -151,6 +151,24 @@ export class AutoAlarmConstruct extends Construct {
     });
     ec2tagRule.addTarget(mainTarget);
 
+    const ec2Rule = new Rule(this, 'Ec2Rule', {
+      eventPattern: {
+        source: ['aws.ec2'],
+        detailType: ['EC2 Instance State-change Notification'],
+        detail: {
+          state: [
+            'running',
+            'terminated',
+            'stopped', //to be removed. for testing only
+            'shutting-down', //to be removed. for testing only
+            'pending',
+          ],
+        },
+      },
+      description: 'Routes ec2 instance events to AutoAlarm',
+    });
+    ec2Rule.addTarget(mainTarget);
+
     // Rule for ALB tag changes
     // Listen to tag changes related to AutoAlarm
     // WARNING threshold num | CRITICAL threshold num | duration time num | duration periods num
@@ -174,6 +192,20 @@ export class AutoAlarmConstruct extends Construct {
     });
     albTagRule.addTarget(mainTarget);
 
+    // Rule for ALB events
+    const albRule = new Rule(this, 'AlbRule', {
+      eventPattern: {
+        source: ['aws.elasticloadbalancing'],
+        detailType: ['AWS API Call via CloudTrail'],
+        detail: {
+          eventSource: ['elasticloadbalancing.amazonaws.com'],
+          eventName: ['CreateLoadBalancer', 'DeleteLoadBalancer'],
+        },
+      },
+      description: 'Routes ALB events to AutoAlarm',
+    });
+    albRule.addTarget(mainTarget);
+
     // Rule for Target Group tag changes
     const targetGroupTagRule = new Rule(this, 'TargetGroupTagRule', {
       eventPattern: {
@@ -181,9 +213,9 @@ export class AutoAlarmConstruct extends Construct {
         detailType: ['Tag Change on Resource'],
         detail: {
           service: ['elasticloadbalancing'],
-          'resource-type': ['target-group'],
+          'resource-type': ['targetgroup'],
           'changed-tag-keys': [
-            'autoalarm:disabled',
+            'autoalarm:enabled',
             'autoalarm:TargetResponseTime',
             'autoalarm:HTTPCode_Target_4XX',
             'autoalarm:HTTPCode_Target_5XX',
@@ -193,6 +225,19 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes Target Group tag events to AutoAlarm',
     });
     targetGroupTagRule.addTarget(mainTarget);
+
+    const targetGroupRule = new Rule(this, 'TargetGroupRule', {
+      eventPattern: {
+        source: ['aws.elasticloadbalancing'],
+        detailType: ['AWS API Call via CloudTrail'],
+        detail: {
+          eventSource: ['elasticloadbalancing.amazonaws.com'],
+          eventName: ['CreateTargetGroup', 'DeleteTargetGroup'],
+        },
+      },
+      description: 'Routes Target Group events to AutoAlarm',
+    });
+    targetGroupRule.addTarget(mainTarget);
 
     // Rule for SQS tag changes
     const sqsTagRule = new Rule(this, 'SqsTagRule', {
@@ -255,52 +300,6 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes OpenSearch tag events to AutoAlarm',
     });
     openSearchTagRule.addTarget(mainTarget);
-
-    const ec2Rule = new Rule(this, 'Ec2Rule', {
-      eventPattern: {
-        source: ['aws.ec2'],
-        detailType: ['EC2 Instance State-change Notification'],
-        detail: {
-          state: [
-            'running',
-            'terminated',
-            'stopped', //to be removed. for testing only
-            'shutting-down', //to be removed. for testing only
-            'pending',
-          ],
-        },
-      },
-      description: 'Routes ec2 instance events to AutoAlarm',
-    });
-    ec2Rule.addTarget(mainTarget);
-
-    // Rule for ALB events
-    const albRule = new Rule(this, 'AlbRule', {
-      eventPattern: {
-        source: ['aws.elasticloadbalancing'],
-        detailType: ['AWS API Call via CloudTrail'],
-        detail: {
-          eventSource: ['elasticloadbalancing.amazonaws.com'],
-          eventName: ['CreateLoadBalancer', 'DeleteLoadBalancer'],
-        },
-      },
-      description: 'Routes ALB events to AutoAlarm',
-    });
-    albRule.addTarget(mainTarget);
-
-    // Rule for Target Group events
-    const targetGroupRule = new Rule(this, 'TargetGroupRule', {
-      eventPattern: {
-        source: ['aws.elasticloadbalancing'],
-        detailType: ['AWS API Call via CloudTrail'],
-        detail: {
-          eventSource: ['elasticloadbalancing.amazonaws.com'],
-          eventName: ['CreateTargetGroup', 'DeleteTargetGroup'],
-        },
-      },
-      description: 'Routes Target Group events to AutoAlarm',
-    });
-    targetGroupRule.addTarget(mainTarget);
 
     // Rule for SQS events
     const sqsRule = new Rule(this, 'SqsRule', {
