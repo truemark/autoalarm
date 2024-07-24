@@ -666,7 +666,13 @@ async function getStoragePathsFromCloudWatch(
     // Extract the path dimension based on the OS and ensure it's defined
     const pathKey = isWindows ? 'instance' : 'path';
     const path = dimensionMap[pathKey];
-    if (path) {
+    if (
+      path &&
+      !path.startsWith('/snap') &&
+      !path.startsWith('/run') &&
+      !path.startsWith('/dev/shm') &&
+      !path.startsWith('/boot')
+    ) {
       // Build an array of dimensions
       const dimensionsArray = requiredDimensions.map(name => ({
         Name: name,

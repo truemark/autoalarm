@@ -131,7 +131,7 @@ export class AutoAlarmConstruct extends Construct {
     // Listen to tag changes related to AutoAlarm
     // WARNING threshold num | CRITICAL threshold num | duration time num | duration periods num
     // example: "90|95|60|2"
-    const tagRule = new Rule(this, 'TagRule', {
+    const ec2tagRule = new Rule(this, 'TagRule', {
       eventPattern: {
         source: ['aws.tag'],
         detailType: ['Tag Change on Resource'],
@@ -149,7 +149,7 @@ export class AutoAlarmConstruct extends Construct {
       },
       description: 'Routes tag events to AutoAlarm',
     });
-    tagRule.addTarget(mainTarget);
+    ec2tagRule.addTarget(mainTarget);
 
     // Rule for ALB tag changes
     const albTagRule = new Rule(this, 'AlbTagRule', {
@@ -160,19 +160,10 @@ export class AutoAlarmConstruct extends Construct {
           service: ['elasticloadbalancing'],
           'resource-type': ['loadbalancer'],
           'changed-tag-keys': [
-            'autoalarm:disabled',
-            'autoalarm:alb-request-count-above-critical',
-            'autoalarm:alb-request-count-above-warning',
-            'autoalarm:alb-request-count-duration-time',
-            'autoalarm:alb-request-count-duration-periods',
-            'autoalarm:alb-HTTPCode_ELB_4XX_Count-above-critical',
-            'autoalarm:alb-HTTPCode_ELB_4XX_Count-above-warning',
-            'autoalarm:alb-HTTPCode_ELB_4XX_Count-duration-time',
-            'autoalarm:alb-HTTPCode_ELB_4XX_Count-duration-periods',
-            'autoalarm:alb-HTTPCode_ELB_5XX_Count-above-critical',
-            'autoalarm:alb-HTTPCode_ELB_5XX_Count-above-warning',
-            'autoalarm:alb-HTTPCode_ELB_5XX_Count-duration-time',
-            'autoalarm:alb-HTTPCode_ELB_5XX_Count-duration-periods',
+            'autoalarm:enabled',
+            'autoalarm:alb-request-count',
+            'autoalarm:alb-HTTPCode_ELB_4XX_Count',
+            'autoalarm:alb-HTTPCode_ELB_5XX',
           ],
         },
       },
@@ -190,18 +181,9 @@ export class AutoAlarmConstruct extends Construct {
           'resource-type': ['target-group'],
           'changed-tag-keys': [
             'autoalarm:disabled',
-            'autoalarm:TargetResponseTime-above-critical',
-            'autoalarm:TargetResponseTime-above-warning',
-            'autoalarm:TargetResponseTime-duration-time',
-            'autoalarm:TargetResponseTime-duration-periods',
-            'autoalarm:HTTPCode_Target_4XX_Count-above-critical',
-            'autoalarm:HTTPCode_Target_4XX_Count-above-warning',
-            'autoalarm:HTTPCode_Target_4XX_Count-duration-time',
-            'autoalarm:HTTPCode_Target_4XX_Count-duration-periods',
-            'autoalarm:HTTPCode_Target_5XX_Count-above-critical',
-            'autoalarm:HTTPCode_Target_5XX_Count-above-warning',
-            'autoalarm:HTTPCode_Target_5XX_Count-duration-time',
-            'autoalarm:HTTPCode_Target_5XX_Count-duration-periods',
+            'autoalarm:TargetResponseTime',
+            'autoalarm:HTTPCode_Target_4XX',
+            'autoalarm:HTTPCode_Target_5XX',
           ],
         },
       },
