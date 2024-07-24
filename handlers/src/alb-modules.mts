@@ -28,7 +28,7 @@ const defaultThreshold = (type: AlarmClassification) =>
 const defaultDurationTime = 60; // e.g., 300 seconds
 const defaultDurationPeriods = 2; // e.g., 5 periods
 
-async function getAlarmConfig(
+async function getALBAlarmConfig(
   loadBalancerName: string,
   type: AlarmClassification,
   service: string,
@@ -40,41 +40,82 @@ async function getAlarmConfig(
   durationTime: number;
   durationPeriods: number;
 }> {
-  const thresholdKey = `autoalarm:${service}-request-count-above-${type.toLowerCase()}`;
-  const durationTimeKey = `autoalarm:${service}-request-count-duration-time`;
-  const durationPeriodsKey = `autoalarm:${service}-request-count-duration-periods`;
+  log
+    .info()
+    .str('function', 'getALBAlarmConfig')
+    .str('instanceId', loadBalancerName)
+    .str('type', type)
+    .str('metric', metricName)
+    .msg('Fetching alarm configuration');
+
+  // Initialize variables with default values
+  let threshold = defaultThreshold(type);
+  let durationTime = defaultDurationTime;
+  let durationPeriods = defaultDurationPeriods;
+  log
+    .info()
+    .str('function', 'getALBAlarmConfig')
+    .str(
+      'alarmName',
+      `AutoAlarm-${service}-${service}-${type}-${metricName.toUpperCase()}`
+    )
+    .str('Loadbalancer Name', loadBalancerName)
+    .msg('Fetching alarm configuration');
+
+  // Define tag key based on metric
+  const tagKey = `autoalarm:${service}-${metricName}`;
 
   log
     .info()
-    .str('function', 'getAlarmConfig')
-    .str('loadBalancerName', loadBalancerName)
-    .str('type', type)
-    .str('service name', service)
+    .str('function', 'getALBAlarmConfig')
+    .str('Loadbalancer Name', loadBalancerName)
     .str('tags', JSON.stringify(tags))
-    .str('thresholdKey', thresholdKey)
-    .str('durationTimeKey', durationTimeKey)
-    .str('durationPeriodsKey', durationPeriodsKey)
-    .str('theshold value', tags[thresholdKey])
-    .str('durationTime value', tags[durationTimeKey])
-    .str('durationPeriods value', tags[durationPeriodsKey])
-    .msg('Fetched ALB tags');
+    .str('tagKey', tagKey)
+    .str('tagValue', tags[tagKey])
+    .msg('Fetched instance tags');
 
-  // Get threshold, duration time, and duration periods from tags or use default values
-  const threshold =
-    tags[thresholdKey] !== undefined
-      ? parseInt(tags[thresholdKey], 10)
-      : defaultThreshold(type);
-  const durationTime =
-    tags[durationTimeKey] !== undefined
-      ? parseInt(tags[durationTimeKey], 10)
-      : defaultDurationTime;
-  const durationPeriods =
-    tags[durationPeriodsKey] !== undefined
-      ? parseInt(tags[durationPeriodsKey], 10)
-      : defaultDurationPeriods;
-
+  // Extract and parse the tag value
+  if (tags[tagKey]) {
+    const values = tags[tagKey].split('|');
+    if (values.length < 1 || values.length > 4) {
+      log
+        .warn()
+        .str('function', 'getALBAlarmConfig')
+        .str('Loadbalancer Name', loadBalancerName)
+        .str('tagKey', tagKey)
+        .str('tagValue', tags[tagKey])
+        .msg(
+          'Invalid tag values/delimiters. Please use 4 values seperated by a "|". Using default values'
+        );
+    } else {
+      switch (type) {
+        case 'WARNING':
+          threshold = !isNaN(parseInt(values[0]))
+            ? parseInt(values[0], 10)
+            : defaultThreshold(type);
+          durationTime = !isNaN(parseInt(values[2]))
+            ? parseInt(values[2], 10)
+            : defaultDurationTime;
+          durationPeriods = !isNaN(parseInt(values[3]))
+            ? parseInt(values[3], 10)
+            : defaultDurationPeriods;
+          break;
+        case 'CRITICAL':
+          threshold = !isNaN(parseInt(values[1]))
+            ? parseInt(values[1], 10)
+            : defaultThreshold(type);
+          durationTime = !isNaN(parseInt(values[2]))
+            ? parseInt(values[2], 10)
+            : defaultDurationTime;
+          durationPeriods = !isNaN(parseInt(values[3]))
+            ? parseInt(values[3], 10)
+            : defaultDurationPeriods;
+          break;
+      }
+    }
+  }
   return {
-    alarmName: `AutoAlarm-ALB-${loadBalancerName}-${type}-${metricName}`,
+    alarmName: `AutoAlarm-${service.toUpperCase()}-${loadBalancerName}-${type}-${metricName.toUpperCase()}`,
     threshold,
     durationTime,
     durationPeriods,
@@ -120,7 +161,7 @@ async function checkAndManageALBStatusAlarms(
   loadBalancerName: string,
   tags: Tag
 ) {
-  if (tags['autoalarm:disabled'] === 'true' || !tags['autoalarm:disabled']) {
+  if (tags['autoalarm:enabled'] === 'false' || !tags['autoalarm:enabled']) {
     const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
       'ALB',
       loadBalancerName
@@ -131,11 +172,11 @@ async function checkAndManageALBStatusAlarms(
       )
     );
     log.info().msg('Status check alarm creation skipped due to tag settings.');
-  } else if (tags['autoalarm:disabled'] === undefined) {
+  } else if (tags['autoalarm:enabled'] === undefined) {
     log
       .info()
       .msg(
-        'Status check alarm creation skipped due to missing autoalarm:disabled tag.'
+        'Status check alarm creation skipped due to missing autoalarm:enabled tag.'
       );
     return;
   } else {
@@ -143,7 +184,7 @@ async function checkAndManageALBStatusAlarms(
       const {metricName, namespace} = config;
       for (const classification of Object.values(AlarmClassification)) {
         const {alarmName, threshold, durationTime, durationPeriods} =
-          await getAlarmConfig(
+          await getALBAlarmConfig(
             loadBalancerName,
             classification as AlarmClassification,
             'alb',

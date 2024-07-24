@@ -152,6 +152,9 @@ export class AutoAlarmConstruct extends Construct {
     ec2tagRule.addTarget(mainTarget);
 
     // Rule for ALB tag changes
+    // Listen to tag changes related to AutoAlarm
+    // WARNING threshold num | CRITICAL threshold num | duration time num | duration periods num
+    // example: "1500|1750|60|2"
     const albTagRule = new Rule(this, 'AlbTagRule', {
       eventPattern: {
         source: ['aws.tag'],
