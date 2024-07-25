@@ -30,8 +30,8 @@ const ec2Client: EC2Client = new EC2Client({
   retryStrategy: retryStrategy,
 });
 const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
-    region: region,
-    retryStrategy: retryStrategy,
+  region: region,
+  retryStrategy: retryStrategy,
 });
 //the follwing environment variables are used to get the prometheus workspace id and the region
 const prometheusWorkspaceId: string = process.env.PROMETHEUS_WORKSPACE_ID || '';
