@@ -72,21 +72,28 @@ async function batchPromRulesDeletion(
 
   for (let attempt = 0; attempt < retryLimit; attempt++) {
     try {
-      const instanceIds = await getAllInstanceIdsInRegion();
-      const instanceDetailsPromises = instanceIds.map(async instanceId => {
-        const tags = await fetchInstanceTags(instanceId);
-        return {instanceId, tags};
-      });
+      const instancesInfo = await getAllInstancesInfoInRegion();
+      const instanceDetailsPromises = instancesInfo.map(
+        async ({instanceId, state}) => {
+          const tags = await fetchInstanceTags(instanceId);
+          return {instanceId, tags, state};
+        }
+      );
 
       const instanceDetails = await Promise.all(instanceDetailsPromises);
 
       const instancesToDelete = instanceDetails
-        .filter(
-          details =>
-            (details.tags['autoalarm:enabled'] !== 'false' &&
-              details.tags['autoalarm:target'] === 'cloudwatch') ||
-            details.tags['autoalarm:enabled'] === 'false'
-        )
+        .filter(details => {
+          const baseCondition =
+            details.tags['autoalarm:target'] === 'cloudwatch' ||
+            details.tags['autoalarm:enabled'] === 'false';
+          const isTerminating = ['terminated'].includes(details.state);
+
+          return (
+            baseCondition ||
+            (details.tags['autoalarm:enabled'] && isTerminating)
+          );
+        })
         .map(details => details.instanceId);
 
       log
@@ -270,20 +277,27 @@ async function getPromAlarmConfigs(
  * Function to get all EC2 instance IDs in the region.
  * @returns Array of EC2 instance IDs.
  */
-async function getAllInstanceIdsInRegion(): Promise<string[]> {
+interface InstanceInfo {
+  instanceId: string;
+  state: string;
+}
+async function getAllInstancesInfoInRegion(): Promise<InstanceInfo[]> {
   const command = new DescribeInstancesCommand({});
   const response = await ec2Client.send(command);
-  const instanceIds: string[] = [];
+  const instancesInfo: InstanceInfo[] = [];
 
   for (const reservation of response.Reservations || []) {
     for (const instance of reservation.Instances || []) {
-      if (instance.InstanceId) {
-        instanceIds.push(instance.InstanceId);
+      if (instance.InstanceId && instance.State && instance.State.Name) {
+        instancesInfo.push({
+          instanceId: instance.InstanceId,
+          state: instance.State.Name,
+        });
       }
     }
   }
 
-  return instanceIds;
+  return instancesInfo;
 }
 
 /**
@@ -299,7 +313,6 @@ async function batchUpdatePromRules(
   service: string,
   region: string
 ) {
-  const instanceIds = await getAllInstanceIdsInRegion();
   if (!shouldUpdatePromRules) {
     log
       .info()
@@ -320,7 +333,6 @@ async function batchUpdatePromRules(
   log
     .info()
     .str('function', 'batchUpdatePromRules')
-    .str('instanceIds', JSON.stringify(instanceIds))
     .msg('Fetching instance details and tags');
 
   try {
@@ -329,11 +341,14 @@ async function batchUpdatePromRules(
     // Retry logic for fetching instance details and tags
     while (retryCount < maxRetries) {
       try {
-        const instanceDetailsPromises = instanceIds.map(async instanceId => {
-          const tags = await fetchInstanceTags(instanceId);
-          const ec2Metadata = await getInstanceDetails(instanceId);
-          return {instanceId, tags, privateIp: ec2Metadata.privateIp};
-        });
+        const instancesInfo = await getAllInstancesInfoInRegion();
+        const instanceDetailsPromises = instancesInfo.map(
+          async ({instanceId, state}) => {
+            const tags = await fetchInstanceTags(instanceId);
+            const ec2Metadata = await getInstanceDetails(instanceId);
+            return {instanceId, state, tags, privateIp: ec2Metadata.privateIp};
+          }
+        );
 
         instanceDetails = await Promise.all(instanceDetailsPromises);
 
