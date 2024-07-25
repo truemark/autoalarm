@@ -83,9 +83,8 @@ async function batchPromRulesDeletion(
       const instancesToDelete = instanceDetails
         .filter(
           details =>
-            (details.tags['autoalarm:target'] === 'cloudwatch' ||
-              !details.tags['autoalarm:target']) &&
-            details.tags['autoalarm:enabled'] &&
+            (details.tags['autoalarm:enabled'] !== 'false' &&
+              details.tags['autoalarm:target'] === 'cloudwatch') ||
             details.tags['autoalarm:enabled'] === 'false'
         )
         .map(details => details.instanceId);
@@ -166,6 +165,18 @@ async function getPromAlarmConfigs(
   } = await getAlarmConfig(instanceId, classification, 'cpu', tags);
   let escapedPrivateIp = '';
 
+  log
+    .info()
+    .str('function', 'getPromAlarmConfigs')
+    .str('instanceId', instanceId)
+    .str('classification', classification)
+    .str('alarmName', cpuAlarmName)
+    .num('threshold', cpuThreshold)
+    .num('durationTime', cpuDurationTime)
+    .str('platform', platform as string)
+    .str('privateIp', privateIp as string)
+    .msg('Fetched alarm configuration');
+
   if (privateIp === '' || privateIp === null) {
     log
       .error()
@@ -174,7 +185,7 @@ async function getPromAlarmConfigs(
       .msg('Private IP address not found for instance');
     throw new Error('Private IP address not found for instance');
   } else {
-    escapedPrivateIp = privateIp.replace(/\./g, '\\.');
+    escapedPrivateIp = privateIp.replace(/\./g, '\\\\.');
   }
 
   const cpuQuery = platform?.toLowerCase().includes('windows')
@@ -196,6 +207,18 @@ async function getPromAlarmConfigs(
     durationTime: memDurationTime,
   } = await getAlarmConfig(instanceId, classification, 'memory', tags);
 
+  log
+    .info()
+    .str('function', 'getPromAlarmConfigs')
+    .str('instanceId', instanceId)
+    .str('classification', classification)
+    .str('alarmName', memAlarmName)
+    .num('threshold', memThreshold)
+    .num('durationTime', memDurationTime)
+    .str('platform', platform as string)
+    .str('privateIp', privateIp as string)
+    .msg('Fetched alarm configuration');
+
   const memQuery = platform?.toLowerCase().includes('windows')
     ? `100 - ((windows_os_virtual_memory_free_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})",job="ec2"} / windows_os_virtual_memory_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})",job="ec2"}) * 100) > ${memThreshold}`
     : `100 - ((node_memory_MemAvailable_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"} / node_memory_MemTotal_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"}) * 100) > ${memThreshold}`;
@@ -215,9 +238,21 @@ async function getPromAlarmConfigs(
     durationTime: storageDurationTime,
   } = await getAlarmConfig(instanceId, classification, 'storage', tags);
 
+  log
+    .info()
+    .str('function', 'getPromAlarmConfigs')
+    .str('instanceId', instanceId)
+    .str('classification', classification)
+    .str('alarmName', storageAlarmName)
+    .num('threshold', storageThreshold)
+    .num('durationTime', storageDurationTime)
+    .str('platform', platform as string)
+    .str('privateIp', privateIp as string)
+    .msg('Fetched alarm configuration');
+
   const storageQuery = platform?.toLowerCase().includes('windows')
     ? `100 - ((windows_logical_disk_free_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"} / windows_logical_disk_size_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"}) * 100) > ${storageThreshold}`
-    : `100 - ((node_filesystem_free_bytes{instance==~"(${escapedPrivateIp}.*|${instanceId})"} / node_filesystem_size_bytes{instance==~"(${escapedPrivateIp}.*|${instanceId})"}) * 100) > ${storageThreshold}`;
+    : `100 - ((node_filesystem_free_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"} / node_filesystem_size_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"}) * 100) > ${storageThreshold}`;
 
   configs.push({
     instanceId,
@@ -309,10 +344,22 @@ async function batchUpdatePromRules(
 
         const instancesToCheck = instanceDetails.filter(
           details =>
-            details.tags['autoalarm:target'] === 'prometheus' &&
             details.tags['autoalarm:enabled'] &&
-            details.tags['autoalarm:enabled'] === 'true'
+            details.tags['autoalarm:enabled'] !== 'false'
         );
+
+        if (instancesToCheck.length === 0) {
+          log
+            .error()
+            .str('function', 'batchUpdatePromRules')
+            .str('instancesToCheck', JSON.stringify(instancesToCheck))
+            .msg(
+              'No instances found with autoalarm:enabled tag set to true. Verify BatchUpdatePromRules logic and manageActiveInstanceAlarms function.'
+            );
+          throw new Error(
+            'No instances found with autoalarm:enabled tag set to true. Verify BatchUpdatePromRules logic and manageActiveInstanceAlarms function.'
+          );
+        }
 
         log
           .info()
@@ -383,6 +430,7 @@ async function batchUpdatePromRules(
           .warn()
           .str('function', 'batchUpdatePromRules')
           .num('retryCount', retryCount)
+          .str('error', error as string)
           .msg(
             `Retry ${retryCount}/${maxRetries} failed. Retrying in ${retryDelay / 1000} seconds...`
           );
@@ -1068,9 +1116,8 @@ export async function manageActiveInstanceAlarms(
       );
     shouldDeletePromAlarm = true;
     isCloudWatch = true;
+    await callAlarmFunctions(instanceId, tags, shouldUpdatePromRules);
   }
-
-  await callAlarmFunctions(instanceId, tags, shouldUpdatePromRules);
 
   if (shouldUpdatePromRules && !shouldDeletePromAlarm) {
     try {
