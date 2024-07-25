@@ -9,6 +9,7 @@ import {
   PutMetricAlarmCommand,
 } from '@aws-sdk/client-cloudwatch';
 import * as logging from '@nr1e/logging';
+import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {AlarmClassification, ValidInstanceState} from './enums.mjs';
 import {Tag, PathMetrics} from './types.mjs'; //need to investigate what we were doing with Dimension.
 import {
@@ -22,11 +23,18 @@ import {
 } from './alarm-tools.mjs';
 
 const log: logging.Logger = logging.getLogger('ec2-modules');
-const ec2Client: EC2Client = new EC2Client({});
+const region: string = process.env.AWS_REGION || '';
+const retryStrategy = new ConfiguredRetryStrategy(
+  8,
+  (attempt: number) => 100 + attempt * 1000
+);
+const ec2Client: EC2Client = new EC2Client({
+  region: region,
+  retryStrategy: retryStrategy,
+});
 const cloudWatchClient: CloudWatchClient = new CloudWatchClient({});
 //the follwing environment variables are used to get the prometheus workspace id and the region
 const prometheusWorkspaceId: string = process.env.PROMETHEUS_WORKSPACE_ID || '';
-const region: string = process.env.AWS_REGION || '';
 
 //these vars are used in the prometheus alarm logic.
 let shouldUpdatePromRules = false;
@@ -393,6 +401,20 @@ async function batchUpdatePromRules(
             reportingInstances.includes(details.privateIp) ||
             reportingInstances.includes(details.instanceId)
         );
+
+        if (instancesToCheck.length === 0) {
+          log
+            .error()
+            .str('function', 'batchUpdatePromRules')
+            .str('instancesToCheck', JSON.stringify(instancesToCheck))
+            .num('retryCount', retryCount)
+            .msg(
+              `Retry ${retryCount}/${maxRetries} failed. Retrying in ${retryDelay / 1000} seconds...`
+            );
+          throw new Error(
+            'No instances found with autoalarm:enabled tag set to true. Verify BatchUpdatePromRules logic and manageActiveInstanceAlarms function.'
+          );
+        }
 
         log
           .info()
@@ -1274,18 +1296,21 @@ export async function fetchInstanceTags(
         Filters: [{Name: 'resource-id', Values: [instanceId]}],
       })
     );
+
     const tags: {[key: string]: string} = {};
     response.Tags?.forEach(tag => {
       if (tag.Key && tag.Value) {
         tags[tag.Key] = tag.Value;
       }
     });
+
     log
       .info()
       .str('function', 'fetchInstanceTags')
       .str('instanceId', instanceId)
       .str('tags', JSON.stringify(tags))
       .msg('Fetched instance tags');
+
     return tags;
   } catch (error) {
     log
