@@ -442,8 +442,9 @@ export async function queryPrometheusForService(
           .str('region', region)
           .msg('Querying Prometheus for EC2 instances');
 
-        query = 'up{job="ec2"}';
-
+        // TODO: DevOps to potentially add job label back but we may need to use go_info for the query
+        // query = 'up{job="ec2"}';
+        query = 'go_info';
         const response = await makeSignedRequest(
           queryPath + encodeURIComponent(query),
           region
