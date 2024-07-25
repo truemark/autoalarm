@@ -160,9 +160,9 @@ export class AutoAlarmConstruct extends Construct {
           state: [
             'running',
             'terminated',
-            'stopped', //to be removed. for testing only
-            'shutting-down', //to be removed. for testing only
-            'pending',
+            //'stopped', //to be removed. for testing only
+            //'shutting-down', //to be removed. for testing only
+            //'pending',
           ],
         },
       },

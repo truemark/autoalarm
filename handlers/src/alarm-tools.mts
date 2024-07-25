@@ -15,6 +15,7 @@ import {
   DescribeWorkspaceCommand,
   DescribeWorkspaceCommandInput,
 } from '@aws-sdk/client-amp';
+import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import * as yaml from 'js-yaml';
 import * as aws4 from 'aws4';
 import {defaultProvider} from '@aws-sdk/credential-provider-node';
@@ -22,9 +23,13 @@ import * as logging from '@nr1e/logging';
 import {AlarmProps, RuleGroup, NamespaceDetails, Rule} from './types.mjs';
 import * as https from 'https';
 
-const log = logging.getLogger('alarm-tools');
-const cloudWatchClient = new CloudWatchClient({});
 const region: string = process.env.AWS_REGION || '';
+const retryStrategy = new ConfiguredRetryStrategy(12);
+const log = logging.getLogger('alarm-tools');
+const cloudWatchClient = new CloudWatchClient({
+  region,
+  retryStrategy: retryStrategy,
+});
 const client = new AmpClient({region, credentials: defaultProvider()}); //used for Prometheus
 
 export async function doesAlarmExist(alarmName: string): Promise<boolean> {
@@ -174,7 +179,6 @@ export async function createOrUpdateCWAlarm(
     !alarmExists ||
     (alarmExists && (await CWAlarmNeedsUpdate(alarmName, props)))
   ) {
-    // TODO: add severity tag to putMetricAlarmCommand for alarm type (WARNING|Critical) Needs to be case insensative.
     try {
       await cloudWatchClient.send(
         new PutMetricAlarmCommand({

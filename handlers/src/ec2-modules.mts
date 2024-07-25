@@ -24,15 +24,15 @@ import {
 
 const log: logging.Logger = logging.getLogger('ec2-modules');
 const region: string = process.env.AWS_REGION || '';
-const retryStrategy = new ConfiguredRetryStrategy(
-  8,
-  (attempt: number) => 100 + attempt * 1000
-);
+const retryStrategy = new ConfiguredRetryStrategy(12);
 const ec2Client: EC2Client = new EC2Client({
   region: region,
   retryStrategy: retryStrategy,
 });
-const cloudWatchClient: CloudWatchClient = new CloudWatchClient({});
+const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
+    region: region,
+    retryStrategy: retryStrategy,
+});
 //the follwing environment variables are used to get the prometheus workspace id and the region
 const prometheusWorkspaceId: string = process.env.PROMETHEUS_WORKSPACE_ID || '';
 
@@ -1331,6 +1331,6 @@ export const liveStates: Set<ValidInstanceState> = new Set([
 export const deadStates: Set<ValidInstanceState> = new Set([
   ValidInstanceState.Terminated,
   //ValidInstanceState.Stopping, //for testing. to be removed
-  ValidInstanceState.Stopped, //for testing. to be removed
+  //ValidInstanceState.Stopped, //for testing. to be removed
   //ValidInstanceState.ShuttingDown, //for testing. to be removed
 ]);
