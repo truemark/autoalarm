@@ -174,159 +174,159 @@ export class AutoAlarmConstruct extends Construct {
     // Listen to tag changes related to AutoAlarm
     // WARNING threshold num | CRITICAL threshold num | duration time num | duration periods num
     // example: "1500|1750|60|2"
-    const albTagRule = new Rule(this, 'AlbTagRule', {
-      eventPattern: {
-        source: ['aws.tag'],
-        detailType: ['Tag Change on Resource'],
-        detail: {
-          service: ['elasticloadbalancing'],
-          'resource-type': ['loadbalancer'],
-          'changed-tag-keys': [
-            'autoalarm:enabled',
-            'autoalarm:alb-request-count',
-            'autoalarm:alb-HTTPCode_ELB_4XX_Count',
-            'autoalarm:alb-HTTPCode_ELB_5XX',
-          ],
-        },
-      },
-      description: 'Routes ALB tag events to AutoAlarm',
-    });
-    albTagRule.addTarget(mainTarget);
-
-    // Rule for ALB events
-    const albRule = new Rule(this, 'AlbRule', {
-      eventPattern: {
-        source: ['aws.elasticloadbalancing'],
-        detailType: ['AWS API Call via CloudTrail'],
-        detail: {
-          eventSource: ['elasticloadbalancing.amazonaws.com'],
-          eventName: ['CreateLoadBalancer', 'DeleteLoadBalancer'],
-        },
-      },
-      description: 'Routes ALB events to AutoAlarm',
-    });
-    albRule.addTarget(mainTarget);
-
-    // Rule for Target Group tag changes
-    const targetGroupTagRule = new Rule(this, 'TargetGroupTagRule', {
-      eventPattern: {
-        source: ['aws.tag'],
-        detailType: ['Tag Change on Resource'],
-        detail: {
-          service: ['elasticloadbalancing'],
-          'resource-type': ['targetgroup'],
-          'changed-tag-keys': [
-            'autoalarm:enabled',
-            'autoalarm:TargetResponseTime',
-            'autoalarm:HTTPCode_Target_4XX',
-            'autoalarm:HTTPCode_Target_5XX',
-          ],
-        },
-      },
-      description: 'Routes Target Group tag events to AutoAlarm',
-    });
-    targetGroupTagRule.addTarget(mainTarget);
-
-    const targetGroupRule = new Rule(this, 'TargetGroupRule', {
-      eventPattern: {
-        source: ['aws.elasticloadbalancing'],
-        detailType: ['AWS API Call via CloudTrail'],
-        detail: {
-          eventSource: ['elasticloadbalancing.amazonaws.com'],
-          eventName: ['CreateTargetGroup', 'DeleteTargetGroup'],
-        },
-      },
-      description: 'Routes Target Group events to AutoAlarm',
-    });
-    targetGroupRule.addTarget(mainTarget);
-
-    // Rule for SQS tag changes
-    const sqsTagRule = new Rule(this, 'SqsTagRule', {
-      eventPattern: {
-        source: ['aws.tag'],
-        detailType: ['Tag Change on Resource'],
-        detail: {
-          service: ['sqs'],
-          'resource-type': ['AWS::SQS::Queue'],
-          'changed-tag-keys': [
-            'autoalarm:disabled',
-            'autoalarm:ApproximateNumberOfMessagesVisible-above-critical',
-            'autoalarm:ApproximateNumberOfMessagesVisible-above-warning',
-            'autoalarm:ApproximateNumberOfMessagesVisible-duration-time',
-            'autoalarm:ApproximateNumberOfMessagesVisible-duration-periods',
-            'autoalarm:ApproximateAgeOfOldestMessage-above-critical',
-            'autoalarm:ApproximateAgeOfOldestMessage-above-warning',
-            'autoalarm:ApproximateAgeOfOldestMessage-duration-time',
-            'autoalarm:ApproximateAgeOfOldestMessage-duration-periods',
-          ],
-        },
-      },
-      description: 'Routes SQS tag events to AutoAlarm',
-    });
-    sqsTagRule.addTarget(mainTarget);
-
-    // Rule for OpenSearch tag changes
-    const openSearchTagRule = new Rule(this, 'OpenSearchTagRule', {
-      eventPattern: {
-        source: ['aws.tag'],
-        detailType: ['Tag Change on Resource'],
-        detail: {
-          service: ['es'],
-          'resource-type': ['domain'],
-          'changed-tag-keys': [
-            'autoalarm:disabled',
-            'autoalarm:ClusterStatus.yellow-above-critical',
-            'autoalarm:ClusterStatus.yellow-above-warning',
-            'autoalarm:ClusterStatus.yellow-duration-time',
-            'autoalarm:ClusterStatus.yellow-duration-periods',
-            'autoalarm:ClusterStatus.red-above-critical',
-            'autoalarm:ClusterStatus.red-above-warning',
-            'autoalarm:ClusterStatus.red-duration-time',
-            'autoalarm:ClusterStatus.red-duration-periods',
-            'autoalarm:FreeStorageSpace-above-critical',
-            'autoalarm:FreeStorageSpace-above-warning',
-            'autoalarm:FreeStorageSpace-duration-time',
-            'autoalarm:FreeStorageSpace-duration-periods',
-            'autoalarm:JVMMemoryPressure-above-critical',
-            'autoalarm:JVMMemoryPressure-above-warning',
-            'autoalarm:JVMMemoryPressure-duration-time',
-            'autoalarm:JVMMemoryPressure-duration-periods',
-            'autoalarm:CPUUtilization-above-critical',
-            'autoalarm:CPUUtilization-above-warning',
-            'autoalarm:CPUUtilization-duration-time',
-            'autoalarm:CPUUtilization-duration-periods',
-          ],
-        },
-      },
-      description: 'Routes OpenSearch tag events to AutoAlarm',
-    });
-    openSearchTagRule.addTarget(mainTarget);
+    //const albTagRule = new Rule(this, 'AlbTagRule', {
+    //  eventPattern: {
+    //    source: ['aws.tag'],
+    //    detailType: ['Tag Change on Resource'],
+    //    detail: {
+    //      service: ['elasticloadbalancing'],
+    //      'resource-type': ['loadbalancer'],
+    //      'changed-tag-keys': [
+    //        'autoalarm:enabled',
+    //        'autoalarm:alb-request-count',
+    //        'autoalarm:alb-HTTPCode_ELB_4XX_Count',
+    //        'autoalarm:alb-HTTPCode_ELB_5XX',
+    //      ],
+    //    },
+    //  },
+    //  description: 'Routes ALB tag events to AutoAlarm',
+    //});
+    //albTagRule.addTarget(mainTarget);
+    //
+    //// Rule for ALB events
+    //const albRule = new Rule(this, 'AlbRule', {
+    //  eventPattern: {
+    //    source: ['aws.elasticloadbalancing'],
+    //    detailType: ['AWS API Call via CloudTrail'],
+    //    detail: {
+    //      eventSource: ['elasticloadbalancing.amazonaws.com'],
+    //      eventName: ['CreateLoadBalancer', 'DeleteLoadBalancer'],
+    //    },
+    //  },
+    //  description: 'Routes ALB events to AutoAlarm',
+    //});
+    //albRule.addTarget(mainTarget);
+    //
+    //// Rule for Target Group tag changes
+    //const targetGroupTagRule = new Rule(this, 'TargetGroupTagRule', {
+    //  eventPattern: {
+    //    source: ['aws.tag'],
+    //    detailType: ['Tag Change on Resource'],
+    //    detail: {
+    //      service: ['elasticloadbalancing'],
+    //      'resource-type': ['targetgroup'],
+    //      'changed-tag-keys': [
+    //        'autoalarm:enabled',
+    //        'autoalarm:TargetResponseTime',
+    //        'autoalarm:HTTPCode_Target_4XX',
+    //        'autoalarm:HTTPCode_Target_5XX',
+    //      ],
+    //    },
+    //  },
+    //  description: 'Routes Target Group tag events to AutoAlarm',
+    //});
+    //targetGroupTagRule.addTarget(mainTarget);
+    //
+    //const targetGroupRule = new Rule(this, 'TargetGroupRule', {
+    //  eventPattern: {
+    //    source: ['aws.elasticloadbalancing'],
+    //    detailType: ['AWS API Call via CloudTrail'],
+    //    detail: {
+    //      eventSource: ['elasticloadbalancing.amazonaws.com'],
+    //      eventName: ['CreateTargetGroup', 'DeleteTargetGroup'],
+    //    },
+    //  },
+    //  description: 'Routes Target Group events to AutoAlarm',
+    //});
+    //targetGroupRule.addTarget(mainTarget);
+    //
+    //// Rule for SQS tag changes
+    //const sqsTagRule = new Rule(this, 'SqsTagRule', {
+    //  eventPattern: {
+    //    source: ['aws.tag'],
+    //    detailType: ['Tag Change on Resource'],
+    //    detail: {
+    //      service: ['sqs'],
+    //      'resource-type': ['AWS::SQS::Queue'],
+    //      'changed-tag-keys': [
+    //        'autoalarm:disabled',
+    //        'autoalarm:ApproximateNumberOfMessagesVisible-above-critical',
+    //        'autoalarm:ApproximateNumberOfMessagesVisible-above-warning',
+    //        'autoalarm:ApproximateNumberOfMessagesVisible-duration-time',
+    //        'autoalarm:ApproximateNumberOfMessagesVisible-duration-periods',
+    //        'autoalarm:ApproximateAgeOfOldestMessage-above-critical',
+    //        'autoalarm:ApproximateAgeOfOldestMessage-above-warning',
+    //        'autoalarm:ApproximateAgeOfOldestMessage-duration-time',
+    //        'autoalarm:ApproximateAgeOfOldestMessage-duration-periods',
+    //      ],
+    //    },
+    //  },
+    //  description: 'Routes SQS tag events to AutoAlarm',
+    //});
+    //sqsTagRule.addTarget(mainTarget);
+    //
+    //// Rule for OpenSearch tag changes
+    //const openSearchTagRule = new Rule(this, 'OpenSearchTagRule', {
+    //  eventPattern: {
+    //    source: ['aws.tag'],
+    //    detailType: ['Tag Change on Resource'],
+    //    detail: {
+    //      service: ['es'],
+    //      'resource-type': ['domain'],
+    //      'changed-tag-keys': [
+    //        'autoalarm:disabled',
+    //        'autoalarm:ClusterStatus.yellow-above-critical',
+    //        'autoalarm:ClusterStatus.yellow-above-warning',
+    //        'autoalarm:ClusterStatus.yellow-duration-time',
+    //        'autoalarm:ClusterStatus.yellow-duration-periods',
+    //        'autoalarm:ClusterStatus.red-above-critical',
+    //        'autoalarm:ClusterStatus.red-above-warning',
+    //        'autoalarm:ClusterStatus.red-duration-time',
+    //        'autoalarm:ClusterStatus.red-duration-periods',
+    //        'autoalarm:FreeStorageSpace-above-critical',
+    //        'autoalarm:FreeStorageSpace-above-warning',
+    //        'autoalarm:FreeStorageSpace-duration-time',
+    //        'autoalarm:FreeStorageSpace-duration-periods',
+    //        'autoalarm:JVMMemoryPressure-above-critical',
+    //        'autoalarm:JVMMemoryPressure-above-warning',
+    //        'autoalarm:JVMMemoryPressure-duration-time',
+    //        'autoalarm:JVMMemoryPressure-duration-periods',
+    //        'autoalarm:CPUUtilization-above-critical',
+    //        'autoalarm:CPUUtilization-above-warning',
+    //        'autoalarm:CPUUtilization-duration-time',
+    //        'autoalarm:CPUUtilization-duration-periods',
+    //      ],
+    //    },
+    //  },
+    //  description: 'Routes OpenSearch tag events to AutoAlarm',
+    //});
+    //openSearchTagRule.addTarget(mainTarget);
 
     // Rule for SQS events
-    const sqsRule = new Rule(this, 'SqsRule', {
-      eventPattern: {
-        source: ['aws.sqs'],
-        detailType: ['AWS API Call via CloudTrail'],
-        detail: {
-          eventSource: ['sqs.amazonaws.com'],
-          eventName: ['CreateQueue', 'DeleteQueue'],
-        },
-      },
-      description: 'Routes SQS events to AutoAlarm',
-    });
-    sqsRule.addTarget(mainTarget);
+    //const sqsRule = new Rule(this, 'SqsRule', {
+    //  eventPattern: {
+    //    source: ['aws.sqs'],
+    //    detailType: ['AWS API Call via CloudTrail'],
+    //    detail: {
+    //      eventSource: ['sqs.amazonaws.com'],
+    //      eventName: ['CreateQueue', 'DeleteQueue'],
+    //    },
+    //  },
+    //  description: 'Routes SQS events to AutoAlarm',
+    //});
+    //sqsRule.addTarget(mainTarget);
 
-    // Rule for OpenSearch events
-    const openSearchRule = new Rule(this, 'OpenSearchRule', {
-      eventPattern: {
-        source: ['aws.es'],
-        detailType: ['Elasticsearch Service Domain Change'],
-        detail: {
-          state: ['active', 'processing', 'deleted'],
-        },
-      },
-      description: 'Routes OpenSearch events to AutoAlarm',
-    });
-    openSearchRule.addTarget(mainTarget);
+    //// Rule for OpenSearch events
+    //const openSearchRule = new Rule(this, 'OpenSearchRule', {
+    //  eventPattern: {
+    //    source: ['aws.es'],
+    //    detailType: ['Elasticsearch Service Domain Change'],
+    //    detail: {
+    //      state: ['active', 'processing', 'deleted'],
+    //    },
+    //  },
+    //  description: 'Routes OpenSearch events to AutoAlarm',
+    //});
+    //openSearchRule.addTarget(mainTarget);
   }
 }

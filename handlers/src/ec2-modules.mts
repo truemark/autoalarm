@@ -24,7 +24,7 @@ import {
 
 const log: logging.Logger = logging.getLogger('ec2-modules');
 const region: string = process.env.AWS_REGION || '';
-const retryStrategy = new ConfiguredRetryStrategy(12);
+const retryStrategy = new ConfiguredRetryStrategy(20);
 const ec2Client: EC2Client = new EC2Client({
   region: region,
   retryStrategy: retryStrategy,

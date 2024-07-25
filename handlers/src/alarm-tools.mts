@@ -24,7 +24,7 @@ import {AlarmProps, RuleGroup, NamespaceDetails, Rule} from './types.mjs';
 import * as https from 'https';
 
 const region: string = process.env.AWS_REGION || '';
-const retryStrategy = new ConfiguredRetryStrategy(12);
+const retryStrategy = new ConfiguredRetryStrategy(20);
 const log = logging.getLogger('alarm-tools');
 const cloudWatchClient = new CloudWatchClient({
   region,
