@@ -143,7 +143,7 @@ export class AutoAlarmConstruct extends Construct {
             'autoalarm:ec2-cpu',
             'autoalarm:ec2-storage',
             'autoalarm:ec2-memory',
-            'Prometheus',
+            'autoalarm:target', // cloudwatch or prometheus
           ],
         },
       },

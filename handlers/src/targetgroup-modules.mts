@@ -104,7 +104,7 @@ async function getTGAlarmConfig(
         case 'WARNING':
           threshold = !isNaN(parseInt(values[0]))
             ? parseInt(values[0], 10)
-            : defaultThreshold(type);
+            : getDefaultThreshold(metricName, type);
           durationTime = !isNaN(parseInt(values[2]))
             ? parseInt(values[2], 10)
             : defaultDurationTime;
@@ -115,7 +115,7 @@ async function getTGAlarmConfig(
         case 'CRITICAL':
           threshold = !isNaN(parseInt(values[1]))
             ? parseInt(values[1], 10)
-            : defaultThreshold(type);
+            : getDefaultThreshold(metricName, type);
           durationTime = !isNaN(parseInt(values[2]))
             ? parseInt(values[2], 10)
             : defaultDurationTime;

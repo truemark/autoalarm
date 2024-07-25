@@ -47,7 +47,15 @@ async function batchPromRulesDeletion(
   const retryLimit = 60; // 60 retries at 5-second intervals = 5 minutes
   const retryDelay = 5000; // 5 seconds in milliseconds
 
-  if (!shouldDeletePromAlarm) {
+  if (!prometheusWorkspaceId) {
+    log
+      .info()
+      .str('function', 'batchPromRulesDeletion')
+      .msg(
+        'Prometheus workspace ID not found. Skipping Prometheus rules deletion)'
+      );
+    return;
+  } else if (!shouldDeletePromAlarm) {
     log
       .info()
       .str('function', 'batchPromRulesDeletion')
@@ -75,7 +83,8 @@ async function batchPromRulesDeletion(
       const instancesToDelete = instanceDetails
         .filter(
           details =>
-            details.tags['Prometheus'] === 'false' &&
+            (details.tags['autoalarm:target'] === 'cloudwatch' ||
+              !details.tags['autoalarm:target']) &&
             details.tags['autoalarm:enabled'] &&
             details.tags['autoalarm:enabled'] === 'false'
         )
@@ -153,12 +162,24 @@ async function getPromAlarmConfigs(
     alarmName: cpuAlarmName,
     threshold: cpuThreshold,
     durationTime: cpuDurationTime,
-    ec2Metadata: {platform},
+    ec2Metadata: {platform, privateIp},
   } = await getAlarmConfig(instanceId, classification, 'cpu', tags);
+  let escapedPrivateIp = '';
+
+  if (privateIp === '' || privateIp === null) {
+    log
+      .error()
+      .str('function', 'getPromAlarmConfigs')
+      .str('instanceId', instanceId)
+      .msg('Private IP address not found for instance');
+    throw new Error('Private IP address not found for instance');
+  } else {
+    escapedPrivateIp = privateIp.replace(/\./g, '\\.');
+  }
 
   const cpuQuery = platform?.toLowerCase().includes('windows')
-    ? `100 - (rate(windows_cpu_time_total{instance="${instanceId}", mode="idle"}[30s]) * 100) > ${cpuThreshold}`
-    : `100 - (rate(node_cpu_seconds_total{mode="idle", instance="${instanceId}"}[30s]) * 100) > ${cpuThreshold}`;
+    ? `100 - (rate(windows_cpu_time_total{instance=~"(${escapedPrivateIp}.*|${instanceId})", mode="idle"}[30s]) * 100) > ${cpuThreshold}`
+    : `100 - (rate(node_cpu_seconds_total{mode="idle", instance=~"(${escapedPrivateIp}.*|${instanceId})"}[30s]) * 100) > ${cpuThreshold}`;
 
   configs.push({
     instanceId,
@@ -176,8 +197,8 @@ async function getPromAlarmConfigs(
   } = await getAlarmConfig(instanceId, classification, 'memory', tags);
 
   const memQuery = platform?.toLowerCase().includes('windows')
-    ? `100 - ((windows_os_virtual_memory_free_bytes{instance="${instanceId}",job="ec2"} / windows_os_virtual_memory_bytes{instance="${instanceId}",job="ec2"}) * 100) > ${memThreshold}`
-    : `100 - ((node_memory_MemAvailable_bytes{instance="${instanceId}"} / node_memory_MemTotal_bytes{instance="${instanceId}"}) * 100) > ${memThreshold}`;
+    ? `100 - ((windows_os_virtual_memory_free_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})",job="ec2"} / windows_os_virtual_memory_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})",job="ec2"}) * 100) > ${memThreshold}`
+    : `100 - ((node_memory_MemAvailable_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"} / node_memory_MemTotal_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"}) * 100) > ${memThreshold}`;
 
   configs.push({
     instanceId,
@@ -195,8 +216,8 @@ async function getPromAlarmConfigs(
   } = await getAlarmConfig(instanceId, classification, 'storage', tags);
 
   const storageQuery = platform?.toLowerCase().includes('windows')
-    ? `100 - ((windows_logical_disk_free_bytes{instance="${instanceId}"} / windows_logical_disk_size_bytes{instance="${instanceId}"}) * 100) > ${storageThreshold}`
-    : `100 - ((node_filesystem_free_bytes{instance="${instanceId}"} / node_filesystem_size_bytes{instance="${instanceId}"}) * 100) > ${storageThreshold}`;
+    ? `100 - ((windows_logical_disk_free_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"} / windows_logical_disk_size_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"}) * 100) > ${storageThreshold}`
+    : `100 - ((node_filesystem_free_bytes{instance==~"(${escapedPrivateIp}.*|${instanceId})"} / node_filesystem_size_bytes{instance==~"(${escapedPrivateIp}.*|${instanceId})"}) * 100) > ${storageThreshold}`;
 
   configs.push({
     instanceId,
@@ -208,84 +229,6 @@ async function getPromAlarmConfigs(
   });
 
   return configs;
-}
-
-/**
- * This function checks if a specific EC2 instance is reporting metrics to Prometheus.
- * It fetches the instance details and compares the instance's private IP against a list
- * of IPs currently reporting to Prometheus. If the instance is not reporting, the function
- * will retry the check-up to 8 times, with a 1-minute delay between each attempt.
- *
- * If after 8 attempts the instance is still not reporting to Prometheus, the function sets
- * the `isCloudWatch` flag to true, indicating that CloudWatch should be used for monitoring
- * instead of Prometheus.
- *
- * The purpose of this function is to ensure that instances that are expected to report to
- * Prometheus are given ample time and retries to start reporting before falling back to
- * CloudWatch for monitoring.
- *
- * @param {string} instanceId - The ID of the EC2 instance to check.
- */
-
-async function alarmFavor(instanceId: string) {
-  const retryLimit = 96; //96 retries at 5 second intervals = 8 minutes
-  const retryDelay = 5000; // 5 seconds in milliseconds
-
-  let instanceIdEc2Metadata = await getInstanceDetails(instanceId);
-  let TriggeredInstanceIP = instanceIdEc2Metadata.privateIp;
-
-  for (let attempt = 0; attempt < retryLimit; attempt++) {
-    const reportingInstances = await queryPrometheusForService(
-      'ec2',
-      prometheusWorkspaceId,
-      region
-    );
-    log
-      .info()
-      .str('function', 'alarmFavor')
-      .str('instanceIdMetadata', JSON.stringify(instanceIdEc2Metadata))
-      .str('TriggeredInstanceIP', TriggeredInstanceIP)
-      .str('reportingInstanceIps', JSON.stringify(reportingInstances))
-      .num('attempt', attempt + 1)
-      .msg('Fetched instance details and list of reporting instance IPs');
-
-    if (reportingInstances.includes(TriggeredInstanceIP)) {
-      log
-        .info()
-        .str('function', 'alarmFavor')
-        .str('instanceId', instanceId)
-        .str('reporting instances', JSON.stringify(reportingInstances))
-        .str('TriggeredInstanceIP', TriggeredInstanceIP)
-        .msg(
-          'Instance is reporting to Prometheus. Setting isCloudWatch to false'
-        );
-      isCloudWatch = false;
-      return;
-    } else if (attempt < retryLimit - 1) {
-      log
-        .warn()
-        .str('function', 'alarmFavor')
-        .str('instanceId', instanceId)
-        .str('TriggeredInstanceIP', TriggeredInstanceIP)
-        .num('attempt', attempt + 1)
-        .msg(
-          'Instance is not reporting to Prometheus. Retrying after a 5 second delay'
-        );
-      await new Promise(resolve => setTimeout(resolve, retryDelay));
-      instanceIdEc2Metadata = await getInstanceDetails(instanceId);
-      TriggeredInstanceIP = instanceIdEc2Metadata.privateIp;
-    }
-  }
-
-  log
-    .info()
-    .str('function', 'alarmFavor')
-    .str('instanceId', instanceId)
-    .str('TriggeredInstanceIP', TriggeredInstanceIP)
-    .msg(
-      'Instance is not reporting to Prometheus after max retries. Setting isCloudWatch to true'
-    );
-  isCloudWatch = true;
 }
 
 /**
@@ -366,7 +309,7 @@ async function batchUpdatePromRules(
 
         const instancesToCheck = instanceDetails.filter(
           details =>
-            details.tags['Prometheus'] === 'true' &&
+            details.tags['autoalarm:target'] === 'prometheus' &&
             details.tags['autoalarm:enabled'] &&
             details.tags['autoalarm:enabled'] === 'true'
         );
@@ -376,16 +319,24 @@ async function batchUpdatePromRules(
           .str('function', 'batchUpdatePromRules')
           .str('instancesToCheck', JSON.stringify(instancesToCheck))
           .msg('Instances to check for Prometheus rules');
-
-        const reportingInstanceIps = await queryPrometheusForService(
+        // Use query Prometheus to get a list of instance label values between private IP addrs and Instance IDs depending on prom instance label configuration
+        const reportingInstances = await queryPrometheusForService(
           'ec2',
           prometheusWorkspaceId,
           region
         );
 
-        const instancesToUpdate = instancesToCheck.filter(details =>
-          reportingInstanceIps.includes(details.privateIp)
+        const instancesToUpdate = instancesToCheck.filter(
+          details =>
+            reportingInstances.includes(details.privateIp) ||
+            reportingInstances.includes(details.instanceId)
         );
+
+        log
+          .info()
+          .str('function', 'batchUpdatePromRules')
+          .str('instancesToUpdate', JSON.stringify(instancesToUpdate))
+          .msg('Instances to update Prometheus rules for');
 
         const alarmConfigs: any[] = [];
         for (const {instanceId} of instancesToUpdate) {
@@ -788,23 +739,23 @@ export async function manageCPUUsageAlarmForInstance(
       .info()
       .str('function', 'manageCPUUsageAlarmForInstance')
       .str('instanceId', instanceId)
-      .str('Prometheus', tags['Prometheus'])
+      .str('autoalarm:target', tags['autoalarm:target'])
       .str('usePrometheus', usePrometheus.toString())
       .str('isCloudWatch', isCloudWatch.toString())
       .str('AlarmName', alarmName)
       .msg(
-        'Prometheus Metrics being recieved from instance. Skipping CloudWatch alarm creation.'
+        'autoalarm:target set to prometheus. Skipping CloudWatch alarm creation.'
       );
     return;
   } else {
     log
       .info()
       .str('function', 'manageCPUUsageAlarmForInstance')
-      .str('prometheus tag', tags['Prometheus'])
+      .str('autoalarm:target', tags['autoalarm:target'])
       .str('instanceId', instanceId)
       .str('AlarmName', alarmName)
       .msg(
-        'Prometheus tag set to false or metrics not being reported to Prometheus. Skipping prometheus rules and creating CW alarms.'
+        'autoalaram:target tag set to cloudwatch. Skipping prometheus rules and creating CW alarms.'
       );
     await createCloudWatchAlarms(
       instanceId,
@@ -839,11 +790,11 @@ export async function manageStorageAlarmForInstance(
       .info()
       .str('function', 'manageStorageAlarmForInstance')
       .str('instanceId', instanceId)
-      .str('Prometheus', tags['Prometheus'])
+      .str('autoalarm:target', tags['autoalarm:target'])
       .str('usePrometheus', usePrometheus.toString())
       .str('isCloudWatch', isCloudWatch.toString())
       .msg(
-        'Prometheus Metrics being recieved from instance. Skipping CloudWatch alarm creation.'
+        'Autoalarm:target set to prometheus. Skipping CloudWatch alarm creation.'
       );
     return;
   } else {
@@ -851,10 +802,10 @@ export async function manageStorageAlarmForInstance(
       .info()
       .str('function', 'manageStorageAlarmForInstance')
       .str('AlarmName', alarmName)
-      .str('prometheus tag', tags['Prometheus'])
+      .str('autoalarm:target', tags['autoalarm:target'])
       .str('instanceId', instanceId)
       .msg(
-        'Prometheus tag set to false or metrics not being reported to Prometheus. Skipping prometheus rules and creating CW alarms.'
+        'autoalaram:target tag set to cloudwatch. Skipping prometheus rules and creating CW alarms.'
       );
     const storagePaths = await getStoragePathsFromCloudWatch(
       instanceId,
@@ -917,7 +868,7 @@ export async function manageMemoryAlarmForInstance(
       .info()
       .str('function', 'manageMemoryAlarmForInstance')
       .str('instanceId', instanceId)
-      .str('Prometheus', tags['Prometheus'])
+      .str('autoalarm:target', tags['autoalarm:target'])
       .str('usePrometheus', usePrometheus.toString())
       .str('isCloudWatch', isCloudWatch.toString())
       .str('AlarmName', alarmName)
@@ -930,11 +881,11 @@ export async function manageMemoryAlarmForInstance(
       .info()
       .str('function', 'manageMemoryAlarmForInstance')
       .str('AlarmName', alarmName)
-      .str('prometheus tag', tags['Prometheus'])
+      .str('autoalarm:target', tags['autoalarm:target'])
       .str('instanceId', instanceId)
       .str('AlarmName', alarmName)
       .msg(
-        'Prometheus tag set to false or metrics not being reported to Prometheus. Skipping prometheus rules and creating CW alarms.'
+        'autoalarm:target set to cloudwatch. Skipping prometheus rules and creating CW alarms.'
       );
     if (await getMemoryMetricsFromCloudWatch(instanceId, metricName)) {
       log
@@ -1070,19 +1021,26 @@ export async function manageActiveInstanceAlarms(
     .info()
     .str('function', 'manageActiveInstanceAlarms')
     .str('instanceId', instanceId)
-    .str('Prometheus', tags['Prometheus'])
+    .str('autoalarm:target', tags['autoalarm:target'])
     .msg('Checking Prometheus tag value before conditional check.');
 
-  if (tags['Prometheus'] === 'true') {
+  if (
+    tags['autoalarm:target'] === 'prometheus' ||
+    (!tags['autoalarm:target'] && prometheusWorkspaceId !== '') ||
+    (tags['autoalarm:target'] !== 'prometheus' &&
+      tags['autoalarm:target'] !== 'cloudwatch' &&
+      prometheusWorkspaceId !== '')
+  ) {
     log
       .info()
       .str('function', 'manageActiveInstanceAlarms')
       .str('instanceId', instanceId)
-      .str('Prometheus', tags['Prometheus'])
+      .str('Prometheus', tags['autoalarm:target'])
       .msg(
-        'Instance is configured for Prometheus. Getting list of all instances reporting to Prometheus'
+        'Instance is tagged for Prometheus or does not have a autoalarm:target tag but found prometheus workspaceId. ' +
+          'Setting isCloudWatch to false.'
       );
-    await alarmFavor(instanceId); // Sets isCloudWatch to false if reporting to Prometheus
+    isCloudWatch = false;
   }
 
   await checkAndManageStatusAlarm(instanceId, tags);
@@ -1093,7 +1051,7 @@ export async function manageActiveInstanceAlarms(
       .str('function', 'manageActiveInstanceAlarms')
       .str('instanceId', instanceId)
       .bool('isCloudWatch', isCloudWatch)
-      .str('Prometheus', tags['Prometheus'])
+      .str('autoalarm:target', tags['autoalarm:target'])
       .msg(
         'Instance that triggered eventbridge rule is configured for and reporting to Prometheus. Setting shouldUpdatePromRules flag to true.'
       );
@@ -1104,11 +1062,12 @@ export async function manageActiveInstanceAlarms(
       .str('function', 'manageActiveInstanceAlarms')
       .str('instanceId', instanceId)
       .str('isCloudWatch', isCloudWatch.toString())
-      .str('Prometheus', tags['Prometheus'])
+      .str('autoalarm:target', tags['autoalarm:target'])
       .msg(
         'Instance that triggered eventbridge rule is not configured for Prometheus. Setting shouldDeletePromAlarm flag to true.'
       );
     shouldDeletePromAlarm = true;
+    isCloudWatch = true;
   }
 
   await callAlarmFunctions(instanceId, tags, shouldUpdatePromRules);
@@ -1126,7 +1085,7 @@ export async function manageActiveInstanceAlarms(
         .str('function', 'manageActiveInstanceAlarms')
         .str('instanceId', instanceId)
         .str('isCloudWatch', isCloudWatch.toString())
-        .str('Prometheus', tags['Prometheus'])
+        .str('autoalarm:target', tags['autoalarm:target'])
         .msg(
           'Instance that triggered eventbridge rule is reporting to Prometheus. Deleting CloudWatch alarms for instance'
         );
@@ -1160,26 +1119,13 @@ export async function manageActiveInstanceAlarms(
         )
       );
     } catch (e) {
-      shouldUpdatePromRules = false;
-      shouldDeletePromAlarm = true;
       log
         .error()
         .str('instanceId', instanceId)
         .str('function', 'manageActiveInstanceAlarms')
         .err(e)
-        .msg(
-          'Error updating Prometheus rules for instances. Falling back to CW alarms. Setting shouldDeletePromAlarm' +
-            'flag to true and shouldUpdatePromRules flag to false. Deleting Prometheus alarm rules for instance'
-        );
-      await callAlarmFunctions(instanceId, tags, shouldUpdatePromRules);
-      // Here we delete just prom rules for the instance that triggered the eventbridge rule, so we don't try to update
-      // en masse if there is a larger general issue. Subsequent runs will try to update again for other isntances.
-      const promInstancesToDelete = [instanceId]; // we only want to delete the prometheus rules for the instance that failed to update
-      await deletePromRulesForService(
-        prometheusWorkspaceId,
-        'ec2',
-        promInstancesToDelete
-      );
+        .msg('Error updating Prometheus rules for instances.');
+      throw new Error(`Error updating Prometheus rules for instances: ${e}`);
     }
     // If isCloudWatch is true, we will delete the prometheus rules for the instance
   } else {
@@ -1188,7 +1134,7 @@ export async function manageActiveInstanceAlarms(
       .str('function', 'manageActiveInstanceAlarms')
       .str('instanceId', instanceId)
       .str('isCloudWatch', isCloudWatch.toString())
-      .str('Prometheus', tags['Prometheus'])
+      .str('autoalarm:target', tags['autoalarm:target'])
       .str('isCloudWatch', isCloudWatch.toString())
       .msg(
         'isCloudWatch is true. Deleting Prometheus alarm rules for instance'

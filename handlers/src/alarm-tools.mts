@@ -449,14 +449,14 @@ export async function queryPrometheusForService(
           region
         );
 
-        //log
-        //  .info()
-        //  .str('function', 'queryPrometheusForService')
-        //  .str('serviceType', serviceType)
-        //  .str('Prometheus Workspace ID', promWorkspaceID)
-        //  .str('region', region)
-        //  .str('response', JSON.stringify(response, null, 2))
-        //  .msg('Raw Prometheus query result');
+        log
+          .info()
+          .str('function', 'queryPrometheusForService')
+          .str('serviceType', serviceType)
+          .str('Prometheus Workspace ID', promWorkspaceID)
+          .str('region', region)
+          .str('response', JSON.stringify(response, null, 2))
+          .msg('Raw Prometheus query result');
 
         if (
           !response ||
@@ -470,17 +470,24 @@ export async function queryPrometheusForService(
             .str('serviceType', serviceType)
             .str('Prometheus Workspace ID', promWorkspaceID)
             .str('response', JSON.stringify(response, null, 2))
-            .msg(
-              'Prometheus query failed or returned unexpected structure. Defaulting to CW Alarms if possible...'
-            );
+            .msg('Prometheus query failed or returned unexpected structure.');
           return [];
         }
-
-        // Extract unique instances private IPs from query results
         const instances = new Set<string>();
+
+        // Regex for matching IP address:port
+        const ipPortRegex = /(\d{1,3}\.){3}\d{1,3}:\d+$/;
+        // Regex for matching AWS EC2 instance ID
+        const ec2InstanceIdRegex = /^i-[a-zA-Z0-9]+$/;
+        // Extract unique instances private IPs or instance IDs from query results
         response.data.result.forEach((item: any) => {
-          const instance = item.metric.instance.split(':')[0];
-          instances.add(instance);
+          const instance = item.metric.instance;
+          if (ipPortRegex.test(instance)) {
+            const ip = instance.split(':')[0];
+            instances.add(ip);
+          } else if (ec2InstanceIdRegex.test(instance)) {
+            instances.add(instance);
+          }
         });
 
         log
@@ -721,7 +728,7 @@ export async function managePromNamespaceAlarms(
   const workspaceDescription: any = await verifyPromWorkspace(promWorkspaceId);
   if (!workspaceDescription) {
     log
-      .warn()
+      .error()
       .str('function', 'managePromNamespaceAlarms')
       .str('promWorkspaceId', promWorkspaceId)
       .msg('Invalid or empty workspace details. Halting Prometheus logic.');
