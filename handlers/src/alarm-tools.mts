@@ -132,6 +132,12 @@ export function configureAlarmPropsFromTags(
     .msg('Adjusted evaluation periods based on tag');
 }
 
+// Define the possible values for MissingDataTreatment
+type MissingDataTreatment = 'breaching' | 'notBreaching' | 'ignore';
+
+// Define the possible values for Statistic
+type Statistic = 'Average' | 'Sum' | 'Minimum' | 'Maximum';
+
 // This function is used to create or update a CW alarm based on the provided values.
 export async function createOrUpdateCWAlarm(
   alarmName: string,
@@ -140,7 +146,9 @@ export async function createOrUpdateCWAlarm(
   threshold: number,
   durationTime: number,
   durationPeriods: number,
-  severityType: string
+  statistic: Statistic = 'Average',
+  severityType: string,
+  missingDataTreatment: MissingDataTreatment = 'ignore' // Default to 'ignore' if not specified
 ) {
   try {
     log
@@ -188,11 +196,12 @@ export async function createOrUpdateCWAlarm(
           MetricName: props.metricName,
           Namespace: props.namespace,
           Period: props.period,
-          Statistic: 'Average',
+          Statistic: statistic,
           Threshold: props.threshold,
           ActionsEnabled: false,
           Dimensions: props.dimensions,
           Tags: [{Key: 'severity', Value: severityType.toLowerCase()}],
+          TreatMissingData: missingDataTreatment,
         })
       );
       log

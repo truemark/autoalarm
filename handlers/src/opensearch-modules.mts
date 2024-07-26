@@ -1,6 +1,7 @@
 import {OpenSearchClient, ListTagsCommand} from '@aws-sdk/client-opensearch';
 import * as logging from '@nr1e/logging';
 import {AlarmProps, Tag} from './types.mjs';
+import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {AlarmClassification, ValidOpenSearchState} from './enums.mjs';
 import {
   createOrUpdateCWAlarm,
@@ -9,7 +10,12 @@ import {
 } from './alarm-tools.mjs';
 
 const log: logging.Logger = logging.getLogger('opensearch-modules');
-const openSearchClient: OpenSearchClient = new OpenSearchClient({});
+const region: string = process.env.AWS_REGION || '';
+const retryStrategy = new ConfiguredRetryStrategy(20);
+const openSearchClient: OpenSearchClient = new OpenSearchClient({
+  region,
+  retryStrategy,
+});
 const metricConfigs = [
   {metricName: 'ClusterStatus.yellow', namespace: 'AWS/OpenSearchService'},
   {metricName: 'ClusterStatus.red', namespace: 'AWS/OpenSearchService'},
@@ -133,6 +139,7 @@ async function checkAndManageOpenSearchStatusAlarms(
           threshold,
           durationTime,
           durationPeriods,
+          'Maximum',
           classification
         );
       }

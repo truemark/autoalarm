@@ -4,6 +4,7 @@ import {
 } from '@aws-sdk/client-elastic-load-balancing-v2';
 import * as logging from '@nr1e/logging';
 import {AlarmProps, Tag} from './types.mjs';
+import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {AlarmClassification} from './enums.mjs';
 import {
   createOrUpdateCWAlarm,
@@ -12,8 +13,13 @@ import {
 } from './alarm-tools.mjs';
 
 const log: logging.Logger = logging.getLogger('targetgroup-modules');
+const region: string = process.env.AWS_REGION || '';
+const retryStrategy = new ConfiguredRetryStrategy(20);
 const elbClient: ElasticLoadBalancingV2Client =
-  new ElasticLoadBalancingV2Client({});
+  new ElasticLoadBalancingV2Client({
+    region,
+    retryStrategy,
+  });
 
 const getDefaultThreshold = (
   metricName: string,
@@ -220,6 +226,7 @@ async function checkAndManageTGStatusAlarms(
           threshold,
           durationTime,
           durationPeriods,
+          'Maximum',
           classification
         );
       }

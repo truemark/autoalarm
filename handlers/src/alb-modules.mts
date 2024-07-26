@@ -5,6 +5,7 @@ import {
 import * as logging from '@nr1e/logging';
 import {AlarmProps, Tag} from './types.mjs';
 import {AlarmClassification} from './enums.mjs';
+import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
   createOrUpdateCWAlarm,
   getCWAlarmsForInstance,
@@ -12,8 +13,13 @@ import {
 } from './alarm-tools.mjs';
 
 const log: logging.Logger = logging.getLogger('alb-modules');
+const region: string = process.env.AWS_REGION || '';
+const retryStrategy = new ConfiguredRetryStrategy(20);
 const elbClient: ElasticLoadBalancingV2Client =
-  new ElasticLoadBalancingV2Client({});
+  new ElasticLoadBalancingV2Client({
+    region,
+    retryStrategy,
+  });
 
 const metricConfigs = [
   {metricName: 'RequestCount', namespace: 'AWS/ApplicationELB'},
@@ -208,6 +214,7 @@ async function checkAndManageALBStatusAlarms(
           threshold,
           durationTime,
           durationPeriods,
+          'Maximum',
           classification
         );
       }

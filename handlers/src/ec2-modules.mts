@@ -775,9 +775,12 @@ async function getInstanceDetails(
   }
 }
 
-//this function is used to create the CloudWatch alarms for CPU, Memory, and Storage in addition to reducing redundant logic needed across those 3 functions
-// This function is used to create the CloudWatch alarms for CPU, Memory, and Storage
-// in addition to reducing redundant logic needed across those 3 functions
+/**this function is used to create the CloudWatch alarms for CPU, Memory, and Storage in addition to reducing redundant logic needed across those 3 functions
+ * This function is used to create the CloudWatch alarms for CPU, Memory, and Storage
+ * in addition to reducing redundant logic needed across those 3 functions
+ */
+
+type Statistic = 'Average' | 'Sum' | 'Minimum' | 'Maximum';
 async function createCloudWatchAlarms(
   instanceId: string,
   alarmName: string,
@@ -787,7 +790,8 @@ async function createCloudWatchAlarms(
   threshold: number,
   durationTime: number,
   durationPeriods: number,
-  severityType: AlarmClassification
+  severityType: AlarmClassification,
+  statistic: Statistic = 'Average'
 ): Promise<void> {
   const alarmProps = {
     threshold: threshold,
@@ -805,6 +809,7 @@ async function createCloudWatchAlarms(
     threshold,
     durationTime,
     durationPeriods,
+    statistic,
     severityType
   );
 }
@@ -1016,11 +1021,13 @@ export async function createStatusAlarmForInstance(
         EvaluationPeriods: 1,
         MetricName: 'StatusCheckFailed',
         Namespace: 'AWS/EC2',
-        Period: 300,
+        Period: 60,
         Statistic: 'Average',
         Threshold: 0,
         ActionsEnabled: false,
         Dimensions: [{Name: 'InstanceId', Value: instanceId}],
+        Tags: [{Key: 'severity', Value: 'critical'}],
+        TreatMissingData: 'breaching',
       })
     );
     log
@@ -1330,7 +1337,7 @@ export const liveStates: Set<ValidInstanceState> = new Set([
 
 export const deadStates: Set<ValidInstanceState> = new Set([
   ValidInstanceState.Terminated,
-  //ValidInstanceState.Stopping, //for testing. to be removed
-  //ValidInstanceState.Stopped, //for testing. to be removed
-  //ValidInstanceState.ShuttingDown, //for testing. to be removed
+  //ValidInstanceState.Stopping, //for testing.
+  //ValidInstanceState.Stopped, //for testing.
+  //ValidInstanceState.ShuttingDown, //for testing.
 ]);

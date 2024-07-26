@@ -1,6 +1,7 @@
 import {SQSClient, ListQueueTagsCommand} from '@aws-sdk/client-sqs';
 import * as logging from '@nr1e/logging';
 import {AlarmProps, Tag} from './types.mjs';
+import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {AlarmClassification, ValidSqsEvent} from './enums.mjs';
 import {
   createOrUpdateCWAlarm,
@@ -9,7 +10,12 @@ import {
 } from './alarm-tools.mjs';
 
 const log: logging.Logger = logging.getLogger('sqs-modules');
-const sqsClient: SQSClient = new SQSClient({});
+const region: string = process.env.AWS_REGION || '';
+const retryStrategy = new ConfiguredRetryStrategy(20);
+const sqsClient: SQSClient = new SQSClient({
+  region,
+  retryStrategy,
+});
 const defaultThreshold = (type: AlarmClassification) =>
   type === 'CRITICAL' ? 1000 : 500;
 
@@ -121,6 +127,7 @@ async function checkAndManageSQSStatusAlarms(queueUrl: string, tags: Tag) {
           threshold,
           durationTime,
           durationPeriods,
+          'Maximum',
           classification
         );
       }
