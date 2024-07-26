@@ -1,6 +1,7 @@
 import {OpenSearchClient, ListTagsCommand} from '@aws-sdk/client-opensearch';
 import * as logging from '@nr1e/logging';
 import {AlarmProps, Tag} from './types.mjs';
+import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {AlarmClassification, ValidOpenSearchState} from './enums.mjs';
 import {
   createOrUpdateCWAlarm,
@@ -9,13 +10,12 @@ import {
 } from './alarm-tools.mjs';
 
 const log: logging.Logger = logging.getLogger('opensearch-modules');
-const openSearchClient: OpenSearchClient = new OpenSearchClient({});
-
-const defaultThresholds: {[key in AlarmClassification]: number} = {
-  [AlarmClassification.Critical]: 90,
-  [AlarmClassification.Warning]: 80,
-};
-
+const region: string = process.env.AWS_REGION || '';
+const retryStrategy = new ConfiguredRetryStrategy(20);
+const openSearchClient: OpenSearchClient = new OpenSearchClient({
+  region,
+  retryStrategy,
+});
 const metricConfigs = [
   {metricName: 'ClusterStatus.yellow', namespace: 'AWS/OpenSearchService'},
   {metricName: 'ClusterStatus.red', namespace: 'AWS/OpenSearchService'},
@@ -24,25 +24,47 @@ const metricConfigs = [
   {metricName: 'CPUUtilization', namespace: 'AWS/OpenSearchService'},
 ];
 
+const defaultThreshold = (type: AlarmClassification) =>
+  type === 'CRITICAL' ? 95 : 90;
+
+// Default values for duration and periods
+const defaultDurationTime = 60; // e.g., 300 seconds
+const defaultDurationPeriods = 2; // e.g., 5 periods
+
 async function getAlarmConfig(
   domainName: string,
   type: AlarmClassification,
   metricName: string
 ): Promise<{
   alarmName: string;
-  thresholdKey: string;
-  durationTimeKey: string;
-  durationPeriodsKey: string;
+  threshold: number;
+  durationTime: number;
+  durationPeriods: number;
 }> {
+  const tags = await fetchOpenSearchTags(domainName);
   const thresholdKey = `autoalarm:${metricName}-percent-above-${type.toLowerCase()}`;
   const durationTimeKey = `autoalarm:${metricName}-percent-duration-time`;
   const durationPeriodsKey = `autoalarm:${metricName}-percent-duration-periods`;
 
+  // Get threshold, duration time, and duration periods from tags or use default values
+  const threshold =
+    tags[thresholdKey] !== undefined
+      ? parseInt(tags[thresholdKey], 10)
+      : defaultThreshold(type);
+  const durationTime =
+    tags[durationTimeKey] !== undefined
+      ? parseInt(tags[durationTimeKey], 10)
+      : defaultDurationTime;
+  const durationPeriods =
+    tags[durationPeriodsKey] !== undefined
+      ? parseInt(tags[durationPeriodsKey], 10)
+      : defaultDurationPeriods;
+
   return {
     alarmName: `AutoAlarm-OpenSearch-${domainName}-${type}-${metricName}`,
-    thresholdKey,
-    durationTimeKey,
-    durationPeriodsKey,
+    threshold,
+    durationTime,
+    durationPeriods,
   };
 }
 
@@ -94,7 +116,7 @@ async function checkAndManageOpenSearchStatusAlarms(
     for (const config of metricConfigs) {
       const {metricName, namespace} = config;
       for (const classification of Object.values(AlarmClassification)) {
-        const {alarmName, thresholdKey, durationTimeKey, durationPeriodsKey} =
+        const {alarmName, threshold, durationTime, durationPeriods} =
           await getAlarmConfig(
             domainName,
             classification as AlarmClassification,
@@ -102,7 +124,7 @@ async function checkAndManageOpenSearchStatusAlarms(
           );
 
         const alarmProps: AlarmProps = {
-          threshold: defaultThresholds[classification as AlarmClassification],
+          threshold: threshold,
           period: 60,
           namespace: namespace,
           evaluationPeriods: 5,
@@ -114,12 +136,11 @@ async function checkAndManageOpenSearchStatusAlarms(
           alarmName,
           domainName,
           alarmProps,
-          tags,
-          // @ts-ignore
-          thresholdKey,
-          durationTimeKey,
-          // @ts-ignore
-          durationPeriodsKey
+          threshold,
+          durationTime,
+          durationPeriods,
+          'Maximum',
+          classification
         );
       }
     }

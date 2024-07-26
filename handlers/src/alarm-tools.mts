@@ -15,6 +15,7 @@ import {
   DescribeWorkspaceCommand,
   DescribeWorkspaceCommandInput,
 } from '@aws-sdk/client-amp';
+import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import * as yaml from 'js-yaml';
 import * as aws4 from 'aws4';
 import {defaultProvider} from '@aws-sdk/credential-provider-node';
@@ -22,9 +23,13 @@ import * as logging from '@nr1e/logging';
 import {AlarmProps, RuleGroup, NamespaceDetails, Rule} from './types.mjs';
 import * as https from 'https';
 
-const log = logging.getLogger('alarm-tools');
-const cloudWatchClient = new CloudWatchClient({});
 const region: string = process.env.AWS_REGION || '';
+const retryStrategy = new ConfiguredRetryStrategy(20);
+const log = logging.getLogger('alarm-tools');
+const cloudWatchClient = new CloudWatchClient({
+  region,
+  retryStrategy: retryStrategy,
+});
 const client = new AmpClient({region, credentials: defaultProvider()}); //used for Prometheus
 
 export async function doesAlarmExist(alarmName: string): Promise<boolean> {
@@ -127,20 +132,30 @@ export function configureAlarmPropsFromTags(
     .msg('Adjusted evaluation periods based on tag');
 }
 
+// Define the possible values for MissingDataTreatment
+type MissingDataTreatment = 'breaching' | 'notBreaching' | 'ignore';
+
+// Define the possible values for Statistic
+type Statistic = 'Average' | 'Sum' | 'Minimum' | 'Maximum';
+
+// This function is used to create or update a CW alarm based on the provided values.
 export async function createOrUpdateCWAlarm(
   alarmName: string,
-  instanceId: string,
+  serviceIdentifier: string,
   props: AlarmProps,
   threshold: number,
   durationTime: number,
-  durationPeriods: number
+  durationPeriods: number,
+  statistic: Statistic = 'Average',
+  severityType: string,
+  missingDataTreatment: MissingDataTreatment = 'ignore' // Default to 'ignore' if not specified
 ) {
   try {
     log
       .info()
       .str('function', 'createOrUpdateCWAlarm')
       .str('alarmName', alarmName)
-      .str('instanceId', instanceId)
+      .str('Service Identifier', serviceIdentifier)
       .msg('Configuring alarm props from provided values');
 
     configureAlarmPropsFromTags(
@@ -153,7 +168,7 @@ export async function createOrUpdateCWAlarm(
       .info()
       .str('function', 'createOrUpdateCWAlarm')
       .str('alarmName', alarmName)
-      .str('instanceId', instanceId)
+      .str('Service Identifier', serviceIdentifier)
       .num('threshold', props.threshold)
       .num('period', props.period)
       .num('evaluationPeriods', props.evaluationPeriods)
@@ -181,17 +196,19 @@ export async function createOrUpdateCWAlarm(
           MetricName: props.metricName,
           Namespace: props.namespace,
           Period: props.period,
-          Statistic: 'Average',
+          Statistic: statistic,
           Threshold: props.threshold,
           ActionsEnabled: false,
           Dimensions: props.dimensions,
+          Tags: [{Key: 'severity', Value: severityType.toLowerCase()}],
+          TreatMissingData: missingDataTreatment,
         })
       );
       log
         .info()
         .str('function', 'createOrUpdateCWAlarm')
         .str('alarmName', alarmName)
-        .str('instanceId', instanceId)
+        .str('serviceIdentifier', serviceIdentifier)
         .num('threshold', props.threshold)
         .num('period', props.period)
         .num('evaluationPeriods', props.evaluationPeriods)
@@ -202,7 +219,7 @@ export async function createOrUpdateCWAlarm(
         .str('function', 'createOrUpdateCWAlarm')
         .err(e)
         .str('alarmName', alarmName)
-        .str('instanceId', instanceId)
+        .str('instanceId', serviceIdentifier)
         .msg(
           `Failed to create or update ${alarmName} alarm due to an error ${e}`
         );
@@ -430,6 +447,7 @@ export async function queryPrometheusForService(
     let query = '';
     switch (serviceType) {
       case 'ec2': {
+        // Log the initial function call details
         log
           .info()
           .str('function', 'queryPrometheusForService')
@@ -438,67 +456,110 @@ export async function queryPrometheusForService(
           .str('region', region)
           .msg('Querying Prometheus for EC2 instances');
 
-        query = 'up{job="ec2"}';
-
+        // TODO: DevOps to potentially add job label back but we may need to use go_info for the query
+        // query = 'up{job="ec2"}';
+        // Define the query to use go_info metric
+        query = 'go_info';
         const response = await makeSignedRequest(
           queryPath + encodeURIComponent(query),
           region
         );
 
-        //log
-        //  .info()
-        //  .str('function', 'queryPrometheusForService')
-        //  .str('serviceType', serviceType)
-        //  .str('Prometheus Workspace ID', promWorkspaceID)
-        //  .str('region', region)
-        //  .str('response', JSON.stringify(response, null, 2))
-        //  .msg('Raw Prometheus query result');
+        // Log the raw Prometheus query result
+        log
+          .info()
+          .str('function', 'queryPrometheusForService')
+          .str('serviceType', serviceType)
+          .str('Prometheus Workspace ID', promWorkspaceID)
+          .str('region', region)
+          .str('response', JSON.stringify(response, null, 2))
+          .msg('Raw Prometheus query result');
 
+        // Check for a successful response structure
         if (
           !response ||
           response.status !== 'success' ||
           !response.data ||
           !response.data.result
         ) {
+          // Log a warning if the query failed or returned an unexpected structure
           log
             .warn()
             .str('function', 'queryPrometheusForService')
             .str('serviceType', serviceType)
             .str('Prometheus Workspace ID', promWorkspaceID)
             .str('response', JSON.stringify(response, null, 2))
-            .msg(
-              'Prometheus query failed or returned unexpected structure. Defaulting to CW Alarms if possible...'
-            );
+            .msg('Prometheus query failed or returned unexpected structure.');
           return [];
         }
 
-        // Extract unique instances private IPs from query results
         const instances = new Set<string>();
+
+        // Regex for matching IP address:port
+        const ipPortRegex = /(\d{1,3}\.){3}\d{1,3}:\d+$/;
+        // Regex for matching AWS EC2 instance ID
+        const ec2InstanceIdRegex = /^i-[a-zA-Z0-9]+$/;
+
+        // Extract unique instances private IPs or instance IDs from query results
         response.data.result.forEach((item: any) => {
-          const instance = item.metric.instance.split(':')[0];
-          instances.add(instance);
+          const instance = item.metric.instance;
+
+          // Log the instance being processed
+          log
+            .info()
+            .str('function', 'queryPrometheusForService')
+            .str('instance', instance)
+            .msg('Processing instance from Prometheus response');
+
+          if (ipPortRegex.test(instance)) {
+            const ip = instance.split(':')[0];
+            instances.add(ip);
+            // Log the matched IP address
+            log
+              .info()
+              .str('function', 'queryPrometheusForService')
+              .str('ip', ip)
+              .msg('Matched IP address');
+          } else if (ec2InstanceIdRegex.test(instance)) {
+            instances.add(instance);
+            // Log the matched EC2 instance ID
+            log
+              .info()
+              .str('function', 'queryPrometheusForService')
+              .str('instanceId', instance)
+              .msg('Matched EC2 instance ID');
+          } else {
+            // Log a warning if the instance did not match any regex patterns
+            log
+              .warn()
+              .str('function', 'queryPrometheusForService')
+              .str('instance', instance)
+              .msg('Instance did not match any regex patterns');
+          }
         });
 
+        // Log the unique instances extracted from the Prometheus response
         log
           .info()
           .str('function', 'queryPrometheusForService')
           .str('serviceType', serviceType)
           .str('Prometheus Workspace ID', promWorkspaceID)
-          //.str('instances', JSON.stringify(Array.from(instances)))
           .msg('Unique instances extracted from Prometheus response');
 
         return Array.from(instances);
       }
       default: {
+        // Log a warning if an unsupported service type is provided
         log
           .warn()
           .str('function', 'queryPrometheusForService')
           .str('serviceType', serviceType)
-          .msg('Unsupported service type. Defaulting to CW Alarms if possible');
+          .msg('Unsupported service type.');
         return [];
       }
     }
   } catch (error) {
+    // Log an error if there was an issue querying Prometheus
     log
       .error()
       .err(error)
@@ -717,7 +778,7 @@ export async function managePromNamespaceAlarms(
   const workspaceDescription: any = await verifyPromWorkspace(promWorkspaceId);
   if (!workspaceDescription) {
     log
-      .warn()
+      .error()
       .str('function', 'managePromNamespaceAlarms')
       .str('promWorkspaceId', promWorkspaceId)
       .msg('Invalid or empty workspace details. Halting Prometheus logic.');
@@ -862,6 +923,8 @@ export async function managePromNamespaceAlarms(
           .str('namespace', namespace)
           .str('ruleGroupName', ruleGroupName)
           .str('alarmName', config.alarmName)
+          .str('existingRuleIndex', ruleGroup.rules[existingRuleIndex].expr)
+          .str('updated rule', config.alarmQuery)
           .msg(
             'Rule exists but expression has changed. Updating the rule expression.'
           );

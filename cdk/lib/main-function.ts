@@ -23,7 +23,7 @@ export class MainFunction extends ExtendedNodejsFunction {
       ),
       architecture: Architecture.ARM_64,
       handler: 'handler',
-      timeout: Duration.seconds(720),
+      timeout: Duration.minutes(15),
       memorySize: 768,
       role: props?.role,
       environment: {

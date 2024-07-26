@@ -10,6 +10,10 @@ const app = new ExtendedApp({
       id: 'autoalarm',
       url: 'https://github.com/truemark/autoalarm',
     },
+    teamTags: {
+      name: 'TrueMark EOC',
+      id: 'truemark-eoc',
+    },
   },
 });
 
