@@ -10,13 +10,8 @@ import {
   createOrUpdateCWAlarm,
   getCWAlarmsForInstance,
   deleteCWAlarm,
+  createAnomalyDetectionAlarm,
 } from './alarm-tools.mjs';
-import {
-  CloudWatchClient,
-  ComparisonOperator,
-  PutAnomalyDetectorCommand,
-  PutMetricAlarmCommand,
-} from '@aws-sdk/client-cloudwatch';
 
 const log: logging.Logger = logging.getLogger('targetgroup-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -26,10 +21,6 @@ const elbClient: ElasticLoadBalancingV2Client =
     region,
     retryStrategy,
   });
-const cloudwatchClient = new CloudWatchClient({
-  region,
-  retryStrategy,
-});
 
 const getDefaultThreshold = (
   metricName: string,
@@ -185,84 +176,6 @@ export async function fetchTGTags(targetGroupArn: string): Promise<Tag> {
   }
 }
 
-async function createAnomalyDetectionAlarm(
-  alarmName: string,
-  loadBalancerName: string,
-  metricName: string,
-  namespace: string,
-  durationTime: number,
-  durationPeriods: number,
-  classification: AlarmClassification
-) {
-  try {
-    // Create anomaly detector with the latest parameters
-    const anomalyDetectorInput = {
-      Namespace: namespace,
-      MetricName: metricName,
-      Dimensions: [
-        {
-          Name: 'LoadBalancer',
-          Value: loadBalancerName,
-        },
-      ],
-      Stat: 'Average',
-      Configuration: {
-        MetricTimezone: 'UTC',
-      },
-    };
-    await cloudwatchClient.send(
-      new PutAnomalyDetectorCommand(anomalyDetectorInput)
-    );
-
-    // Create anomaly detection alarm
-    const metricAlarmInput = {
-      AlarmName: alarmName,
-      ComparisonOperator: ComparisonOperator.GreaterThanUpperThreshold,
-      EvaluationPeriods: durationPeriods,
-      Metrics: [
-        {
-          Id: 'primaryMetric',
-          MetricStat: {
-            Metric: {
-              Namespace: namespace,
-              MetricName: metricName,
-              Dimensions: [{Name: 'LoadBalancer', Value: loadBalancerName}],
-            },
-            Period: durationTime,
-            Stat: 'Average',
-          },
-        },
-        {
-          Id: 'anomalyDetectionBand',
-          Expression: 'ANOMALY_DETECTION_BAND(primaryMetric)',
-        },
-      ],
-      ThresholdMetricId: 'anomalyDetectionBand',
-      ActionsEnabled: false,
-      Tags: [{Key: 'severity', Value: classification.toLowerCase()}],
-      TreatMissingData: 'ignore', // Adjust as needed
-    };
-    await cloudwatchClient.send(new PutMetricAlarmCommand(metricAlarmInput));
-
-    log
-      .info()
-      .str('function', 'createAnomalyDetectionAlarm')
-      .str('alarmName', alarmName)
-      .str('serviceIdentifier', loadBalancerName)
-      .msg(`${alarmName} Anomaly Detection Alarm created or updated.`);
-  } catch (e) {
-    log
-      .error()
-      .str('function', 'createAnomalyDetectionAlarm')
-      .err(e)
-      .str('alarmName', alarmName)
-      .str('serviceIdentifier', loadBalancerName)
-      .msg(
-        `Failed to create or update ${alarmName} anomaly detection alarm due to an error ${e}`
-      );
-  }
-}
-
 async function checkAndManageTGStatusAlarms(
   targetGroupName: string,
   tags: Tag
@@ -329,7 +242,7 @@ async function checkAndManageTGStatusAlarms(
             .str('serviceIdentifier', targetGroupName)
             .msg(`${alarmName} Standard CloudWatch Alarm created or updated.`);
 
-          // Create anomaly detection alarm
+          // Create anomaly detection alarm. Critical only.
           if (classification === 'CRITICAL')
             await createAnomalyDetectionAlarm(
               `${alarmName}-Anomaly`,
