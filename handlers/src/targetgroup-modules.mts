@@ -367,7 +367,10 @@ export async function parseTGEventAndCreateAlarms(event: any): Promise<{
     .str('eventType', eventType)
     .msg('Finished processing target group event');
 
-  if (targetGroupArn && (eventType === 'Create' || eventType === 'TagChange')) {
+  if (
+    targetGroupArn &&
+    (eventType === 'Create' || eventType === 'Target Group TagChange')
+  ) {
     log
       .info()
       .str('function', 'parseTGEventAndCreateAlarms')
