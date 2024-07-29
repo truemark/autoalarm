@@ -247,9 +247,9 @@ export class AutoAlarmConstruct extends Construct {
         detailType: ['Tag Change on Resource'],
         detail: {
           service: ['sqs'],
-          'resource-type': ['AWS::SQS::Queue'],
+          'resource-type': ['queue'],
           'changed-tag-keys': [
-            'autoalarm:disabled',
+            'autoalarm:enabled',
             'autoalarm:ApproximateNumberOfMessagesVisible-above-critical',
             'autoalarm:ApproximateNumberOfMessagesVisible-above-warning',
             'autoalarm:ApproximateNumberOfMessagesVisible-duration-time',

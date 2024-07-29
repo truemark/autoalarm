@@ -1,8 +1,8 @@
 import {SQSClient, ListQueueTagsCommand} from '@aws-sdk/client-sqs';
 import * as logging from '@nr1e/logging';
 import {AlarmProps, Tag} from './types.mjs';
+import {AlarmClassification} from './enums.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
-import {AlarmClassification, ValidSqsEvent} from './enums.mjs';
 import {
   createOrUpdateCWAlarm,
   getCWAlarmsForInstance,
@@ -16,6 +16,12 @@ const sqsClient: SQSClient = new SQSClient({
   region,
   retryStrategy,
 });
+
+const metricConfigs = [
+  {metricName: 'ApproximateNumberOfMessagesVisible', namespace: 'AWS/SQS'},
+  {metricName: 'ApproximateAgeOfOldestMessage', namespace: 'AWS/SQS'},
+];
+
 const defaultThreshold = (type: AlarmClassification) =>
   type === 'CRITICAL' ? 1000 : 500;
 
@@ -23,47 +29,84 @@ const defaultThreshold = (type: AlarmClassification) =>
 const defaultDurationTime = 60; // e.g., 300 seconds
 const defaultDurationPeriods = 2; // e.g., 5 periods
 
-const metricConfigs = [
-  {metricName: 'ApproximateNumberOfMessagesVisible', namespace: 'AWS/SQS'},
-  {metricName: 'ApproximateAgeOfOldestMessage', namespace: 'AWS/SQS'},
-];
-
-function extractQueueName(queueUrl: string): string {
-  const parts = queueUrl.split('/');
-  return parts[parts.length - 1];
-}
-
-async function getAlarmConfig(
+async function getSQSAlarmConfig(
   queueName: string,
   type: AlarmClassification,
-  metricName: string
+  metricName: string,
+  tags: Tag
 ): Promise<{
   alarmName: string;
   threshold: number;
   durationTime: number;
   durationPeriods: number;
 }> {
-  const tags = await fetchSQSTags(queueName);
-  const thresholdKey = `autoalarm:${metricName}-percent-above-${type.toLowerCase()}`;
-  const durationTimeKey = `autoalarm:${metricName}-percent-duration-time`;
-  const durationPeriodsKey = `autoalarm:${metricName}-percent-duration-periods`;
+  log
+    .info()
+    .str('function', 'getSQSAlarmConfig')
+    .str('queueName', queueName)
+    .str('type', type)
+    .str('metric', metricName)
+    .msg('Fetching alarm configuration');
 
-  // Get threshold, duration time, and duration periods from tags or use default values
-  const threshold =
-    tags[thresholdKey] !== undefined
-      ? parseInt(tags[thresholdKey], 10)
-      : defaultThreshold(type);
-  const durationTime =
-    tags[durationTimeKey] !== undefined
-      ? parseInt(tags[durationTimeKey], 10)
-      : defaultDurationTime;
-  const durationPeriods =
-    tags[durationPeriodsKey] !== undefined
-      ? parseInt(tags[durationPeriodsKey], 10)
-      : defaultDurationPeriods;
+  // Initialize variables with default values
+  let threshold = defaultThreshold(type);
+  let durationTime = defaultDurationTime;
+  let durationPeriods = defaultDurationPeriods;
 
+  // Define tag key based on metric
+  const tagKey = `autoalarm:${metricName}`;
+
+  log
+    .info()
+    .str('function', 'getSQSAlarmConfig')
+    .str('queueName', queueName)
+    .str('tags', JSON.stringify(tags))
+    .str('tagKey', tagKey)
+    .str('tagValue', tags[tagKey])
+    .msg('Fetched queue tags');
+
+  // Extract and parse the tag value
+  if (tags[tagKey]) {
+    const values = tags[tagKey].split('|');
+    if (values.length < 1 || values.length > 4) {
+      log
+        .warn()
+        .str('function', 'getSQSAlarmConfig')
+        .str('queueName', queueName)
+        .str('tagKey', tagKey)
+        .str('tagValue', tags[tagKey])
+        .msg(
+          'Invalid tag values/delimiters. Please use 4 values separated by a "|". Using default values'
+        );
+    } else {
+      switch (type) {
+        case 'WARNING':
+          threshold = !isNaN(parseInt(values[0]))
+            ? parseInt(values[0], 10)
+            : defaultThreshold(type);
+          durationTime = !isNaN(parseInt(values[2]))
+            ? parseInt(values[2], 10)
+            : defaultDurationTime;
+          durationPeriods = !isNaN(parseInt(values[3]))
+            ? parseInt(values[3], 10)
+            : defaultDurationPeriods;
+          break;
+        case 'CRITICAL':
+          threshold = !isNaN(parseInt(values[1]))
+            ? parseInt(values[1], 10)
+            : defaultThreshold(type);
+          durationTime = !isNaN(parseInt(values[2]))
+            ? parseInt(values[2], 10)
+            : defaultDurationTime;
+          durationPeriods = !isNaN(parseInt(values[3]))
+            ? parseInt(values[3], 10)
+            : defaultDurationPeriods;
+          break;
+      }
+    }
+  }
   return {
-    alarmName: `AutoAlarm-SQS-${queueName}-${type}-${metricName}`,
+    alarmName: `AutoAlarm-SQS-${queueName}-${type}-${metricName.toUpperCase()}`,
     threshold,
     durationTime,
     durationPeriods,
@@ -78,6 +121,7 @@ export async function fetchSQSTags(queueUrl: string): Promise<Tag> {
 
     log
       .info()
+      .str('function', 'fetchSQSTags')
       .str('queueUrl', queueUrl)
       .str('tags', JSON.stringify(tags))
       .msg('Fetched SQS tags');
@@ -86,6 +130,7 @@ export async function fetchSQSTags(queueUrl: string): Promise<Tag> {
   } catch (error) {
     log
       .error()
+      .str('function', 'fetchSQSTags')
       .err(error)
       .str('queueUrl', queueUrl)
       .msg('Error fetching SQS tags');
@@ -95,7 +140,7 @@ export async function fetchSQSTags(queueUrl: string): Promise<Tag> {
 
 async function checkAndManageSQSStatusAlarms(queueUrl: string, tags: Tag) {
   const queueName = extractQueueName(queueUrl);
-  if (tags['autoalarm:disabled'] === 'true') {
+  if (tags['autoalarm:enabled'] === 'false' || !tags['autoalarm:enabled']) {
     const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
       'SQS',
       queueName
@@ -104,12 +149,24 @@ async function checkAndManageSQSStatusAlarms(queueUrl: string, tags: Tag) {
       activeAutoAlarms.map(alarmName => deleteCWAlarm(alarmName, queueName))
     );
     log.info().msg('Status check alarm creation skipped due to tag settings.');
+  } else if (tags['autoalarm:enabled'] === undefined) {
+    log
+      .info()
+      .msg(
+        'Status check alarm creation skipped due to missing autoalarm:enabled tag.'
+      );
+    return;
   } else {
     for (const config of metricConfigs) {
       const {metricName, namespace} = config;
       for (const classification of Object.values(AlarmClassification)) {
         const {alarmName, threshold, durationTime, durationPeriods} =
-          await getAlarmConfig(queueName, classification, metricName);
+          await getSQSAlarmConfig(
+            queueName,
+            classification as AlarmClassification,
+            metricName,
+            tags
+          );
 
         const alarmProps: AlarmProps = {
           threshold: threshold,
@@ -153,29 +210,133 @@ export async function manageInactiveSQSAlarms(queueUrl: string) {
       activeAutoAlarms.map(alarmName => deleteCWAlarm(alarmName, queueName))
     );
   } catch (e) {
-    log.error().err(e).msg(`Error deleting SQS alarms: ${e}`);
+    log
+      .error()
+      .str('function', 'manageInactiveSQSAlarms')
+      .err(e)
+      .msg(`Error deleting SQS alarms: ${e}`);
     throw new Error(`Error deleting SQS alarms: ${e}`);
   }
 }
 
-export async function getSqsEvent(
-  event: any
-): Promise<{queueUrl: string; eventName: ValidSqsEvent; tags: Tag}> {
-  const queueUrl = event.detail.responseElements.queueUrl;
-  const eventName = event.detail.eventName as ValidSqsEvent;
+function extractQueueName(queueUrl: string): string {
+  const parts = queueUrl.split('/');
+  return parts[parts.length - 1];
+}
+
+export async function parseSQSEventAndCreateAlarms(event: any): Promise<{
+  queueUrl: string;
+  eventType: string;
+  tags: Record<string, string>;
+}> {
+  let queueUrl: string = '';
+  let eventType: string = '';
+  let tags: Record<string, string> = {};
+
+  switch (event['detail-type']) {
+    case 'Tag Change on Resource':
+      queueUrl = event.resources[0];
+      eventType = 'TagChange';
+      tags = event.detail.tags || {};
+      log
+        .info()
+        .str('function', 'parseSQSEventAndCreateAlarms')
+        .str('eventType', 'TagChange')
+        .str('queueUrl', queueUrl)
+        .str('changedTags', JSON.stringify(event.detail['changed-tag-keys']))
+        .msg('Processing Tag Change event');
+      break;
+
+    case 'AWS API Call via CloudTrail':
+      switch (event.detail.eventName) {
+        case 'CreateQueue':
+          queueUrl = event.detail.responseElements?.queueUrl;
+          eventType = 'Create';
+          log
+            .info()
+            .str('function', 'parseSQSEventAndCreateAlarms')
+            .str('eventType', 'Create')
+            .str('queueUrl', queueUrl)
+            .str('requestId', event.detail.requestID)
+            .msg('Processing CreateQueue event');
+          if (queueUrl) {
+            tags = await fetchSQSTags(queueUrl);
+            log
+              .info()
+              .str('function', 'parseSQSEventAndCreateAlarms')
+              .str('queueUrl', queueUrl)
+              .str('tags', JSON.stringify(tags))
+              .msg('Fetched tags for new SQS queue');
+          } else {
+            log
+              .warn()
+              .str('function', 'parseSQSEventAndCreateAlarms')
+              .str('eventType', 'Create')
+              .msg('QueueUrl not found in CreateQueue event');
+          }
+          break;
+
+        case 'DeleteQueue':
+          queueUrl = event.detail.requestParameters?.queueUrl;
+          eventType = 'Delete';
+          log
+            .info()
+            .str('function', 'parseSQSEventAndCreateAlarms')
+            .str('eventType', 'Delete')
+            .str('queueUrl', queueUrl)
+            .str('requestId', event.detail.requestID)
+            .msg('Processing DeleteQueue event');
+          break;
+
+        default:
+          log
+            .warn()
+            .str('function', 'parseSQSEventAndCreateAlarms')
+            .str('eventName', event.detail.eventName)
+            .str('requestId', event.detail.requestID)
+            .msg('Unexpected CloudTrail event type');
+      }
+      break;
+
+    default:
+      log
+        .warn()
+        .str('function', 'parseSQSEventAndCreateAlarms')
+        .str('detail-type', event['detail-type'])
+        .msg('Unexpected event type');
+  }
+
+  const queueName = extractQueueName(queueUrl);
+  if (!queueName) {
+    log
+      .error()
+      .str('function', 'parseSQSEventAndCreateAlarms')
+      .str('queueUrl', queueUrl)
+      .msg('Extracted queue name is empty');
+  }
+
   log
     .info()
+    .str('function', 'parseSQSEventAndCreateAlarms')
     .str('queueUrl', queueUrl)
-    .str('eventName', eventName)
-    .msg('Processing SQS event');
+    .str('eventType', eventType)
+    .msg('Finished processing SQS event');
 
-  const tags = await fetchSQSTags(queueUrl);
-
-  if (queueUrl && eventName === ValidSqsEvent.CreateQueue) {
+  if (queueUrl && (eventType === 'Create' || eventType === 'TagChange')) {
+    log
+      .info()
+      .str('function', 'parseSQSEventAndCreateAlarms')
+      .str('queueUrl', queueUrl)
+      .msg('Starting to manage SQS alarms');
     await manageSQSAlarms(queueUrl, tags);
-  } else if (eventName === ValidSqsEvent.DeleteQueue) {
+  } else if (eventType === 'Delete') {
+    log
+      .info()
+      .str('function', 'parseSQSEventAndCreateAlarms')
+      .str('queueUrl', queueUrl)
+      .msg('Starting to manage inactive SQS alarms');
     await manageInactiveSQSAlarms(queueUrl);
   }
 
-  return {queueUrl, eventName, tags};
+  return {queueUrl, eventType, tags};
 }
