@@ -240,7 +240,7 @@ export class AutoAlarmConstruct extends Construct {
     });
     targetGroupRule.addTarget(mainTarget);
 
-    // Rule for SQS tag changes
+    /*/* Rule for SQS tag changes
     const sqsTagRule = new Rule(this, 'SqsTagRule', {
       eventPattern: {
         source: ['aws.tag'],
@@ -263,7 +263,7 @@ export class AutoAlarmConstruct extends Construct {
       },
       description: 'Routes SQS tag events to AutoAlarm',
     });
-    sqsTagRule.addTarget(mainTarget);
+    sqsTagRule.addTarget(mainTarget);*/
 
     // Rule for OpenSearch tag changes
     //const openSearchTagRule = new Rule(this, 'OpenSearchTagRule', {
@@ -308,7 +308,7 @@ export class AutoAlarmConstruct extends Construct {
         detailType: ['AWS API Call via CloudTrail'],
         detail: {
           eventSource: ['sqs.amazonaws.com'],
-          eventName: ['CreateQueue', 'DeleteQueue'],
+          eventName: ['CreateQueue', 'DeleteQueue', 'TagQueue', 'UntagQueue'],
         },
       },
       description: 'Routes SQS events to AutoAlarm',

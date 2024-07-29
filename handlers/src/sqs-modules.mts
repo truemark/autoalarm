@@ -298,6 +298,26 @@ export async function parseSQSEventAndCreateAlarms(event: any): Promise<{
       }
       break;
 
+    case 'TagQueue':
+      log
+        .info()
+        .str('function', 'parseSQSEventAndCreateAlarms')
+        .str('eventType', 'TagQueue')
+        .str('queueUrl', event.detail.requestParameters.queueUrl)
+        .str('tags', JSON.stringify(event.detail.requestParameters.tags))
+        .msg('Processing TagQueue event');
+      break;
+
+    case 'UntagQueue':
+      log
+        .info()
+        .str('function', 'parseSQSEventAndCreateAlarms')
+        .str('eventType', 'UntagQueue')
+        .str('queueUrl', event.detail.requestParameters.queueUrl)
+        .str('tags', JSON.stringify(event.detail.requestParameters.tags))
+        .msg('Processing UntagQueue event');
+      break;
+
     default:
       log
         .warn()
