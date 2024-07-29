@@ -1,7 +1,9 @@
 import {
   CloudWatchClient,
+  ComparisonOperator,
   DeleteAlarmsCommand,
   DescribeAlarmsCommand,
+  PutAnomalyDetectorCommand,
   PutMetricAlarmCommand,
 } from '@aws-sdk/client-cloudwatch';
 import {
@@ -22,6 +24,7 @@ import {defaultProvider} from '@aws-sdk/credential-provider-node';
 import * as logging from '@nr1e/logging';
 import {AlarmProps, RuleGroup, NamespaceDetails, Rule} from './types.mjs';
 import * as https from 'https';
+import {AlarmClassification} from './enums.mjs';
 
 const region: string = process.env.AWS_REGION || '';
 const retryStrategy = new ConfiguredRetryStrategy(20);
@@ -130,6 +133,84 @@ export function configureAlarmPropsFromTags(
     .str('function', 'configureAlarmPropsFromTags')
     .num('evaluationPeriods', durationPeriods)
     .msg('Adjusted evaluation periods based on tag');
+}
+
+export async function createAnomalyDetectionAlarm(
+  alarmName: string,
+  dimensionNameValue: string,
+  metricName: string,
+  namespace: string,
+  durationTime: number,
+  durationPeriods: number,
+  classification: AlarmClassification
+) {
+  try {
+    // Create anomaly detector with the latest parameters
+    const anomalyDetectorInput = {
+      Namespace: namespace,
+      MetricName: metricName,
+      Dimensions: [
+        {
+          Name: 'LoadBalancer',
+          Value: dimensionNameValue,
+        },
+      ],
+      Stat: 'Average',
+      Configuration: {
+        MetricTimezone: 'UTC',
+      },
+    };
+    await cloudWatchClient.send(
+      new PutAnomalyDetectorCommand(anomalyDetectorInput)
+    );
+
+    // Create anomaly detection alarm
+    const metricAlarmInput = {
+      AlarmName: alarmName,
+      ComparisonOperator: ComparisonOperator.GreaterThanUpperThreshold,
+      EvaluationPeriods: durationPeriods,
+      Metrics: [
+        {
+          Id: 'primaryMetric',
+          MetricStat: {
+            Metric: {
+              Namespace: namespace,
+              MetricName: metricName,
+              Dimensions: [{Name: 'LoadBalancer', Value: dimensionNameValue}],
+            },
+            Period: durationTime,
+            Stat: 'Average',
+          },
+        },
+        {
+          Id: 'anomalyDetectionBand',
+          Expression: 'ANOMALY_DETECTION_BAND(primaryMetric)',
+        },
+      ],
+      ThresholdMetricId: 'anomalyDetectionBand',
+      ActionsEnabled: false,
+      Tags: [{Key: 'severity', Value: classification.toLowerCase()}],
+      TreatMissingData: 'ignore', // Adjust as needed
+    };
+    await cloudWatchClient.send(new PutMetricAlarmCommand(metricAlarmInput));
+
+    log
+      .info()
+      .str('function', 'createAnomalyDetectionAlarm')
+      .str('alarmName', alarmName)
+      .str('serviceIdentifier', dimensionNameValue)
+      .msg(`${alarmName} Anomaly Detection Alarm created or updated.`);
+  } catch (e) {
+    log
+      .error()
+      .str('function', 'createAnomalyDetectionAlarm')
+      .err(e)
+      .str('alarmName', alarmName)
+      .str('serviceIdentifier', dimensionNameValue)
+      .msg(
+        `Failed to create or update ${alarmName} anomaly detection alarm due to an error ${e}`
+      );
+  }
 }
 
 // Define the possible values for MissingDataTreatment

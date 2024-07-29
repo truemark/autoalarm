@@ -2,17 +2,15 @@ import {
   ElasticLoadBalancingV2Client,
   DescribeTagsCommand,
 } from '@aws-sdk/client-elastic-load-balancing-v2';
-import {
-  CloudWatchClient,
-  ComparisonOperator,
-  PutAnomalyDetectorCommand,
-  PutMetricAlarmCommand,
-} from '@aws-sdk/client-cloudwatch';
 import * as logging from '@nr1e/logging';
 import {Tag} from './types.mjs';
 import {AlarmClassification} from './enums.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
-import {getCWAlarmsForInstance, deleteCWAlarm} from './alarm-tools.mjs';
+import {
+  getCWAlarmsForInstance,
+  deleteCWAlarm,
+  createAnomalyDetectionAlarm,
+} from './alarm-tools.mjs';
 
 const log: logging.Logger = logging.getLogger('alb-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -22,10 +20,6 @@ const elbClient: ElasticLoadBalancingV2Client =
     region,
     retryStrategy,
   });
-const cloudwatchClient: CloudWatchClient = new CloudWatchClient({
-  region,
-  retryStrategy,
-});
 
 const metricConfigs = [
   {metricName: 'RequestCount', namespace: 'AWS/ApplicationELB'},
@@ -166,84 +160,6 @@ export async function fetchALBTags(loadBalancerArn: string): Promise<Tag> {
       .str('loadBalancerArn', loadBalancerArn)
       .msg('Error fetching ALB tags');
     return {};
-  }
-}
-
-async function createAnomalyDetectionAlarm(
-  alarmName: string,
-  loadBalancerName: string,
-  metricName: string,
-  namespace: string,
-  durationTime: number,
-  durationPeriods: number,
-  classification: AlarmClassification
-) {
-  try {
-    // Create anomaly detector with the latest parameters
-    const anomalyDetectorInput = {
-      Namespace: namespace,
-      MetricName: metricName,
-      Dimensions: [
-        {
-          Name: 'LoadBalancer',
-          Value: loadBalancerName,
-        },
-      ],
-      Stat: 'Average',
-      Configuration: {
-        MetricTimezone: 'UTC',
-      },
-    };
-    await cloudwatchClient.send(
-      new PutAnomalyDetectorCommand(anomalyDetectorInput)
-    );
-
-    // Create anomaly detection alarm
-    const metricAlarmInput = {
-      AlarmName: alarmName,
-      ComparisonOperator: ComparisonOperator.GreaterThanUpperThreshold,
-      EvaluationPeriods: durationPeriods,
-      Metrics: [
-        {
-          Id: 'primaryMetric',
-          MetricStat: {
-            Metric: {
-              Namespace: namespace,
-              MetricName: metricName,
-              Dimensions: [{Name: 'LoadBalancer', Value: loadBalancerName}],
-            },
-            Period: durationTime,
-            Stat: 'Average',
-          },
-        },
-        {
-          Id: 'anomalyDetectionBand',
-          Expression: 'ANOMALY_DETECTION_BAND(primaryMetric)',
-        },
-      ],
-      ThresholdMetricId: 'anomalyDetectionBand',
-      ActionsEnabled: false,
-      Tags: [{Key: 'severity', Value: classification.toLowerCase()}],
-      TreatMissingData: 'ignore', // Adjust as needed
-    };
-    await cloudwatchClient.send(new PutMetricAlarmCommand(metricAlarmInput));
-
-    log
-      .info()
-      .str('function', 'createAnomalyDetectionAlarm')
-      .str('alarmName', alarmName)
-      .str('serviceIdentifier', loadBalancerName)
-      .msg(`${alarmName} Anomaly Detection Alarm created or updated.`);
-  } catch (e) {
-    log
-      .error()
-      .str('function', 'createAnomalyDetectionAlarm')
-      .err(e)
-      .str('alarmName', alarmName)
-      .str('serviceIdentifier', loadBalancerName)
-      .msg(
-        `Failed to create or update ${alarmName} anomaly detection alarm due to an error ${e}`
-      );
   }
 }
 
