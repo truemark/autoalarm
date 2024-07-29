@@ -242,7 +242,7 @@ async function checkAndManageTGStatusAlarms(
             .str('serviceIdentifier', targetGroupName)
             .msg(`${alarmName} Standard CloudWatch Alarm created or updated.`);
 
-          // Create anomaly detection alarm
+          // Create anomaly detection alarm. Critical only.
           if (classification === 'CRITICAL')
             await createAnomalyDetectionAlarm(
               `${alarmName}-Anomaly`,
