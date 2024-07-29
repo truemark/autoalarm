@@ -11,6 +11,12 @@ import {
   getCWAlarmsForInstance,
   deleteCWAlarm,
 } from './alarm-tools.mjs';
+import {
+  CloudWatchClient,
+  ComparisonOperator,
+  PutAnomalyDetectorCommand,
+  PutMetricAlarmCommand,
+} from '@aws-sdk/client-cloudwatch';
 
 const log: logging.Logger = logging.getLogger('targetgroup-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -20,6 +26,10 @@ const elbClient: ElasticLoadBalancingV2Client =
     region,
     retryStrategy,
   });
+const cloudwatchClient = new CloudWatchClient({
+  region,
+  retryStrategy,
+});
 
 const getDefaultThreshold = (
   metricName: string,
@@ -175,6 +185,84 @@ export async function fetchTGTags(targetGroupArn: string): Promise<Tag> {
   }
 }
 
+async function createAnomalyDetectionAlarm(
+  alarmName: string,
+  loadBalancerName: string,
+  metricName: string,
+  namespace: string,
+  durationTime: number,
+  durationPeriods: number,
+  classification: AlarmClassification
+) {
+  try {
+    // Create anomaly detector with the latest parameters
+    const anomalyDetectorInput = {
+      Namespace: namespace,
+      MetricName: metricName,
+      Dimensions: [
+        {
+          Name: 'LoadBalancer',
+          Value: loadBalancerName,
+        },
+      ],
+      Stat: 'Average',
+      Configuration: {
+        MetricTimezone: 'UTC',
+      },
+    };
+    await cloudwatchClient.send(
+      new PutAnomalyDetectorCommand(anomalyDetectorInput)
+    );
+
+    // Create anomaly detection alarm
+    const metricAlarmInput = {
+      AlarmName: alarmName,
+      ComparisonOperator: ComparisonOperator.GreaterThanUpperThreshold,
+      EvaluationPeriods: durationPeriods,
+      Metrics: [
+        {
+          Id: 'primaryMetric',
+          MetricStat: {
+            Metric: {
+              Namespace: namespace,
+              MetricName: metricName,
+              Dimensions: [{Name: 'LoadBalancer', Value: loadBalancerName}],
+            },
+            Period: durationTime,
+            Stat: 'Average',
+          },
+        },
+        {
+          Id: 'anomalyDetectionBand',
+          Expression: 'ANOMALY_DETECTION_BAND(primaryMetric)',
+        },
+      ],
+      ThresholdMetricId: 'anomalyDetectionBand',
+      ActionsEnabled: false,
+      Tags: [{Key: 'severity', Value: classification.toLowerCase()}],
+      TreatMissingData: 'ignore', // Adjust as needed
+    };
+    await cloudwatchClient.send(new PutMetricAlarmCommand(metricAlarmInput));
+
+    log
+      .info()
+      .str('function', 'createAnomalyDetectionAlarm')
+      .str('alarmName', alarmName)
+      .str('serviceIdentifier', loadBalancerName)
+      .msg(`${alarmName} Anomaly Detection Alarm created or updated.`);
+  } catch (e) {
+    log
+      .error()
+      .str('function', 'createAnomalyDetectionAlarm')
+      .err(e)
+      .str('alarmName', alarmName)
+      .str('serviceIdentifier', loadBalancerName)
+      .msg(
+        `Failed to create or update ${alarmName} anomaly detection alarm due to an error ${e}`
+      );
+  }
+}
+
 async function checkAndManageTGStatusAlarms(
   targetGroupName: string,
   tags: Tag
@@ -200,35 +288,97 @@ async function checkAndManageTGStatusAlarms(
   } else {
     for (const config of metricConfigs) {
       const {metricName, namespace} = config;
-      for (const classification of Object.values(AlarmClassification)) {
-        const {alarmName, threshold, durationTime, durationPeriods} =
-          await getTGAlarmConfig(
+
+      if (metricName === 'UnHealthyHostCount') {
+        for (const classification of Object.values(AlarmClassification)) {
+          const {alarmName, threshold, durationTime, durationPeriods} =
+            await getTGAlarmConfig(
+              targetGroupName,
+              classification as AlarmClassification,
+              'tg',
+              metricName,
+              tags
+            );
+
+          const alarmProps: AlarmProps = {
+            threshold: threshold,
+            period: 60,
+            namespace: namespace,
+            evaluationPeriods: 5,
+            metricName: metricName,
+            dimensions: [{Name: 'TargetGroup', Value: targetGroupName}],
+          };
+
+          // Create standard CloudWatch alarm
+          await createOrUpdateCWAlarm(
+            alarmName,
             targetGroupName,
-            classification as AlarmClassification,
-            'tg',
-            metricName,
-            tags
+            alarmProps,
+            threshold,
+            durationTime,
+            durationPeriods,
+            'Maximum',
+            classification
           );
 
-        const alarmProps: AlarmProps = {
-          threshold: threshold,
-          period: 60,
-          namespace: namespace,
-          evaluationPeriods: 5,
-          metricName: metricName,
-          dimensions: [{Name: 'TargetGroup', Value: targetGroupName}],
-        };
+          // Log for standard CloudWatch alarm creation
+          log
+            .info()
+            .str('function', 'checkAndManageTGStatusAlarms')
+            .str('alarmName', alarmName)
+            .str('serviceIdentifier', targetGroupName)
+            .msg(`${alarmName} Standard CloudWatch Alarm created or updated.`);
 
-        await createOrUpdateCWAlarm(
-          alarmName,
-          targetGroupName,
-          alarmProps,
-          threshold,
-          durationTime,
-          durationPeriods,
-          'Maximum',
-          classification
-        );
+          // Create anomaly detection alarm
+          if (classification === 'CRITICAL')
+            await createAnomalyDetectionAlarm(
+              `${alarmName}-Anomaly`,
+              targetGroupName,
+              metricName,
+              namespace,
+              durationTime,
+              durationPeriods,
+              classification as AlarmClassification
+            );
+          // Log for anomaly detection alarm creation
+          log
+            .info()
+            .str('function', 'checkAndManageTGStatusAlarms')
+            .str('alarmName', `${alarmName}-Anomaly`)
+            .str('serviceIdentifier', targetGroupName)
+            .msg(
+              `${alarmName}-Anomaly Anomaly Detection Alarm created or updated.`
+            );
+        }
+      } else {
+        if (metricName !== 'UnHealthyHostCount') {
+          const {alarmName, durationTime, durationPeriods} =
+            await getTGAlarmConfig(
+              targetGroupName,
+              'CRITICAL' as AlarmClassification,
+              'tg',
+              metricName,
+              tags
+            );
+
+          await createAnomalyDetectionAlarm(
+            `${alarmName}-Anomaly`,
+            targetGroupName,
+            metricName,
+            namespace,
+            durationTime,
+            durationPeriods,
+            'CRITICAL' as AlarmClassification
+          );
+
+          // Log for anomaly detection alarm creation for other metrics
+          log
+            .info()
+            .str('function', 'checkAndManageTGStatusAlarms')
+            .str('alarmName', alarmName)
+            .str('serviceIdentifier', targetGroupName)
+            .msg(`${alarmName} Anomaly Detection Alarm created or updated.`);
+        }
       }
     }
   }

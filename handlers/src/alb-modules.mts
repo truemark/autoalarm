@@ -174,7 +174,6 @@ async function createAnomalyDetectionAlarm(
   loadBalancerName: string,
   metricName: string,
   namespace: string,
-  threshold: number,
   durationTime: number,
   durationPeriods: number,
   classification: AlarmClassification
@@ -273,7 +272,7 @@ async function checkAndManageALBStatusAlarms(
   } else {
     for (const config of metricConfigs) {
       const {metricName, namespace} = config;
-      const {alarmName, threshold, durationTime, durationPeriods} =
+      const {alarmName, durationTime, durationPeriods} =
         await getALBAlarmConfig(
           loadBalancerName,
           'CRITICAL' as AlarmClassification,
@@ -287,7 +286,6 @@ async function checkAndManageALBStatusAlarms(
         loadBalancerName,
         metricName,
         namespace,
-        threshold,
         durationTime,
         durationPeriods,
         'CRITICAL' as AlarmClassification
