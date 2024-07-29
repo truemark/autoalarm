@@ -303,8 +303,8 @@ export async function parseSQSEventAndCreateAlarms(event: any): Promise<{
         .info()
         .str('function', 'parseSQSEventAndCreateAlarms')
         .str('eventType', 'TagQueue')
-        .str('queueUrl', event.detail.requestParameters.queueUrl)
-        .str('tags', JSON.stringify(event.detail.requestParameters.tags))
+        .str('queueUrl', event.detail.requestParameters?.queueUrl)
+        .str('tags', JSON.stringify(event.detail.requestParameters?.tags))
         .msg('Processing TagQueue event');
       break;
 
@@ -313,8 +313,8 @@ export async function parseSQSEventAndCreateAlarms(event: any): Promise<{
         .info()
         .str('function', 'parseSQSEventAndCreateAlarms')
         .str('eventType', 'UntagQueue')
-        .str('queueUrl', event.detail.requestParameters.queueUrl)
-        .str('tags', JSON.stringify(event.detail.requestParameters.tags))
+        .str('queueUrl', event.detail.requestParameters?.queueUrl)
+        .str('tags', JSON.stringify(event.detail.requestParameters?.tags))
         .msg('Processing UntagQueue event');
       break;
 
