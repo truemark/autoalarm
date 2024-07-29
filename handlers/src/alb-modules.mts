@@ -222,7 +222,7 @@ async function createAnomalyDetectionAlarm(
           Expression: 'ANOMALY_DETECTION_BAND(primaryMetric)',
         },
       ],
-      Threshold: threshold,
+      ThresholdMetricId: 'anomalyDetectionBand',
       ActionsEnabled: false,
       Tags: [{Key: 'severity', Value: classification.toLowerCase()}],
       TreatMissingData: 'ignore', // Adjust as needed
@@ -273,27 +273,25 @@ async function checkAndManageALBStatusAlarms(
   } else {
     for (const config of metricConfigs) {
       const {metricName, namespace} = config;
-      for (const classification of Object.values(AlarmClassification)) {
-        const {alarmName, threshold, durationTime, durationPeriods} =
-          await getALBAlarmConfig(
-            loadBalancerName,
-            classification as AlarmClassification,
-            'alb',
-            metricName,
-            tags
-          );
-
-        await createAnomalyDetectionAlarm(
-          alarmName,
+      const {alarmName, threshold, durationTime, durationPeriods} =
+        await getALBAlarmConfig(
           loadBalancerName,
+          'CRITICAL' as AlarmClassification,
+          'alb',
           metricName,
-          namespace,
-          threshold,
-          durationTime,
-          durationPeriods,
-          classification
+          tags
         );
-      }
+
+      await createAnomalyDetectionAlarm(
+        alarmName,
+        loadBalancerName,
+        metricName,
+        namespace,
+        threshold,
+        durationTime,
+        durationPeriods,
+        'CRITICAL' as AlarmClassification
+      );
     }
   }
 }
