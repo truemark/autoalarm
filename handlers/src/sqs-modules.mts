@@ -20,6 +20,7 @@ const sqsClient: SQSClient = new SQSClient({
 const metricConfigs = [
   {metricName: 'ApproximateNumberOfMessagesVisible', namespace: 'AWS/SQS'},
   {metricName: 'ApproximateAgeOfOldestMessage', namespace: 'AWS/SQS'},
+  {metricName: 'NumberOfMessagesSent', namespace: 'AWS/SQS'},
 ];
 
 const defaultThreshold = (type: AlarmClassification) =>
@@ -288,6 +289,45 @@ export async function parseSQSEventAndCreateAlarms(event: any): Promise<{
             .msg('Processing DeleteQueue event');
           break;
 
+        case 'TagQueue':
+          eventType = 'TagChange';
+          queueUrl = event.detail.requestParameters?.queueUrl;
+          log
+            .info()
+            .str('function', 'parseSQSEventAndCreateAlarms')
+            .str('eventType', 'TagQueue')
+            .str('queueUrl', queueUrl)
+            .str('requestId', event.detail.requestID)
+            .msg('Processing TagQueue event');
+          if (queueUrl) {
+            tags = await fetchSQSTags(queueUrl);
+            log
+              .info()
+              .str('function', 'parseSQSEventAndCreateAlarms')
+              .str('queueUrl', queueUrl)
+              .str('tags', JSON.stringify(tags))
+              .msg('Fetched tags for new SQS queue');
+          } else {
+            log
+              .warn()
+              .str('function', 'parseSQSEventAndCreateAlarms')
+              .str('eventType', 'TagQueue')
+              .msg('QueueUrl not found in TagQueue event');
+          }
+          break;
+
+        case 'UntagQueue':
+          eventType = 'RemoveTag';
+          queueUrl = event.detail.requestParameters?.queueUrl;
+          log
+            .info()
+            .str('function', 'parseSQSEventAndCreateAlarms')
+            .str('eventType', 'UntagQueue')
+            .str('queueUrl', queueUrl)
+            .str('tags', JSON.stringify(event.detail.requestParameters?.tags))
+            .msg('Processing UntagQueue event');
+          break;
+
         default:
           log
             .warn()
@@ -296,26 +336,6 @@ export async function parseSQSEventAndCreateAlarms(event: any): Promise<{
             .str('requestId', event.detail.requestID)
             .msg('Unexpected CloudTrail event type');
       }
-      break;
-
-    case 'TagQueue':
-      log
-        .info()
-        .str('function', 'parseSQSEventAndCreateAlarms')
-        .str('eventType', 'TagQueue')
-        .str('queueUrl', event.detail.requestParameters?.queueUrl)
-        .str('tags', JSON.stringify(event.detail.requestParameters?.tags))
-        .msg('Processing TagQueue event');
-      break;
-
-    case 'UntagQueue':
-      log
-        .info()
-        .str('function', 'parseSQSEventAndCreateAlarms')
-        .str('eventType', 'UntagQueue')
-        .str('queueUrl', event.detail.requestParameters?.queueUrl)
-        .str('tags', JSON.stringify(event.detail.requestParameters?.tags))
-        .msg('Processing UntagQueue event');
       break;
 
     default:
@@ -349,7 +369,7 @@ export async function parseSQSEventAndCreateAlarms(event: any): Promise<{
       .str('queueUrl', queueUrl)
       .msg('Starting to manage SQS alarms');
     await manageSQSAlarms(queueUrl, tags);
-  } else if (eventType === 'Delete') {
+  } else if (eventType === 'Delete' || eventType === 'RemoveTag') {
     log
       .info()
       .str('function', 'parseSQSEventAndCreateAlarms')
