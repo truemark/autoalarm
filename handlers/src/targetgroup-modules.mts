@@ -246,6 +246,7 @@ async function checkAndManageTGStatusAlarms(
           if (classification === 'CRITICAL')
             await createAnomalyDetectionAlarm(
               `${alarmName}-Anomaly`,
+              'TargetGroup',
               targetGroupName,
               metricName,
               namespace,
@@ -276,6 +277,7 @@ async function checkAndManageTGStatusAlarms(
 
           await createAnomalyDetectionAlarm(
             `${alarmName}-Anomaly`,
+            'TargetGroup',
             targetGroupName,
             metricName,
             namespace,

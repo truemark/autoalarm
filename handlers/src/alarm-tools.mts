@@ -137,6 +137,7 @@ export function configureAlarmPropsFromTags(
 
 export async function createAnomalyDetectionAlarm(
   alarmName: string,
+  dimensionName: string,
   dimensionNameValue: string,
   metricName: string,
   namespace: string,
@@ -151,7 +152,7 @@ export async function createAnomalyDetectionAlarm(
       MetricName: metricName,
       Dimensions: [
         {
-          Name: 'LoadBalancer',
+          Name: dimensionName,
           Value: dimensionNameValue,
         },
       ],
@@ -176,7 +177,7 @@ export async function createAnomalyDetectionAlarm(
             Metric: {
               Namespace: namespace,
               MetricName: metricName,
-              Dimensions: [{Name: 'LoadBalancer', Value: dimensionNameValue}],
+              Dimensions: [{Name: dimensionName, Value: dimensionNameValue}],
             },
             Period: durationTime,
             Stat: 'Average',
