@@ -199,6 +199,7 @@ async function checkAndManageALBStatusAlarms(
 
       await createAnomalyDetectionAlarm(
         alarmName,
+        'LoadBalancer',
         loadBalancerName,
         metricName,
         namespace,
