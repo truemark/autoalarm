@@ -45,6 +45,12 @@ export async function doesAlarmExist(alarmName: string): Promise<boolean> {
   const response = await cloudWatchClient.send(
     new DescribeAlarmsCommand({AlarmNames: [alarmName]})
   );
+  log
+    .info()
+    .str('function', 'doesAlarmExist')
+    .str('alarmName', alarmName)
+    .str('response', JSON.stringify(response))
+    .msg('Checking if alarm exists');
   return (response.MetricAlarms?.length ?? 0) > 0;
 }
 
@@ -533,6 +539,11 @@ export async function deleteCWAlarm(
   alarmName: string,
   instanceIdentifier: string
 ): Promise<void> {
+  log
+    .info()
+    .str('function', 'deleteCWAlarm')
+    .str('alarmName', alarmName)
+    .msg('checking if alarm exists...');
   const alarmExists = await doesAlarmExist(alarmName);
   if (alarmExists) {
     log
