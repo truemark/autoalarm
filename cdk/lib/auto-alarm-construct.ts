@@ -59,6 +59,7 @@ export class AutoAlarmConstruct extends Construct {
           'cloudwatch:DeleteAlarms',
           'cloudwatch:DescribeAlarms',
           'cloudwatch:ListMetrics',
+          'cloudwatch:PutAnomalyDetector',
         ],
         resources: ['*'],
       })
@@ -129,9 +130,12 @@ export class AutoAlarmConstruct extends Construct {
       deadLetterQueue,
     });
 
-    // Listen to tag changes related to AutoAlarm
-    // WARNING threshold num | CRITICAL threshold num | duration time num | duration periods num
-    // example: "90|95|60|2"
+    /* Listen to tag changes related to AutoAlarm. Anomaly Alarms are standard and Cloudwatch Alarms are optional.
+     * If cloudwatch Alarm tags are not present, CW alarms are not created.
+     * WARNING threshold num | CRITICAL threshold num | duration time num | duration periods num
+     * example for standard CloudWatch Alarms: "90|95|60|2"
+     * example for Anomaly Detection: "90|60|2|ANOMALY_DETECTION"
+     */
     const ec2tagRule = new Rule(this, 'TagRule', {
       eventPattern: {
         source: ['aws.tag'],
@@ -141,9 +145,12 @@ export class AutoAlarmConstruct extends Construct {
           'resource-type': ['instance'],
           'changed-tag-keys': [
             'autoalarm:enabled',
-            'autoalarm:ec2-cpu',
-            'autoalarm:ec2-storage',
-            'autoalarm:ec2-memory',
+            'autoalarm:cw-ec2-cpu',
+            'autoalarm:cw-ec2-storage',
+            'autoalarm:cw-ec2-memory',
+            'autoalarm:anomaly-ec2-cpu',
+            'autoalarm:anomaly-ec2-storage',
+            'autoalarm:anomaly-ec2-memory',
             'autoalarm:target', // cloudwatch or prometheus
           ],
         },
@@ -183,9 +190,14 @@ export class AutoAlarmConstruct extends Construct {
           'resource-type': ['loadbalancer'],
           'changed-tag-keys': [
             'autoalarm:enabled',
-            'autoalarm:alb-request-count',
-            'autoalarm:alb-HTTPCode_ELB_4XX_Count',
-            'autoalarm:alb-HTTPCode_ELB_5XX',
+            'autoalarm:cw-alb-request-count',
+            'autoalarm:cw-alb-4xx-count',
+            'autoalarm:cw-alb-5xx-count',
+            'autoalarm:cw-alb-response-time',
+            'autoalarm:anomaly-alb-request-count',
+            'autoalarm:anomaly-alb-4xx-count',
+            'autoalarm:anomaly-alb-5xx-count',
+            'autoalarm:anomaly-alb-response-time',
           ],
         },
       },
@@ -217,9 +229,12 @@ export class AutoAlarmConstruct extends Construct {
           'resource-type': ['targetgroup'],
           'changed-tag-keys': [
             'autoalarm:enabled',
-            'autoalarm:TargetResponseTime',
-            'autoalarm:HTTPCode_Target_4XX',
-            'autoalarm:HTTPCode_Target_5XX',
+            'autoalarm:cw-tg-response-time',
+            'autoalarm:cw-tg-4xx-count',
+            'autoalarm:cw-tg-5xx-count',
+            'autoalarm:anomaly-tg-response-time',
+            'autoalarm:anomaly-tg-4xx-count',
+            'autoalarm:anomaly-tg-5xx-count',
           ],
         },
       },
@@ -240,16 +255,16 @@ export class AutoAlarmConstruct extends Construct {
     });
     targetGroupRule.addTarget(mainTarget);
 
-    // Rule for SQS tag changes
+    /*/* Rule for SQS tag changes
     const sqsTagRule = new Rule(this, 'SqsTagRule', {
       eventPattern: {
         source: ['aws.tag'],
         detailType: ['Tag Change on Resource'],
         detail: {
           service: ['sqs'],
-          'resource-type': ['AWS::SQS::Queue'],
+          'resource-type': ['queue'],
           'changed-tag-keys': [
-            'autoalarm:disabled',
+            'autoalarm:enabled',
             'autoalarm:ApproximateNumberOfMessagesVisible-above-critical',
             'autoalarm:ApproximateNumberOfMessagesVisible-above-warning',
             'autoalarm:ApproximateNumberOfMessagesVisible-duration-time',
@@ -263,7 +278,7 @@ export class AutoAlarmConstruct extends Construct {
       },
       description: 'Routes SQS tag events to AutoAlarm',
     });
-    sqsTagRule.addTarget(mainTarget);
+    sqsTagRule.addTarget(mainTarget);*/
 
     // Rule for OpenSearch tag changes
     //const openSearchTagRule = new Rule(this, 'OpenSearchTagRule', {
@@ -308,7 +323,7 @@ export class AutoAlarmConstruct extends Construct {
         detailType: ['AWS API Call via CloudTrail'],
         detail: {
           eventSource: ['sqs.amazonaws.com'],
-          eventName: ['CreateQueue', 'DeleteQueue'],
+          eventName: ['CreateQueue', 'DeleteQueue', 'TagQueue', 'UntagQueue'],
         },
       },
       description: 'Routes SQS events to AutoAlarm',

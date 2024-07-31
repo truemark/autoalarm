@@ -8,19 +8,10 @@ import {
   liveStates,
   deadStates,
 } from './ec2-modules.mjs';
-import {
-  ValidTargetGroupEvent,
-  ValidSqsEvent,
-  ValidOpenSearchState,
-} from './enums.mjs';
+import {ValidTargetGroupEvent, ValidOpenSearchState} from './enums.mjs';
 import {parseALBEventAndCreateAlarms} from './alb-modules.mjs';
 import {parseTGEventAndCreateAlarms} from './targetgroup-modules.mjs';
-import {
-  fetchSQSTags,
-  manageSQSAlarms,
-  manageInactiveSQSAlarms,
-  getSqsEvent,
-} from './sqs-modules.mjs';
+import {parseSQSEventAndCreateAlarms} from './sqs-modules.mjs';
 import {
   fetchOpenSearchTags,
   manageOpenSearchAlarms,
@@ -73,7 +64,10 @@ async function processEC2TagEvent(event: any) {
     liveStates.has(state)
   ) {
     await manageActiveInstanceAlarms(instanceId, tags);
-  } else if (!tags['autoalarm:enabled']) {
+  } else if (
+    !tags['autoalarm:enabled'] ||
+    tags['autoalarm:enabled'] === undefined
+  ) {
     log
       .info()
       .str('function', 'processEC2TagEvent')
@@ -94,29 +88,7 @@ export async function processTargetGroupEvent(event: any) {
 }
 
 export async function processSQSEvent(event: any) {
-  const eventName = event.detail.eventName;
-  if (eventName === ValidSqsEvent.CreateQueue) {
-    const queueUrl = event.detail.responseElements.queueUrl;
-    const tags = await fetchSQSTags(queueUrl);
-    await manageSQSAlarms(queueUrl, tags);
-  } else if (eventName === ValidSqsEvent.DeleteQueue) {
-    const queueUrl = event.detail.requestParameters?.queueUrl;
-    await manageInactiveSQSAlarms(queueUrl);
-  }
-}
-
-export async function processSQSTagEvent(event: any) {
-  const {queueUrl, eventName, tags} = await getSqsEvent(event);
-
-  if (tags['autoalarm:enabled'] === 'false') {
-    await manageInactiveSQSAlarms(queueUrl);
-  } else if (
-    tags['autoalarm:enabled'] === 'true' &&
-    queueUrl &&
-    eventName === ValidSqsEvent.CreateQueue
-  ) {
-    await manageSQSAlarms(queueUrl, tags);
-  }
+  await parseSQSEventAndCreateAlarms(event);
 }
 
 export async function processOpenSearchEvent(event: any) {
@@ -155,11 +127,11 @@ async function routeTagEvent(event: any) {
   } else if (service === 'elasticloadbalancing') {
     if (resourceType === 'loadbalancer') {
       await parseALBEventAndCreateAlarms(event);
-    } else if (resourceType === 'target-group') {
+    } else if (resourceType === 'targetgroup') {
       await parseTGEventAndCreateAlarms(event);
     }
   } else if (service === 'sqs') {
-    await processSQSTagEvent(event);
+    await parseSQSEventAndCreateAlarms(event);
   } else if (service === 'es') {
     await processOpenSearchTagEvent(event);
   } else {
@@ -191,13 +163,13 @@ export const handler: Handler = async (event: any): Promise<void> => {
           event.detail.eventName === 'CreateTargetGroup' ||
           event.detail.eventName === 'DeleteTargetGroup'
         ) {
-          await processTargetGroupEvent(event);
+          await parseTGEventAndCreateAlarms(event);
         } else {
           log.warn().msg('Unhandled event name for aws.elasticloadbalancing');
         }
         break;
       case 'aws.sqs':
-        await processSQSEvent(event);
+        await parseSQSEventAndCreateAlarms(event);
         break;
       case 'aws.opensearch':
         await processOpenSearchEvent(event);

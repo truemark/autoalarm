@@ -1,7 +1,9 @@
 import {
   CloudWatchClient,
+  ComparisonOperator,
   DeleteAlarmsCommand,
   DescribeAlarmsCommand,
+  PutAnomalyDetectorCommand,
   PutMetricAlarmCommand,
 } from '@aws-sdk/client-cloudwatch';
 import {
@@ -20,8 +22,15 @@ import * as yaml from 'js-yaml';
 import * as aws4 from 'aws4';
 import {defaultProvider} from '@aws-sdk/credential-provider-node';
 import * as logging from '@nr1e/logging';
-import {AlarmProps, RuleGroup, NamespaceDetails, Rule} from './types.mjs';
+import {
+  AlarmProps,
+  RuleGroup,
+  NamespaceDetails,
+  Rule,
+  AnomalyAlarmProps,
+} from './types.mjs';
 import * as https from 'https';
+import {AlarmClassification} from './enums.mjs';
 
 const region: string = process.env.AWS_REGION || '';
 const retryStrategy = new ConfiguredRetryStrategy(20);
@@ -36,11 +45,95 @@ export async function doesAlarmExist(alarmName: string): Promise<boolean> {
   const response = await cloudWatchClient.send(
     new DescribeAlarmsCommand({AlarmNames: [alarmName]})
   );
+  log
+    .info()
+    .str('function', 'doesAlarmExist')
+    .str('alarmName', alarmName)
+    .str('response', JSON.stringify(response))
+    .msg('Checking if alarm exists');
   return (response.MetricAlarms?.length ?? 0) > 0;
 }
 
-// returns true if the alarm needs to be updated whether it exists or does not.
-export async function CWAlarmNeedsUpdate(
+// returns true if the alarm needs to be updated whether it exists or does not. For Anomaly Detection CW alarms
+export async function anomalyCWAlarmNeedsUpdate(
+  alarmName: string,
+  newProps: AnomalyAlarmProps
+): Promise<boolean> {
+  try {
+    const existingAlarm = await cloudWatchClient.send(
+      new DescribeAlarmsCommand({AlarmNames: [alarmName]})
+    );
+
+    if (existingAlarm.MetricAlarms && existingAlarm.MetricAlarms.length > 0) {
+      const existingProps = existingAlarm.MetricAlarms[0];
+
+      log
+        .info()
+        .str('function', 'anomalyCWAlarmNeedsUpdate')
+        .str('alarmName', alarmName)
+        .str('existingProps', JSON.stringify(existingProps))
+        .str('newProps', JSON.stringify(newProps))
+        .msg('Checking if anomaly detection alarm needs');
+
+      if (
+        existingProps.EvaluationPeriods !== newProps.evaluationPeriods ||
+        existingProps.Period !== newProps.period ||
+        existingProps.ExtendedStatistic !== newProps.extendedStatistic
+      ) {
+        log
+          .info()
+          .str('function', 'anomalyCWAlarmNeedsUpdate')
+          .str('alarmName', alarmName)
+          .str(
+            'existingEvaluationPeriods',
+            existingProps.EvaluationPeriods?.toString() || 'undefined'
+          )
+          .str(
+            'newEvaluationPeriods',
+            newProps.evaluationPeriods.toString() || 'undefined'
+          )
+          .str(
+            'existingPeriod',
+            existingProps.Period?.toString() || 'undefined'
+          )
+          .str('newPeriod', newProps.period.toString() || 'undefined')
+          .str(
+            'existingExtendedStatistic',
+            existingProps.ExtendedStatistic || 'undefined'
+          )
+          .str('newExtendedStatistic', newProps.extendedStatistic)
+          .msg('Anomaly Detection Alarm needs update');
+        return true;
+      }
+    } else {
+      log
+        .info()
+        .str('function', 'anomalyCWAlarmNeedsUpdate')
+        .str('alarmName', alarmName)
+        .msg('Anomaly Detection Alarm does not exist');
+      return true;
+    }
+
+    log
+      .info()
+      .str('function', 'anomalyCWAlarmNeedsUpdate')
+      .str('alarmName', alarmName)
+      .msg('Anomaly Detection Alarm does not need update');
+    return false;
+  } catch (e) {
+    log
+      .error()
+      .err(e)
+      .str('function', 'anomalyCWAlarmNeedsUpdate')
+      .msg('Failed to determine if anomaly detection alarm needs update:');
+    throw new Error(
+      'Failed to determine if anomaly detection alarm needs update.'
+    );
+  }
+}
+
+// returns true if the alarm needs to be updated whether it exists or does not. For Static threshold CW alarms
+export async function staticCWAlarmNeedsUpdate(
   alarmName: string,
   newProps: AlarmProps
 ): Promise<boolean> {
@@ -53,12 +146,32 @@ export async function CWAlarmNeedsUpdate(
       const existingProps = existingAlarm.MetricAlarms[0];
 
       if (
-        Number(existingProps.Threshold) !== newProps.threshold ||
-        Number(existingProps.EvaluationPeriods) !==
-          newProps.evaluationPeriods ||
-        Number(existingProps.Period) !== newProps.period
+        existingProps.Threshold !== newProps.threshold ||
+        existingProps.EvaluationPeriods !== newProps.evaluationPeriods ||
+        existingProps.Period !== newProps.period
       ) {
-        log.info().str('alarmName', alarmName).msg('Alarm needs update');
+        log
+          .info()
+          .str('alarmName', alarmName)
+          .str(
+            'existingThreshold',
+            existingProps.Threshold?.toString() || 'undefined'
+          )
+          .str('newThreshold', newProps.threshold?.toString() || 'undefined')
+          .str(
+            'existingEvaluationPeriods',
+            existingProps.EvaluationPeriods?.toString() || 'undefined'
+          )
+          .str(
+            'newEvaluationPeriods',
+            newProps.evaluationPeriods?.toString() || 'undefined'
+          )
+          .str(
+            'existingPeriod',
+            existingProps.Period?.toString() || 'undefined'
+          )
+          .str('newPeriod', newProps.period?.toString() || 'undefined')
+          .msg('Alarm needs update');
         return true;
       }
     } else {
@@ -96,14 +209,14 @@ export function configureAlarmPropsFromTags(
       .msg(
         'Period value less than 10 is not allowed, must be 10. Using default value of 10'
       );
-  } else if (durationTime < 30) {
+  } else if (durationTime < 30 || durationTime <= 45) {
     durationTime = 30;
     log
       .info()
       .str('function', 'configureAlarmPropsFromTags')
       .num('period', durationTime)
       .msg(
-        'Period value less than 30 and not 10 is adjusted to 30. Using default value of 30'
+        'Period value is either 30, < 30, <= 45 or 30. Using default value of 30'
       );
   } else {
     durationTime = Math.ceil(durationTime / 60) * 60;
@@ -132,6 +245,125 @@ export function configureAlarmPropsFromTags(
     .msg('Adjusted evaluation periods based on tag');
 }
 
+export async function createOrUpdateAnomalyDetectionAlarm(
+  alarmName: string,
+  dimensionName: string,
+  dimensionNameValue: string,
+  metricName: string,
+  namespace: string,
+  extendedStatistic: string,
+  durationTime: number,
+  durationPeriods: number,
+  classification: AlarmClassification
+) {
+  if (durationTime < 10) {
+    durationTime = 10;
+    log
+      .info()
+      .str('function', 'createOrUpdateAnomalyDetectionAlarm')
+      .num('period', durationTime)
+      .msg(
+        'Period value less than 10 is not allowed, must be 10. Using default value of 10'
+      );
+  } else if (durationTime < 30 || durationTime <= 45) {
+    durationTime = 30;
+    log
+      .info()
+      .str('function', 'createOrUpdateAnomalyDetectionAlarm')
+      .num('period', durationTime)
+      .msg(
+        'Period value is either 30, < 30, <= 45 or 30. Using default value of 30'
+      );
+  } else {
+    durationTime = Math.ceil(durationTime / 60) * 60;
+    log
+      .info()
+      .str('function', 'createOrUpdateAnomalyDetectionAlarm')
+      .num('period', durationTime)
+      .msg(
+        'Period value not 10 or 30 must be multiple of 60. Adjusted to nearest multiple of 60'
+      );
+  }
+  const newProps: AnomalyAlarmProps = {
+    evaluationPeriods: durationPeriods,
+    period: durationTime,
+    extendedStatistic: extendedStatistic,
+  };
+  const alarmExists = await doesAlarmExist(alarmName);
+  if (
+    !alarmExists ||
+    (alarmExists && (await anomalyCWAlarmNeedsUpdate(alarmName, newProps)))
+  ) {
+    try {
+      // Create anomaly detector with the latest parameters
+      const anomalyDetectorInput = {
+        Namespace: namespace,
+        MetricName: metricName,
+        Dimensions: [
+          {
+            Name: dimensionName,
+            Value: dimensionNameValue,
+          },
+        ],
+        Stat: extendedStatistic,
+        Configuration: {
+          MetricTimezone: 'UTC',
+        },
+      };
+      await cloudWatchClient.send(
+        new PutAnomalyDetectorCommand(anomalyDetectorInput)
+      );
+
+      // Create anomaly detection alarm
+      const metricAlarmInput = {
+        AlarmName: alarmName,
+        ComparisonOperator: ComparisonOperator.GreaterThanUpperThreshold,
+        EvaluationPeriods: durationPeriods,
+        Metrics: [
+          {
+            Id: 'primaryMetric',
+            MetricStat: {
+              Metric: {
+                Namespace: namespace,
+                MetricName: metricName,
+                Dimensions: [{Name: dimensionName, Value: dimensionNameValue}],
+              },
+              Period: durationTime,
+              Stat: extendedStatistic,
+            },
+          },
+          {
+            Id: 'anomalyDetectionBand',
+            Expression: 'ANOMALY_DETECTION_BAND(primaryMetric)',
+          },
+        ],
+        ThresholdMetricId: 'anomalyDetectionBand',
+        ActionsEnabled: false,
+        Tags: [{Key: 'severity', Value: classification.toLowerCase()}],
+        TreatMissingData: 'ignore', // Adjust as needed
+      };
+      await cloudWatchClient.send(new PutMetricAlarmCommand(metricAlarmInput));
+
+      log
+        .info()
+        .str('function', 'createOrUpdateAnomalyDetectionAlarm')
+        .str('alarmName', alarmName)
+        .str('serviceIdentifier', dimensionNameValue)
+        .msg(`${alarmName} Anomaly Detection Alarm created or updated.`);
+    } catch (e) {
+      log
+        .error()
+        .str('function', 'createOrUpdateAnomalyDetectionAlarm')
+        .err(e)
+        .str('alarmName', alarmName)
+        .str('serviceIdentifier', dimensionNameValue)
+        .msg(
+          `Failed to create or update ${alarmName} anomaly detection alarm due to an error ${e}`
+        );
+    }
+  }
+}
+
 // Define the possible values for MissingDataTreatment
 type MissingDataTreatment = 'breaching' | 'notBreaching' | 'ignore';
 
@@ -156,6 +388,9 @@ export async function createOrUpdateCWAlarm(
       .str('function', 'createOrUpdateCWAlarm')
       .str('alarmName', alarmName)
       .str('Service Identifier', serviceIdentifier)
+      .num('threshold', threshold)
+      .num('period', durationTime)
+      .num('evaluationPeriods', durationPeriods)
       .msg('Configuring alarm props from provided values');
 
     configureAlarmPropsFromTags(
@@ -185,7 +420,7 @@ export async function createOrUpdateCWAlarm(
   const alarmExists = await doesAlarmExist(alarmName);
   if (
     !alarmExists ||
-    (alarmExists && (await CWAlarmNeedsUpdate(alarmName, props)))
+    (alarmExists && (await staticCWAlarmNeedsUpdate(alarmName, props)))
   ) {
     try {
       await cloudWatchClient.send(
@@ -263,9 +498,15 @@ export async function getCWAlarmsForInstance(
     const instanceAlarms = alarms.filter(
       alarm =>
         alarm.AlarmName &&
-        alarm.AlarmName.startsWith(
-          `AutoAlarm-${serviceIdentifier}-${instanceIdentifier}`
-        )
+        (alarm.AlarmName.startsWith(
+          `AutoAlarm-${serviceIdentifier}-StaticThreshold-${instanceIdentifier}`
+        ) ||
+          alarm.AlarmName.startsWith(
+            `AutoAlarm-${serviceIdentifier}-AnomalyDetection-${instanceIdentifier}`
+          ) ||
+          alarm.AlarmName.startsWith(
+            `AutoAlarm-${serviceIdentifier}-${instanceIdentifier}`
+          ))
     );
 
     // Push the alarm names to activeAutoAlarmAlarms, ensuring AlarmName is defined
@@ -298,6 +539,11 @@ export async function deleteCWAlarm(
   alarmName: string,
   instanceIdentifier: string
 ): Promise<void> {
+  log
+    .info()
+    .str('function', 'deleteCWAlarm')
+    .str('alarmName', alarmName)
+    .msg('checking if alarm exists...');
   const alarmExists = await doesAlarmExist(alarmName);
   if (alarmExists) {
     log
