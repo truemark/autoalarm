@@ -55,7 +55,7 @@ async function getSQSAlarmConfig(
   let durationPeriods = defaultDurationPeriods;
 
   // Define tag key based on metric
-  const tagKey = `autoalarm:${metricName}`;
+  const tagKey = `autoalarm:sqs-${metricName}`;
 
   log
     .info()
