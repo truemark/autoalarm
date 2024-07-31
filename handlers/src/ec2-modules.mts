@@ -174,7 +174,7 @@ async function getPromAlarmConfigs(
   const configs = [];
   const tags = await fetchInstanceTags(instanceId);
   const {
-    alarmName: cpuAlarmName,
+    staticThresholdAlarmName: cpuAlarmName,
     threshold: cpuThreshold,
     durationTime: cpuDurationTime,
     ec2Metadata: {platform, privateIp},
@@ -218,7 +218,7 @@ async function getPromAlarmConfigs(
   });
 
   const {
-    alarmName: memAlarmName,
+    staticThresholdAlarmName: memAlarmName,
     threshold: memThreshold,
     durationTime: memDurationTime,
   } = await getAlarmConfig(instanceId, classification, 'memory', tags);
@@ -249,7 +249,7 @@ async function getPromAlarmConfigs(
   });
 
   const {
-    alarmName: storageAlarmName,
+    staticThresholdAlarmName: storageAlarmName,
     threshold: storageThreshold,
     durationTime: storageDurationTime,
   } = await getAlarmConfig(instanceId, classification, 'storage', tags);
@@ -509,9 +509,10 @@ async function getAlarmConfig(
   metricTagName: string,
   tags: Tag
 ): Promise<{
-  alarmName: string;
+  staticThresholdAlarmName: string;
+  anomalyAlarmName: string;
   extendedStatistic: string;
-  threshold: number;
+  threshold: any;
   durationTime: number;
   durationPeriods: number;
   ec2Metadata: {platform: string | null; privateIp: string | null};
@@ -525,7 +526,7 @@ async function getAlarmConfig(
     .msg('Fetching alarm configuration');
 
   // Initialize variables with default values
-  let threshold = defaultThreshold(type);
+  let threshold: any = defaultThreshold(type);
   let extendedStatistic = defaultExtendedStatistic;
   let durationTime = defaultDurationTime;
   let durationPeriods = defaultDurationPeriods;
@@ -574,7 +575,7 @@ async function getAlarmConfig(
               ? parseInt(values[0], 10)
               : defaultThreshold(type);
           } else {
-            threshold = values[0];
+            threshold = undefined;
           }
           durationTime = !isNaN(parseInt(values[2]))
             ? parseInt(values[2], 10)
@@ -589,7 +590,7 @@ async function getAlarmConfig(
               ? parseInt(values[1], 10)
               : defaultThreshold(type);
           } else {
-            threshold = values[1];
+            threshold = undefined;
           }
           durationTime = !isNaN(parseInt(values[2]))
             ? parseInt(values[2], 10)
@@ -626,7 +627,8 @@ async function getAlarmConfig(
     }
   }
   return {
-    alarmName: `AutoAlarm-EC2-StaticThreshold-${instanceId}-${type}-${metricTagName.toUpperCase()}-Utilization`,
+    staticThresholdAlarmName: `AutoAlarm-EC2-StaticThreshold-${instanceId}-${type}-${metricTagName.toUpperCase()}-Utilization`,
+    anomalyAlarmName: `AutoAlarm-EC2-AnomalyDetection-${instanceId}-CRITICAL-${metricTagName.toUpperCase()}-Utilization`,
     extendedStatistic,
     threshold,
     durationTime,
@@ -859,7 +861,8 @@ export async function manageCPUUsageAlarmForInstance(
   usePrometheus: boolean
 ): Promise<void> {
   const {
-    alarmName,
+    staticThresholdAlarmName,
+    anomalyAlarmName,
     extendedStatistic,
     threshold,
     durationTime,
@@ -875,7 +878,7 @@ export async function manageCPUUsageAlarmForInstance(
       .str('autoalarm:target', tags['autoalarm:target'])
       .str('usePrometheus', usePrometheus.toString())
       .str('isCloudWatch', isCloudWatch.toString())
-      .str('AlarmName', alarmName)
+      .str('Static Threshold AlarmName', staticThresholdAlarmName)
       .msg(
         'autoalarm:target set to prometheus. Skipping CloudWatch alarm creation.'
       );
@@ -886,12 +889,13 @@ export async function manageCPUUsageAlarmForInstance(
       .str('function', 'manageCPUUsageAlarmForInstance')
       .str('autoalarm:target', tags['autoalarm:target'])
       .str('instanceId', instanceId)
-      .str('AlarmName', alarmName)
+      .str('Static Threshold Alarm Name', staticThresholdAlarmName)
+      .str('Anomaly Alarm Name', anomalyAlarmName)
       .msg(
         'autoalaram:target tag set to cloudwatch. Skipping prometheus rules and creating CW alarms.'
       );
     await createOrUpdateAnomalyDetectionAlarm(
-      `${alarmName}-Anomaly`,
+      anomalyAlarmName,
       'InstanceId',
       instanceId,
       'CPUUtilization',
@@ -931,19 +935,10 @@ export async function manageCPUUsageAlarmForInstance(
           'CPU alarm threshold for critical is not defined. Skipping static cpu critical alarm creation.'
         );
       return;
-    } else if (!tags['autoalarm:cw-ec2-cpu']) {
-      log
-        .info()
-        .str('function', 'manageCPUUsageAlarmForInstance')
-        .str('instanceId', instanceId)
-        .msg(
-          `CW static cpu tag does not exist. Skipping static cpu ${type} alarm creation.`
-        );
-      return;
     } else {
       await createCloudWatchAlarms(
         instanceId,
-        alarmName,
+        staticThresholdAlarmName,
         'CPUUtilization',
         'AWS/EC2',
         [{Name: 'InstanceId', Value: instanceId}],
@@ -963,7 +958,8 @@ export async function manageStorageAlarmForInstance(
   usePrometheus: boolean
 ): Promise<void> {
   const {
-    alarmName,
+    staticThresholdAlarmName,
+    anomalyAlarmName,
     extendedStatistic,
     threshold,
     durationTime,
@@ -992,7 +988,6 @@ export async function manageStorageAlarmForInstance(
     log
       .info()
       .str('function', 'manageStorageAlarmForInstance')
-      .str('AlarmName', alarmName)
       .str('autoalarm:target', tags['autoalarm:target'])
       .str('instanceId', instanceId)
       .msg(
@@ -1006,9 +1001,11 @@ export async function manageStorageAlarmForInstance(
     if (paths.length > 0) {
       for (const path of paths) {
         const dimensions_props = storagePaths[path];
-        const storageAlarmName = `${alarmName}-${path}`;
+        const staticThresholdStorageAlarmName = `${staticThresholdAlarmName}-${path}`;
+        const anomalyStorageAlarmName = `${anomalyAlarmName}-${path}`;
+
         await createOrUpdateAnomalyDetectionAlarm(
-          `${storageAlarmName}-Anomaly`,
+          anomalyStorageAlarmName,
           'InstanceId',
           instanceId,
           metricName,
@@ -1023,7 +1020,6 @@ export async function manageStorageAlarmForInstance(
           .str('function', 'manageStorageAlarmForInstance')
           .str('instanceId', instanceId)
           .str('path', path)
-          .str('storageAlarmName', storageAlarmName)
           .msg('Creating storage alarm');
         if (
           (type === 'WARNING' &&
@@ -1058,7 +1054,7 @@ export async function manageStorageAlarmForInstance(
         } else {
           await createCloudWatchAlarms(
             instanceId,
-            storageAlarmName,
+            staticThresholdStorageAlarmName,
             metricName,
             'CWAgent',
             dimensions_props,
@@ -1088,7 +1084,8 @@ export async function manageMemoryAlarmForInstance(
   usePrometheus: boolean
 ): Promise<void> {
   const {
-    alarmName,
+    staticThresholdAlarmName,
+    anomalyAlarmName,
     extendedStatistic,
     threshold,
     durationTime,
@@ -1110,7 +1107,6 @@ export async function manageMemoryAlarmForInstance(
       .str('autoalarm:target', tags['autoalarm:target'])
       .str('usePrometheus', usePrometheus.toString())
       .str('isCloudWatch', isCloudWatch.toString())
-      .str('AlarmName', alarmName)
       .msg(
         'Prometheus Metrics being recieved from instance. Skipping CloudWatch alarm creation.'
       );
@@ -1119,10 +1115,8 @@ export async function manageMemoryAlarmForInstance(
     log
       .info()
       .str('function', 'manageMemoryAlarmForInstance')
-      .str('AlarmName', alarmName)
       .str('autoalarm:target', tags['autoalarm:target'])
       .str('instanceId', instanceId)
-      .str('AlarmName', alarmName)
       .msg(
         'autoalarm:target set to cloudwatch. Skipping prometheus rules and checking if memory metrics are being reported to CW.'
       );
@@ -1135,7 +1129,7 @@ export async function manageMemoryAlarmForInstance(
         .msg('Memory metrics found. Creating CloudWatch alarm');
 
       await createOrUpdateAnomalyDetectionAlarm(
-        `${alarmName}-Anomaly`,
+        anomalyAlarmName,
         'InstanceId',
         instanceId,
         metricName,
@@ -1179,7 +1173,7 @@ export async function manageMemoryAlarmForInstance(
       } else {
         await createCloudWatchAlarms(
           instanceId,
-          alarmName,
+          staticThresholdAlarmName,
           metricName,
           'CWAgent',
           [{Name: 'InstanceId', Value: instanceId}],

@@ -250,7 +250,7 @@ export async function createOrUpdateAnomalyDetectionAlarm(
                 Dimensions: [{Name: dimensionName, Value: dimensionNameValue}],
               },
               Period: durationTime,
-              Stat: 'Average',
+              Stat: '',
               ExtendedStatistic: extendedStatistic,
             },
           },
