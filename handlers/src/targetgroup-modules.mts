@@ -10,7 +10,7 @@ import {
   createOrUpdateCWAlarm,
   getCWAlarmsForInstance,
   deleteCWAlarm,
-  createAnomalyDetectionAlarm,
+  createOrUpdateAnomalyDetectionAlarm,
 } from './alarm-tools.mjs';
 
 const log: logging.Logger = logging.getLogger('targetgroup-modules');
@@ -244,12 +244,13 @@ async function checkAndManageTGStatusAlarms(
 
           // Create anomaly detection alarm. Critical only.
           if (classification === 'CRITICAL')
-            await createAnomalyDetectionAlarm(
+            await createOrUpdateAnomalyDetectionAlarm(
               `${alarmName}-Anomaly`,
               'TargetGroup',
               targetGroupName,
               metricName,
               namespace,
+              'p90',
               durationTime,
               durationPeriods,
               classification as AlarmClassification
@@ -275,12 +276,13 @@ async function checkAndManageTGStatusAlarms(
               tags
             );
 
-          await createAnomalyDetectionAlarm(
+          await createOrUpdateAnomalyDetectionAlarm(
             `${alarmName}-Anomaly`,
             'TargetGroup',
             targetGroupName,
             metricName,
             namespace,
+            'p90',
             durationTime,
             durationPeriods,
             'CRITICAL' as AlarmClassification
