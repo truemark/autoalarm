@@ -52,6 +52,7 @@ The system is event-driven, responding to EC2 state change notifications and tag
 
 ## Supported Tags
 
+
 | Tag                                    | Description                                                                                                             | Default Value                                               |
 |----------------------------------------|-------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------|
 | `autoalarm:enabled`                    | If set to "true", instance status check alarms will be created for the resource.                                        | `false`                                                     |
@@ -68,8 +69,6 @@ The system is event-driven, responding to EC2 state change notifications and tag
 | `autoalarm:sqs-NumberOfMessagesSent`   | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "500\|100\|60\|2".   | "500\|1000\|60\|2"                                          |
 | `autoalarm:sqs-ApproximateNumberOfMessagesVisible`   | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "500\|100\|60\|2".   | "500\|1000\|60\|2"                                          |
 | `autoalarm:sqs-ApproximateAgeOfOldestMessage`   | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "500\|100\|60\|2".   | "500\|1000\|60\|2"                                          |
-
-
 
 ### Default Alarm Behavior
 
@@ -104,7 +103,6 @@ The project configures AWS EventBridge to route specific events to the AutoAlarm
 | **Event Source** | `aws.elasticloadbalancing`                                     |
 | **Detail Type**  | AWS API Call via CloudTrail                                    |
 | **Event Names**  | `CreateLoadBalancer`, `DeleteLoadBalancer`                     |
-
 ### Target Group Event Rule
 
 | Description      | Value                                                          |

@@ -62,3 +62,9 @@ export interface Rule {
 export interface NamespaceDetails {
   groups: RuleGroup[];
 }
+
+export interface AnomalyAlarmProps {
+  evaluationPeriods: number;
+  period: number;
+  extendedStatistic: string;
+}

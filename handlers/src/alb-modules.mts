@@ -9,7 +9,7 @@ import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
   getCWAlarmsForInstance,
   deleteCWAlarm,
-  createAnomalyDetectionAlarm,
+  createOrUpdateAnomalyDetectionAlarm,
 } from './alarm-tools.mjs';
 
 const log: logging.Logger = logging.getLogger('alb-modules');
@@ -197,12 +197,13 @@ async function checkAndManageALBStatusAlarms(
           tags
         );
 
-      await createAnomalyDetectionAlarm(
+      await createOrUpdateAnomalyDetectionAlarm(
         alarmName,
         'LoadBalancer',
         loadBalancerName,
         metricName,
         namespace,
+        'p90',
         durationTime,
         durationPeriods,
         'CRITICAL' as AlarmClassification
