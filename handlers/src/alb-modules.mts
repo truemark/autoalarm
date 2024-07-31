@@ -113,6 +113,7 @@ async function getALBAlarmConfig(
     .str('anomalyTagValue', tags[anomalyTagKey])
     .msg('Fetched instance tags');
 
+
   // Extract and parse the static threshold tag values
   if (tags[cwTagKey]) {
     const staticValues = tags[cwTagKey].split('/');
@@ -126,6 +127,7 @@ async function getALBAlarmConfig(
       .msg('Fetched Static Threshold tag values');
 
     if (staticValues.length < 1 || staticValues.length > 4) {
+
       log
         .warn()
         .str('function', 'getALBAlarmConfig')
@@ -133,7 +135,9 @@ async function getALBAlarmConfig(
         .str('cwTagKey', cwTagKey)
         .str('cwTagValue', tags[cwTagKey])
         .msg(
+
           'Invalid tag values/delimiters. Please use 4 values separated by a "|". Using default values'
+
         );
     } else {
       switch (type) {
