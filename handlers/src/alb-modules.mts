@@ -82,7 +82,7 @@ async function getALBAlarmConfig(
 
   // Extract and parse the tag value
   if (tags[tagKey]) {
-    const values = tags[tagKey].split('|');
+    const values = tags[tagKey].split('/');
     if (values.length < 1 || values.length > 4) {
       log
         .warn()
@@ -91,7 +91,7 @@ async function getALBAlarmConfig(
         .str('tagKey', tagKey)
         .str('tagValue', tags[tagKey])
         .msg(
-          'Invalid tag values/delimiters. Please use 4 values seperated by a "|". Using default values'
+          'Invalid tag values/delimiters. Please use 4 values seperated by a "/". Using default values'
         );
     } else {
       switch (type) {
