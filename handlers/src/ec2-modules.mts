@@ -534,10 +534,6 @@ async function getAlarmConfig(
   log
     .info()
     .str('function', 'getAlarmConfig')
-    .str(
-      'alarmName',
-      `AutoAlarm-EC2-${instanceId}-${type}-${metricTagName.toUpperCase()}-Utilization`
-    )
     .str('instanceId', instanceId)
     .msg('Fetching alarm configuration');
 
@@ -556,8 +552,17 @@ async function getAlarmConfig(
 
   // Extract and parse the tag value
   if (tags[cwTagKey]) {
-    const values = tags[cwTagKey].split('|');
-    if (values.length < 1 || values.length > 4) {
+    const staticValues = tags[cwTagKey].split('|');
+    log
+      .info()
+      .str('function', 'getAlarmConfig')
+      .str('instanceId', instanceId)
+      .str('tagKey', cwTagKey)
+      .str('tagValue', tags[cwTagKey])
+      .str('staticValues', JSON.stringify(staticValues))
+      .msg('Fetched Static Threshold tag values');
+
+    if (staticValues.length < 1 || staticValues.length > 4) {
       log
         .warn()
         .str('function', 'getAlarmConfig')
@@ -565,44 +570,52 @@ async function getAlarmConfig(
         .str('tagKey', cwTagKey)
         .str('tagValue', tags[cwTagKey])
         .msg(
-          'Invalid tag values/delimiters. Please use 4 values seperated by a "|". Using default values'
+          'Invalid tag values/delimiters. Please use 4 values separated by a "|". Using default values'
         );
     } else {
       switch (type) {
         case 'WARNING':
-          if (values[0] !== undefined) {
-            threshold = !isNaN(parseInt(values[0]))
-              ? parseInt(values[0], 10)
+          threshold =
+            staticValues[0] !== undefined && staticValues[0] !== ''
+              ? parseInt(staticValues[0], 10)
               : defaultThreshold(type);
-          } else {
-            threshold = undefined;
-          }
-          durationTime = !isNaN(parseInt(values[2]))
-            ? parseInt(values[2], 10)
-            : defaultDurationTime;
-          durationPeriods = !isNaN(parseInt(values[3]))
-            ? parseInt(values[3], 10)
-            : defaultDurationPeriods;
+          durationTime =
+            staticValues[2] !== undefined && staticValues[2] !== ''
+              ? parseInt(staticValues[2], 10)
+              : defaultDurationTime;
+          durationPeriods =
+            staticValues[3] !== undefined && staticValues[3] !== ''
+              ? parseInt(staticValues[3], 10)
+              : defaultDurationPeriods;
           break;
         case 'CRITICAL':
-          if (values[1] !== undefined) {
-            threshold = !isNaN(parseInt(values[1]))
-              ? parseInt(values[1], 10)
+          threshold =
+            staticValues[1] !== undefined && staticValues[1] !== ''
+              ? parseInt(staticValues[1], 10)
               : defaultThreshold(type);
-          } else {
-            threshold = undefined;
-          }
-          durationTime = !isNaN(parseInt(values[2]))
-            ? parseInt(values[2], 10)
-            : defaultDurationTime;
-          durationPeriods = !isNaN(parseInt(values[3]))
-            ? parseInt(values[3], 10)
-            : defaultDurationPeriods;
+          durationTime =
+            staticValues[2] !== undefined && staticValues[2] !== ''
+              ? parseInt(staticValues[2], 10)
+              : defaultDurationTime;
+          durationPeriods =
+            staticValues[3] !== undefined && staticValues[3] !== ''
+              ? parseInt(staticValues[3], 10)
+              : defaultDurationPeriods;
           break;
       }
     }
-  } else if (tags[anomalyTagKey]) {
+  }
+  if (tags[anomalyTagKey]) {
     const values = tags[anomalyTagKey].split('|');
+    log
+      .info()
+      .str('function', 'getAlarmConfig')
+      .str('instanceId', instanceId)
+      .str('tagKey', anomalyTagKey)
+      .str('tagValue', tags[anomalyTagKey])
+      .str('values', JSON.stringify(values))
+      .msg('Fetched Anomaly Detection tag values');
+
     if (values.length < 1 || values.length > 3) {
       log
         .warn()
@@ -611,19 +624,31 @@ async function getAlarmConfig(
         .str('tagKey', anomalyTagKey)
         .str('tagValue', tags[anomalyTagKey])
         .msg(
-          'Invalid tag values/delimiters. Please use 3 values seperated by a "|". Using default values'
+          'Invalid tag values/delimiters. Please use 3 values separated by a "|". Using default values'
         );
     } else {
       extendedStatistic =
-        typeof values[0] === 'string'
+        typeof values[0] === 'string' && values[0].trim() !== ''
           ? values[0].trim()
           : defaultExtendedStatistic;
-      durationTime = !isNaN(parseInt(values[1]))
-        ? parseInt(values[1], 10)
-        : defaultDurationTime;
-      durationPeriods = !isNaN(parseInt(values[2]))
-        ? parseInt(values[2], 10)
-        : defaultDurationPeriods;
+      durationTime =
+        values[1] !== undefined && values[1] !== ''
+          ? parseInt(values[1], 10)
+          : defaultDurationTime;
+      durationPeriods =
+        values[2] !== undefined && values[2] !== ''
+          ? parseInt(values[2], 10)
+          : defaultDurationPeriods;
+      log
+        .info()
+        .str('function', 'getAlarmConfig')
+        .str('instanceId', instanceId)
+        .str('tagKey', anomalyTagKey)
+        .str('tagValue', tags[anomalyTagKey])
+        .str('extendedStatistic', extendedStatistic)
+        .num('durationTime', durationTime)
+        .num('durationPeriods', durationPeriods)
+        .msg('Fetched Anomaly Detection tag values');
     }
   }
   return {
@@ -869,7 +894,6 @@ export async function manageCPUUsageAlarmForInstance(
     durationPeriods,
   } = await getAlarmConfig(instanceId, type, 'cpu', tags);
 
-  //we should consolidate the promethues tag check and the iscloudwatch check into manage active isntances and instead pass a boolean to this function and create prom alarms based of that.
   if (usePrometheus) {
     log
       .info()
@@ -877,7 +901,6 @@ export async function manageCPUUsageAlarmForInstance(
       .str('instanceId', instanceId)
       .str('autoalarm:target', tags['autoalarm:target'])
       .str('usePrometheus', usePrometheus.toString())
-      .str('isCloudWatch', isCloudWatch.toString())
       .str('Static Threshold AlarmName', staticThresholdAlarmName)
       .msg(
         'autoalarm:target set to prometheus. Skipping CloudWatch alarm creation.'
@@ -892,8 +915,9 @@ export async function manageCPUUsageAlarmForInstance(
       .str('Static Threshold Alarm Name', staticThresholdAlarmName)
       .str('Anomaly Alarm Name', anomalyAlarmName)
       .msg(
-        'autoalaram:target tag set to cloudwatch. Skipping prometheus rules and creating CW alarms.'
+        'autoalarm:target tag set to cloudwatch. Skipping prometheus rules and creating CW alarms.'
       );
+
     await createOrUpdateAnomalyDetectionAlarm(
       anomalyAlarmName,
       'InstanceId',
@@ -905,49 +929,54 @@ export async function manageCPUUsageAlarmForInstance(
       durationPeriods,
       'CRITICAL' as AlarmClassification
     );
-    if (
-      (type === 'WARNING' &&
-        (tags['autoalarm:cw-ec2-cpu'][0] === undefined ||
-          tags['autoalarm:cw-ec2-cpu'][0] === '')) ||
-      !tags['autoalarm:cw-ec2-cpu']
-    ) {
-      log
-        .info()
-        .str('function', 'manageCPUUsageAlarmForInstance')
-        .str('instanceId', instanceId)
-        .str('autoalarm:cw-ec2-cpu', tags['autoalarm:cw-ec2-cpu'])
-        .msg(
-          'CPU alarm threshold for warning is not defined. Skipping static cpu warning alarm creation.'
-        );
-      return;
-    } else if (
-      (type === 'CRITICAL' &&
-        (tags['autoalarm:cw-ec2-cpu'][1] === '' ||
-          tags['autoalarm:cw-ec2-cpu'][1] === undefined)) ||
-      !tags['autoalarm:cw-ec2-cpu']
-    ) {
-      log
-        .info()
-        .str('function', 'manageCPUUsageAlarmForInstance')
-        .str('instanceId', instanceId)
-        .str('autoalarm:cw-ec2-cpu', tags['autoalarm:cw-ec2-cpu'])
-        .msg(
-          'CPU alarm threshold for critical is not defined. Skipping static cpu critical alarm creation.'
-        );
-      return;
-    } else {
-      await createCloudWatchAlarms(
-        instanceId,
-        staticThresholdAlarmName,
-        'CPUUtilization',
-        'AWS/EC2',
-        [{Name: 'InstanceId', Value: instanceId}],
-        threshold,
-        durationTime,
-        durationPeriods,
-        type
-      );
+
+    if (type === 'WARNING') {
+      if (
+        !tags['autoalarm:cw-ec2-cpu'] ||
+        tags['autoalarm:cw-ec2-cpu'].split('|')[0] === undefined ||
+        tags['autoalarm:cw-ec2-cpu'].split('|')[0] === ''
+      ) {
+        log
+          .info()
+          .str('function', 'manageCPUUsageAlarmForInstance')
+          .str('instanceId', instanceId)
+          .str('autoalarm:cw-ec2-cpu', tags['autoalarm:cw-ec2-cpu'])
+          .msg(
+            'CPU alarm threshold for warning is not defined. Skipping static cpu warning alarm creation.'
+          );
+        await deleteCWAlarm(staticThresholdAlarmName, instanceId);
+        return;
+      }
+    } else if (type === 'CRITICAL') {
+      if (
+        !tags['autoalarm:cw-ec2-cpu'] ||
+        tags['autoalarm:cw-ec2-cpu'].split('|')[1] === '' ||
+        tags['autoalarm:cw-ec2-cpu'].split('|')[1] === undefined
+      ) {
+        log
+          .info()
+          .str('function', 'manageCPUUsageAlarmForInstance')
+          .str('instanceId', instanceId)
+          .str('autoalarm:cw-ec2-cpu', tags['autoalarm:cw-ec2-cpu'])
+          .msg(
+            'CPU alarm threshold for critical is not defined. Skipping static cpu critical alarm creation.'
+          );
+        await deleteCWAlarm(staticThresholdAlarmName, instanceId);
+        return;
+      }
     }
+
+    await createCloudWatchAlarms(
+      instanceId,
+      staticThresholdAlarmName,
+      'CPUUtilization',
+      'AWS/EC2',
+      [{Name: 'InstanceId', Value: instanceId}],
+      threshold,
+      durationTime,
+      durationPeriods,
+      type
+    );
   }
 }
 
@@ -1022,10 +1051,10 @@ export async function manageStorageAlarmForInstance(
           .str('path', path)
           .msg('Creating storage alarm');
         if (
-          (type === 'WARNING' &&
-            (tags['autoalarm:cw-ec2-storage'][0] === undefined ||
-              tags['autoalarm:cw-ec2-storage'][0] === '')) ||
-          !tags['autoalarm:cw-ec2-storage']
+          type === 'WARNING' &&
+          (!tags['autoalarm:cw-ec2-storage'] ||
+            tags['autoalarm:cw-ec2-storage'].split('|')[0] === undefined ||
+            tags['autoalarm:cw-ec2-storage'].split('|')[0] === '')
         ) {
           log
             .info()
@@ -1035,12 +1064,13 @@ export async function manageStorageAlarmForInstance(
             .msg(
               'Storage alarm threshold for warning is not defined. Skipping static storage warning alarm creation.'
             );
+          await deleteCWAlarm(staticThresholdStorageAlarmName, instanceId);
           return;
         } else if (
-          (type === 'CRITICAL' &&
-            (tags['autoalarm:cw-ec2-storage'][1] === '' ||
-              tags['autoalarm:cw-ec2-storage'][1] === undefined)) ||
-          !tags['autoalarm:cw-ec2-storage']
+          type === 'CRITICAL' &&
+          (!tags['autoalarm:cw-ec2-storage'] ||
+            tags['autoalarm:cw-ec2-storage'].split('|')[1] === '' ||
+            tags['autoalarm:cw-ec2-storage'].split('|')[1] === undefined)
         ) {
           log
             .info()
@@ -1050,6 +1080,7 @@ export async function manageStorageAlarmForInstance(
             .msg(
               'Storage alarm threshold for critical is not defined. Skipping static storage critical alarm creation.'
             );
+          await deleteCWAlarm(staticThresholdStorageAlarmName, instanceId);
           return;
         } else {
           await createCloudWatchAlarms(
@@ -1141,10 +1172,10 @@ export async function manageMemoryAlarmForInstance(
       );
 
       if (
-        (type === 'WARNING' &&
-          (tags['autoalarm:cw-ec2-memory'][0] === undefined ||
-            tags['autoalarm:cw-ec2-memory'][0] === '')) ||
-        !tags['autoalarm:cw-ec2-memory']
+        type === 'WARNING' &&
+        (!tags['autoalarm:cw-ec2-memory'] ||
+          tags['autoalarm:cw-ec2-memory'].split('|')[0] === undefined ||
+          tags['autoalarm:cw-ec2-memory'].split('|')[0] === '')
       ) {
         log
           .info()
@@ -1154,12 +1185,13 @@ export async function manageMemoryAlarmForInstance(
           .msg(
             'Memory alarm threshold for warning is not defined. Skipping static memory warning alarm creation.'
           );
+        await deleteCWAlarm(staticThresholdAlarmName, instanceId);
         return;
       } else if (
-        (type === 'CRITICAL' &&
-          (tags['autoalarm:cw-ec2-memory'][1] === '' ||
-            tags['autoalarm:cw-ec2-memory'][1] === undefined)) ||
-        !tags['autoalarm:cw-ec2-memory']
+        type === 'CRITICAL' &&
+        (!tags['autoalarm:cw-ec2-memory'] ||
+          tags['autoalarm:cw-ec2-memory'].split('|')[1] === '' ||
+          tags['autoalarm:cw-ec2-memory'].split('|')[1] === undefined)
       ) {
         log
           .info()
@@ -1169,6 +1201,7 @@ export async function manageMemoryAlarmForInstance(
           .msg(
             'Memory alarm threshold for critical is not defined. Skipping static memory critical alarm creation.'
           );
+        await deleteCWAlarm(staticThresholdAlarmName, instanceId);
         return;
       } else {
         await createCloudWatchAlarms(
