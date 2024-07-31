@@ -349,6 +349,16 @@ async function checkAndManageALBStatusAlarms(
             .msg('Unexpected metric name');
       }
 
+      log
+        .info()
+        .str('function', 'checkAndManageALBStatusAlarms')
+        .str('loadBalancerName', loadBalancerName)
+        .str('cwTagKey', cwTagKey)
+        .str('cwTagValue', tags[cwTagKey] || 'undefined')
+        .str('anomalyTagKey', anomalyTagKey)
+        .str('anomalyTagValue', tags[anomalyTagKey] || 'undefined')
+        .msg('Tag values before processing');
+
       for (const type of ['WARNING', 'CRITICAL'] as AlarmClassification[]) {
         const {
           staticThresholdAlarmName,
@@ -383,32 +393,32 @@ async function checkAndManageALBStatusAlarms(
         // Check and create or delete static threshold alarm based on tag values
         if (
           type === 'WARNING' &&
-          (!tags[`${cwTagKey}`] ||
-            tags[`${cwTagKey}`].split('/')[0] === undefined ||
-            tags[`${cwTagKey}`].split('/')[0] === '' ||
-            !tags[`${cwTagKey}`].split('/')[0])
+          (!tags[cwTagKey] ||
+            tags[cwTagKey].split('/')[0] === undefined ||
+            tags[cwTagKey].split('/')[0] === '' ||
+            !tags[cwTagKey].split('/')[0])
         ) {
           log
             .info()
             .str('function', 'checkAndManageALBStatusAlarms')
             .str('loadBalancerName', loadBalancerName)
-            .str(`${cwTagKey}`, tags[`${cwTagKey}`])
+            .str(cwTagKey, tags[cwTagKey])
             .msg(
               `ALB alarm threshold for ${metricName} WARNING is not defined. Skipping static ${metricName} warning alarm creation.`
             );
           await deleteCWAlarm(staticThresholdAlarmName, loadBalancerName);
         } else if (
           type === 'CRITICAL' &&
-          (!tags[`${cwTagKey}`] ||
-            tags[`${cwTagKey}`].split('/')[1] === '' ||
-            tags[`${cwTagKey}`].split('/')[1] === undefined ||
-            !tags[`autoalarm:cw-alb-${metricName}`].split('/')[1])
+          (!tags[cwTagKey] ||
+            tags[cwTagKey].split('/')[1] === '' ||
+            tags[cwTagKey].split('/')[1] === undefined ||
+            !tags[cwTagKey].split('/')[1])
         ) {
           log
             .info()
             .str('function', 'checkAndManageALBStatusAlarms')
             .str('loadBalancerName', loadBalancerName)
-            .str(`${anomalyTagKey}`, tags[`${anomalyTagKey}`])
+            .str(cwTagKey, tags[cwTagKey])
             .msg(
               `ALB alarm threshold for ${metricName} CRITICAL is not defined. Skipping static ${metricName} critical alarm creation.`
             );
