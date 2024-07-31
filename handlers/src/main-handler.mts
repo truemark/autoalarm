@@ -64,7 +64,10 @@ async function processEC2TagEvent(event: any) {
     liveStates.has(state)
   ) {
     await manageActiveInstanceAlarms(instanceId, tags);
-  } else if (!tags['autoalarm:enabled']) {
+  } else if (
+    !tags['autoalarm:enabled'] ||
+    tags['autoalarm:enabled'] === undefined
+  ) {
     log
       .info()
       .str('function', 'processEC2TagEvent')
