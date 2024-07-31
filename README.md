@@ -52,25 +52,28 @@ The system is event-driven, responding to EC2 state change notifications and tag
 
 ## Supported Tags
 
-| Tag                               | Description                                                                                                           | Default Value   |
-|-----------------------------------|-----------------------------------------------------------------------------------------------------------------------|-----------------|
-| `autoalarm:enabled`               | If set to "true", instance status check alarms will be created for the resource.                                      | `false`         |
-| `autoalarm:ec2-cpu`               | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "90\|95\|60\|2".   | "90\|95\|60\|2" |
-| `autoalarm:ec2-storage`           | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "90\|95\|60\|2".   | "90\|95\|60\|2" |
-| `autoalarm:ec2-memory`            | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "90\|95\|60\|2".   | "90\|95\|60\|2" |
-| `autoalarm:target`                | Specifies whether to use CloudWatch or Prometheus for monitoring. Default is CloudWatch.                              | `cloudwatch`    |
-| `autoalarm:alb-request-count`     | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2".| "1500\|1750\|60\|2" |
-| `autoalarm:alb-HTTPCode_ELB_4XX_Count` | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2".| "1500\|1750\|60\|2" |
-| `autoalarm:alb-HTTPCode_ELB_5XX`  | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2".| "1500\|1750\|60\|2" |
-| `autoalarm:TargetResponseTime`    | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2".| "1500\|1750\|60\|2" |
-| `autoalarm:HTTPCode_Target_4XX`   | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2".| "1500\|1750\|60\|2" |
-| `autoalarm:HTTPCode_Target_5XX`   | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2".| "1500\|1750\|60\|2" |
+| Tag                                    | Description                                                                                                             | Default Value                                               |
+|----------------------------------------|-------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------|
+| `autoalarm:enabled`                    | If set to "true", instance status check alarms will be created for the resource.                                        | `false`                                                     |
+| `autoalarm:ec2-cpu`                    | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "90\|95\|60\|2".     | "90\|95\|60\|2"                                             |
+| `autoalarm:ec2-storage`                | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "90\|95\|60\|2".     | "90\|95\|60\|2"                                             |
+| `autoalarm:ec2-memory`                 | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "90\|95\|60\|2".     | "90\|95\|60\|2"                                             |
+| `autoalarm:target`                     | Specifies whether to use CloudWatch or Prometheus for monitoring. Default is CloudWatch.                                | `Prometheus` if Promethesu workspace ID is passed to lambda |
+| `autoalarm:alb-request-count`          | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2". | "1500\|1750\|60\|2"                                         |
+| `autoalarm:alb-HTTPCode_ELB_4XX_Count` | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2". | "1500\|1750\|60\|2"                                         |
+| `autoalarm:alb-HTTPCode_ELB_5XX`       | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2". | "1500\|1750\|60\|2"                                         |
+| `autoalarm:TargetResponseTime`         | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2". | "1500\|1750\|60\|2"                                         |
+| `autoalarm:HTTPCode_Target_4XX`        | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2". | "1500\|1750\|60\|2"                                         |
+| `autoalarm:HTTPCode_Target_5XX`        | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2". | "1500\|1750\|60\|2"                                         |
+| `autoalarm:sqs-NumberOfMessagesSent`   | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "500\|100\|60\|2".   | "500\|1000\|60\|2"                                          |
+| `autoalarm:sqs-ApproximateNumberOfMessagesVisible`   | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "500\|100\|60\|2".   | "500\|1000\|60\|2"                                          |
+| `autoalarm:sqs-ApproximateAgeOfOldestMessage`   | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "500\|100\|60\|2".   | "500\|1000\|60\|2"                                          |
 
 
 
 ### Default Alarm Behavior
 
-If the `autoalarm:cpu-percent-above-critical` and `autoalarm:cpu-percent-above-warning` tags are not present, alarms will be created with default thresholds of 99% for critical alarms and 97% for warning alarms, respectively. These default settings ensure that basic monitoring is in place even if specific customizations are not specified. This default behavior helps to maintain a baseline of operational awareness and prompt response capability.
+If the `autoalarm:ec2-cpu` tag is not present, alarms will be created with default thresholds of 95% for critical alarms and 90% for warning alarms, respectively. These default settings ensure that basic monitoring is in place even if specific customizations are not specified. This default behavior helps to maintain a baseline of operational awareness and prompt response capability.
 
 ## EventBridge Rules
 
@@ -110,33 +113,50 @@ The project configures AWS EventBridge to route specific events to the AutoAlarm
 | **Detail Type**  | AWS API Call via CloudTrail                                    |
 | **Event Names**  | `CreateTargetGroup`, `DeleteTargetGroup`                       |
 
+### SQS Event Rule
+
+| Description      | Value                                                 |
+| ---------------- |-------------------------------------------------------|
+| **Event Source** | `aws.sqs`                                             |
+| **Detail Type**  | AWS API Call via CloudTrail                           |
+| **Event Names**  | `CreateQueue`, `DeleteQueue`, `TagQueue`, `UntagQueue` |
+
+
 ## Prometheus Rules
 
 ### Supported Metrics for Prometheus Rules
 
 - **CPU Utilization**
-- **Memory Utilization** 
-- **Storage Utilization** 
+- **Memory Utilization**
+- **Storage Utilization**
 
 ## IAM Role and Permissions
 
 The Lambda execution role requires specific permissions to interact with AWS services:
 
-- **Prometheus**: 
+- **Prometheus**:
   - Actions: `aps:QueryMetrics`, `aps:ListRuleGroupsNamespaces`, `aps:DescribeRuleGroupsNamespace`, `aps:CreateRuleGroupsNamespace`, `aps:PutRuleGroupsNamespace`, `aps:DeleteRuleGroupsNamespace`
   - Resources: `arn:aws:aps:${region}:${accountId}:workspace/${prometheusWorkspaceId}`, `arn:aws:aps:${region}:${accountId}:*/${prometheusWorkspaceId}/*`
 
-- **EC2 and CloudWatch**: 
+- **EC2 and CloudWatch**:
   - Actions: `ec2:DescribeInstances`, `ec2:DescribeTags`, `cloudwatch:PutMetricAlarm`, `cloudwatch:DeleteAlarms`, `cloudwatch:DescribeAlarms`, `cloudwatch:ListMetrics`
   - Resources: `*`
 
-- **CloudWatch Logs**: 
+- **CloudWatch Logs**:
   - Actions: `logs:CreateLogGroup`, `logs:CreateLogStream`, `logs:PutLogEvents`
+  - Resources: `*`
+
+- **Elasic Load Balancing**:
+  - Actions: `elasticloadbalancing:DescribeLoadBalancers`, `elasticloadbalancing:DescribeTargetGroups`, `elasticloadbalancing:DescribeTags`, `elasticloadbalancing:DescribeTargetHealth`
+  - Resources: `*`
+
+- **SQS**:
+  - Actions: `sqs:GetQueueAttributes`, `sqs:ListQueues`, `sqs:ListQueueTags`, `sqs:TagQueue`
   - Resources: `*`
 
 ## Limitations
 
-- Currently supports only EC2 instances, ALBs, and Target Groups. Extension to other services like ECS or RDS would require modifications to the Lambda function and CDK setup.
+- Currently supports only EC2 instances, ALBs, Target Groups and SQS. Extension to other services like ECS or RDS would require modifications to the Lambda function and CDK setup.
 - Tag-based configuration may not be suitable for all use cases. Customization options are limited to the supported tags.
 - Some alarms and rules are created by default even without tags, such as CPU utilization alarms, and can only be modified with the use of tags. Otherwise, they will be created with default values.
 
