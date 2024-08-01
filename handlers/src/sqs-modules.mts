@@ -128,7 +128,7 @@ async function getSQSAlarmConfig(
         .str('cwTagKey', cwTagKey)
         .str('cwTagValue', tags[cwTagKey])
         .msg(
-          'Invalid tag values/delimiters. Please use 4 values separated by a "|". Using default values'
+          'Invalid tag values/delimiters. Please use 4 values separated by a "/". Using default values'
         );
     } else {
       switch (type) {
