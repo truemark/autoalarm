@@ -70,7 +70,7 @@ async function getTGAlarmConfig(
   log
     .info()
     .str('function', 'getTGAlarmConfig')
-    .str('instanceId', targetGroupName)
+    .str('TargetGroupName', targetGroupName)
     .str('type', type)
     .str('metric', metricName)
     .msg('Fetching alarm configuration');
