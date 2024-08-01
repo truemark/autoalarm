@@ -96,38 +96,16 @@ The project configures AWS EventBridge to route specific events to the AutoAlarm
 
 ### Tag Rule
 
-| Description          | Value                                                                                                                                                                              |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Event Source**     | `aws.tag`                                                                                                                                                                          |
-| **Detail Type**      | Tag Change on Resource                                                                                                                                                             |
-| **Service**          | EC2, ECS, RDS, ELB, Target Group                                                                                                                                                   |
-| **Resource Type**    | Instance, loadbalancer, targetgroup                                                                                                                                                |
-| **Changed Tag Keys** | `autoalarm:enabled`, `autoalarm:ec2-cpu`, `autoalarm:ec2-storage`, `autoalarm:ec2-memory`, `autoalarm:target`, `autoalarm:alb-request-count`, `autoalarm:alb-HTTPCode_ELB_4XX_Count`, `autoalarm:alb-HTTPCode_ELB_5XX`, `autoalarm:TargetResponseTime`, `autoalarm:HTTPCode_Target_4XX`, `autoalarm:HTTPCode_Target_5XX` |
-
-### EC2 State Change Rule
-
-| Description      | Value                                                          |
-| ---------------- | -------------------------------------------------------------- |
-| **Event Source** | `aws.ec2`                                                      |
-| **Detail Type**  | EC2 Instance State-change Notification                         |
-| **States**       | `running`, `terminated`, `stopped`, `shutting-down`, `pending` |
-
-### ALB Event Rule
-
-| Description      | Value                                                          |
-| ---------------- | -------------------------------------------------------------- |
-| **Event Source** | `aws.elasticloadbalancing`                                     |
-| **Detail Type**  | AWS API Call via CloudTrail                                    |
-| **Event Names**  | `CreateLoadBalancer`, `DeleteLoadBalancer`                     |
-### Target Group Event Rule
-
-| Description      | Value                                                          |
-| ---------------- | -------------------------------------------------------------- |
-| **Event Source** | `aws.elasticloadbalancing`                                     |
-| **Detail Type**  | AWS API Call via CloudTrail                                    |
-| **Event Names**  | `CreateTargetGroup`, `DeleteTargetGroup`                       |
-
-### SQS Event Rule
+| Description          | Value                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+|----------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Event Source**     | `aws.tag`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| **Detail Type**      | Tag Change on Resource                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| **Service**          | EC2, ECS, RDS, ELB, Target Group                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| **Resource Type**    | Instance, loadbalancer, targetgroup                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| **Changed Tag Keys** | `autoalarm:enabled`,`autoalarm:target`, `autoalarm:cw-ec2-cpu`, `autoalarm:cw-ec2-storage`, `autoalarm:cw-ec2-memory`, `autoalarm;anomaly-ec2-cpu,` , `autoalarm:anomaly-ec2-storage`, `autoalarm;anomaly-ec2-memory`, `autoalarm:cw-alb-request-count`, `autoalarm:cw-alb-4xx-count`, `autoalarm:cw-alb-5xx-count`, `autoalarm:anomaly-alb-request-count`,`autoalarm:anomaly-alb-4xx-count`, `autoalarm:anomaly-alb-5xx-count`, `autoalarm:cw-tg-response-time`, `autoalarm:cw-tg-4xx-count`, `autoalarm:cw-tg-5xx-count`, `autoalarm:cw-tg-unhealthy-host-count`, `autoalarm:cw-tg-request-count`, `autoalarm:anomaly-tg-response-time`, `autoalarm:anomaly-tg-4xx-count`, `autoalarm:anomaly-tg-5xx-count`, `autoalarm:anomaly-tg-unhealthy-host-count`, `autoalarm:anomaly-tg-request-count` |
+                                                                                                                                                                                                 
+                                                                                                                                                                                                                                                                                                                                                                         
+### EC2 State Change Rule                                                                                                                                                                                                                                                                                                                                
 
 | Description      | Value                                                 |
 | ---------------- |-------------------------------------------------------|
