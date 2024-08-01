@@ -36,8 +36,11 @@ const getDefaultThreshold = (
 };
 
 // Default values for duration and periods
-const defaultDurationTime = 60; // e.g., 300 seconds
-const defaultDurationPeriods = 2; // e.g., 5 periods
+const defaultStaticDurationTime = 60; // e.g., 300 seconds
+const defaultStaticDurationPeriods = 2; // e.g., 5 periods
+const defaultAnomalyDurationTime = 60; // e.g., 300 seconds
+const defaultAnomalyDurationPeriods = 2; // e.g., 5 periods
+const defaultExtendedStatistic: string = 'p90';
 
 const metricConfigs = [
   {metricName: 'UnHealthyHostCount', namespace: 'AWS/ApplicationELB'},
@@ -55,89 +58,231 @@ async function getTGAlarmConfig(
   tags: Tag
 ): Promise<{
   alarmName: string;
+  staticThresholdAlarmName: string;
+  anomalyAlarmName: string;
+  extendedStatistic: string;
   threshold: number;
-  durationTime: number;
-  durationPeriods: number;
+  durationStaticTime: number;
+  durationStaticPeriods: number;
+  durationAnomalyTime: number;
+  durationAnomalyPeriods: number;
 }> {
   log
     .info()
     .str('function', 'getTGAlarmConfig')
-    .str('instanceId', targetGroupName)
+    .str('TargetGroupName', targetGroupName)
     .str('type', type)
     .str('metric', metricName)
     .msg('Fetching alarm configuration');
 
   // Initialize variables with default values
   let threshold = getDefaultThreshold(metricName, type);
-  let durationTime = defaultDurationTime;
-  let durationPeriods = defaultDurationPeriods;
+  let extendedStatistic = defaultExtendedStatistic;
+  let durationStaticTime = defaultStaticDurationTime;
+  let durationStaticPeriods = defaultStaticDurationPeriods;
+  let durationAnomalyTime = defaultAnomalyDurationTime;
+  let durationAnomalyPeriods = defaultAnomalyDurationPeriods;
+
   log
     .info()
     .str('function', 'getTGAlarmConfig')
-    .str(
-      'alarmName',
-      `AutoAlarm-${service}-${service}-${type}-${metricName.toUpperCase()}`
-    )
     .str('TargetGroupName', targetGroupName)
     .msg('Fetching alarm configuration');
 
   // Define tag key based on metric
-  const tagKey = `autoalarm:${service}-${metricName}`;
+  let cwTagKey = '';
+  let anomalyTagKey = '';
 
+  switch (metricName) {
+    case 'UnHealthyHostCount':
+      cwTagKey = 'autoalarm:cw-tg-unhealthy-host-count';
+      anomalyTagKey = 'autoalarm:anomaly-tg-unhealthy-host-count';
+      break;
+    case 'TargetResponseTime':
+      cwTagKey = 'autoalarm:cw-tg-response-time';
+      anomalyTagKey = 'autoalarm:anomaly-tg-response-time';
+      break;
+    case 'RequestCountPerTarget':
+      cwTagKey = 'autoalarm:cw-tg-request-count';
+      anomalyTagKey = 'autoalarm:anomaly-tg-request-count';
+      break;
+    case 'HTTPCode_Target_4XX_Count':
+      cwTagKey = 'autoalarm:cw-tg-4xx-count';
+      anomalyTagKey = 'autoalarm:anomaly-tg-4xx-count';
+      break;
+    case 'HTTPCode_Target_5XX_Count':
+      cwTagKey = 'autoalarm:cw-tg-5xx-count';
+      anomalyTagKey = 'autoalarm:anomaly-tg-5xx-count';
+      break;
+    default:
+      log
+        .warn()
+        .str('function', 'getTGAlarmConfig')
+        .str('TargetGroupName', targetGroupName)
+        .str('metricName', metricName)
+        .msg('Invalid metric name');
+      break;
+  }
   log
     .info()
     .str('function', 'getTGAlarmConfig')
     .str('TargetGroupName', targetGroupName)
     .str('tags', JSON.stringify(tags))
-    .str('tagKey', tagKey)
-    .str('tagValue', tags[tagKey])
+    .str('cwTagKey', cwTagKey)
+    .str('cwTagValue', tags[cwTagKey])
+    .str('anomalyTagKey', anomalyTagKey)
+    .str('anomalyTagValue', tags[anomalyTagKey])
     .msg('Fetched instance tags');
 
   // Extract and parse the tag value
-  if (tags[tagKey]) {
-    const values = tags[tagKey].split('|');
-    if (values.length < 1 || values.length > 4) {
+  if (tags[cwTagKey]) {
+    const staticValues = tags[cwTagKey].split('/');
+    log
+      .info()
+      .str('function', 'getTGAlarmConfig')
+      .str('TargetGroupName', targetGroupName)
+      .str('tagKey', cwTagKey)
+      .str('tagValue', tags[cwTagKey])
+      .str('staticValues', JSON.stringify(staticValues))
+      .msg('Fetched static threshold tag values');
+
+    if (staticValues.length < 1 || staticValues.length > 4) {
       log
         .warn()
         .str('function', 'getTGAlarmConfig')
         .str('TargetGroupName', targetGroupName)
-        .str('tagKey', tagKey)
-        .str('tagValue', tags[tagKey])
+        .str('tagKey', cwTagKey)
+        .str('tagValue', tags[cwTagKey])
         .msg(
-          'Invalid tag values/delimiters. Please use 4 values separated by a "|". Using default values'
+          'Invalid tag values/delimiters. Please use 4 values separated by a "/". Using default values'
         );
     } else {
       switch (type) {
         case 'WARNING':
-          threshold = !isNaN(parseInt(values[0]))
-            ? parseInt(values[0], 10)
-            : getDefaultThreshold(metricName, type);
-          durationTime = !isNaN(parseInt(values[2]))
-            ? parseInt(values[2], 10)
-            : defaultDurationTime;
-          durationPeriods = !isNaN(parseInt(values[3]))
-            ? parseInt(values[3], 10)
-            : defaultDurationPeriods;
+          threshold =
+            staticValues[0] !== undefined &&
+            staticValues[0] !== '' &&
+            !isNaN(parseInt(staticValues[0], 10))
+              ? parseInt(staticValues[0], 10)
+              : getDefaultThreshold(metricName, type);
+          durationStaticTime =
+            staticValues[2] !== undefined &&
+            staticValues[2] !== '' &&
+            !isNaN(parseInt(staticValues[2], 10))
+              ? parseInt(staticValues[2], 10)
+              : defaultStaticDurationTime;
+          durationStaticPeriods =
+            staticValues[3] !== undefined &&
+            staticValues[3] !== '' &&
+            !isNaN(parseInt(staticValues[3], 10))
+              ? parseInt(staticValues[3], 10)
+              : defaultStaticDurationPeriods;
           break;
         case 'CRITICAL':
-          threshold = !isNaN(parseInt(values[1]))
-            ? parseInt(values[1], 10)
-            : getDefaultThreshold(metricName, type);
-          durationTime = !isNaN(parseInt(values[2]))
-            ? parseInt(values[2], 10)
-            : defaultDurationTime;
-          durationPeriods = !isNaN(parseInt(values[3]))
-            ? parseInt(values[3], 10)
-            : defaultDurationPeriods;
+          threshold =
+            staticValues[1] !== undefined &&
+            staticValues[1] !== '' &&
+            !isNaN(parseInt(staticValues[1], 10))
+              ? parseInt(staticValues[1], 10)
+              : getDefaultThreshold(metricName, type);
+          durationStaticTime =
+            staticValues[2] !== undefined &&
+            staticValues[2] !== '' &&
+            !isNaN(parseInt(staticValues[2], 10))
+              ? parseInt(staticValues[2], 10)
+              : defaultStaticDurationTime;
+          durationStaticPeriods =
+            staticValues[3] !== undefined &&
+            staticValues[3] !== '' &&
+            !isNaN(parseInt(staticValues[3], 10))
+              ? parseInt(staticValues[3], 10)
+              : defaultStaticDurationPeriods;
           break;
       }
     }
   }
+
+  // Extract and parse the anomaly detection tag value
+  if (tags[anomalyTagKey]) {
+    const values = tags[anomalyTagKey].split('|');
+    log
+      .info()
+      .str('function', 'getTGAlarmConfig')
+      .str('TargetGroupName', targetGroupName)
+      .str('tagKey', anomalyTagKey)
+      .str('tagValue', tags[anomalyTagKey])
+      .str('values', JSON.stringify(values))
+      .msg('Fetched anomaly detection tag values');
+    if (values.length < 1 || values.length > 3) {
+      log
+        .warn()
+        .str('function', 'getTGAlarmConfig')
+        .str('TargetGroupName', targetGroupName)
+        .str('tagKey', anomalyTagKey)
+        .str('tagValue', tags[anomalyTagKey])
+        .msg(
+          'Invalid tag values/delimiters. Please use 3 values separated by a "|". Using default values'
+        );
+    } else {
+      extendedStatistic =
+        typeof values[0] === 'string' && values[0].trim() !== ''
+          ? values[0].trim()
+          : defaultExtendedStatistic;
+      durationAnomalyTime =
+        values[1] !== undefined &&
+        values[1] !== '' &&
+        !isNaN(parseInt(values[1], 10))
+          ? parseInt(values[1], 10)
+          : defaultAnomalyDurationTime;
+      durationAnomalyPeriods =
+        values[2] !== undefined &&
+        values[2] !== '' &&
+        !isNaN(parseInt(values[2], 10))
+          ? parseInt(values[2], 10)
+          : defaultAnomalyDurationPeriods;
+      log
+        .info()
+        .str('function', 'getTGAlarmConfig')
+        .str('TargetGroupName', targetGroupName)
+        .str('tagKey', anomalyTagKey)
+        .str('tagValue', tags[anomalyTagKey])
+        .str('extendedStatistic', extendedStatistic)
+        .num('durationAnomalyTime', durationAnomalyTime)
+        .num('durationAnomalyPeriods', durationAnomalyPeriods)
+        .msg('Parsed anomaly detection tag values');
+    }
+  }
+  log
+    .info()
+    .str('function', 'getTGAlarmConfig')
+    .str('TargetGroupName', targetGroupName)
+    .str('type', type)
+    .str('metric', metricName)
+    .str(
+      'staticThresholdAlarmName',
+      `AutoAlarm-TG-StaticThreshold - ${targetGroupName} - ${type} - ${metricName.toUpperCase()} `
+    )
+    .str(
+      'anomalyAlarmName',
+      `AutoAlarm-TG-AnomalyDetection - ${targetGroupName} - CRITICAL - ${metricName.toUpperCase()} `
+    )
+    .str('extendedStatistic', extendedStatistic)
+    .num('threshold', threshold)
+    .num('durationStaticTime', durationStaticTime)
+    .num('durationStaticPeriods', durationStaticPeriods)
+    .num('durationAnomalyTime', durationAnomalyTime)
+    .num('durationAnomalyPeriods', durationAnomalyPeriods)
+    .msg('Fetched alarm configuration');
   return {
     alarmName: `AutoAlarm-${service.toUpperCase()}-${targetGroupName}-${type}-${metricName.toUpperCase()}`,
+    staticThresholdAlarmName: `AutoAlarm-TG-StaticThreshold-${targetGroupName}-${type}-${metricName.toUpperCase()}`,
+    anomalyAlarmName: `AutoAlarm-TG-AnomalyDetection-${targetGroupName}-CRITICAL-${metricName.toUpperCase()}`,
+    extendedStatistic,
     threshold,
-    durationTime,
-    durationPeriods,
+    durationStaticTime,
+    durationStaticPeriods,
+    durationAnomalyTime,
+    durationAnomalyPeriods,
   };
 }
 
@@ -201,18 +346,112 @@ async function checkAndManageTGStatusAlarms(
   } else {
     for (const config of metricConfigs) {
       const {metricName, namespace} = config;
+      let cwTagKey = '';
+      let anomalyTagKey = '';
 
-      if (metricName === 'UnHealthyHostCount') {
-        for (const classification of Object.values(AlarmClassification)) {
-          const {alarmName, threshold, durationTime, durationPeriods} =
-            await getTGAlarmConfig(
-              targetGroupName,
-              classification as AlarmClassification,
-              'tg',
-              metricName,
-              tags
+      switch (metricName) {
+        case 'UnHealthyHostCount':
+          cwTagKey = 'autoalarm:cw-tg-unhealthy-host-count';
+          anomalyTagKey = 'autoalarm:anomaly-tg-unhealthy-host-count';
+          break;
+        case 'TargetResponseTime':
+          cwTagKey = 'autoalarm:cw-tg-response-time';
+          anomalyTagKey = 'autoalarm:anomaly-tg-response-time';
+          break;
+        case 'RequestCountPerTarget':
+          cwTagKey = 'autoalarm:cw-tg-request-count';
+          anomalyTagKey = 'autoalarm:anomaly-tg-request-count';
+          break;
+        case 'HTTPCode_Target_4XX_Count':
+          cwTagKey = 'autoalarm:cw-tg-4xx-count';
+          anomalyTagKey = 'autoalarm:anomaly-tg-4xx-count';
+          break;
+        case 'HTTPCode_Target_5XX_Count':
+          cwTagKey = 'autoalarm:cw-tg-5xx-count';
+          anomalyTagKey = 'autoalarm:anomaly-tg-5xx-count';
+          break;
+        default:
+          log
+            .warn()
+            .str('function', 'checkAndManageTGStatusAlarms')
+            .str('TargetGroupName', targetGroupName)
+            .str('metricName', metricName)
+            .msg('Invalid metric name');
+          break;
+      }
+
+      log
+        .info()
+        .str('function', 'checkAndManageTGStatusAlarms')
+        .str('TargetGroupName', targetGroupName)
+        .str('cwTagKey', cwTagKey)
+        .str('cwTagValue', tags[cwTagKey] || 'undefined')
+        .str('anomalyTagKey', anomalyTagKey)
+        .str('anomalyTagValue', tags[anomalyTagKey] || 'undefined')
+        .msg('Tag values before processing');
+
+      for (const type of ['WARNING', 'CRITICAL'] as AlarmClassification[]) {
+        const {
+          staticThresholdAlarmName,
+          anomalyAlarmName,
+          extendedStatistic,
+          threshold,
+          durationStaticTime,
+          durationStaticPeriods,
+          durationAnomalyTime,
+          durationAnomalyPeriods,
+        } = await getTGAlarmConfig(
+          targetGroupName,
+          type,
+          'tg',
+          metricName,
+          tags
+        );
+        await createOrUpdateAnomalyDetectionAlarm(
+          anomalyAlarmName,
+          'TargetGroup',
+          targetGroupName,
+          metricName,
+          namespace,
+          extendedStatistic,
+          durationAnomalyTime,
+          durationAnomalyPeriods,
+          'CRITICAL' as AlarmClassification
+        );
+        // Check and create or delete static threshold alarm based on tag values
+        if (
+          type === 'WARNING' &&
+          (!tags[cwTagKey] ||
+            tags[cwTagKey].split('/')[0] === undefined ||
+            tags[cwTagKey].split('/')[0] === '' ||
+            !tags[cwTagKey].split('/')[0])
+        ) {
+          log
+            .info()
+            .str('function', 'checkAndManageTGStatusAlarms')
+            .str('targetGroupName', targetGroupName)
+            .str(cwTagKey, tags[cwTagKey])
+            .msg(
+              `TG alarm threshold for ${metricName} WARNING is not defined. Skipping static ${metricName} warning alarm creation.`
             );
-
+          await deleteCWAlarm(staticThresholdAlarmName, targetGroupName);
+        } else if (
+          type === 'CRITICAL' &&
+          (!tags[cwTagKey] ||
+            tags[cwTagKey].split('/')[1] === '' ||
+            tags[cwTagKey].split('/')[1] === undefined ||
+            !tags[cwTagKey].split('/')[1])
+        ) {
+          log
+            .info()
+            .str('function', 'checkAndManageTGStatusAlarms')
+            .str('targetGroupName', targetGroupName)
+            .str(cwTagKey, tags[cwTagKey])
+            .msg(
+              `TG alarm threshold for ${metricName} CRITICAL is not defined. Skipping static ${metricName} critical alarm creation.`
+            );
+          await deleteCWAlarm(staticThresholdAlarmName, targetGroupName);
+        } else {
           const alarmProps: AlarmProps = {
             threshold: threshold,
             period: 60,
@@ -224,77 +463,15 @@ async function checkAndManageTGStatusAlarms(
 
           // Create standard CloudWatch alarm
           await createOrUpdateCWAlarm(
-            alarmName,
+            staticThresholdAlarmName,
             targetGroupName,
             alarmProps,
             threshold,
-            durationTime,
-            durationPeriods,
+            durationStaticTime,
+            durationStaticPeriods,
             'Maximum',
-            classification
+            type as AlarmClassification
           );
-
-          // Log for standard CloudWatch alarm creation
-          log
-            .info()
-            .str('function', 'checkAndManageTGStatusAlarms')
-            .str('alarmName', alarmName)
-            .str('serviceIdentifier', targetGroupName)
-            .msg(`${alarmName} Standard CloudWatch Alarm created or updated.`);
-
-          // Create anomaly detection alarm. Critical only.
-          if (classification === 'CRITICAL')
-            await createOrUpdateAnomalyDetectionAlarm(
-              `${alarmName}-Anomaly`,
-              'TargetGroup',
-              targetGroupName,
-              metricName,
-              namespace,
-              'p90',
-              durationTime,
-              durationPeriods,
-              classification as AlarmClassification
-            );
-          // Log for anomaly detection alarm creation
-          log
-            .info()
-            .str('function', 'checkAndManageTGStatusAlarms')
-            .str('alarmName', `${alarmName}-Anomaly`)
-            .str('serviceIdentifier', targetGroupName)
-            .msg(
-              `${alarmName}-Anomaly Anomaly Detection Alarm created or updated.`
-            );
-        }
-      } else {
-        if (metricName !== 'UnHealthyHostCount') {
-          const {alarmName, durationTime, durationPeriods} =
-            await getTGAlarmConfig(
-              targetGroupName,
-              'CRITICAL' as AlarmClassification,
-              'tg',
-              metricName,
-              tags
-            );
-
-          await createOrUpdateAnomalyDetectionAlarm(
-            `${alarmName}-Anomaly`,
-            'TargetGroup',
-            targetGroupName,
-            metricName,
-            namespace,
-            'p90',
-            durationTime,
-            durationPeriods,
-            'CRITICAL' as AlarmClassification
-          );
-
-          // Log for anomaly detection alarm creation for other metrics
-          log
-            .info()
-            .str('function', 'checkAndManageTGStatusAlarms')
-            .str('alarmName', alarmName)
-            .str('serviceIdentifier', targetGroupName)
-            .msg(`${alarmName} Anomaly Detection Alarm created or updated.`);
         }
       }
     }

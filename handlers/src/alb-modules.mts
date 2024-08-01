@@ -201,7 +201,7 @@ async function getALBAlarmConfig(
         .str('anomalyTagKey', anomalyTagKey)
         .str('anomalyTagValue', tags[anomalyTagKey])
         .msg(
-          'Invalid tag values/delimiters. Please use 3 values separated by a "|". Using default values'
+          'Invalid tag values/delimiters. Please use 3 values separated by a "/". Using default values'
         );
     } else {
       extendedStatistic =
@@ -235,7 +235,7 @@ async function getALBAlarmConfig(
   log
     .info()
     .str('function', 'getALBAlarmConfig')
-    .str('instanceId', loadBalancerName)
+    .str('Loadbalancer Name', loadBalancerName)
     .str('type', type)
     .str('metricName', metricName)
     .str(

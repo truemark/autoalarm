@@ -52,21 +52,39 @@ The system is event-driven, responding to EC2 state change notifications and tag
 
 ## Supported Tags
 
-| Tag                               | Description                                                                                                           | Default Value                                               |
-|-----------------------------------|-----------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------|
-| `autoalarm:enabled`               | If set to "true", instance status check alarms will be created for the resource.                                      | `false`                                                     |
-| `autoalarm:ec2-cpu`               | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "90\|95\|60\|2".   | "90\|95\|60\|2"                                             |
-| `autoalarm:ec2-storage`           | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "90\|95\|60\|2".   | "90\|95\|60\|2"                                             |
-| `autoalarm:ec2-memory`            | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "90\|95\|60\|2".   | "90\|95\|60\|2"                                             |
-| `autoalarm:target`                | Specifies whether to use CloudWatch or Prometheus for monitoring. Default is CloudWatch.                              | `Prometheus` if Promethesu workspace ID is passed to lambda |
-| `autoalarm:alb-request-count`     | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2".| "1500\|1750\|60\|2"                                         |
-| `autoalarm:alb-HTTPCode_ELB_4XX_Count` | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2".| "1500\|1750\|60\|2"                                         |
-| `autoalarm:alb-HTTPCode_ELB_5XX`  | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2".| "1500\|1750\|60\|2"                                         |
-| `autoalarm:TargetResponseTime`    | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2".| "1500\|1750\|60\|2"                                         |
-| `autoalarm:HTTPCode_Target_4XX`   | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2".| "1500\|1750\|60\|2"                                         |
-| `autoalarm:HTTPCode_Target_5XX`   | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2".| "1500\|1750\|60\|2"                                         |
 
-
+| Tag                                         | Description                                                                                                             | Default Value                                               |
+|---------------------------------------------|-------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------|
+| `autoalarm:enabled`                         | If set to "true", instance status check alarms will be created for the resource.                                        | `false`                                                     |
+| `autoalarm:cw-ec2-cpu`                      | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "90\|95\|60\|2".     | "90\|95\|60\|2"                                             |
+| `autoalarm:cw-ec2-storage`                  | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "90\|95\|60\|2".     | "90\|95\|60\|2"                                             |
+| `autoalarm:cw-ec2-memory`                   | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "90\|95\|60\|2".     | "90\|95\|60\|2"                                             |
+| `autoalarm:anomaly-ec2-cpu`                 |                                                                                                                         |                                                             |
+| `autoalarm:anomaly-ec2-storage`             |                                                                                                                         |                                                             |
+| `autoalarm:anomaly-ec2-memory`              |                                                                                                                         |                                                             |
+| `autoalarm:target`                          | Specifies whether to use CloudWatch or Prometheus for monitoring. Default is CloudWatch.                                | `Prometheus` if Promethesu workspace ID is passed to lambda |
+| `autoalarm:cw-alb-request-count`            | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2". | "1500\|1750\|60\|2"                                         |
+| `autoalarm:cw-alb-4xx-count`                | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2". | "1500\|1750\|60\|2"                                         |
+| `autoalarm:cw-alb-5xx-count`                | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2". | "1500\|1750\|60\|2"                                         |
+| `autoalarm:anomaly-alb-request-count`       |                                                                                                                         |                                                             |
+| `autoalarm:anomaly-alb-4xx-count`           |                                                                                                                         |                                                             |
+| `autoalarm:anomaly-alb-5xx-count`           |                                                                                                                         |                                                             |
+| `autoalarm:cw-tg-response-time`             | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2". | "1500\|1750\|60\|2"                                         |
+| `autoalarm:cw-tg-4xx-count`                 | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2". | "1500\|1750\|60\|2"                                         |
+| `autoalarm:cw-tg-5xx-count`                 | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2". | "1500\|1750\|60\|2"                                         |
+| `autoalarm:cw-tg-unhealthy-host-count`      | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2". | "1500\|1750\|60\|2"                                         |
+| `autoalarm:cw-tg-request-count`             | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2". | "1500\|1750\|60\|2"                                         |
+| `autoalarm:anomaly-tg-response-time`        |                                                                                                                         |                                                             |
+| `autoalarm:anomaly-tg-4xx-count`            |                                                                                                                         |                                                             |
+| `autoalarm:anomaly-tg-5xx-count`            |                                                                                                                         |                                                             |
+| `autoalarm:anomaly-tg-unhealthy-host-count` |                                                                                                                         |                                                             |
+| `autoalarm:anomaly-tg-request-count`        |                                                                                                                         |                                                             |
+| `autoalarm:cw-sqs-messages-sent`            | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "500\|100\|60\|2".   | "500\|1000\|60\|2"                                          |
+| `autoalarm:cw-sqs-messages-visible`         | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "500\|100\|60\|2".   | "500\|1000\|60\|2"                                          |
+| `autoalarm:cw-sqs-oldest-message-age`       | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "500\|100\|60\|2".   | "500\|1000\|60\|2"                                          |
+| `autoalarm:anomaly-sqs-messages-sent`       |                                                                                                                         |                                                             |
+| `autoalarm:anomaly-sqs-messages-visible`    |                                                                                                                         |                                                             |
+| `autoalarm:anomaly-sqs-oldest-message-age`  |                                                                                                                         |                                                             |
 
 ### Default Alarm Behavior
 
@@ -78,65 +96,59 @@ The project configures AWS EventBridge to route specific events to the AutoAlarm
 
 ### Tag Rule
 
-| Description          | Value                                                                                                                                                                              |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Event Source**     | `aws.tag`                                                                                                                                                                          |
-| **Detail Type**      | Tag Change on Resource                                                                                                                                                             |
-| **Service**          | EC2, ECS, RDS, ELB, Target Group                                                                                                                                                   |
-| **Resource Type**    | Instance, loadbalancer, targetgroup                                                                                                                                                |
-| **Changed Tag Keys** | `autoalarm:enabled`, `autoalarm:ec2-cpu`, `autoalarm:ec2-storage`, `autoalarm:ec2-memory`, `autoalarm:target`, `autoalarm:alb-request-count`, `autoalarm:alb-HTTPCode_ELB_4XX_Count`, `autoalarm:alb-HTTPCode_ELB_5XX`, `autoalarm:TargetResponseTime`, `autoalarm:HTTPCode_Target_4XX`, `autoalarm:HTTPCode_Target_5XX` |
+| Description          | Value                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+|----------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Event Source**     | `aws.tag`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| **Detail Type**      | Tag Change on Resource                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| **Service**          | EC2, ECS, RDS, ELB, Target Group                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| **Resource Type**    | Instance, loadbalancer, targetgroup                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| **Changed Tag Keys** | `autoalarm:enabled`,`autoalarm:target`, `autoalarm:cw-ec2-cpu`, `autoalarm:cw-ec2-storage`, `autoalarm:cw-ec2-memory`, `autoalarm;anomaly-ec2-cpu,` , `autoalarm:anomaly-ec2-storage`, `autoalarm;anomaly-ec2-memory`, `autoalarm:cw-alb-request-count`, `autoalarm:cw-alb-4xx-count`, `autoalarm:cw-alb-5xx-count`, `autoalarm:anomaly-alb-request-count`,`autoalarm:anomaly-alb-4xx-count`, `autoalarm:anomaly-alb-5xx-count`, `autoalarm:cw-tg-response-time`, `autoalarm:cw-tg-4xx-count`, `autoalarm:cw-tg-5xx-count`, `autoalarm:cw-tg-unhealthy-host-count`, `autoalarm:cw-tg-request-count`, `autoalarm:anomaly-tg-response-time`, `autoalarm:anomaly-tg-4xx-count`, `autoalarm:anomaly-tg-5xx-count`, `autoalarm:anomaly-tg-unhealthy-host-count`, `autoalarm:anomaly-tg-request-count` |
+                                                                                                                                                                                                 
+                                                                                                                                                                                                                                                                                                                                                                         
+### EC2 State Change Rule                                                                                                                                                                                                                                                                                                                                
 
-### EC2 State Change Rule
+| Description      | Value                                                 |
+| ---------------- |-------------------------------------------------------|
+| **Event Source** | `aws.sqs`                                             |
+| **Detail Type**  | AWS API Call via CloudTrail                           |
+| **Event Names**  | `CreateQueue`, `DeleteQueue`, `TagQueue`, `UntagQueue` |
 
-| Description      | Value                                                          |
-| ---------------- | -------------------------------------------------------------- |
-| **Event Source** | `aws.ec2`                                                      |
-| **Detail Type**  | EC2 Instance State-change Notification                         |
-| **States**       | `running`, `terminated`, `stopped`, `shutting-down`, `pending` |
-
-### ALB Event Rule
-
-| Description      | Value                                                          |
-| ---------------- | -------------------------------------------------------------- |
-| **Event Source** | `aws.elasticloadbalancing`                                     |
-| **Detail Type**  | AWS API Call via CloudTrail                                    |
-| **Event Names**  | `CreateLoadBalancer`, `DeleteLoadBalancer`                     |
-
-### Target Group Event Rule
-
-| Description      | Value                                                          |
-| ---------------- | -------------------------------------------------------------- |
-| **Event Source** | `aws.elasticloadbalancing`                                     |
-| **Detail Type**  | AWS API Call via CloudTrail                                    |
-| **Event Names**  | `CreateTargetGroup`, `DeleteTargetGroup`                       |
 
 ## Prometheus Rules
 
 ### Supported Metrics for Prometheus Rules
 
 - **CPU Utilization**
-- **Memory Utilization** 
-- **Storage Utilization** 
+- **Memory Utilization**
+- **Storage Utilization**
 
 ## IAM Role and Permissions
 
 The Lambda execution role requires specific permissions to interact with AWS services:
 
-- **Prometheus**: 
+- **Prometheus**:
   - Actions: `aps:QueryMetrics`, `aps:ListRuleGroupsNamespaces`, `aps:DescribeRuleGroupsNamespace`, `aps:CreateRuleGroupsNamespace`, `aps:PutRuleGroupsNamespace`, `aps:DeleteRuleGroupsNamespace`
   - Resources: `arn:aws:aps:${region}:${accountId}:workspace/${prometheusWorkspaceId}`, `arn:aws:aps:${region}:${accountId}:*/${prometheusWorkspaceId}/*`
 
-- **EC2 and CloudWatch**: 
+- **EC2 and CloudWatch**:
   - Actions: `ec2:DescribeInstances`, `ec2:DescribeTags`, `cloudwatch:PutMetricAlarm`, `cloudwatch:DeleteAlarms`, `cloudwatch:DescribeAlarms`, `cloudwatch:ListMetrics`
   - Resources: `*`
 
-- **CloudWatch Logs**: 
+- **CloudWatch Logs**:
   - Actions: `logs:CreateLogGroup`, `logs:CreateLogStream`, `logs:PutLogEvents`
+  - Resources: `*`
+
+- **Elasic Load Balancing**:
+  - Actions: `elasticloadbalancing:DescribeLoadBalancers`, `elasticloadbalancing:DescribeTargetGroups`, `elasticloadbalancing:DescribeTags`, `elasticloadbalancing:DescribeTargetHealth`
+  - Resources: `*`
+
+- **SQS**:
+  - Actions: `sqs:GetQueueAttributes`, `sqs:ListQueues`, `sqs:ListQueueTags`, `sqs:TagQueue`
   - Resources: `*`
 
 ## Limitations
 
-- Currently supports only EC2 instances, ALBs, and Target Groups. Extension to other services like ECS or RDS would require modifications to the Lambda function and CDK setup.
+- Currently supports only EC2 instances, ALBs, Target Groups and SQS. Extension to other services like ECS or RDS would require modifications to the Lambda function and CDK setup.
 - Tag-based configuration may not be suitable for all use cases. Customization options are limited to the supported tags.
 - Some alarms and rules are created by default even without tags, such as CPU utilization alarms, and can only be modified with the use of tags. Otherwise, they will be created with default values.
 
