@@ -179,6 +179,19 @@ async function getSQSAlarmConfig(
   // Extract and parse the anomaly detection tag values
   if (tags[anomalyTagKey]) {
     const values = tags[anomalyTagKey].split('/');
+    const extendedStatRegex = /^\(p\d{1,2}\)$/;
+    if (!extendedStatRegex.test(values[0].trim())) {
+      log
+        .warn()
+        .str('function', 'getSQSAlarmConfig')
+        .str('queueName', queueName)
+        .str('tagKey', anomalyTagKey)
+        .str('tagValue', tags[anomalyTagKey])
+        .msg(
+          "Invalid extended statistic value. Please use a valid percentile value. Using default value of 'p90'"
+        );
+      values[0] = defaultExtendedStatistic;
+    }
     log
       .info()
       .str('function', 'getSQSAlarmConfig')
