@@ -204,7 +204,7 @@ async function getTGAlarmConfig(
 
   // Extract and parse the anomaly detection tag value
   if (tags[anomalyTagKey]) {
-    const values = tags[anomalyTagKey].split('|');
+    const values = tags[anomalyTagKey].split('/');
     log
       .info()
       .str('function', 'getTGAlarmConfig')
@@ -221,7 +221,7 @@ async function getTGAlarmConfig(
         .str('tagKey', anomalyTagKey)
         .str('tagValue', tags[anomalyTagKey])
         .msg(
-          'Invalid tag values/delimiters. Please use 3 values separated by a "|". Using default values'
+          'Invalid tag values/delimiters. Please use 3 values separated by a "/". Using default values'
         );
     } else {
       extendedStatistic =
