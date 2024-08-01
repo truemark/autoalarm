@@ -229,9 +229,13 @@ export class AutoAlarmConstruct extends Construct {
           'resource-type': ['targetgroup'],
           'changed-tag-keys': [
             'autoalarm:enabled',
+            'autoalarm:cw-tg-unhealthy-host-count',
             'autoalarm:cw-tg-response-time',
+            'autoalarm:cw-tg-request-count',
             'autoalarm:cw-tg-4xx-count',
             'autoalarm:cw-tg-5xx-count',
+            'autoalarm:anomaly-tg-unhealthy-host-count',
+            'autoalarm:anomaly-tg-request-count',
             'autoalarm:anomaly-tg-response-time',
             'autoalarm:anomaly-tg-4xx-count',
             'autoalarm:anomaly-tg-5xx-count',
