@@ -373,7 +373,7 @@ async function checkAndManageTGStatusAlarms(
         default:
           log
             .warn()
-            .str('function', 'getTGAlarmConfig')
+            .str('function', 'checkAndManageTGStatusAlarms')
             .str('TargetGroupName', targetGroupName)
             .str('metricName', metricName)
             .msg('Invalid metric name');
@@ -382,7 +382,7 @@ async function checkAndManageTGStatusAlarms(
 
       log
         .info()
-        .str('function', 'getTGAlarmConfig')
+        .str('function', 'checkAndManageTGStatusAlarms')
         .str('TargetGroupName', targetGroupName)
         .str('cwTagKey', cwTagKey)
         .str('cwTagValue', tags[cwTagKey] || 'undefined')
