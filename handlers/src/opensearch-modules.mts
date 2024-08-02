@@ -461,6 +461,7 @@ async function checkAndManageOpenSearchStatusAlarms(
             durationStaticTime,
             durationStaticPeriods,
             'Maximum',
+            //@ts-ignore
             type as AlarmClassification
           );
         }

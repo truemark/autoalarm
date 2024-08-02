@@ -145,12 +145,12 @@ export class AutoAlarmConstruct extends Construct {
           'resource-type': ['instance'],
           'changed-tag-keys': [
             'autoalarm:enabled',
-            'autoalarm:cw-ec2-cpu',
-            'autoalarm:cw-ec2-storage',
-            'autoalarm:cw-ec2-memory',
-            'autoalarm:anomaly-ec2-cpu',
-            'autoalarm:anomaly-ec2-storage',
-            'autoalarm:anomaly-ec2-memory',
+            'autoalarm:ec2-cpu',
+            'autoalarm:ec2-storage',
+            'autoalarm:ec2-memory',
+            'autoalarm:ec2-cpu-anomaly',
+            'autoalarm:ec2-storage-anomaly',
+            'autoalarm:ec2-memory-anomaly',
             'autoalarm:target', // cloudwatch or prometheus
           ],
         },

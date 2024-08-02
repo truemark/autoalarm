@@ -483,6 +483,7 @@ async function checkAndManageTGStatusAlarms(
             durationStaticTime,
             durationStaticPeriods,
             'Maximum',
+            //@ts-ignore
             type as AlarmClassification
           );
         }
