@@ -517,7 +517,7 @@ const defaultMemoryStaticDurationPeriods = 2; // e.g., 5 periods
 const defaultStaticMemoryStatistic = 'p90';
 const defaultAnomalyDurationTime = 60; // e.g., 300 seconds
 const defaultAnomalyDurationPeriods = 2; // e.g., 5 periods
-const defaultExtendedStatistic: string = 'p90';
+const defaultExtendedAnomalyStatistic: string = 'p90';
 // used as input validation for extended statistics
 const extendedStatRegex = /^p\d{1,2}$/;
 
@@ -529,7 +529,7 @@ async function getAlarmConfig(
 ): Promise<{
   staticThresholdAlarmName: string;
   anomalyAlarmName: string;
-  extendedStatistic: string;
+  extendedAnomalyStatistic: string;
   threshold: any;
   durationStaticTime: number;
   durationStaticPeriods: number;
@@ -577,7 +577,7 @@ async function getAlarmConfig(
       throw new Error(`Unsupported metricTagName: ${metricTagName}`);
   }
 
-  let extendedStatistic = defaultExtendedStatistic;
+  let extendedStatistic = defaultExtendedAnomalyStatistic;
   let durationAnomalyTime = defaultAnomalyDurationTime;
   let durationAnomalyPeriods = defaultAnomalyDurationPeriods;
   const ec2Metadata = await getInstanceDetails(instanceId);
@@ -713,7 +713,7 @@ async function getAlarmConfig(
         .msg(
           "Invalid extended statistic value. Please use a valid percentile value. Using default value of 'p90'"
         );
-      values[0] = defaultExtendedStatistic;
+      values[0] = defaultExtendedAnomalyStatistic;
     }
     log
       .info()
@@ -739,7 +739,7 @@ async function getAlarmConfig(
       extendedStatistic =
         typeof values[0] === 'string' && values[0].trim() !== ''
           ? values[0].trim()
-          : defaultExtendedStatistic;
+          : defaultExtendedAnomalyStatistic;
       durationAnomalyTime =
         values[1] !== undefined &&
         values[1] !== '' &&
@@ -789,7 +789,7 @@ async function getAlarmConfig(
   return {
     staticThresholdAlarmName: `AutoAlarm-EC2-StaticThreshold-${instanceId}-${type}-${metricTagName.toUpperCase()}-Utilization`,
     anomalyAlarmName: `AutoAlarm-EC2-AnomalyDetection-${instanceId}-CRITICAL-${metricTagName.toUpperCase()}-Utilization`,
-    extendedStatistic,
+    extendedAnomalyStatistic: extendedStatistic,
     threshold,
     durationStaticTime,
     durationStaticPeriods,
@@ -1031,7 +1031,7 @@ export async function manageCPUUsageAlarmForInstance(
   const {
     staticThresholdAlarmName,
     anomalyAlarmName,
-    extendedStatistic,
+    extendedAnomalyStatistic,
     threshold,
     durationStaticTime,
     durationStaticPeriods,
@@ -1072,7 +1072,7 @@ export async function manageCPUUsageAlarmForInstance(
         instanceId,
         'CPUUtilization',
         'AWS/EC2',
-        extendedStatistic,
+        extendedAnomalyStatistic,
         durationAnomalyTime,
         durationAnomalyPeriods,
         'CRITICAL' as AlarmClassification
@@ -1157,7 +1157,7 @@ export async function manageStorageAlarmForInstance(
   const {
     staticThresholdAlarmName,
     anomalyAlarmName,
-    extendedStatistic,
+    extendedAnomalyStatistic,
     threshold,
     durationStaticTime,
     durationStaticPeriods,
@@ -1214,7 +1214,7 @@ export async function manageStorageAlarmForInstance(
             instanceId,
             metricName,
             'CWAgent',
-            extendedStatistic,
+            extendedAnomalyStatistic,
             durationAnomalyTime,
             durationAnomalyPeriods,
             'CRITICAL' as AlarmClassification
@@ -1313,7 +1313,7 @@ export async function manageMemoryAlarmForInstance(
   const {
     staticThresholdAlarmName,
     anomalyAlarmName,
-    extendedStatistic,
+    extendedAnomalyStatistic,
     threshold,
     durationStaticTime,
     durationStaticPeriods,
@@ -1365,7 +1365,7 @@ export async function manageMemoryAlarmForInstance(
           instanceId,
           metricName,
           'CWAgent',
-          extendedStatistic,
+          extendedAnomalyStatistic,
           durationAnomalyTime,
           durationAnomalyPeriods,
           'CRITICAL' as AlarmClassification

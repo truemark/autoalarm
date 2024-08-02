@@ -1,3 +1,4 @@
+import {Statistic} from '@aws-sdk/client-cloudwatch';
 //export interface AlarmConfig {
 //  metricName: string;
 //  namespace: string;
@@ -21,6 +22,8 @@ export interface AlarmProps {
   metricName: string;
   namespace: string;
   dimensions: {Name: string; Value: string}[];
+  statistic?: Statistic; // Optional property for standard statistics
+  extendedStatistic?: string; // Optional property for extended statistics
 }
 
 export interface Tag {

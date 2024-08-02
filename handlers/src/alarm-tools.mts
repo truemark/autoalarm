@@ -146,10 +146,15 @@ export async function staticCWAlarmNeedsUpdate(
     if (existingAlarm.MetricAlarms && existingAlarm.MetricAlarms.length > 0) {
       const existingProps = existingAlarm.MetricAlarms[0];
 
+      const existingStatistic =
+        existingProps.Statistic || existingProps.ExtendedStatistic;
+      const newStatistic = newProps.statistic || newProps.extendedStatistic;
+
       if (
         existingProps.Threshold !== newProps.threshold ||
         existingProps.EvaluationPeriods !== newProps.evaluationPeriods ||
-        existingProps.Period !== newProps.period
+        existingProps.Period !== newProps.period ||
+        existingStatistic !== newStatistic
       ) {
         log
           .info()
@@ -172,6 +177,11 @@ export async function staticCWAlarmNeedsUpdate(
             existingProps.Period?.toString() || 'undefined'
           )
           .str('newPeriod', newProps.period?.toString() || 'undefined')
+          .str(
+            'existingStatistic',
+            existingStatistic?.toString() || 'undefined'
+          )
+          .str('newStatistic', newStatistic?.toString() || 'undefined')
           .msg('Alarm needs update');
         return true;
       }
@@ -192,7 +202,9 @@ export function configureAlarmPropsFromTags(
   alarmProps: AlarmProps,
   threshold: number,
   durationTime: number,
-  durationPeriods: number
+  durationPeriods: number,
+  statistic?: Statistic,
+  extendedStatistic?: string
 ): void {
   alarmProps.threshold = threshold;
   log
@@ -244,6 +256,18 @@ export function configureAlarmPropsFromTags(
     .str('function', 'configureAlarmPropsFromTags')
     .num('evaluationPeriods', durationPeriods)
     .msg('Adjusted evaluation periods based on tag');
+
+  if (statistic) {
+    alarmProps.statistic = statistic;
+    log
+      .info()
+      .str('function', 'configureAlarmPropsFromTags')
+      .str('statistic', statistic)
+      .msg('Adjusted statistic based on tag');
+  }
+  if (extendedStatistic) {
+    alarmProps.extendedStatistic = extendedStatistic;
+  }
 }
 
 export async function createOrUpdateAnomalyDetectionAlarm(
@@ -399,8 +423,11 @@ export async function createOrUpdateCWAlarm(
       props,
       threshold,
       durationTime,
-      durationPeriods
+      durationPeriods,
+      statistic,
+      extendedStatistic
     );
+
     log
       .info()
       .str('function', 'createOrUpdateCWAlarm')
