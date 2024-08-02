@@ -5,6 +5,7 @@ import {
   DescribeAlarmsCommand,
   PutAnomalyDetectorCommand,
   PutMetricAlarmCommand,
+  Statistic,
 } from '@aws-sdk/client-cloudwatch';
 import {
   AmpClient,
@@ -368,7 +369,7 @@ export async function createOrUpdateAnomalyDetectionAlarm(
 type MissingDataTreatment = 'breaching' | 'notBreaching' | 'ignore';
 
 // Define the possible values for Statistic
-type Statistic = 'Average' | 'Sum' | 'Minimum' | 'Maximum';
+//type Statistic = 'Average' | 'Sum' | 'Minimum' | 'Maximum';
 
 // This function is used to create or update a CW alarm based on the provided values.
 export async function createOrUpdateCWAlarm(
@@ -378,7 +379,7 @@ export async function createOrUpdateCWAlarm(
   threshold: number,
   durationTime: number,
   durationPeriods: number,
-  statistic: Statistic = 'Average',
+  statistic: Statistic,
   severityType: string,
   missingDataTreatment: MissingDataTreatment = 'ignore' // Default to 'ignore' if not specified
 ) {
