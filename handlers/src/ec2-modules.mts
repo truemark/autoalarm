@@ -519,7 +519,7 @@ const defaultAnomalyDurationTime = 60; // e.g., 300 seconds
 const defaultAnomalyDurationPeriods = 2; // e.g., 5 periods
 const defaultExtendedStatistic: string = 'p90';
 // used as input validation for extended statistics
-const extendedStatRegex = /^\(p\d{1,2}\)$/;
+const extendedStatRegex = /^p\d{1,2}$/;
 
 async function getAlarmConfig(
   instanceId: string,
@@ -655,7 +655,7 @@ async function getAlarmConfig(
             !Object.values(Statistic).includes(staticValues[4] as Statistic) &&
             extendedStatRegex.test(staticValues[4])
           ) {
-            extendedStatistic = staticValues[4];
+            staticStatistic = staticValues[4];
           } else {
             staticValues[4] = staticStatistic;
           }
@@ -691,7 +691,7 @@ async function getAlarmConfig(
             !Object.values(Statistic).includes(staticValues[4] as Statistic) &&
             extendedStatRegex.test(staticValues[4])
           ) {
-            extendedStatistic = staticValues[4];
+            staticStatistic = staticValues[4];
           } else {
             staticValues[4] = staticStatistic;
           }
@@ -1259,7 +1259,7 @@ export async function manageStorageAlarmForInstance(
             );
           await deleteCWAlarm(staticThresholdStorageAlarmName, instanceId);
         } else {
-          if (extendedStatRegex.test(extendedStatistic)) {
+          if (extendedStatRegex.test(staticStatistic)) {
             await createCloudWatchAlarms(
               instanceId,
               staticThresholdStorageAlarmName,
@@ -1405,7 +1405,23 @@ export async function manageMemoryAlarmForInstance(
         await deleteCWAlarm(staticThresholdAlarmName, instanceId);
         return;
       } else {
-        if (extendedStatRegex.test(extendedStatistic)) {
+        if (extendedStatRegex.test(staticStatistic)) {
+          log
+            .debug()
+            .str('function', 'manageMemoryAlarmForInstance')
+            .str('instanceId', instanceId)
+            .str('metricName', metricName)
+            .str('staticThresholdAlarmName', staticThresholdAlarmName)
+            .str('threshold', threshold.toString())
+            .str('durationStaticTime', durationStaticTime.toString())
+            .str('durationStaticPeriods', durationStaticPeriods.toString())
+            .str('type', type)
+            .str('missingDataTreatment', 'ignore')
+            .str('static satistic', staticStatistic)
+            .msg(
+              'regex matched for extended statistic. Creating alarm with extended statistic'
+            );
+
           await createCloudWatchAlarms(
             instanceId,
             staticThresholdAlarmName,
@@ -1421,6 +1437,21 @@ export async function manageMemoryAlarmForInstance(
             staticStatistic
           );
         } else {
+          log
+            .debug()
+            .str('function', 'manageMemoryAlarmForInstance')
+            .str('instanceId', instanceId)
+            .str('metricName', metricName)
+            .str('staticThresholdAlarmName', staticThresholdAlarmName)
+            .str('threshold', threshold.toString())
+            .str('durationStaticTime', durationStaticTime.toString())
+            .str('durationStaticPeriods', durationStaticPeriods.toString())
+            .str('type', type)
+            .str('missingDataTreatment', 'ignore')
+            .str('static satistic', staticStatistic)
+            .msg(
+              'regex NOT matched for extended statisstic. Creating alarm with standard statistic'
+            );
           await createCloudWatchAlarms(
             instanceId,
             staticThresholdAlarmName,
@@ -1779,6 +1810,6 @@ export const liveStates: Set<ValidInstanceState> = new Set([
 export const deadStates: Set<ValidInstanceState> = new Set([
   ValidInstanceState.Terminated,
   //ValidInstanceState.Stopping, //for testing.
-  //ValidInstanceState.Stopped, //for testing.
+  ValidInstanceState.Stopped, //for testing.
   //ValidInstanceState.ShuttingDown, //for testing.
 ]);
