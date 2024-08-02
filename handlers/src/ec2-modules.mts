@@ -1078,76 +1078,71 @@ export async function manageCPUUsageAlarmForInstance(
         'CRITICAL' as AlarmClassification
       );
     }
+  }
 
-    if (
-      type === 'WARNING' &&
-      (!tags['autoalarm:ec2-cpu'] ||
-        tags['autoalarm:ec2-cpu'].split('/')[0] === undefined ||
-        tags['autoalarm:ec2-cpu'].split('/')[0] === '' ||
-        !tags['autoalarm:ec2-cpu'].split('/')[0])
-    ) {
-      log
-        .info()
-        .str('function', 'manageCPUUsageAlarmForInstance')
-        .str('instanceId', instanceId)
-        .str('autoalarm:ec2-cpu', tags['autoalarm:ec2-cpu'])
-        .msg(
-          'CPU alarm threshold for warning is not defined. Skipping static cpu warning alarm creation.'
-        );
-      await deleteCWAlarm(staticThresholdAlarmName, instanceId);
-      return;
-    } else if (type === 'CRITICAL') {
-      if (
-        !tags['autoalarm:ec2-cpu'] ||
-        tags['autoalarm:ec2-cpu'].split('/')[1] === '' ||
-        tags['autoalarm:ec2-cpu'].split('/')[1] === undefined ||
-        !tags['autoalarm:ec2-cpu'].split('/')[1]
-      ) {
-        log
-          .info()
-          .str('function', 'manageCPUUsageAlarmForInstance')
-          .str('instanceId', instanceId)
-          .str('autoalarm:ec2-cpu', tags['autoalarm:ec2-cpu'])
-          .msg(
-            'CPU alarm threshold for critical is not defined. Skipping static cpu critical alarm creation.'
-          );
-        await deleteCWAlarm(staticThresholdAlarmName, instanceId);
-        return;
-      }
-    }
+  if (
+    type === 'WARNING' &&
+    (tags['autoalarm:ec2-cpu'].split('/')[0] === 'disabled' ||
+      tags['autoalarm:ec2-cpu'].split('/')[0] === '-')
+  ) {
+    log
+      .info()
+      .str('function', 'manageCPUUsageAlarmForInstance')
+      .str('instanceId', instanceId)
+      .str('autoalarm:ec2-cpu', tags['autoalarm:ec2-cpu'])
+      .msg(
+        'CPU alarm threshold for warning is set to be disabled. Skipping static cpu warning alarm creation.'
+      );
+    await deleteCWAlarm(staticThresholdAlarmName, instanceId);
+    return;
+  } else if (
+    type === 'CRITICAL' &&
+    (tags['autoalarm:ec2-cpu'].split('/')[1] === 'disabled' ||
+      tags['autoalarm:ec2-cpu'].split('/')[1] === '-')
+  ) {
+    log
+      .info()
+      .str('function', 'manageCPUUsageAlarmForInstance')
+      .str('instanceId', instanceId)
+      .str('autoalarm:ec2-cpu', tags['autoalarm:ec2-cpu'])
+      .msg(
+        'CPU alarm threshold for critical is not defined. Skipping static cpu critical alarm creation.'
+      );
+    await deleteCWAlarm(staticThresholdAlarmName, instanceId);
+    return;
+  }
 
-    // using regex to validate the statistic type between statistic and extended statistic
-    if (extendedStatRegex.test(staticStatistic)) {
-      await createCloudWatchAlarms(
-        instanceId,
-        staticThresholdAlarmName,
-        'CPUUtilization',
-        'AWS/EC2',
-        [{Name: 'InstanceId', Value: instanceId}],
-        threshold,
-        durationStaticTime,
-        durationStaticPeriods,
-        type,
-        'ignore' as MissingDataTreatment,
-        undefined,
-        staticStatistic
-      );
-    } else {
-      await createCloudWatchAlarms(
-        instanceId,
-        staticThresholdAlarmName,
-        'CPUUtilization',
-        'AWS/EC2',
-        [{Name: 'InstanceId', Value: instanceId}],
-        threshold,
-        durationStaticTime,
-        durationStaticPeriods,
-        type,
-        'ignore' as MissingDataTreatment,
-        staticStatistic as Statistic,
-        undefined
-      );
-    }
+  // using regex to validate the statistic type between statistic and extended statistic
+  if (extendedStatRegex.test(staticStatistic)) {
+    await createCloudWatchAlarms(
+      instanceId,
+      staticThresholdAlarmName,
+      'CPUUtilization',
+      'AWS/EC2',
+      [{Name: 'InstanceId', Value: instanceId}],
+      threshold,
+      durationStaticTime,
+      durationStaticPeriods,
+      type,
+      'ignore' as MissingDataTreatment,
+      undefined,
+      staticStatistic
+    );
+  } else {
+    await createCloudWatchAlarms(
+      instanceId,
+      staticThresholdAlarmName,
+      'CPUUtilization',
+      'AWS/EC2',
+      [{Name: 'InstanceId', Value: instanceId}],
+      threshold,
+      durationStaticTime,
+      durationStaticPeriods,
+      type,
+      'ignore' as MissingDataTreatment,
+      staticStatistic as Statistic,
+      undefined
+    );
   }
 }
 
@@ -1231,10 +1226,8 @@ export async function manageStorageAlarmForInstance(
         }
         if (
           type === 'WARNING' &&
-          (tags['autoalarm:ec2-storage'].split('/')[0] === undefined ||
-            tags['autoalarm:ec2-storage'].split('/')[0] === '' ||
-            !tags['autoalarm:ec2-storage'] ||
-            !tags['autoalarm:ec2-storage'].split('/')[0])
+          (tags['autoalarm:ec2-storage'].split('/')[0] === 'disabled' ||
+            tags['autoalarm:ec2-storage'].split('/')[0] === '-')
         ) {
           log
             .info()
@@ -1248,10 +1241,8 @@ export async function manageStorageAlarmForInstance(
           await deleteCWAlarm(staticThresholdStorageAlarmName, instanceId);
         } else if (
           type === 'CRITICAL' &&
-          (!tags['autoalarm:ec2-storage'] ||
-            tags['autoalarm:ec2-storage'].split('/')[1] === '' ||
-            tags['autoalarm:ec2-storage'].split('/')[1] === undefined ||
-            !tags['autoalarm:ec2-storage'].split('/')[1])
+          (tags['autoalarm:ec2-storage'].split('/')[1] === 'disabled' ||
+            tags['autoalarm:ec2-storage'].split('/')[1] === '-')
         ) {
           log
             .info()
@@ -1379,10 +1370,8 @@ export async function manageMemoryAlarmForInstance(
 
       if (
         type === 'WARNING' &&
-        (!tags['autoalarm:ec2-memory'] ||
-          tags['autoalarm:ec2-memory'].split('/')[0] === undefined ||
-          tags['autoalarm:ec2-memory'].split('/')[0] === '' ||
-          !tags['autoalarm:ec2-memory'].split('/')[0])
+        (tags['autoalarm:ec2-memory'].split('/')[0] === 'disabled' ||
+          tags['autoalarm:ec2-memory'].split('/')[0] === '-')
       ) {
         log
           .info()
@@ -1396,10 +1385,8 @@ export async function manageMemoryAlarmForInstance(
         return;
       } else if (
         type === 'CRITICAL' &&
-        (!tags['autoalarm:ec2-memory'] ||
-          tags['autoalarm:ec2-memory'].split('/')[1] === '' ||
-          tags['autoalarm:ec2-memory'].split('/')[1] === undefined ||
-          !tags['autoalarm:ec2-memory'].split('/')[1])
+        (tags['autoalarm:ec2-memory'].split('/')[1] === 'disabled' ||
+          tags['autoalarm:ec2-memory'].split('/')[1] === '-')
       ) {
         log
           .info()
