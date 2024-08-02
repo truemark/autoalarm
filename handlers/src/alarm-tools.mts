@@ -366,7 +366,7 @@ export async function createOrUpdateAnomalyDetectionAlarm(
 }
 
 // Define the possible values for MissingDataTreatment
-type MissingDataTreatment = 'breaching' | 'notBreaching' | 'ignore';
+export type MissingDataTreatment = 'breaching' | 'notBreaching' | 'ignore';
 
 // Define the possible values for Statistic
 //type Statistic = 'Average' | 'Sum' | 'Minimum' | 'Maximum';
@@ -379,9 +379,10 @@ export async function createOrUpdateCWAlarm(
   threshold: number,
   durationTime: number,
   durationPeriods: number,
-  statistic: Statistic,
   severityType: string,
-  missingDataTreatment: MissingDataTreatment = 'ignore' // Default to 'ignore' if not specified
+  missingDataTreatment: MissingDataTreatment = 'ignore', // Default to 'ignore' if not specified
+  statistic?: Statistic | undefined,
+  extendedStatistic?: string | undefined
 ) {
   try {
     log
@@ -432,7 +433,9 @@ export async function createOrUpdateCWAlarm(
           MetricName: props.metricName,
           Namespace: props.namespace,
           Period: props.period,
-          Statistic: statistic,
+          ...(statistic
+            ? {Statistic: statistic}
+            : {ExtendedStatistic: extendedStatistic}),
           Threshold: props.threshold,
           ActionsEnabled: false,
           Dimensions: props.dimensions,

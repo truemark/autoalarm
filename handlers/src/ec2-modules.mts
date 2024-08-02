@@ -22,6 +22,7 @@ import {
   managePromNamespaceAlarms,
   deletePromRulesForService,
   createOrUpdateAnomalyDetectionAlarm,
+  MissingDataTreatment,
 } from './alarm-tools.mjs';
 
 const log: logging.Logger = logging.getLogger('ec2-modules');
@@ -507,13 +508,18 @@ const defaultStorageThreshold = (type: AlarmClassification) =>
 // Default values for duration and periods
 const defaultCPUStaticDurationTime = 300; // e.g., 300 seconds
 const defaultCPUStaticDurationPeriods = 2; // e.g., 5 periods
+const defaultStaticCPUSStatistic = 'p90';
 const defaultStorageStaticDurationTime = 300; // e.g., 300 seconds
 const defaultStorageStaticDurationPeriods = 2; // e.g., 5 periods
+const defaultStaticStorageStatistic = 'Maximum';
 const defaultMemoryStaticDurationTime = 300; // e.g., 300 seconds
 const defaultMemoryStaticDurationPeriods = 2; // e.g., 5 periods
+const defaultStaticMemoryStatistic = 'p90';
 const defaultAnomalyDurationTime = 60; // e.g., 300 seconds
 const defaultAnomalyDurationPeriods = 2; // e.g., 5 periods
 const defaultExtendedStatistic: string = 'p90';
+// used as input validation for extended statistics
+const extendedStatRegex = /^\(p\d{1,2}\)$/;
 
 async function getAlarmConfig(
   instanceId: string,
@@ -527,8 +533,10 @@ async function getAlarmConfig(
   threshold: any;
   durationStaticTime: number;
   durationStaticPeriods: number;
+  staticStatistic: string;
   durationAnomalyTime: number;
   durationAnomalyPeriods: number;
+  useAnomalyDetection: boolean;
   ec2Metadata: {platform: string | null; privateIp: string | null};
 }> {
   log
@@ -543,22 +551,27 @@ async function getAlarmConfig(
   let threshold: any;
   let durationStaticTime: number;
   let durationStaticPeriods: number;
+  let staticStatistic: string;
+  let useAnomalyDetection: boolean = false;
 
   switch (metricTagName) {
     case 'cpu':
       threshold = defaultCPUThreshold(type);
       durationStaticTime = defaultCPUStaticDurationTime;
       durationStaticPeriods = defaultCPUStaticDurationPeriods;
+      staticStatistic = defaultStaticCPUSStatistic;
       break;
     case 'storage':
       threshold = defaultStorageThreshold(type);
       durationStaticTime = defaultStorageStaticDurationTime;
       durationStaticPeriods = defaultStorageStaticDurationPeriods;
+      staticStatistic = defaultStaticStorageStatistic;
       break;
     case 'memory':
       threshold = defaultMemoryThreshold(type);
       durationStaticTime = defaultMemoryStaticDurationTime;
       durationStaticPeriods = defaultMemoryStaticDurationPeriods;
+      staticStatistic = defaultStaticMemoryStatistic;
       break;
     default:
       throw new Error(`Unsupported metricTagName: ${metricTagName}`);
@@ -599,7 +612,7 @@ async function getAlarmConfig(
       .str('staticValues', JSON.stringify(staticValues))
       .msg('Fetched Static Threshold tag values');
 
-    if (staticValues.length < 1 || staticValues.length > 4) {
+    if (staticValues.length < 1 || staticValues.length > 5) {
       log
         .warn()
         .str('function', 'getAlarmConfig')
@@ -630,6 +643,22 @@ async function getAlarmConfig(
             !isNaN(parseInt(staticValues[3], 10))
               ? parseInt(staticValues[3], 10)
               : durationStaticPeriods;
+          if (
+            staticValues[4] !== undefined &&
+            staticValues[4] !== '' &&
+            Object.values(Statistic).includes(staticValues[4] as Statistic)
+          ) {
+            staticStatistic = staticValues[4];
+          } else if (
+            staticValues[4] !== undefined &&
+            staticValues[4] !== '' &&
+            !Object.values(Statistic).includes(staticValues[4] as Statistic) &&
+            extendedStatRegex.test(staticValues[4])
+          ) {
+            extendedStatistic = staticValues[4];
+          } else {
+            staticValues[4] = staticStatistic;
+          }
           break;
         case 'CRITICAL':
           threshold =
@@ -650,6 +679,22 @@ async function getAlarmConfig(
             !isNaN(parseInt(staticValues[3], 10))
               ? parseInt(staticValues[3], 10)
               : durationStaticPeriods;
+          if (
+            staticValues[4] !== undefined &&
+            staticValues[4] !== '' &&
+            Object.values(Statistic).includes(staticValues[4] as Statistic)
+          ) {
+            staticStatistic = staticValues[4];
+          } else if (
+            staticValues[4] !== undefined &&
+            staticValues[4] !== '' &&
+            !Object.values(Statistic).includes(staticValues[4] as Statistic) &&
+            extendedStatRegex.test(staticValues[4])
+          ) {
+            extendedStatistic = staticValues[4];
+          } else {
+            staticValues[4] = staticStatistic;
+          }
           break;
       }
     }
@@ -690,6 +735,7 @@ async function getAlarmConfig(
           'Invalid tag values/delimiters. Please use 3 values separated by a "|". Using default values'
         );
     } else {
+      useAnomalyDetection = true;
       extendedStatistic =
         typeof values[0] === 'string' && values[0].trim() !== ''
           ? values[0].trim()
@@ -747,8 +793,10 @@ async function getAlarmConfig(
     threshold,
     durationStaticTime,
     durationStaticPeriods,
+    staticStatistic,
     durationAnomalyTime,
     durationAnomalyPeriods,
+    useAnomalyDetection,
     ec2Metadata,
   };
 }
@@ -947,7 +995,9 @@ async function createCloudWatchAlarms(
   durationTime: number,
   durationPeriods: number,
   severityType: AlarmClassification,
-  statistic: Statistic
+  missingDataTreatment: MissingDataTreatment = 'ignore',
+  statistic?: Statistic,
+  extendedStatistic?: string
 ): Promise<void> {
   const alarmProps = {
     threshold: threshold,
@@ -965,8 +1015,10 @@ async function createCloudWatchAlarms(
     threshold,
     durationTime,
     durationPeriods,
+    severityType,
+    missingDataTreatment,
     statistic,
-    severityType
+    extendedStatistic
   );
 }
 
@@ -983,8 +1035,10 @@ export async function manageCPUUsageAlarmForInstance(
     threshold,
     durationStaticTime,
     durationStaticPeriods,
+    staticStatistic,
     durationAnomalyTime,
     durationAnomalyPeriods,
+    useAnomalyDetection,
   } = await getAlarmConfig(instanceId, type, 'cpu', tags);
 
   if (usePrometheus) {
@@ -1011,17 +1065,19 @@ export async function manageCPUUsageAlarmForInstance(
         'autoalarm:target tag set to cloudwatch. Skipping prometheus rules and creating CW alarms.'
       );
 
-    await createOrUpdateAnomalyDetectionAlarm(
-      anomalyAlarmName,
-      'InstanceId',
-      instanceId,
-      'CPUUtilization',
-      'AWS/EC2',
-      extendedStatistic,
-      durationAnomalyTime,
-      durationAnomalyPeriods,
-      'CRITICAL' as AlarmClassification
-    );
+    if (useAnomalyDetection) {
+      await createOrUpdateAnomalyDetectionAlarm(
+        anomalyAlarmName,
+        'InstanceId',
+        instanceId,
+        'CPUUtilization',
+        'AWS/EC2',
+        extendedStatistic,
+        durationAnomalyTime,
+        durationAnomalyPeriods,
+        'CRITICAL' as AlarmClassification
+      );
+    }
 
     if (
       type === 'WARNING' &&
@@ -1060,18 +1116,38 @@ export async function manageCPUUsageAlarmForInstance(
       }
     }
 
-    await createCloudWatchAlarms(
-      instanceId,
-      staticThresholdAlarmName,
-      'CPUUtilization',
-      'AWS/EC2',
-      [{Name: 'InstanceId', Value: instanceId}],
-      threshold,
-      durationStaticTime,
-      durationStaticPeriods,
-      type,
-      'Maximum' as Statistic
-    );
+    // using regex to validate the statistic type between statistic and extended statistic
+    if (extendedStatRegex.test(staticStatistic)) {
+      await createCloudWatchAlarms(
+        instanceId,
+        staticThresholdAlarmName,
+        'CPUUtilization',
+        'AWS/EC2',
+        [{Name: 'InstanceId', Value: instanceId}],
+        threshold,
+        durationStaticTime,
+        durationStaticPeriods,
+        type,
+        'ignore' as MissingDataTreatment,
+        undefined,
+        staticStatistic
+      );
+    } else {
+      await createCloudWatchAlarms(
+        instanceId,
+        staticThresholdAlarmName,
+        'CPUUtilization',
+        'AWS/EC2',
+        [{Name: 'InstanceId', Value: instanceId}],
+        threshold,
+        durationStaticTime,
+        durationStaticPeriods,
+        type,
+        'ignore' as MissingDataTreatment,
+        staticStatistic as Statistic,
+        undefined
+      );
+    }
   }
 }
 
@@ -1088,8 +1164,10 @@ export async function manageStorageAlarmForInstance(
     threshold,
     durationStaticTime,
     durationStaticPeriods,
+    staticStatistic,
     durationAnomalyTime,
     durationAnomalyPeriods,
+    useAnomalyDetection,
     ec2Metadata,
   } = await getAlarmConfig(instanceId, type, 'storage', tags);
   const isWindows = ec2Metadata.platform
@@ -1132,23 +1210,25 @@ export async function manageStorageAlarmForInstance(
         staticThresholdStorageAlarmName = `${staticThresholdAlarmName}-${path}`;
         anomalyStorageAlarmName = `${anomalyAlarmName}-${path}`;
 
-        await createOrUpdateAnomalyDetectionAlarm(
-          anomalyStorageAlarmName,
-          'InstanceId',
-          instanceId,
-          metricName,
-          'CWAgent',
-          extendedStatistic,
-          durationAnomalyTime,
-          durationAnomalyPeriods,
-          'CRITICAL' as AlarmClassification
-        );
-        log
-          .info()
-          .str('function', 'manageStorageAlarmForInstance')
-          .str('instanceId', instanceId)
-          .str('path', path)
-          .msg('Creating storage alarm');
+        if (useAnomalyDetection) {
+          await createOrUpdateAnomalyDetectionAlarm(
+            anomalyStorageAlarmName,
+            'InstanceId',
+            instanceId,
+            metricName,
+            'CWAgent',
+            extendedStatistic,
+            durationAnomalyTime,
+            durationAnomalyPeriods,
+            'CRITICAL' as AlarmClassification
+          );
+          log
+            .info()
+            .str('function', 'manageStorageAlarmForInstance')
+            .str('instanceId', instanceId)
+            .str('path', path)
+            .msg('Creating Anomaly storage alarm');
+        }
         if (
           type === 'WARNING' &&
           (tags['autoalarm:ec2-storage'].split('/')[0] === undefined ||
@@ -1184,18 +1264,37 @@ export async function manageStorageAlarmForInstance(
             );
           await deleteCWAlarm(staticThresholdStorageAlarmName, instanceId);
         } else {
-          await createCloudWatchAlarms(
-            instanceId,
-            staticThresholdStorageAlarmName,
-            metricName,
-            'CWAgent',
-            dimensions_props,
-            threshold,
-            durationStaticTime,
-            durationStaticPeriods,
-            type,
-            'Maximum' as Statistic
-          );
+          if (extendedStatRegex.test(extendedStatistic)) {
+            await createCloudWatchAlarms(
+              instanceId,
+              staticThresholdStorageAlarmName,
+              metricName,
+              'CWAgent',
+              dimensions_props,
+              threshold,
+              durationStaticTime,
+              durationStaticPeriods,
+              type,
+              'ignore' as MissingDataTreatment,
+              undefined,
+              staticStatistic
+            );
+          } else {
+            await createCloudWatchAlarms(
+              instanceId,
+              staticThresholdStorageAlarmName,
+              metricName,
+              'CWAgent',
+              dimensions_props,
+              threshold,
+              durationStaticTime,
+              durationStaticPeriods,
+              type,
+              'ignore' as MissingDataTreatment,
+              staticStatistic as Statistic,
+              undefined
+            );
+          }
         }
       }
     } else {
@@ -1223,8 +1322,10 @@ export async function manageMemoryAlarmForInstance(
     threshold,
     durationStaticTime,
     durationStaticPeriods,
+    staticStatistic,
     durationAnomalyTime,
     durationAnomalyPeriods,
+    useAnomalyDetection,
     ec2Metadata,
   } = await getAlarmConfig(instanceId, type, 'memory', tags);
 
@@ -1262,18 +1363,19 @@ export async function manageMemoryAlarmForInstance(
         .str('instanceId', instanceId)
         .str('metricName', metricName)
         .msg('Memory metrics found. Creating CloudWatch alarm');
-
-      await createOrUpdateAnomalyDetectionAlarm(
-        anomalyAlarmName,
-        'InstanceId',
-        instanceId,
-        metricName,
-        'CWAgent',
-        extendedStatistic,
-        durationAnomalyTime,
-        durationAnomalyPeriods,
-        'CRITICAL' as AlarmClassification
-      );
+      if (useAnomalyDetection) {
+        await createOrUpdateAnomalyDetectionAlarm(
+          anomalyAlarmName,
+          'InstanceId',
+          instanceId,
+          metricName,
+          'CWAgent',
+          extendedStatistic,
+          durationAnomalyTime,
+          durationAnomalyPeriods,
+          'CRITICAL' as AlarmClassification
+        );
+      }
 
       if (
         type === 'WARNING' &&
@@ -1310,18 +1412,37 @@ export async function manageMemoryAlarmForInstance(
         await deleteCWAlarm(staticThresholdAlarmName, instanceId);
         return;
       } else {
-        await createCloudWatchAlarms(
-          instanceId,
-          staticThresholdAlarmName,
-          metricName,
-          'CWAgent',
-          [{Name: 'InstanceId', Value: instanceId}],
-          threshold,
-          durationStaticTime,
-          durationStaticPeriods,
-          type,
-          'Maximum' as Statistic
-        );
+        if (extendedStatRegex.test(extendedStatistic)) {
+          await createCloudWatchAlarms(
+            instanceId,
+            staticThresholdAlarmName,
+            metricName,
+            'CWAgent',
+            [{Name: 'InstanceId', Value: instanceId}],
+            threshold,
+            durationStaticTime,
+            durationStaticPeriods,
+            type,
+            'ignore' as MissingDataTreatment,
+            undefined,
+            staticStatistic
+          );
+        } else {
+          await createCloudWatchAlarms(
+            instanceId,
+            staticThresholdAlarmName,
+            metricName,
+            'CWAgent',
+            [{Name: 'InstanceId', Value: instanceId}],
+            threshold,
+            durationStaticTime,
+            durationStaticPeriods,
+            type,
+            'ignore' as MissingDataTreatment,
+            staticStatistic as Statistic,
+            undefined
+          );
+        }
       }
     } else {
       log
