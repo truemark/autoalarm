@@ -496,12 +496,21 @@ async function batchUpdatePromRules(
 // The following const and function are used to dynamically identify the alarm configuration tags and apply them to each alarm
 // that requires those configurations. The default threshold is set to 90 for critical alarms and 80 for warning alarms.
 // The manageActiveInstances function will call these alarm functions twice, once for each alarm classification type 'Critical' and 'Warning'.
-const defaultThreshold = (type: AlarmClassification) =>
-  type === 'CRITICAL' ? 95 : 90;
+const defaultCPUThreshold = (type: AlarmClassification) =>
+  type === 'CRITICAL' ? 98 : 95;
+const defaultMemoryThreshold = (type: AlarmClassification) =>
+  type === 'CRITICAL' ? 98 : 96;
+
+const defaultStorageThreshold = (type: AlarmClassification) =>
+  type === 'CRITICAL' ? 98 : 96;
 
 // Default values for duration and periods
-const defaultStaticDurationTime = 60; // e.g., 300 seconds
-const defaultStaticDurationPeriods = 2; // e.g., 5 periods
+const defaultCPUStaticDurationTime = 300; // e.g., 300 seconds
+const defaultCPUStaticDurationPeriods = 2; // e.g., 5 periods
+const defaultStorageStaticDurationTime = 300; // e.g., 300 seconds
+const defaultStorageStaticDurationPeriods = 2; // e.g., 5 periods
+const defaultMemoryStaticDurationTime = 300; // e.g., 300 seconds
+const defaultMemoryStaticDurationPeriods = 2; // e.g., 5 periods
 const defaultAnomalyDurationTime = 60; // e.g., 300 seconds
 const defaultAnomalyDurationPeriods = 2; // e.g., 5 periods
 const defaultExtendedStatistic: string = 'p90';
@@ -531,11 +540,32 @@ async function getAlarmConfig(
     .msg('Fetching alarm configuration');
 
   // Initialize variables with default values
-  let threshold: any = defaultThreshold(type);
+  let threshold: any;
+  let durationStaticTime: number;
+  let durationStaticPeriods: number;
+
+  switch (metricTagName) {
+    case 'cpu':
+      threshold = defaultCPUThreshold(type);
+      durationStaticTime = defaultCPUStaticDurationTime;
+      durationStaticPeriods = defaultCPUStaticDurationPeriods;
+      break;
+    case 'storage':
+      threshold = defaultStorageThreshold(type);
+      durationStaticTime = defaultStorageStaticDurationTime;
+      durationStaticPeriods = defaultStorageStaticDurationPeriods;
+      break;
+    case 'memory':
+      threshold = defaultMemoryThreshold(type);
+      durationStaticTime = defaultMemoryStaticDurationTime;
+      durationStaticPeriods = defaultMemoryStaticDurationPeriods;
+      break;
+    default:
+      throw new Error(`Unsupported metricTagName: ${metricTagName}`);
+  }
+
   let extendedStatistic = defaultExtendedStatistic;
-  let durationStaticTime = defaultStaticDurationTime;
-  let durationStaticPeriods = defaultStaticDurationPeriods;
-  let durationAnomalyTime = defaultAnomalyDurationPeriods;
+  let durationAnomalyTime = defaultAnomalyDurationTime;
   let durationAnomalyPeriods = defaultAnomalyDurationPeriods;
   const ec2Metadata = await getInstanceDetails(instanceId);
   log
@@ -587,19 +617,19 @@ async function getAlarmConfig(
             staticValues[0] !== '' &&
             !isNaN(parseInt(staticValues[0], 10))
               ? parseInt(staticValues[0], 10)
-              : defaultThreshold(type);
+              : threshold;
           durationStaticTime =
             staticValues[2] !== undefined &&
             staticValues[2] !== '' &&
             !isNaN(parseInt(staticValues[2], 10))
               ? parseInt(staticValues[2], 10)
-              : defaultStaticDurationTime;
+              : durationStaticTime;
           durationStaticPeriods =
             staticValues[3] !== undefined &&
             staticValues[3] !== '' &&
             !isNaN(parseInt(staticValues[3], 10))
               ? parseInt(staticValues[3], 10)
-              : defaultStaticDurationPeriods;
+              : durationStaticPeriods;
           break;
         case 'CRITICAL':
           threshold =
@@ -607,19 +637,19 @@ async function getAlarmConfig(
             staticValues[1] !== '' &&
             !isNaN(parseInt(staticValues[1], 10))
               ? parseInt(staticValues[1], 10)
-              : defaultThreshold(type);
+              : threshold;
           durationStaticTime =
             staticValues[2] !== undefined &&
             staticValues[2] !== '' &&
             !isNaN(parseInt(staticValues[2], 10))
               ? parseInt(staticValues[2], 10)
-              : defaultStaticDurationTime;
+              : durationStaticTime;
           durationStaticPeriods =
             staticValues[3] !== undefined &&
             staticValues[3] !== '' &&
             !isNaN(parseInt(staticValues[3], 10))
               ? parseInt(staticValues[3], 10)
-              : defaultStaticDurationPeriods;
+              : durationStaticPeriods;
           break;
       }
     }
