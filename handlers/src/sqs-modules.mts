@@ -429,6 +429,7 @@ async function checkAndManageSQSStatusAlarms(queueUrl: string, tags: Tag) {
             durationStaticTime,
             durationStaticPeriods,
             'Maximum',
+            //@ts-ignore
             type as AlarmClassification
           );
         }

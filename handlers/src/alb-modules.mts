@@ -454,6 +454,7 @@ async function checkAndManageALBStatusAlarms(
             durationStaticTime,
             durationStaticPeriods,
             'Maximum',
+            //@ts-ignore
             type as AlarmClassification
           );
         }

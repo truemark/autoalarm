@@ -1082,6 +1082,7 @@ export async function manageCPUUsageAlarmForInstance(
 
   if (
     type === 'WARNING' &&
+    tags['autoalarm:ec2-cpu'] &&
     (tags['autoalarm:ec2-cpu'].split('/')[0] === 'disabled' ||
       tags['autoalarm:ec2-cpu'].split('/')[0] === '-')
   ) {
@@ -1097,6 +1098,7 @@ export async function manageCPUUsageAlarmForInstance(
     return;
   } else if (
     type === 'CRITICAL' &&
+    tags['autoalarm:ec2-cpu'] &&
     (tags['autoalarm:ec2-cpu'].split('/')[1] === 'disabled' ||
       tags['autoalarm:ec2-cpu'].split('/')[1] === '-')
   ) {
@@ -1226,6 +1228,7 @@ export async function manageStorageAlarmForInstance(
         }
         if (
           type === 'WARNING' &&
+          tags['autoalarm:ec2-storag'] &&
           (tags['autoalarm:ec2-storage'].split('/')[0] === 'disabled' ||
             tags['autoalarm:ec2-storage'].split('/')[0] === '-')
         ) {
@@ -1241,6 +1244,7 @@ export async function manageStorageAlarmForInstance(
           await deleteCWAlarm(staticThresholdStorageAlarmName, instanceId);
         } else if (
           type === 'CRITICAL' &&
+          tags['autoalarm:ec2-storag'] &&
           (tags['autoalarm:ec2-storage'].split('/')[1] === 'disabled' ||
             tags['autoalarm:ec2-storage'].split('/')[1] === '-')
         ) {
@@ -1370,6 +1374,7 @@ export async function manageMemoryAlarmForInstance(
 
       if (
         type === 'WARNING' &&
+        tags['autoalarm:ec2-memory'] &&
         (tags['autoalarm:ec2-memory'].split('/')[0] === 'disabled' ||
           tags['autoalarm:ec2-memory'].split('/')[0] === '-')
       ) {
@@ -1385,6 +1390,7 @@ export async function manageMemoryAlarmForInstance(
         return;
       } else if (
         type === 'CRITICAL' &&
+        tags['autoalarm:ec2-memory'] &&
         (tags['autoalarm:ec2-memory'].split('/')[1] === 'disabled' ||
           tags['autoalarm:ec2-memory'].split('/')[1] === '-')
       ) {
