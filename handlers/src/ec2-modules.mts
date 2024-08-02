@@ -702,7 +702,6 @@ async function getAlarmConfig(
 
   if (tags[anomalyTagKey]) {
     const values = tags[anomalyTagKey].split('/');
-    const extendedStatRegex = /^\(p\d{1,2}\)$/;
     if (!extendedStatRegex.test(values[0].trim())) {
       log
         .warn()
@@ -1084,7 +1083,8 @@ export async function manageCPUUsageAlarmForInstance(
     type === 'WARNING' &&
     tags['autoalarm:ec2-cpu'] &&
     (tags['autoalarm:ec2-cpu'].split('/')[0] === 'disabled' ||
-      tags['autoalarm:ec2-cpu'].split('/')[0] === '-')
+      tags['autoalarm:ec2-cpu'].split('/')[0] === '-' ||
+      tags['autoalarm:ec2-cpu'] === 'disabled')
   ) {
     log
       .info()
@@ -1100,7 +1100,8 @@ export async function manageCPUUsageAlarmForInstance(
     type === 'CRITICAL' &&
     tags['autoalarm:ec2-cpu'] &&
     (tags['autoalarm:ec2-cpu'].split('/')[1] === 'disabled' ||
-      tags['autoalarm:ec2-cpu'].split('/')[1] === '-')
+      tags['autoalarm:ec2-cpu'].split('/')[1] === '-' ||
+      tags['autoalarm:ec2-cpu'] === 'disabled')
   ) {
     log
       .info()
@@ -1230,7 +1231,8 @@ export async function manageStorageAlarmForInstance(
           type === 'WARNING' &&
           tags['autoalarm:ec2-storag'] &&
           (tags['autoalarm:ec2-storage'].split('/')[0] === 'disabled' ||
-            tags['autoalarm:ec2-storage'].split('/')[0] === '-')
+            tags['autoalarm:ec2-storage'].split('/')[0] === '-' ||
+            tags['autoalarm:ec2-storage'] === 'disabled')
         ) {
           log
             .info()
@@ -1246,7 +1248,8 @@ export async function manageStorageAlarmForInstance(
           type === 'CRITICAL' &&
           tags['autoalarm:ec2-storag'] &&
           (tags['autoalarm:ec2-storage'].split('/')[1] === 'disabled' ||
-            tags['autoalarm:ec2-storage'].split('/')[1] === '-')
+            tags['autoalarm:ec2-storage'].split('/')[1] === '-' ||
+            tags['autoalarm:ec2-storage'] === 'disabled')
         ) {
           log
             .info()
@@ -1376,7 +1379,8 @@ export async function manageMemoryAlarmForInstance(
         type === 'WARNING' &&
         tags['autoalarm:ec2-memory'] &&
         (tags['autoalarm:ec2-memory'].split('/')[0] === 'disabled' ||
-          tags['autoalarm:ec2-memory'].split('/')[0] === '-')
+          tags['autoalarm:ec2-memory'].split('/')[0] === '-' ||
+          tags['autoalarm:ec2-memory'] === 'disabled')
       ) {
         log
           .info()
@@ -1392,7 +1396,8 @@ export async function manageMemoryAlarmForInstance(
         type === 'CRITICAL' &&
         tags['autoalarm:ec2-memory'] &&
         (tags['autoalarm:ec2-memory'].split('/')[1] === 'disabled' ||
-          tags['autoalarm:ec2-memory'].split('/')[1] === '-')
+          tags['autoalarm:ec2-memory'].split('/')[1] === '-' ||
+          tags['autoalarm:ec2-memory'] === 'disabled')
       ) {
         log
           .info()
