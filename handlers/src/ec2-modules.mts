@@ -1076,6 +1076,15 @@ export async function manageCPUUsageAlarmForInstance(
         durationAnomalyPeriods,
         'CRITICAL' as AlarmClassification
       );
+    } else {
+      log
+        .info()
+        .str('function', 'manageCPUUsageAlarmForInstance')
+        .str('instanceId', instanceId)
+        .msg(
+          'Anomaly Detection is not enabled. Skipping and deleting anomaly alarm if it exists.'
+        );
+      await deleteCWAlarm(anomalyAlarmName, instanceId);
     }
   }
 
@@ -1226,6 +1235,15 @@ export async function manageStorageAlarmForInstance(
             .str('instanceId', instanceId)
             .str('path', path)
             .msg('Creating Anomaly storage alarm');
+        } else {
+          log
+            .info()
+            .str('function', 'manageStorageAlarmForInstance')
+            .str('instanceId', instanceId)
+            .msg(
+              'Anomaly Detection is not enabled. Skipping and deleting anomaly alarm if it exists.'
+            );
+          await deleteCWAlarm(anomalyAlarmName, instanceId);
         }
         if (
           type === 'WARNING' &&
@@ -1373,6 +1391,15 @@ export async function manageMemoryAlarmForInstance(
           durationAnomalyPeriods,
           'CRITICAL' as AlarmClassification
         );
+      } else {
+        log
+          .info()
+          .str('function', 'manageMemoryAlarmForInstance')
+          .str('instanceId', instanceId)
+          .msg(
+            'Anomaly Detection is not enabled. Skipping and deleting anomaly alarm if it exists.'
+          );
+        await deleteCWAlarm(anomalyAlarmName, instanceId);
       }
 
       if (

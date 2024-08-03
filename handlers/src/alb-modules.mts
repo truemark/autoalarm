@@ -5,6 +5,7 @@ import {
 import * as logging from '@nr1e/logging';
 import {Tag, AlarmProps} from './types.mjs';
 import {AlarmClassification} from './enums.mjs';
+import {Statistic} from '@aws-sdk/client-cloudwatch';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
   getCWAlarmsForInstance,
@@ -34,9 +35,12 @@ const defaultThreshold = (type: AlarmClassification) =>
 // Default values for duration and periods
 const defaultStaticDurationTime = 60; // e.g., 300 seconds
 const defaultStaticDurationPeriods = 2; // e.g., 5 periods
+const defaultStaticStatistic: Statistic = 'Sum';
 const defaultAnomalyDurationTime = 60; // e.g., 300 seconds
 const defaultAnomalyDurationPeriods = 2; // e.g., 5 periods
-const defaultExtendedStatistic: string = 'p90';
+const defaultExtendedAnomalyStatistic: string = 'p90';
+// used as input validation for extended statistics
+const extendedStatRegex = /^p\d{1,2}$/;
 
 async function getALBAlarmConfig(
   loadBalancerName: string,
@@ -45,13 +49,13 @@ async function getALBAlarmConfig(
   metricName: string,
   tags: Tag
 ): Promise<{
-  alarmName: string;
   staticThresholdAlarmName: string;
   anomalyAlarmName: string;
-  extendedStatistic: string;
+  extendedAnomalyStatistic: string;
   threshold: number;
   durationStaticTime: number;
   durationStaticPeriods: number;
+  staticStatistic: Statistic;
   durationAnomalyTime: number;
   durationAnomalyPeriods: number;
 }> {
@@ -65,7 +69,8 @@ async function getALBAlarmConfig(
 
   // Initialize variables with default values
   let threshold = defaultThreshold(type);
-  let extendedStatistic = defaultExtendedStatistic;
+  let extendedAnomalyStatistic = defaultExtendedAnomalyStatistic;
+  let staticStatistic = defaultStaticStatistic;
   let durationStaticTime = defaultStaticDurationTime;
   let durationStaticPeriods = defaultStaticDurationPeriods;
   let durationAnomalyTime = defaultAnomalyDurationTime;
@@ -94,12 +99,6 @@ async function getALBAlarmConfig(
       cwTagKey = 'autoalarm:cw-alb-5xx-count';
       anomalyTagKey = 'autoalarm:anomaly-alb-5xx-count';
       break;
-    default:
-      log
-        .warn()
-        .str('function', 'getALBAlarmConfig')
-        .str('metricName', metricName)
-        .msg('Unexpected metric name');
   }
 
   log
@@ -156,6 +155,7 @@ async function getALBAlarmConfig(
             !isNaN(parseInt(staticValues[3], 10))
               ? parseInt(staticValues[3], 10)
               : defaultStaticDurationPeriods;
+          staticStatistic = defaultStaticStatistic
           break;
         case 'CRITICAL':
           threshold =
@@ -176,6 +176,7 @@ async function getALBAlarmConfig(
             !isNaN(parseInt(staticValues[3], 10))
               ? parseInt(staticValues[3], 10)
               : defaultStaticDurationPeriods;
+            staticStatistic = defaultStaticStatistic
           break;
       }
     }
@@ -184,7 +185,6 @@ async function getALBAlarmConfig(
   // Extract and parse the anomaly detection tag values
   if (tags[anomalyTagKey]) {
     const values = tags[anomalyTagKey].split('/');
-    const extendedStatRegex = /^\(p\d{1,2}\)$/;
     if (!extendedStatRegex.test(values[0].trim())) {
       log
         .warn()
@@ -195,7 +195,7 @@ async function getALBAlarmConfig(
         .msg(
           "Invalid extended statistic value. Please use a valid percentile value. Using default value of 'p90'"
         );
-      values[0] = defaultExtendedStatistic;
+      values[0] = defaultExtendedAnomalyStatistic;
     }
     log
       .info()
@@ -217,10 +217,10 @@ async function getALBAlarmConfig(
           'Invalid tag values/delimiters. Please use 3 values separated by a "/". Using default values'
         );
     } else {
-      extendedStatistic =
+      extendedAnomalyStatistic =
         typeof values[0] === 'string' && values[0].trim() !== ''
           ? values[0].trim()
-          : defaultExtendedStatistic;
+          : defaultExtendedAnomalyStatistic;
       durationAnomalyTime =
         values[1] !== undefined &&
         values[1] !== '' &&
@@ -233,17 +233,6 @@ async function getALBAlarmConfig(
         !isNaN(parseInt(values[2], 10))
           ? parseInt(values[2], 10)
           : defaultAnomalyDurationPeriods;
-      log
-        .info()
-        .str('function', 'getALBAlarmConfig')
-        .str('Loadbalancer Name', loadBalancerName)
-        .str('anomalyTagKey', anomalyTagKey)
-        .str('anomalyTagValue', tags[anomalyTagKey])
-        .str('extendedStatistic', extendedStatistic)
-        .num('durationTime', durationAnomalyTime)
-        .num('durationPeriods', durationAnomalyPeriods)
-        .msg('Fetched Anomaly Detection tag values');
-    }
   }
   log
     .info()
@@ -259,7 +248,8 @@ async function getALBAlarmConfig(
       'anomalyAlarmName',
       `AutoAlarm-ALB-AnomalyDetection-${loadBalancerName}-CRITICAL-${metricName.toUpperCase()}`
     )
-    .str('extendedStatistic', extendedStatistic)
+    .str('Static Threshold Alarm Statistic', staticStatistic)
+    .str('Extended Anomaly Statistic', extendedAnomalyStatistic)
     .num('threshold', threshold)
     .num('durationStaticTime', durationStaticTime)
     .num('durationStaticPeriods', durationStaticPeriods)
@@ -267,13 +257,13 @@ async function getALBAlarmConfig(
     .num('durationAnomalyPeriods', durationAnomalyPeriods)
     .msg('Fetched alarm configuration');
   return {
-    alarmName: `AutoAlarm-${service.toUpperCase()}-${loadBalancerName}-${type}-${metricName.toUpperCase()}`,
     staticThresholdAlarmName: `AutoAlarm-ALB-StaticThreshold-${loadBalancerName}-${type}-${metricName.toUpperCase()}`,
     anomalyAlarmName: `AutoAlarm-ALB-AnomalyDetection-${loadBalancerName}-CRITICAL-${metricName.toUpperCase()}`,
-    extendedStatistic,
+    extendedAnomalyStatistic,
     threshold,
     durationStaticTime,
     durationStaticPeriods,
+    staticStatistic,
     durationAnomalyTime,
     durationAnomalyPeriods,
   };
@@ -343,16 +333,16 @@ async function checkAndManageALBStatusAlarms(
       let anomalyTagKey = '';
       switch (metricName) {
         case 'RequestCount':
-          cwTagKey = 'autoalarm:cw-alb-request-count';
-          anomalyTagKey = 'autoalarm:anomaly-alb-request-count';
+          cwTagKey = 'autoalarm:alb-request-count';
+          anomalyTagKey = 'autoalarm:alb-request-count-anomaly';
           break;
         case 'HTTPCode_ELB_4XX_Count':
-          cwTagKey = 'autoalarm:cw-alb-4xx-count';
-          anomalyTagKey = 'autoalarm:anomaly-alb-4xx-count';
+          cwTagKey = 'autoalarm:alb-4xx-count';
+          anomalyTagKey = 'autoalarm:alb-4xx-count-anomaly';
           break;
         case 'HTTPCode_ELB_5XX_Count':
-          cwTagKey = 'autoalarm:cw-alb-5xx-count';
-          anomalyTagKey = 'autoalarm:anomaly-alb-5xx-count';
+          cwTagKey = 'autoalarm:alb-5xx-count';
+          anomalyTagKey = 'autoalarm:alb-5xx-count-anomaly';
           break;
         default:
           log
@@ -390,26 +380,97 @@ async function checkAndManageALBStatusAlarms(
           tags
         );
 
-        // Create or update anomaly detection alarm
-        await createOrUpdateAnomalyDetectionAlarm(
-          anomalyAlarmName,
-          'LoadBalancer',
-          loadBalancerName,
-          metricName,
-          namespace,
-          extendedStatistic,
-          durationAnomalyTime,
-          durationAnomalyPeriods,
-          'CRITICAL' as AlarmClassification
-        );
+        // Create or update anomaly detection alarms
+        switch (anomalyAlarmName) {
+          case `AutoAlarm-ALB-AnomalyDetection-${loadBalancerName}-CRITICAL-REQUESTCOUNT`:
+            if (!tags['autoalarm:alb-request-count-anomaly']) {
+              log
+                .info()
+                .str('function', 'checkAndManageALBStatusAlarms')
+                .str('loadBalancerName', loadBalancerName)
+                .str('anomalyAlarmName', anomalyAlarmName)
+                .msg('Skipping anomaly detection alarm creation');
+              break;
+            } else {
+              await createOrUpdateAnomalyDetectionAlarm(
+                anomalyAlarmName,
+                'LoadBalancer',
+                loadBalancerName,
+                metricName,
+                namespace,
+                extendedStatistic,
+                durationAnomalyTime,
+                durationAnomalyPeriods,
+                'CRITICAL' as AlarmClassification
+              );
+              log
+                .info()
+                .str('function', 'checkAndManageALBStatusAlarms')
+                .str('loadBalancerName', loadBalancerName)
+                .str('anomalyAlarmName', anomalyAlarmName)
+                .msg('Creating or updating anomaly detection alarm');
+            }
+            break;
+          case `AutoAlarm-ALB-AnomalyDetection-${loadBalancerName}-CRITICAL-HTTPCODE_ELB_4XX_COUNT`:
+            if (!tags['autoalarm:alb-4xx-count-anomaly']) {
+              log
+                .info()
+                .str('function', 'checkAndManageALBStatusAlarms')
+                .str('loadBalancerName', loadBalancerName)
+                .str('anomalyAlarmName', anomalyAlarmName)
+                .msg('Skipping anomaly detection alarm creation');
+              break;
+            } else {
+              await createOrUpdateAnomalyDetectionAlarm(
+                anomalyAlarmName,
+                'LoadBalancer',
+                loadBalancerName,
+                metricName,
+                namespace,
+                extendedStatistic,
+                durationAnomalyTime,
+                durationAnomalyPeriods,
+                'CRITICAL' as AlarmClassification
+              );
+              log
+                .info()
+                .str('function', 'checkAndManageALBStatusAlarms')
+                .str('loadBalancerName', loadBalancerName)
+                .str('anomalyAlarmName', anomalyAlarmName)
+                .msg('Created anomaly detection alarm');
+            }
+            break;
+          case `AutoAlarm-ALB-AnomalyDetection-${loadBalancerName}-CRITICAL-HTTPCODE_ELB_5XX_COUNT`:
+            await createOrUpdateAnomalyDetectionAlarm(
+              anomalyAlarmName,
+              'LoadBalancer',
+              loadBalancerName,
+              metricName,
+              namespace,
+              extendedStatistic,
+              durationAnomalyTime,
+              durationAnomalyPeriods,
+              'CRITICAL' as AlarmClassification
+            );
+            log
+              .info()
+              .str('function', 'checkAndManageALBStatusAlarms')
+              .str('loadBalancerName', loadBalancerName)
+              .str('anomalyAlarmName', anomalyAlarmName)
+              .msg(
+                `Creating ${anomalyAlarmName} by default using tag values or default values if tag does not exist.`
+              );
+            break;
+        }
 
         // Check and create or delete static threshold alarm based on tag values
         if (
           type === 'WARNING' &&
           (!tags[cwTagKey] ||
-            tags[cwTagKey].split('/')[0] === undefined ||
-            tags[cwTagKey].split('/')[0] === '' ||
-            !tags[cwTagKey].split('/')[0])
+            tags[cwTagKey].split('/')[0] === 'disabled' ||
+            tags[cwTagKey].split('/')[0] === '-' ||
+            !tags[cwTagKey].split('/')[0] ||
+            tags[cwTagKey] === 'disabled')
         ) {
           log
             .info()
@@ -423,9 +484,10 @@ async function checkAndManageALBStatusAlarms(
         } else if (
           type === 'CRITICAL' &&
           (!tags[cwTagKey] ||
-            tags[cwTagKey].split('/')[1] === '' ||
-            tags[cwTagKey].split('/')[1] === undefined ||
-            !tags[cwTagKey].split('/')[1])
+            tags[cwTagKey].split('/')[1] === 'disabled' ||
+            tags[cwTagKey].split('/')[1] === '-' ||
+            !tags[cwTagKey].split('/')[1] ||
+            tags[cwTagKey] === 'disabled')
         ) {
           log
             .info()
@@ -439,9 +501,9 @@ async function checkAndManageALBStatusAlarms(
         } else {
           const alarmProps: AlarmProps = {
             threshold: threshold,
-            period: 60,
+            period: ,
             namespace: namespace,
-            evaluationPeriods: 5,
+            evaluationPeriods: durationStaticPeriods,
             metricName: metricName,
             dimensions: [{Name: 'LoadBalancer', Value: loadBalancerName}],
           };
@@ -454,7 +516,7 @@ async function checkAndManageALBStatusAlarms(
             durationStaticTime,
             durationStaticPeriods,
             'Maximum',
-            //@ts-ignore
+
             type as AlarmClassification
           );
         }
