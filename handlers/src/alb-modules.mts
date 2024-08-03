@@ -358,178 +358,215 @@ async function checkAndManageALBStatusAlarms(
           durationAnomalyTime,
           durationAnomalyPeriods,
         } = await getALBAlarmConfig(loadBalancerName, type, metricName, tags);
-
-        // Create or update anomaly detection alarms
-        switch (anomalyAlarmName) {
-          case `AutoAlarm-ALB-AnomalyDetection-${loadBalancerName}-CRITICAL-REQUESTCOUNT`:
-            if (!tags['autoalarm:alb-request-count-anomaly']) {
-              log
-                .info()
-                .str('function', 'checkAndManageALBStatusAlarms')
-                .str('loadBalancerName', loadBalancerName)
-                .str('anomalyAlarmName', anomalyAlarmName)
-                .msg('Skipping anomaly detection alarm creation');
-              break;
-            } else if (
-              tags[anomalyTagKey].split('/')[0] !== 'disabled' ||
-              tags[anomalyTagKey].split('/')[0] !== '-' ||
-              tags[anomalyTagKey] !== 'disabled'
-            ) {
-              await createOrUpdateAnomalyDetectionAlarm(
-                anomalyAlarmName,
-                'LoadBalancer',
-                loadBalancerName,
-                metricName,
-                namespace,
-                extendedAnomalyStatistic,
-                durationAnomalyTime,
-                durationAnomalyPeriods,
-                'CRITICAL' as AlarmClassification
-              );
-              log
-                .info()
-                .str('function', 'checkAndManageALBStatusAlarms')
-                .str('loadBalancerName', loadBalancerName)
-                .str('anomalyAlarmName', anomalyAlarmName)
-                .msg('Creating or updating anomaly detection alarm');
-            }
-            break;
-          case `AutoAlarm-ALB-AnomalyDetection-${loadBalancerName}-CRITICAL-HTTPCODE_ELB_4XX_COUNT`:
-            if (!tags['autoalarm:alb-4xx-count-anomaly']) {
-              log
-                .info()
-                .str('function', 'checkAndManageALBStatusAlarms')
-                .str('loadBalancerName', loadBalancerName)
-                .str('anomalyAlarmName', anomalyAlarmName)
-                .msg('Skipping anomaly detection alarm creation');
-              break;
-            } else if (
-              tags[anomalyTagKey].split('/')[0] !== 'disabled' ||
-              tags[anomalyTagKey].split('/')[0] !== '-' ||
-              tags[anomalyTagKey] !== 'disabled'
-            ) {
-              await createOrUpdateAnomalyDetectionAlarm(
-                anomalyAlarmName,
-                'LoadBalancer',
-                loadBalancerName,
-                metricName,
-                namespace,
-                extendedAnomalyStatistic,
-                durationAnomalyTime,
-                durationAnomalyPeriods,
-                'CRITICAL' as AlarmClassification
-              );
-              log
-                .info()
-                .str('function', 'checkAndManageALBStatusAlarms')
-                .str('loadBalancerName', loadBalancerName)
-                .str('anomalyAlarmName', anomalyAlarmName)
-                .msg('Created anomaly detection alarm');
-            }
-            break;
-          case `AutoAlarm-ALB-AnomalyDetection-${loadBalancerName}-CRITICAL-HTTPCODE_ELB_5XX_COUNT`:
-            if (
-              !tags[anomalyTagKey] ||
-              (tags[anomalyTagKey] &&
-                (tags[anomalyTagKey].split('/')[0] !== 'disabled' ||
-                  tags[anomalyTagKey].split('/')[0] !== '-' ||
-                  tags[anomalyTagKey] !== 'disabled'))
-            ) {
-              await createOrUpdateAnomalyDetectionAlarm(
-                anomalyAlarmName,
-                'LoadBalancer',
-                loadBalancerName,
-                metricName,
-                namespace,
-                extendedAnomalyStatistic,
-                durationAnomalyTime,
-                durationAnomalyPeriods,
-                'CRITICAL' as AlarmClassification
-              );
-              log
-                .info()
-                .str('function', 'checkAndManageALBStatusAlarms')
-                .str('loadBalancerName', loadBalancerName)
-                .str('anomalyAlarmName', anomalyAlarmName)
-                .msg(
-                  `Creating ${anomalyAlarmName} by default using tag values or default values if tag does not exist.`
-                );
-              break;
-            }
-
-            // Check and create or delete static threshold alarm based on tag values
-            if (
-              type === 'WARNING' &&
-              (!tags[cwTagKey] ||
-                tags[cwTagKey].split('/')[0] === 'disabled' ||
-                tags[cwTagKey].split('/')[0] === '-' ||
-                !tags[cwTagKey].split('/')[0] ||
-                tags[cwTagKey] === 'disabled')
-            ) {
-              log
-                .info()
-                .str('function', 'checkAndManageALBStatusAlarms')
-                .str('loadBalancerName', loadBalancerName)
-                .str(cwTagKey, tags[cwTagKey])
-                .msg(
-                  `ALB alarm threshold for ${metricName} WARNING is not defined. Skipping static ${metricName} warning alarm creation.`
-                );
-              await deleteCWAlarm(staticThresholdAlarmName, loadBalancerName);
-            } else if (
-              type === 'CRITICAL' &&
-              (!tags[cwTagKey] ||
-                tags[cwTagKey].split('/')[1] === 'disabled' ||
-                tags[cwTagKey].split('/')[1] === '-' ||
-                !tags[cwTagKey].split('/')[1] ||
-                tags[cwTagKey] === 'disabled')
-            ) {
-              log
-                .info()
-                .str('function', 'checkAndManageALBStatusAlarms')
-                .str('loadBalancerName', loadBalancerName)
-                .str(cwTagKey, tags[cwTagKey])
-                .msg(
-                  `ALB alarm threshold for ${metricName} CRITICAL is not defined. Skipping static ${metricName} critical alarm creation.`
-                );
-              await deleteCWAlarm(staticThresholdAlarmName, loadBalancerName);
-            } else {
-              const alarmProps: AlarmProps = {
-                threshold: threshold as number,
-                period: durationStaticTime,
-                namespace: namespace,
-                evaluationPeriods: durationStaticPeriods,
-                metricName: metricName,
-                dimensions: [{Name: 'LoadBalancer', Value: loadBalancerName}],
-              };
-
-              if (extendedStatRegex.test(staticStatistic)) {
-                await createOrUpdateCWAlarm(
-                  staticThresholdAlarmName,
-                  loadBalancerName,
-                  alarmProps,
-                  threshold as number,
-                  durationStaticTime,
-                  durationStaticPeriods,
-                  type as AlarmClassification,
-                  'ignore',
-                  undefined,
-                  staticStatistic
-                );
+        const alarmProps: AlarmProps = {
+          threshold: threshold as number,
+          period: durationStaticTime,
+          namespace: namespace,
+          evaluationPeriods: durationStaticPeriods,
+          metricName: metricName,
+          dimensions: [{Name: 'LoadBalancer', Value: loadBalancerName}],
+        };
+        if (type === 'CRITICAL') {
+          switch (anomalyAlarmName) {
+            case `AutoAlarm-ALB-AnomalyDetection-${loadBalancerName}-CRITICAL-REQUESTCOUNT`:
+              if (
+                !tags[anomalyTagKey] ||
+                (tags[anomalyTagKey] &&
+                  tags[anomalyTagKey].split('/')[0] === 'disabled') ||
+                tags[anomalyTagKey].split('/')[0] === '-' ||
+                tags[anomalyTagKey] === 'disabled'
+              ) {
+                log
+                  .info()
+                  .str('function', 'checkAndManageALBStatusAlarms')
+                  .str('loadBalancerName', loadBalancerName)
+                  .str('anomalyAlarmName', anomalyAlarmName)
+                  .msg(
+                    'Skipping or deleting anomaly detection alarm if it exists due to missing tag or tag value set to disable alarm'
+                  );
+                await deleteCWAlarm(anomalyAlarmName, loadBalancerName);
+                break;
               } else {
-                await createOrUpdateCWAlarm(
-                  staticThresholdAlarmName,
+                await createOrUpdateAnomalyDetectionAlarm(
+                  anomalyAlarmName,
+                  'LoadBalancer',
                   loadBalancerName,
-                  alarmProps,
-                  threshold as number,
-                  durationStaticTime,
-                  durationStaticPeriods,
-                  type as AlarmClassification,
-                  'ignore',
-                  staticStatistic as Statistic,
-                  undefined
+                  metricName,
+                  namespace,
+                  extendedAnomalyStatistic,
+                  durationAnomalyTime,
+                  durationAnomalyPeriods,
+                  'CRITICAL' as AlarmClassification
                 );
+                log
+                  .info()
+                  .str('function', 'checkAndManageALBStatusAlarms')
+                  .str('loadBalancerName', loadBalancerName)
+                  .str('anomalyAlarmName', anomalyAlarmName)
+                  .msg('Creating or updating anomaly detection alarm');
               }
+              break;
+            case `AutoAlarm-ALB-AnomalyDetection-${loadBalancerName}-CRITICAL-HTTPCODE_ELB_4XX_COUNT`:
+              if (
+                !tags[anomalyTagKey] ||
+                (tags[anomalyTagKey] &&
+                  tags[anomalyTagKey].split('/')[0] === 'disabled') ||
+                tags[anomalyTagKey].split('/')[0] === '-' ||
+                tags[anomalyTagKey] === 'disabled'
+              ) {
+                log
+                  .info()
+                  .str('function', 'checkAndManageALBStatusAlarms')
+                  .str('loadBalancerName', loadBalancerName)
+                  .str('anomalyAlarmName', anomalyAlarmName)
+                  .msg(
+                    'Skipping or deleting anomaly detection alarm if it exists due to missing tag or tag value set to disable alarm'
+                  );
+                await deleteCWAlarm(anomalyAlarmName, loadBalancerName);
+                break;
+              } else {
+                await createOrUpdateAnomalyDetectionAlarm(
+                  anomalyAlarmName,
+                  'LoadBalancer',
+                  loadBalancerName,
+                  metricName,
+                  namespace,
+                  extendedAnomalyStatistic,
+                  durationAnomalyTime,
+                  durationAnomalyPeriods,
+                  'CRITICAL' as AlarmClassification
+                );
+                log
+                  .info()
+                  .str('function', 'checkAndManageALBStatusAlarms')
+                  .str('loadBalancerName', loadBalancerName)
+                  .str('anomalyAlarmName', anomalyAlarmName)
+                  .msg('Created anomaly detection alarm');
+              }
+              break;
+            case `AutoAlarm-ALB-AnomalyDetection-${loadBalancerName}-CRITICAL-HTTPCODE_ELB_5XX_COUNT`:
+              if (
+                !tags[anomalyTagKey] ||
+                (tags[anomalyTagKey] &&
+                  (tags[anomalyTagKey].split('/')[0] === 'disabled' ||
+                    tags[anomalyTagKey].split('/')[0] === '-' ||
+                    tags[anomalyTagKey] === 'disabled'))
+              ) {
+                await createOrUpdateAnomalyDetectionAlarm(
+                  anomalyAlarmName,
+                  'LoadBalancer',
+                  loadBalancerName,
+                  metricName,
+                  namespace,
+                  extendedAnomalyStatistic,
+                  durationAnomalyTime,
+                  durationAnomalyPeriods,
+                  'CRITICAL' as AlarmClassification
+                );
+                log
+                  .info()
+                  .str('function', 'checkAndManageALBStatusAlarms')
+                  .str('loadBalancerName', loadBalancerName)
+                  .str('anomalyAlarmName', anomalyAlarmName)
+                  .msg(
+                    `Creating ${anomalyAlarmName} by default using tag values or default values if tag does not exist.`
+                  );
+                break;
+              }
+          }
+          if (
+            type === 'CRITICAL' &&
+            (!tags[cwTagKey] ||
+              tags[cwTagKey].split('/')[1] === 'disabled' ||
+              tags[cwTagKey].split('/')[1] === '-' ||
+              !tags[cwTagKey].split('/')[1] ||
+              tags[cwTagKey] === 'disabled')
+          ) {
+            log
+              .info()
+              .str('function', 'checkAndManageALBStatusAlarms')
+              .str('loadBalancerName', loadBalancerName)
+              .str(cwTagKey, tags[cwTagKey])
+              .msg(
+                `ALB alarm threshold for ${metricName} CRITICAL is not defined. Skipping static ${metricName} critical alarm creation.`
+              );
+            await deleteCWAlarm(staticThresholdAlarmName, loadBalancerName);
+          } else {
+            if (extendedStatRegex.test(staticStatistic)) {
+              await createOrUpdateCWAlarm(
+                staticThresholdAlarmName,
+                loadBalancerName,
+                alarmProps,
+                threshold as number,
+                durationStaticTime,
+                durationStaticPeriods,
+                type as AlarmClassification,
+                'ignore',
+                undefined,
+                staticStatistic
+              );
+            } else {
+              await createOrUpdateCWAlarm(
+                staticThresholdAlarmName,
+                loadBalancerName,
+                alarmProps,
+                threshold as number,
+                durationStaticTime,
+                durationStaticPeriods,
+                type as AlarmClassification,
+                'ignore',
+                staticStatistic as Statistic,
+                undefined
+              );
             }
+          }
+        } else {
+          if (
+            type === 'WARNING' &&
+            (!tags[cwTagKey] ||
+              tags[cwTagKey].split('/')[0] === 'disabled' ||
+              tags[cwTagKey].split('/')[0] === '-' ||
+              !tags[cwTagKey].split('/')[0] ||
+              tags[cwTagKey] === 'disabled')
+          ) {
+            log
+              .info()
+              .str('function', 'checkAndManageALBStatusAlarms')
+              .str('loadBalancerName', loadBalancerName)
+              .str(cwTagKey, tags[cwTagKey])
+              .msg(
+                `ALB alarm threshold for ${metricName} WARNING is not defined. Skipping static ${metricName} warning alarm creation.`
+              );
+            await deleteCWAlarm(staticThresholdAlarmName, loadBalancerName);
+          } else {
+            if (extendedStatRegex.test(staticStatistic)) {
+              await createOrUpdateCWAlarm(
+                staticThresholdAlarmName,
+                loadBalancerName,
+                alarmProps,
+                threshold as number,
+                durationStaticTime,
+                durationStaticPeriods,
+                type as AlarmClassification,
+                'ignore',
+                undefined,
+                staticStatistic
+              );
+            } else {
+              await createOrUpdateCWAlarm(
+                staticThresholdAlarmName,
+                loadBalancerName,
+                alarmProps,
+                threshold as number,
+                durationStaticTime,
+                durationStaticPeriods,
+                type as AlarmClassification,
+                'ignore',
+                staticStatistic as Statistic,
+                undefined
+              );
+            }
+          }
         }
       }
     }
