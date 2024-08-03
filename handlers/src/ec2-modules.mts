@@ -519,7 +519,7 @@ const defaultAnomalyDurationTime = 60; // e.g., 300 seconds
 const defaultAnomalyDurationPeriods = 2; // e.g., 5 periods
 const defaultExtendedAnomalyStatistic: string = 'p90';
 // used as input validation for extended statistics
-const extendedStatRegex = /^p\d{1,2}$/;
+const extendedStatRegex = /^p.*|^tm.*|^tc.*|^ts.*|^wm.*|^IQM$/;
 
 async function getAlarmConfig(
   instanceId: string,
