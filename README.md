@@ -54,37 +54,49 @@ The system is event-driven, responding to EC2 state change notifications and tag
 ## Supported Tags
 Note that tagging format is different for ALBs, Target Groups and SQS which require a '/' delimiter in place of the '|' delimiter used for EC2 instances. This is a limitation on the AWS side.
 
-| Tag                                         | Description                                                                                                                          | Default Value             | Enabled By Default |
-|---------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------|---------------------------|--------------------|
-| `autoalarm:enabled`                         | If set to "true", instance status check alarms will be created for the resource in addition to anomaly detection alarms.             | `false`                   | No                 |
-| `autoalarm:alb-4xx-count`                   | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2".              | "-\/-\/60\/2\/Sum         | No                 |
-| `autoalarm:alb-4xx-count-anomaly`           | Anomaly detection for ALB 4xx count. Evaluated Percentile\/Duration Period time num\/duration periods num e.g., p95\/30\//           | "p90/60/2"                | No                 |
-| `autoalarm:alb-5xx-count`                   | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2".              | "-\/-\/60\/2\/Sum         | No                 |
-| `autoalarm:alb-5xx-count-anomaly`           | Anomaly detection for ALB 5xx count. Evaluated Percentile\/Duration Period time num\/duration periods num e.g., p95\/30\//           | "p90/60/2"                | Yes                |
-| `autoalarm:alb-request-count`               | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2".              | "-\/-\/60\/2\\/Sum        | No                 |
-| `autoalarm:alb-request-count-anomaly`       | Anomaly detection for ALB request count. Evaluated Percentile\/Duration Period time num\/duration periods num e.g., p95\/30\//       | "p90/60/2"                | No                 |
-| `autoalarm:ec2-cpu`                         | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "90\|95\|60\|2".                  | "95\/98\/300\/2\/p90"     | Yes                |
-| `autoalarm:ec2-cpu-anomaly`                 | Anomaly detection for EC2 CPU usage. Evaluated Percentile\/Duration Period time num\/duration periods num e.g., p95\/30\//           | "p90\|60\|2"              | No                 |
-| `autoalarm:ec2-memory`                      | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "90\|95\|60\|2".                  | "96\/98\/300\/2\/p90"     | Yes                |
-| `autoalarm:ec2-memory-anomaly`              | Anomaly detection for EC2 memory usage. Evaluated Percentile\/Duration Period time num\/duration periods num e.g., p95\/30\//        | "p90\|60\|2"              | No                 |
-| `autoalarm:ec2-storage`                     | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "90\|95\|60\|2".                  | "96\/98\/300\/2\/Maximum" | Yes                |
-| `autoalarm:ec2-storage-anomaly`             | Anomaly detection for EC2 storage usage. Evaluated Percentile\/Duration Period time num\/duration periods num e.g., p95\/30\//       | "p90\|60\|2"              | No                 |
-| `autoalarm:sqs-messages-sent`               | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "500\|100\|60\|2".                | "-\/-\/60\/2\/Sum"        | No                 |
-| `autoalarm:sqs-messages-sent-anomaly`       | Anomaly detection for SQS messages sent. Evaluated Percentile\/Duration Period time num\/duration periods num e.g., p95\/30\//       | "p90/60/2"                | No                 |
-| `autoalarm:sqs-messages-visible`            | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "500\|100\|60\|2".                | "-\/-\/60\/2\/Sum"        | No                 |
-| `autoalarm:sqs-messages-visible-anomaly`    | Anomaly detection for SQS messages visible. Evaluated Percentile\/Duration Period time num\/duration periods num e.g., p95\/30\//    | "p90/60/2"                | No                 |
-| `autoalarm:sqs-oldest-message-age`          | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "500\|100\|60\|2".                | "-\/-\/60\/2\/Maximum"    | No                 |
-| `autoalarm:sqs-oldest-message-age-anomaly`  | Anomaly detection for SQS oldest message age. Evaluated Percentile\/Duration Period time num\/duration periods num e.g., p95\/30\//  | "p90/60/2"                | Yes                |
-| `autoalarm:tg-4xx-count`                    | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2".              | "-\/-\/60\/2\/Sum"        | No                 |
-| `autoalarm:tg-4xx-count-anomaly`            | Anomaly detection for TG 4xx count. Evaluated Percentile\/Duration Period time num\/duration periods num e.g., p95\/30\//            | "p90/60/2"                | No                 |
-| `autoalarm:tg-5xx-count`                    | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2".              | "-\/-\/60\/2\/Sum"        | No                 |
-| `autoalarm:tg-5xx-count-anomaly`            | Anomaly detection for TG 5xx count. Evaluated Percentile\/Duration Period time num\/duration periods num e.g., p95\/30\//            | "p90/60/2"                | Yes                |
-| `autoalarm:tg-request-count`                | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2".              | "-\/-\/60\/2\/Sum"        | No                 |
-| `autoalarm:tg-request-count-anomaly`        | Anomaly detection for TG request count. Evaluated Percentile\/Duration Period time num\/duration periods num e.g., p95\/30\//        | "p90/60/2"                | No                 |
-| `autoalarm:tg-response-time`                | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2".              | "-\/-\/60\/2\/p90"        | No                 |
-| `autoalarm:tg-response-time-anomaly`        | Anomaly detection for TG response time. Evaluated Percentile\/Duration Period time num\/duration periods num e.g., p95\/30\//        | "p90/60/2"                | Yes                |
-| `autoalarm:tg-unhealthy-host-count`         | WARNING threshold num \| CRITICAL threshold num \| duration time num \| duration periods num e.g., "1500\|1750\|60\|2".              | "-\/1\/60\/3\/Sum"        | Yes                |
-| `autoalarm:tg-unhealthy-host-count-anomaly` | Anomaly detection for TG unhealthy host count. Evaluated Percentile\/Duration Period time num\/duration periods num e.g., p95\/30\// | "p90/60/2"                | No                 |
+| Tag                                                    | Default Value             | Enabled By Default   | CloudWatch Only                 |
+|--------------------------------------------------------|---------------------------|----------------------|---------------------------------|
+| `autoalarm:enabled`                                    | `false`                   | No                   | N/A                             |
+| `autoalarm:alb-4xx-count`                              | "-\/-\/60\/2\/Sum         | No                   | Yes                             |
+| `autoalarm:alb-4xx-count-anomaly`                      | "p90/60/2"                | No                   | Yes                             | 
+| `autoalarm:alb-5xx-count`                              | "-\/-\/60\/2\/Sum         | No                   | Yes                             |
+| `autoalarm:alb-5xx-count-anomaly`                      | "p90/60/2"                | Yes                  | Yes                             |
+| `autoalarm:alb-request-count`                          | "-\/-\/60\/2\\/Sum        | No                   | Yes                             |
+| `autoalarm:alb-request-count-anomaly`                  | "p90/60/2"                | No                   | Yes                             |
+| `autoalarm:ec2-cpu`                                    | "95\/98\/300\/2\/p90"     | Yes                  | No                              |
+| `autoalarm:ec2-cpu-anomaly`                            | "p90\|60\|2"              | No                   | Yes                             |
+| `autoalarm:ec2-memory`                                 | "96\/98\/300\/2\/p90"     | Yes                  | No                              |
+| `autoalarm:ec2-memory-anomaly`                         | "p90\|60\|2"              | No                   | Yes (Requires CloudWatch Agent) |
+| `autoalarm:ec2-storage`                                | "96\/98\/300\/2\/Maximum" | Yes                  | No                              |
+| `autoalarm:ec2-storage-anomaly`                        | "p90\|60\|2"              | No                   | Yes (Requires CloudWatch Agent) |
+| `autoalarm:sqs-number-of-empty-receives`               | "-\/-\/300\/1\/Sum"       | No                   | Yes                             |
+| `autoalarm:sqs-number-of-empty-receives-anomaly`       | "Sum\/300\/1"             | No                   | Yes                             |
+| `autoalarm:sqs-number-of-messages-delayed`             | "-\/-\/300\/1\/Maximum"   | No                   | Yes                             |
+| `autoalarm:sqs-number-of-messages-delayed-anomaly`     | "Maximum\/300\/1"         | No                   | Yes                             |
+| `autoalarm:sqs-number-of-messages-deleted`             | "-\/-\/300\/1\/Sum"       | No                   | Yes                             |
+| `autoalarm:sqs-number-of-messages-deleted-anomaly`     | "Sum\/300\/1"             | No                   | Yes                             |
+| `autoalarm:sqs-number-of-messages-not-visible`         | "-\/-\/300\/1\/Maximum"   | No                   | Yes                             |
+| `autoalarm:sqs-number-of-messages-not-visible-anomaly` | "Maximum\/300\/1"         | No                   | Yes                             |
+| `autoalarm:sqs-number-of-messages-received`            | "-\/-\/300\/1\/Sum"       | No                   | Yes                             |
+| `autoalarm:sqs-number-of-messages-received-anomaly`    | "Sum\/300\/1"             | No                   | Yes                             |
+| `autoalarm:sqs-number-of-messages-sent`                | "-\/-\/300\/1\/Sum"       | No                   | Yes                             |
+| `autoalarm:sqs-number-of-messages-sent-anomaly`        | "Sum\/300\/1"             | No                   | Yes                             |
+| `autoalarm:sqs-number-of-messages-visible`             | "-\/-\/300\/1\/Maximum"   | No                   | Yes                             |
+| `autoalarm:sqs-number-of-messages-visible-anomaly`     | "Maximum\/300\/1"         | No                   | Yes                             |
+| `autoalarm:sqs-sent-messsge-size`                      | "-\/-\/300\/1\/Average"   | No                   | Yes                             |
+| `autoalarm:sqs-sent-message-size-anomaly`              | "Average\/300\/1"         | No                   | Yes                             |
+| `autoalarm:sqs-age-of-oldest-message`                  | "-\/-\/300\/1\/Maximum"   | No                   | Yes                             |
+| `autoalarm:sqs-age-of-oldest-message-anomaly`          | "Maximum\/300\/1"         | Yes                  | Yes                             |
+| `autoalarm:tg-4xx-count`                               | "-\/-\/60\/2\/Sum"        | No                   | Yes                             |
+| `autoalarm:tg-4xx-count-anomaly`                       | "p90/60/2"                | No                   | Yes                             |
+| `autoalarm:tg-5xx-count`                               | "-\/-\/60\/2\/Sum"        | No                   | Yes                             |
+| `autoalarm:tg-5xx-count-anomaly`                       | "p90/60/2"                | Yes                  | Yes                             |
+| `autoalarm:tg-request-count`                           | "-\/-\/60\/2\/Sum"        | No                   | Yes                             |
+| `autoalarm:tg-request-count-anomaly`                   | "p90/60/2"                | No                   | Yes                             |
+| `autoalarm:tg-response-time`                           | "-\/-\/60\/2\/p90"        | No                   | Yes                             |
+| `autoalarm:tg-response-time-anomaly`                   | "p90/60/2"                | Yes                  | Yes                             |
+| `autoalarm:tg-unhealthy-host-count`                    | "-\/1\/60\/3\/Sum"        | Yes                  | Yes                             |
+| `autoalarm:tg-unhealthy-host-count-anomaly`            | "p90/60/2"                | No                   | Yes                             |
 
 
 
