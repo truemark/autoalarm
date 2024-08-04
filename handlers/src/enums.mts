@@ -7,8 +7,8 @@ export enum ValidInstanceState {
   Terminated = 'terminated',
 }
 export enum AlarmClassification {
-  Critical = 'CRITICAL',
-  Warning = 'WARNING',
+  Critical = 'Critical',
+  Warning = 'Warning',
 }
 
 export enum ValidAlbEvent {

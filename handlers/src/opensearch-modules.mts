@@ -30,13 +30,13 @@ const getDefaultThreshold = (metricName: string, type: AlarmClassification) => {
     metricName === 'ClusterStatus.yellow' ||
     metricName === 'ClusterStatus.red'
   ) {
-    return type === 'CRITICAL' ? 1 : 0;
+    return type === 'Critical' ? 1 : 0;
   } else if (metricName === 'FreeStorageSpace') {
-    return type === 'CRITICAL' ? 10 : 5;
+    return type === 'Critical' ? 10 : 5;
   } else if (metricName === 'JVMMemoryPressure') {
-    return type === 'CRITICAL' ? 95 : 90;
+    return type === 'Critical' ? 95 : 90;
   } else if (metricName === 'CPUUtilization') {
-    return type === 'CRITICAL' ? 95 : 90;
+    return type === 'Critical' ? 95 : 90;
   }
   return 0;
 };
@@ -156,7 +156,7 @@ async function getOSAlarmConfig(
         );
     } else {
       switch (type) {
-        case 'WARNING':
+        case 'Warning':
           threshold =
             staticValues[0] !== undefined &&
             staticValues[0] !== '' &&
@@ -176,7 +176,7 @@ async function getOSAlarmConfig(
               ? parseInt(staticValues[3], 10)
               : defaultStaticDurationPeriods;
           break;
-        case 'CRITICAL':
+        case 'Critical':
           threshold =
             staticValues[1] !== undefined &&
             staticValues[1] !== '' &&
@@ -382,7 +382,7 @@ async function checkAndManageOpenSearchStatusAlarms(
         .str('anomalyTagKey', anomalyTagKey)
         .str('anomalyTagValue', tags[anomalyTagKey] || 'undefined')
         .msg('Tag values before processing');
-      for (const type of ['WARNING', 'CRITICAL'] as AlarmClassification[]) {
+      for (const type of ['Warning', 'Critical'] as AlarmClassification[]) {
         const {
           staticThresholdAlarmName,
           anomalyAlarmName,
@@ -408,11 +408,11 @@ async function checkAndManageOpenSearchStatusAlarms(
           extendedStatistic,
           durationAnomalyTime,
           durationAnomalyPeriods,
-          'CRITICAL' as AlarmClassification
+          'Critical' as AlarmClassification
         );
         // Check and create or delete static threshold alarm based on tag values
         if (
-          type === 'WARNING' &&
+          type === 'Warning' &&
           (!tags[cwTagKey] ||
             tags[cwTagKey].split('/')[0] === undefined ||
             tags[cwTagKey].split('/')[0] === '' ||
@@ -424,11 +424,11 @@ async function checkAndManageOpenSearchStatusAlarms(
             .str('domainName', domainName)
             .str(cwTagKey, tags[cwTagKey])
             .msg(
-              `OS alarm threshold for ${metricName} WARNING is not defined. Skipping static ${metricName} warning alarm creation.`
+              `OS alarm threshold for ${metricName} Warning is not defined. Skipping static ${metricName} Warning alarm creation.`
             );
           await deleteCWAlarm(staticThresholdAlarmName, domainName);
         } else if (
-          type === 'CRITICAL' &&
+          type === 'Critical' &&
           (!tags[cwTagKey] ||
             tags[cwTagKey].split('/')[1] === '' ||
             tags[cwTagKey].split('/')[1] === undefined ||
@@ -440,7 +440,7 @@ async function checkAndManageOpenSearchStatusAlarms(
             .str('domainName', domainName)
             .str(cwTagKey, tags[cwTagKey])
             .msg(
-              `OS alarm threshold for ${metricName} CRITICAL is not defined. Skipping static ${metricName} critical alarm creation.`
+              `OS alarm threshold for ${metricName} Critical is not defined. Skipping static ${metricName} Critical alarm creation.`
             );
           await deleteCWAlarm(staticThresholdAlarmName, domainName);
         } else {

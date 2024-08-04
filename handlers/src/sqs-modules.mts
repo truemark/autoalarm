@@ -25,7 +25,7 @@ const metricConfigs = [
 ];
 
 const defaultThreshold = (type: AlarmClassification) =>
-  type === 'CRITICAL' ? 1000 : 500;
+  type === 'Critical' ? 1000 : 500;
 
 // Default values for duration and periods
 const defaultStaticDurationTime = 60; // e.g., 300 seconds
@@ -132,7 +132,7 @@ async function getSQSAlarmConfig(
         );
     } else {
       switch (type) {
-        case 'WARNING':
+        case 'Warning':
           threshold =
             staticValues[0] !== undefined &&
             staticValues[0] !== '' &&
@@ -152,7 +152,7 @@ async function getSQSAlarmConfig(
               ? parseInt(staticValues[3], 10)
               : defaultStaticDurationPeriods;
           break;
-        case 'CRITICAL':
+        case 'Critical':
           threshold =
             staticValues[1] !== undefined &&
             staticValues[1] !== '' &&
@@ -252,7 +252,7 @@ async function getSQSAlarmConfig(
     )
     .str(
       'anomalyAlarmName',
-      `AutoAlarm-SQS-${queueName}-CRITICAL-${metricName.toUpperCase()}`
+      `AutoAlarm-SQS-${queueName}-Critical-${metricName.toUpperCase()}`
     )
     .str('extendedStatistic', extendedStatistic)
     .num('threshold', threshold)
@@ -264,7 +264,7 @@ async function getSQSAlarmConfig(
   return {
     alarmName: `AutoAlarm-SQS-${queueName}-${type}-${metricName.toUpperCase()}`,
     staticThresholdAlarmName: `AutoAlarm-SQS-StaticThreshold-${queueName}-${type}-${metricName.toUpperCase()}`,
-    anomalyAlarmName: `AutoAlarm-SQS-AnomalyDetection-${queueName}-CRITICAL-${metricName.toUpperCase()}`,
+    anomalyAlarmName: `AutoAlarm-SQS-AnomalyDetection-${queueName}-Critical-${metricName.toUpperCase()}`,
     extendedStatistic,
     threshold,
     durationStaticTime,
@@ -353,7 +353,7 @@ async function checkAndManageSQSStatusAlarms(queueUrl: string, tags: Tag) {
         .str('anomalyTagValue', tags[anomalyTagKey] || 'undefined')
         .msg('Tag values before processing');
 
-      for (const type of ['WARNING', 'CRITICAL'] as AlarmClassification[]) {
+      for (const type of ['Warning', 'Critical'] as AlarmClassification[]) {
         const {
           staticThresholdAlarmName,
           anomalyAlarmName,
@@ -375,12 +375,12 @@ async function checkAndManageSQSStatusAlarms(queueUrl: string, tags: Tag) {
           extendedStatistic,
           durationAnomalyTime,
           durationAnomalyPeriods,
-          'CRITICAL' as AlarmClassification
+          'Critical' as AlarmClassification
         );
 
         // Check and create or delete static threshold alarm based on tag values
         if (
-          type === 'WARNING' &&
+          type === 'Warning' &&
           (!tags[cwTagKey] ||
             tags[cwTagKey].split('/')[0] === undefined ||
             tags[cwTagKey].split('/')[0] === '' ||
@@ -392,11 +392,11 @@ async function checkAndManageSQSStatusAlarms(queueUrl: string, tags: Tag) {
             .str('queueName', queueName)
             .str(cwTagKey, tags[cwTagKey])
             .msg(
-              `SQS alarm threshold for ${metricName} WARNING is not defined. Skipping static ${metricName} warning alarm creation.`
+              `SQS alarm threshold for ${metricName} Warning is not defined. Skipping static ${metricName} Warning alarm creation.`
             );
           await deleteCWAlarm(staticThresholdAlarmName, queueName);
         } else if (
-          type === 'CRITICAL' &&
+          type === 'Critical' &&
           (!tags[cwTagKey] ||
             tags[cwTagKey].split('/')[1] === '' ||
             tags[cwTagKey].split('/')[1] === undefined ||
@@ -408,7 +408,7 @@ async function checkAndManageSQSStatusAlarms(queueUrl: string, tags: Tag) {
             .str('queueName', queueName)
             .str(cwTagKey, tags[cwTagKey])
             .msg(
-              `SQS alarm threshold for ${metricName} CRITICAL is not defined. Skipping static ${metricName} critical alarm creation.`
+              `SQS alarm threshold for ${metricName} Critical is not defined. Skipping static ${metricName} Critical alarm creation.`
             );
           await deleteCWAlarm(staticThresholdAlarmName, queueName);
         } else {

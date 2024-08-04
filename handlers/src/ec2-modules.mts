@@ -498,12 +498,12 @@ async function batchUpdatePromRules(
 // that requires those configurations. The default threshold is set to 90 for critical alarms and 80 for warning alarms.
 // The manageActiveInstances function will call these alarm functions twice, once for each alarm classification type 'Critical' and 'Warning'.
 const defaultCPUThreshold = (type: AlarmClassification) =>
-  type === 'CRITICAL' ? 98 : 95;
+  type === 'Critical' ? 98 : 95;
 const defaultMemoryThreshold = (type: AlarmClassification) =>
-  type === 'CRITICAL' ? 98 : 96;
+  type === 'Critical' ? 98 : 96;
 
 const defaultStorageThreshold = (type: AlarmClassification) =>
-  type === 'CRITICAL' ? 98 : 96;
+  type === 'Critical' ? 98 : 96;
 
 // Default values for duration and periods
 const defaultCPUStaticDurationTime = 300; // e.g., 300 seconds
@@ -624,7 +624,7 @@ async function getAlarmConfig(
         );
     } else {
       switch (type) {
-        case 'WARNING':
+        case 'Warning':
           threshold =
             staticValues[0] !== undefined &&
             staticValues[0] !== '' &&
@@ -660,7 +660,7 @@ async function getAlarmConfig(
             staticValues[4] = staticStatistic;
           }
           break;
-        case 'CRITICAL':
+        case 'Critical':
           threshold =
             staticValues[1] !== undefined &&
             staticValues[1] !== '' &&
@@ -771,11 +771,11 @@ async function getAlarmConfig(
     .str('metricTagName', metricTagName)
     .str(
       'staticThresholdAlarmName',
-      `AutoAlarm-EC2-StaticThreshold-${instanceId}-${type}-${metricTagName.toUpperCase()}-Utilization`
+      `AutoAlarm-EC2-StaticThreshold-${instanceId}-${metricTagName}-Utilization-${type}`
     )
     .str(
       'anomalyAlarmName',
-      `AutoAlarm-EC2-AnomalyDetection-${instanceId}-CRITICAL-${metricTagName.toUpperCase()}-Utilization`
+      `AutoAlarm-EC2-AnomalyDetection-${instanceId}-${metricTagName}-Utilization-Critical`
     )
     .str('extendedStatistic', extendedStatistic)
     .num('threshold', threshold)
@@ -786,8 +786,8 @@ async function getAlarmConfig(
     .str('ec2Metadata', JSON.stringify(ec2Metadata))
     .msg('Fetched alarm configuration');
   return {
-    staticThresholdAlarmName: `AutoAlarm-EC2-StaticThreshold-${instanceId}-${type}-${metricTagName.toUpperCase()}-Utilization`,
-    anomalyAlarmName: `AutoAlarm-EC2-AnomalyDetection-${instanceId}-CRITICAL-${metricTagName.toUpperCase()}-Utilization`,
+    staticThresholdAlarmName: `AutoAlarm-EC2-${instanceId}-${metricTagName}-${type}`,
+    anomalyAlarmName: `AutoAlarm-EC2-${instanceId}-${metricTagName}-Anomaly-Critical`,
     extendedAnomalyStatistic: extendedStatistic,
     threshold,
     durationStaticTime,
@@ -1089,7 +1089,7 @@ export async function manageCPUUsageAlarmForInstance(
   }
 
   if (
-    type === 'WARNING' &&
+    type === 'Warning' &&
     tags['autoalarm:ec2-cpu'] &&
     (tags['autoalarm:ec2-cpu'].split('/')[0] === 'disabled' ||
       tags['autoalarm:ec2-cpu'].split('/')[0] === '-' ||
@@ -1106,7 +1106,7 @@ export async function manageCPUUsageAlarmForInstance(
     await deleteCWAlarm(staticThresholdAlarmName, instanceId);
     return;
   } else if (
-    type === 'CRITICAL' &&
+    type === 'Critical' &&
     tags['autoalarm:ec2-cpu'] &&
     (tags['autoalarm:ec2-cpu'].split('/')[1] === 'disabled' ||
       tags['autoalarm:ec2-cpu'].split('/')[1] === '-' ||
@@ -1246,7 +1246,7 @@ export async function manageStorageAlarmForInstance(
           await deleteCWAlarm(anomalyAlarmName, instanceId);
         }
         if (
-          type === 'WARNING' &&
+          type === 'Warning' &&
           tags['autoalarm:ec2-storag'] &&
           (tags['autoalarm:ec2-storage'].split('/')[0] === 'disabled' ||
             tags['autoalarm:ec2-storage'].split('/')[0] === '-' ||
@@ -1263,7 +1263,7 @@ export async function manageStorageAlarmForInstance(
             );
           await deleteCWAlarm(staticThresholdStorageAlarmName, instanceId);
         } else if (
-          type === 'CRITICAL' &&
+          type === 'Critical' &&
           tags['autoalarm:ec2-storag'] &&
           (tags['autoalarm:ec2-storage'].split('/')[1] === 'disabled' ||
             tags['autoalarm:ec2-storage'].split('/')[1] === '-' ||
@@ -1403,7 +1403,7 @@ export async function manageMemoryAlarmForInstance(
       }
 
       if (
-        type === 'WARNING' &&
+        type === 'Warning' &&
         tags['autoalarm:ec2-memory'] &&
         (tags['autoalarm:ec2-memory'].split('/')[0] === 'disabled' ||
           tags['autoalarm:ec2-memory'].split('/')[0] === '-' ||
@@ -1420,7 +1420,7 @@ export async function manageMemoryAlarmForInstance(
         await deleteCWAlarm(staticThresholdAlarmName, instanceId);
         return;
       } else if (
-        type === 'CRITICAL' &&
+        type === 'Critical' &&
         tags['autoalarm:ec2-memory'] &&
         (tags['autoalarm:ec2-memory'].split('/')[1] === 'disabled' ||
           tags['autoalarm:ec2-memory'].split('/')[1] === '-' ||

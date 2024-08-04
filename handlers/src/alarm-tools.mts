@@ -335,6 +335,10 @@ export async function createOrUpdateAnomalyDetectionAlarm(
           MetricTimezone: 'UTC',
         },
       };
+      log
+        .debug()
+        .obj('input', anomalyDetectorInput)
+        .msg('Sending PutAnomalyDetectorCommand');
       await cloudWatchClient.send(
         new PutAnomalyDetectorCommand(anomalyDetectorInput)
       );
@@ -364,7 +368,7 @@ export async function createOrUpdateAnomalyDetectionAlarm(
         ],
         ThresholdMetricId: 'anomalyDetectionBand',
         ActionsEnabled: false,
-        Tags: [{Key: 'severity', Value: classification.toLowerCase()}],
+        Tags: [{Key: 'severity', Value: classification}],
         TreatMissingData: 'ignore', // Adjust as needed
       };
       await cloudWatchClient.send(new PutMetricAlarmCommand(metricAlarmInput));
@@ -530,10 +534,10 @@ export async function getCWAlarmsForInstance(
       alarm =>
         alarm.AlarmName &&
         (alarm.AlarmName.startsWith(
-          `AutoAlarm-${serviceIdentifier}-StaticThreshold-${instanceIdentifier}`
+          `AutoAlarm-${serviceIdentifier}-${instanceIdentifier}`
         ) ||
           alarm.AlarmName.startsWith(
-            `AutoAlarm-${serviceIdentifier}-AnomalyDetection-${instanceIdentifier}`
+            `AutoAlarm-${serviceIdentifier}-${instanceIdentifier}-Anomaly`
           ) ||
           alarm.AlarmName.startsWith(
             `AutoAlarm-${serviceIdentifier}-${instanceIdentifier}`
