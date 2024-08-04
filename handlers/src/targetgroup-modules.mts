@@ -18,11 +18,9 @@ import {AlarmClassification} from './enums.mjs';
 import {
   getCWAlarmsForInstance,
   deleteCWAlarm,
-  createOrUpdateAnomalyDetectionAlarm,
   doesAlarmExist,
 } from './alarm-tools.mjs';
 import * as arnparser from '@aws-sdk/util-arn-parser';
-import {load} from 'js-yaml';
 
 const log: logging.Logger = logging.getLogger('targetgroup-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -599,7 +597,8 @@ export async function parseTGEventAndCreateAlarms(event: any): Promise<{
       .msg('Load balancer ARN not found');
     throw new Error('Load balancer ARN not found');
   }
-
+  const lbArn = arnparser.parse(loadBalancerArn);
+  const loadBalancerName = lbArn.resource;
   const arn = arnparser.parse(targetGroupArn);
   const targetGroupName = arn.resource;
   if (!targetGroupName) {
@@ -626,7 +625,7 @@ export async function parseTGEventAndCreateAlarms(event: any): Promise<{
       .str('function', 'parseTGEventAndCreateAlarms')
       .str('targetGroupArn', targetGroupArn)
       .msg('Starting to manage target group alarms');
-    await manageTGAlarms(targetGroupName, loadBalancerArn, tags);
+    await manageTGAlarms(targetGroupName, loadBalancerName, tags);
   } else if (eventType === 'Delete') {
     log
       .info()
