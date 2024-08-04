@@ -1,6 +1,5 @@
 {
   "name": "autoalarm-cdk",
-  "version": "0.1.0",
   "bin": {
     "autoalarm": "bin/auto-alarm.js"
   },

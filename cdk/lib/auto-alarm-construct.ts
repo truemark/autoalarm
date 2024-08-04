@@ -3,7 +3,6 @@ import {MainFunction} from './main-function';
 import {StandardQueue} from 'truemark-cdk-lib/aws-sqs';
 import {Rule} from 'aws-cdk-lib/aws-events';
 import {LambdaFunction} from 'aws-cdk-lib/aws-events-targets';
-import {ExtendedAutoAlarmProps} from './auto-alarm-stack-props';
 import {
   Role,
   ServicePrincipal,
@@ -12,8 +11,12 @@ import {
 } from 'aws-cdk-lib/aws-iam';
 import {Stack} from 'aws-cdk-lib';
 
+export interface AutoAlarmConstructProps {
+  readonly prometheusWorkspaceId?: string;
+}
+
 export class AutoAlarmConstruct extends Construct {
-  constructor(scope: Construct, id: string, props: ExtendedAutoAlarmProps) {
+  constructor(scope: Construct, id: string, props: AutoAlarmConstructProps) {
     super(scope, id);
 
     //the following four consts are used to pass the correct ARN for whichever prometheus ID is being used as well as to the lambda.
