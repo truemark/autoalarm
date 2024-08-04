@@ -1,13 +1,16 @@
 import {
   ElasticLoadBalancingV2Client,
   DescribeTagsCommand,
+  DescribeTargetGroupsCommand,
 } from '@aws-sdk/client-elastic-load-balancing-v2';
 import * as logging from '@nr1e/logging';
 import {Tag} from './types.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
   CloudWatchClient,
+  ComparisonOperator,
   DeleteAlarmsCommand,
+  PutAnomalyDetectorCommand,
   PutMetricAlarmCommand,
   Statistic,
 } from '@aws-sdk/client-cloudwatch';
@@ -18,6 +21,8 @@ import {
   createOrUpdateAnomalyDetectionAlarm,
   doesAlarmExist,
 } from './alarm-tools.mjs';
+import * as arnparser from '@aws-sdk/util-arn-parser';
+import {load} from 'js-yaml';
 
 const log: logging.Logger = logging.getLogger('targetgroup-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -245,6 +250,7 @@ export async function fetchTGTags(targetGroupArn: string): Promise<Tag> {
 
 async function checkAndManageTGStatusAlarms(
   targetGroupName: string,
+  loadBalancerName: string,
   tags: Tag
 ) {
   const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
@@ -289,17 +295,103 @@ async function checkAndManageTGStatusAlarms(
       if (defaults.stat) {
         // Create critical alarm
         if (defaults.stat !== '-' && defaults.stat !== 'disabled') {
-          await createOrUpdateAnomalyDetectionAlarm(
-            alarmName,
-            'TargetGroup',
-            targetGroupName,
-            config.metricName,
-            config.namespace,
-            defaults.stat,
-            defaults.duration,
-            defaults.periods,
-            AlarmClassification.Critical
-          );
+          //await createOrUpdateAnomalyDetectionAlarm(
+          //  alarmName,
+          //  'TargetGroup',
+          //  targetGroupName,
+          //  config.metricName,
+          //  config.namespace,
+          //  defaults.stat,
+          //  defaults.duration,
+          //  defaults.periods,
+          //  AlarmClassification.Critical
+          //);
+          try {
+            // Create anomaly detector with the latest parameters
+            const anomalyDetectorInput = {
+              Namespace: config.namespace,
+              MetricName: config.metricName,
+              Dimensions: [
+                {
+                  Name: 'TargetGroup',
+                  Value: targetGroupName,
+                },
+                {
+                  Name: 'LoadBalancer',
+                  Value: loadBalancerName,
+                },
+              ],
+              Stat: defaults.stat,
+              Configuration: {
+                MetricTimezone: 'UTC',
+              },
+            };
+            log
+              .debug()
+              .obj('input', anomalyDetectorInput)
+              .msg('Sending PutAnomalyDetectorCommand');
+            await cloudWatchClient.send(
+              new PutAnomalyDetectorCommand(anomalyDetectorInput)
+            );
+
+            // Create anomaly detection alarm
+            const metricAlarmInput = {
+              AlarmName: alarmName,
+              ComparisonOperator: ComparisonOperator.GreaterThanUpperThreshold,
+              EvaluationPeriods: defaults.periods,
+              Metrics: [
+                {
+                  Id: 'primaryMetric',
+                  MetricStat: {
+                    Metric: {
+                      Namespace: config.namespace,
+                      MetricName: config.metricName,
+                      Dimensions: [
+                        {
+                          Name: 'TargetGroup',
+                          Value: targetGroupName,
+                        },
+                        {
+                          Name: 'LoadBalancer',
+                          Value: loadBalancerName,
+                        },
+                      ],
+                    },
+                    Period: defaults.duration,
+                    Stat: defaults.stat,
+                  },
+                },
+                {
+                  Id: 'anomalyDetectionBand',
+                  Expression: 'ANOMALY_DETECTION_BAND(primaryMetric)',
+                },
+              ],
+              ThresholdMetricId: 'anomalyDetectionBand',
+              ActionsEnabled: false,
+              Tags: [{Key: 'severity', Value: AlarmClassification.Critical}],
+              TreatMissingData: 'ignore', // Adjust as needed
+            };
+            await cloudWatchClient.send(
+              new PutMetricAlarmCommand(metricAlarmInput)
+            );
+
+            log
+              .info()
+              .str('function', 'createOrUpdateAnomalyDetectionAlarm')
+              .str('alarmName', alarmName)
+              .obj('anomalyDetectorInput', anomalyDetectorInput)
+              .obj('metricAlarmInput', metricAlarmInput)
+              .msg(`${alarmName} Anomaly Detection Alarm created or updated.`);
+          } catch (e) {
+            log
+              .error()
+              .str('function', 'createOrUpdateAnomalyDetectionAlarm')
+              .err(e)
+              .str('alarmName', alarmName)
+              .msg(
+                `Failed to create or update ${alarmName} anomaly detection alarm due to an error ${e}`
+              );
+          }
         }
       } else if (await doesAlarmExist(alarmName)) {
         await cloudWatchClient.send(
@@ -325,7 +417,10 @@ async function checkAndManageTGStatusAlarms(
               : {Statistic: defaults.stat as Statistic}),
             Threshold: defaults.warning,
             ActionsEnabled: false,
-            Dimensions: [{Name: 'TargetGroup', Value: targetGroupName}],
+            Dimensions: [
+              {Name: 'TargetGroup', Value: targetGroupName},
+              {Name: 'LoadBalancer', Value: loadBalancerName},
+            ],
             Tags: [{Key: 'severity', Value: 'Warning'}],
             TreatMissingData: 'ignore',
           })
@@ -353,7 +448,10 @@ async function checkAndManageTGStatusAlarms(
               : {Statistic: defaults.stat as Statistic}),
             Threshold: defaults.critical,
             ActionsEnabled: false,
-            Dimensions: [{Name: 'TargetGroup', Value: targetGroupName}],
+            Dimensions: [
+              {Name: 'TargetGroup', Value: targetGroupName},
+              {Name: 'LoadBalancer', Value: loadBalancerName},
+            ],
             Tags: [{Key: 'severity', Value: 'Critical'}],
             TreatMissingData: 'ignore',
           })
@@ -371,9 +469,10 @@ async function checkAndManageTGStatusAlarms(
 
 export async function manageTGAlarms(
   targetGroupName: string,
+  loadBalancerName: string,
   tags: Tag
 ): Promise<void> {
-  await checkAndManageTGStatusAlarms(targetGroupName, tags);
+  await checkAndManageTGStatusAlarms(targetGroupName, loadBalancerName, tags);
 }
 
 export async function manageInactiveTGAlarms(targetGroupName: string) {
@@ -395,12 +494,6 @@ export async function manageInactiveTGAlarms(targetGroupName: string) {
       .msg(`Error deleting target group alarms: ${e}`);
     throw new Error(`Error deleting target group alarms: ${e}`);
   }
-}
-
-function extractTGNameFromArn(arn: string): string {
-  const regex = /targetgroup\/([^/]+)\/[^/]+$/;
-  const match = arn.match(regex);
-  return match ? match[1] : '';
 }
 
 export async function parseTGEventAndCreateAlarms(event: any): Promise<{
@@ -486,7 +579,29 @@ export async function parseTGEventAndCreateAlarms(event: any): Promise<{
         .msg('Unexpected event type');
   }
 
-  const targetGroupName = extractTGNameFromArn(targetGroupArn);
+  const response = await elbClient.send(
+    new DescribeTargetGroupsCommand({
+      TargetGroupArns: [targetGroupArn],
+    })
+  );
+  let loadBalancerArn: string | undefined = undefined;
+  if (response.TargetGroups && response.TargetGroups.length > 0) {
+    const loadBalancerArns = response.TargetGroups[0].LoadBalancerArns;
+    if (loadBalancerArns && loadBalancerArns.length > 0) {
+      loadBalancerArn = loadBalancerArns[0];
+    }
+  }
+  if (!loadBalancerArn) {
+    log
+      .error()
+      .str('function', 'parseTGEventAndCreateAlarms')
+      .str('targetGroupArn', targetGroupArn)
+      .msg('Load balancer ARN not found');
+    throw new Error('Load balancer ARN not found');
+  }
+
+  const arn = arnparser.parse(targetGroupArn);
+  const targetGroupName = arn.resource;
   if (!targetGroupName) {
     log
       .error()
@@ -511,7 +626,7 @@ export async function parseTGEventAndCreateAlarms(event: any): Promise<{
       .str('function', 'parseTGEventAndCreateAlarms')
       .str('targetGroupArn', targetGroupArn)
       .msg('Starting to manage target group alarms');
-    await manageTGAlarms(targetGroupName, tags);
+    await manageTGAlarms(targetGroupName, loadBalancerArn, tags);
   } else if (eventType === 'Delete') {
     log
       .info()
