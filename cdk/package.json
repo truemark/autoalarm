@@ -4,12 +4,13 @@
     "autoalarm": "bin/auto-alarm.js"
   },
   "scripts": {
+    "prebuild": "prettier --check . && eslint .",
     "build": "tsc",
     "watch": "tsc -w",
     "test": "jest",
     "cdk": "cdk",
     "tsc": "tsc",
-    "makepretty": "prettier --write ."
+    "fmt": "prettier --write ."
   },
   "devDependencies": {
     "@types/jest": "^29.5.12",
