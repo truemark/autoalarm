@@ -1,7 +1,6 @@
 import {Construct} from 'constructs';
 import {AutoAlarmConstruct} from './auto-alarm-construct';
 import {ExtendedStack, ExtendedStackProps} from 'truemark-cdk-lib/aws-cdk';
-import {version} from 'esbuild';
 
 export interface ExtendedAutoAlarmProps extends ExtendedStackProps {
   version: string;
@@ -16,6 +15,6 @@ export class AutoAlarmStack extends ExtendedStack {
       prometheusWorkspaceId: props.prometheusWorkspaceId,
     });
     this.outputParameter('Name', 'AutoAlarm');
-    this.outputParameter('Version', version);
+    this.outputParameter('Version', props.version);
   }
 }
