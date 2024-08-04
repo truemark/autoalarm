@@ -1,6 +1,5 @@
 {
   "name": "autoalarm-handlers",
-  "version": "1.0.0",
   "main": "main-handler.js",
   "scripts": {
     "build": "tsc",
