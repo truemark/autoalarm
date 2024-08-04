@@ -28,6 +28,7 @@
     "@aws-sdk/credential-provider-node": "^3.620.0",
     "@aws-sdk/lib-dynamodb": "^3.620.0",
     "@aws-sdk/s3-request-presigner": "^3.620.0",
+    "@aws-sdk/util-arn-parser": "^3.568.0",
     "@aws-sdk/util-dynamodb": "^3.620.0",
     "@nr1e/commons": "0.0.2-alpha.9",
     "@nr1e/logging": "^1.2.1",
