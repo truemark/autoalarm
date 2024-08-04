@@ -11,6 +11,6 @@ export class AutoAlarmStack extends ExtendedStack {
       prometheusWorkspaceId: props.prometheusWorkspaceId,
     });
     this.outputParameter('Name', 'AutoAlarm');
-    this.outputParameter('Version', '1.3.0');
+    this.outputParameter('Version', '1.4.0');
   }
 }
