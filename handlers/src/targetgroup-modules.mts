@@ -219,8 +219,8 @@ export async function fetchTGTags(targetGroupArn: string): Promise<Tag> {
     const response = await elbClient.send(command);
     const tags: Tag = {};
 
-    response.TagDescriptions?.forEach(tagDescription => {
-      tagDescription.Tags?.forEach(tag => {
+    response.TagDescriptions?.forEach((tagDescription) => {
+      tagDescription.Tags?.forEach((tag) => {
         if (tag.Key && tag.Value) {
           tags[tag.Key] = tag.Value;
         }
@@ -249,19 +249,19 @@ export async function fetchTGTags(targetGroupArn: string): Promise<Tag> {
 async function checkAndManageTGStatusAlarms(
   targetGroupName: string,
   loadBalancerName: string,
-  tags: Tag
+  tags: Tag,
 ) {
   const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
 
   if (!isAlarmEnabled) {
     const activeAutoAlarms = await getCWAlarmsForInstance(
       'TG',
-      targetGroupName
+      targetGroupName,
     );
     await Promise.all(
-      activeAutoAlarms.map(alarmName =>
-        deleteCWAlarm(alarmName, targetGroupName)
-      )
+      activeAutoAlarms.map((alarmName) =>
+        deleteCWAlarm(alarmName, targetGroupName),
+      ),
     );
     log.info().msg('Status check alarm creation skipped due to tag settings.');
     return;
@@ -318,7 +318,7 @@ async function checkAndManageTGStatusAlarms(
               .obj('input', anomalyDetectorInput)
               .msg('Sending PutAnomalyDetectorCommand');
             await cloudWatchClient.send(
-              new PutAnomalyDetectorCommand(anomalyDetectorInput)
+              new PutAnomalyDetectorCommand(anomalyDetectorInput),
             );
 
             // Create anomaly detection alarm
@@ -359,7 +359,7 @@ async function checkAndManageTGStatusAlarms(
               TreatMissingData: 'ignore', // Adjust as needed
             };
             await cloudWatchClient.send(
-              new PutMetricAlarmCommand(metricAlarmInput)
+              new PutMetricAlarmCommand(metricAlarmInput),
             );
 
             log
@@ -376,7 +376,7 @@ async function checkAndManageTGStatusAlarms(
               .err(e)
               .str('alarmName', alarmName)
               .msg(
-                `Failed to create or update ${alarmName} anomaly detection alarm due to an error ${e}`
+                `Failed to create or update ${alarmName} anomaly detection alarm due to an error ${e}`,
               );
           }
         }
@@ -384,7 +384,7 @@ async function checkAndManageTGStatusAlarms(
         await cloudWatchClient.send(
           new DeleteAlarmsCommand({
             AlarmNames: [alarmName],
-          })
+          }),
         );
       }
     } else {
@@ -410,13 +410,13 @@ async function checkAndManageTGStatusAlarms(
             ],
             Tags: [{Key: 'severity', Value: 'Warning'}],
             TreatMissingData: 'ignore',
-          })
+          }),
         );
       } else if (await doesAlarmExist(`${alarmNamePrefix}-Warning`)) {
         await cloudWatchClient.send(
           new DeleteAlarmsCommand({
             AlarmNames: [`${alarmNamePrefix}-Warning`],
-          })
+          }),
         );
       }
 
@@ -441,13 +441,13 @@ async function checkAndManageTGStatusAlarms(
             ],
             Tags: [{Key: 'severity', Value: 'Critical'}],
             TreatMissingData: 'ignore',
-          })
+          }),
         );
       } else if (await doesAlarmExist(`${alarmNamePrefix}-Critical`)) {
         await cloudWatchClient.send(
           new DeleteAlarmsCommand({
             AlarmNames: [`${alarmNamePrefix}-Critical`],
-          })
+          }),
         );
       }
     }
@@ -457,7 +457,7 @@ async function checkAndManageTGStatusAlarms(
 export async function manageTGAlarms(
   targetGroupName: string,
   loadBalancerName: string,
-  tags: Tag
+  tags: Tag,
 ): Promise<void> {
   await checkAndManageTGStatusAlarms(targetGroupName, loadBalancerName, tags);
 }
@@ -466,12 +466,12 @@ export async function manageInactiveTGAlarms(targetGroupName: string) {
   try {
     const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
       'TG',
-      targetGroupName
+      targetGroupName,
     );
     await Promise.all(
-      activeAutoAlarms.map(alarmName =>
-        deleteCWAlarm(alarmName, targetGroupName)
-      )
+      activeAutoAlarms.map((alarmName) =>
+        deleteCWAlarm(alarmName, targetGroupName),
+      ),
     );
   } catch (e) {
     log
@@ -483,6 +483,8 @@ export async function manageInactiveTGAlarms(targetGroupName: string) {
   }
 }
 
+// TODO Fix the use of any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function parseTGEventAndCreateAlarms(event: any): Promise<{
   targetGroupArn: string;
   eventType: string;
@@ -569,7 +571,7 @@ export async function parseTGEventAndCreateAlarms(event: any): Promise<{
   const response = await elbClient.send(
     new DescribeTargetGroupsCommand({
       TargetGroupArns: [targetGroupArn],
-    })
+    }),
   );
   let loadBalancerArn: string | undefined = undefined;
   if (response.TargetGroups && response.TargetGroups.length > 0) {

@@ -300,7 +300,7 @@ async function checkAndManageSQSStatusAlarms(queueName: string, tags: Tag) {
   if (!isAlarmEnabled) {
     const activeAutoAlarms = await getCWAlarmsForInstance('SQS', queueName);
     await Promise.all(
-      activeAutoAlarms.map(alarmName => deleteCWAlarm(alarmName, queueName))
+      activeAutoAlarms.map((alarmName) => deleteCWAlarm(alarmName, queueName)),
     );
     log.info().msg('Status check alarm creation skipped due to tag settings.');
     return;
@@ -352,7 +352,7 @@ async function checkAndManageSQSStatusAlarms(queueName: string, tags: Tag) {
               .obj('input', anomalyDetectorInput)
               .msg('Sending PutAnomalyDetectorCommand');
             await cloudWatchClient.send(
-              new PutAnomalyDetectorCommand(anomalyDetectorInput)
+              new PutAnomalyDetectorCommand(anomalyDetectorInput),
             );
 
             // Create anomaly detection alarm
@@ -389,7 +389,7 @@ async function checkAndManageSQSStatusAlarms(queueName: string, tags: Tag) {
               TreatMissingData: 'ignore', // Adjust as needed
             };
             await cloudWatchClient.send(
-              new PutMetricAlarmCommand(metricAlarmInput)
+              new PutMetricAlarmCommand(metricAlarmInput),
             );
 
             log
@@ -406,7 +406,7 @@ async function checkAndManageSQSStatusAlarms(queueName: string, tags: Tag) {
               .err(e)
               .str('alarmName', alarmName)
               .msg(
-                `Failed to create or update ${alarmName} anomaly detection alarm due to an error ${e}`
+                `Failed to create or update ${alarmName} anomaly detection alarm due to an error ${e}`,
               );
           }
         }
@@ -414,7 +414,7 @@ async function checkAndManageSQSStatusAlarms(queueName: string, tags: Tag) {
         await cloudWatchClient.send(
           new DeleteAlarmsCommand({
             AlarmNames: [alarmName],
-          })
+          }),
         );
       }
     } else {
@@ -437,13 +437,13 @@ async function checkAndManageSQSStatusAlarms(queueName: string, tags: Tag) {
             Dimensions: [{Name: 'QueueName', Value: queueName}],
             Tags: [{Key: 'severity', Value: 'Warning'}],
             TreatMissingData: 'ignore',
-          })
+          }),
         );
       } else if (await doesAlarmExist(`${alarmNamePrefix}-Warning`)) {
         await cloudWatchClient.send(
           new DeleteAlarmsCommand({
             AlarmNames: [`${alarmNamePrefix}-Warning`],
-          })
+          }),
         );
       }
 
@@ -465,13 +465,13 @@ async function checkAndManageSQSStatusAlarms(queueName: string, tags: Tag) {
             Dimensions: [{Name: 'QueueName', Value: queueName}],
             Tags: [{Key: 'severity', Value: 'Critical'}],
             TreatMissingData: 'ignore',
-          })
+          }),
         );
       } else if (await doesAlarmExist(`${alarmNamePrefix}-Critical`)) {
         await cloudWatchClient.send(
           new DeleteAlarmsCommand({
             AlarmNames: [`${alarmNamePrefix}-Critical`],
-          })
+          }),
         );
       }
     }
@@ -480,7 +480,7 @@ async function checkAndManageSQSStatusAlarms(queueName: string, tags: Tag) {
 
 export async function manageSQSAlarms(
   queueName: string,
-  tags: Tag
+  tags: Tag,
 ): Promise<void> {
   await checkAndManageSQSStatusAlarms(queueName, tags);
 }
@@ -490,10 +490,10 @@ export async function manageInactiveSQSAlarms(queueUrl: string) {
   try {
     const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
       'SQS',
-      queueName
+      queueName,
     );
     await Promise.all(
-      activeAutoAlarms.map(alarmName => deleteCWAlarm(alarmName, queueName))
+      activeAutoAlarms.map((alarmName) => deleteCWAlarm(alarmName, queueName)),
     );
   } catch (e) {
     log
@@ -510,6 +510,8 @@ function extractQueueName(queueUrl: string): string {
   return parts[parts.length - 1];
 }
 
+// TODO Fix the use of any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function parseSQSEventAndCreateAlarms(event: any): Promise<{
   queueUrl: string;
   eventType: string;

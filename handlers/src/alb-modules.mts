@@ -184,8 +184,8 @@ export async function fetchALBTags(loadBalancerArn: string): Promise<Tag> {
     const response = await elbClient.send(command);
     const tags: Tag = {};
 
-    response.TagDescriptions?.forEach(tagDescription => {
-      tagDescription.Tags?.forEach(tag => {
+    response.TagDescriptions?.forEach((tagDescription) => {
+      tagDescription.Tags?.forEach((tag) => {
         if (tag.Key && tag.Value) {
           tags[tag.Key] = tag.Value;
         }
@@ -213,18 +213,18 @@ export async function fetchALBTags(loadBalancerArn: string): Promise<Tag> {
 
 async function checkAndManageALBStatusAlarms(
   loadBalancerName: string,
-  tags: Tag
+  tags: Tag,
 ) {
   const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
   if (!isAlarmEnabled) {
     const activeAutoAlarms = await getCWAlarmsForInstance(
       'ALB',
-      loadBalancerName
+      loadBalancerName,
     );
     await Promise.all(
-      activeAutoAlarms.map(alarmName =>
-        deleteCWAlarm(alarmName, loadBalancerName)
-      )
+      activeAutoAlarms.map((alarmName) =>
+        deleteCWAlarm(alarmName, loadBalancerName),
+      ),
     );
     log.info().msg('Status check alarm creation skipped due to tag settings.');
     return;
@@ -263,14 +263,14 @@ async function checkAndManageALBStatusAlarms(
             defaults.stat,
             defaults.duration,
             defaults.periods,
-            AlarmClassification.Critical
+            AlarmClassification.Critical,
           );
         }
       } else if (await doesAlarmExist(alarmName)) {
         await cloudWatchClient.send(
           new DeleteAlarmsCommand({
             AlarmNames: [alarmName],
-          })
+          }),
         );
       }
     } else {
@@ -293,13 +293,13 @@ async function checkAndManageALBStatusAlarms(
             Dimensions: [{Name: 'LoadBalancer', Value: loadBalancerName}],
             Tags: [{Key: 'severity', Value: 'Warning'}],
             TreatMissingData: 'ignore',
-          })
+          }),
         );
       } else if (await doesAlarmExist(`${alarmNamePrefix}-Warning`)) {
         await cloudWatchClient.send(
           new DeleteAlarmsCommand({
             AlarmNames: [`${alarmNamePrefix}-Warning`],
-          })
+          }),
         );
       }
 
@@ -321,13 +321,13 @@ async function checkAndManageALBStatusAlarms(
             Dimensions: [{Name: 'LoadBalancer', Value: loadBalancerName}],
             Tags: [{Key: 'severity', Value: 'Critical'}],
             TreatMissingData: 'ignore',
-          })
+          }),
         );
       } else if (await doesAlarmExist(`${alarmNamePrefix}-Critical`)) {
         await cloudWatchClient.send(
           new DeleteAlarmsCommand({
             AlarmNames: [`${alarmNamePrefix}-Critical`],
-          })
+          }),
         );
       }
     }
@@ -336,7 +336,7 @@ async function checkAndManageALBStatusAlarms(
 
 export async function manageALBAlarms(
   loadBalancerName: string,
-  tags: Tag
+  tags: Tag,
 ): Promise<void> {
   await checkAndManageALBStatusAlarms(loadBalancerName, tags);
 }
@@ -345,12 +345,12 @@ export async function manageInactiveALBAlarms(loadBalancerName: string) {
   try {
     const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
       'ALB',
-      loadBalancerName
+      loadBalancerName,
     );
     await Promise.all(
-      activeAutoAlarms.map(alarmName =>
-        deleteCWAlarm(alarmName, loadBalancerName)
-      )
+      activeAutoAlarms.map((alarmName) =>
+        deleteCWAlarm(alarmName, loadBalancerName),
+      ),
     );
   } catch (e) {
     log
@@ -368,6 +368,8 @@ function extractAlbNameFromArn(arn: string): string {
   return match ? `app/${match[1]}` : '';
 }
 
+// TODO Fix the use of any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function parseALBEventAndCreateAlarms(event: any): Promise<{
   loadBalancerArn: string;
   eventType: string;

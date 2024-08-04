@@ -53,7 +53,7 @@ let isCloudWatch = true;
 async function batchPromRulesDeletion(
   shouldDeletePromAlarm: boolean,
   prometheusWorkspaceId: string,
-  service: string
+  service: string,
 ) {
   const retryLimit = 60; // 60 retries at 5-second intervals = 5 minutes
   const retryDelay = 5000; // 5 seconds in milliseconds
@@ -63,7 +63,7 @@ async function batchPromRulesDeletion(
       .info()
       .str('function', 'batchPromRulesDeletion')
       .msg(
-        'Prometheus workspace ID not found. Skipping Prometheus rules deletion)'
+        'Prometheus workspace ID not found. Skipping Prometheus rules deletion)',
       );
     return;
   } else if (!shouldDeletePromAlarm) {
@@ -88,13 +88,13 @@ async function batchPromRulesDeletion(
         async ({instanceId, state}) => {
           const tags = await fetchInstanceTags(instanceId);
           return {instanceId, tags, state};
-        }
+        },
       );
 
       const instanceDetails = await Promise.all(instanceDetailsPromises);
 
       const instancesToDelete = instanceDetails
-        .filter(details => {
+        .filter((details) => {
           const baseCondition =
             details.tags['autoalarm:target'] === 'cloudwatch' ||
             details.tags['autoalarm:enabled'] === 'false';
@@ -105,7 +105,7 @@ async function batchPromRulesDeletion(
             (details.tags['autoalarm:enabled'] && isTerminating)
           );
         })
-        .map(details => details.instanceId);
+        .map((details) => details.instanceId);
 
       log
         .info()
@@ -118,13 +118,13 @@ async function batchPromRulesDeletion(
         await deletePromRulesForService(
           prometheusWorkspaceId,
           service,
-          instancesToDelete
+          instancesToDelete,
         );
         log
           .info()
           .str('function', 'batchPromRulesDeletion')
           .msg(
-            'Prometheus rules deleted successfully in batch or no rules to delete'
+            'Prometheus rules deleted successfully in batch or no rules to delete',
           );
         break; // Exit loop if successful
       } else {
@@ -148,15 +148,15 @@ async function batchPromRulesDeletion(
           .str('function', 'batchPromRulesDeletion')
           .num('attempt', attempt + 1)
           .msg(
-            `Retry ${attempt + 1}/${retryLimit} failed. Retrying after a 5-second delay...`
+            `Retry ${attempt + 1}/${retryLimit} failed. Retrying after a 5-second delay...`,
           );
-        await new Promise(resolve => setTimeout(resolve, retryDelay));
+        await new Promise((resolve) => setTimeout(resolve, retryDelay));
       } else {
         log
           .error()
           .str('function', 'batchPromRulesDeletion')
           .msg(
-            `Error deleting Prometheus rules after ${retryLimit} retries. Please investigate.`
+            `Error deleting Prometheus rules after ${retryLimit} retries. Please investigate.`,
           );
       }
     }
@@ -171,7 +171,9 @@ async function batchPromRulesDeletion(
  */
 async function getPromAlarmConfigs(
   instanceId: string,
-  classification: AlarmClassification
+  classification: AlarmClassification,
+  // TODO Fix the use of any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<any[]> {
   const configs = [];
   const tags = await fetchInstanceTags(instanceId);
@@ -322,7 +324,7 @@ async function batchUpdatePromRules(
   shouldUpdatePromRules: boolean,
   prometheusWorkspaceId: string,
   service: string,
-  region: string
+  region: string,
 ) {
   if (!shouldUpdatePromRules) {
     log
@@ -330,7 +332,7 @@ async function batchUpdatePromRules(
       .str('function', 'batchUpdatePromRules')
       .str('shouldUpdatePromRules', 'false')
       .msg(
-        'Prometheus rules have not been marked for update or creation. Skipping batch update.'
+        'Prometheus rules have not been marked for update or creation. Skipping batch update.',
       );
     return;
   }
@@ -358,7 +360,7 @@ async function batchUpdatePromRules(
             const tags = await fetchInstanceTags(instanceId);
             const ec2Metadata = await getInstanceDetails(instanceId);
             return {instanceId, state, tags, privateIp: ec2Metadata.privateIp};
-          }
+          },
         );
 
         instanceDetails = await Promise.all(instanceDetailsPromises);
@@ -369,9 +371,9 @@ async function batchUpdatePromRules(
           .msg('Filtering instances based on tags');
 
         const instancesToCheck = instanceDetails.filter(
-          details =>
+          (details) =>
             details.tags['autoalarm:enabled'] &&
-            details.tags['autoalarm:enabled'] !== 'false'
+            details.tags['autoalarm:enabled'] !== 'false',
         );
 
         if (instancesToCheck.length === 0) {
@@ -380,10 +382,10 @@ async function batchUpdatePromRules(
             .str('function', 'batchUpdatePromRules')
             .str('instancesToCheck', JSON.stringify(instancesToCheck))
             .msg(
-              'No instances found with autoalarm:enabled tag set to true. Verify BatchUpdatePromRules logic and manageActiveInstanceAlarms function.'
+              'No instances found with autoalarm:enabled tag set to true. Verify BatchUpdatePromRules logic and manageActiveInstanceAlarms function.',
             );
           throw new Error(
-            'No instances found with autoalarm:enabled tag set to true. Verify BatchUpdatePromRules logic and manageActiveInstanceAlarms function.'
+            'No instances found with autoalarm:enabled tag set to true. Verify BatchUpdatePromRules logic and manageActiveInstanceAlarms function.',
           );
         }
 
@@ -396,13 +398,13 @@ async function batchUpdatePromRules(
         const reportingInstances = await queryPrometheusForService(
           'ec2',
           prometheusWorkspaceId,
-          region
+          region,
         );
 
         const instancesToUpdate = instancesToCheck.filter(
-          details =>
+          (details) =>
             reportingInstances.includes(details.privateIp) ||
-            reportingInstances.includes(details.instanceId)
+            reportingInstances.includes(details.instanceId),
         );
 
         if (instancesToCheck.length === 0) {
@@ -412,10 +414,10 @@ async function batchUpdatePromRules(
             .str('instancesToCheck', JSON.stringify(instancesToCheck))
             .num('retryCount', retryCount)
             .msg(
-              `Retry ${retryCount}/${maxRetries} failed. Retrying in ${retryDelay / 1000} seconds...`
+              `Retry ${retryCount}/${maxRetries} failed. Retrying in ${retryDelay / 1000} seconds...`,
             );
           throw new Error(
-            'No instances found with autoalarm:enabled tag set to true. Verify BatchUpdatePromRules logic and manageActiveInstanceAlarms function.'
+            'No instances found with autoalarm:enabled tag set to true. Verify BatchUpdatePromRules logic and manageActiveInstanceAlarms function.',
           );
         }
 
@@ -425,12 +427,14 @@ async function batchUpdatePromRules(
           .str('instancesToUpdate', JSON.stringify(instancesToUpdate))
           .msg('Instances to update Prometheus rules for');
 
+        // TODO Fix the use of any
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const alarmConfigs: any[] = [];
         for (const {instanceId} of instancesToUpdate) {
           for (const classification of Object.values(AlarmClassification)) {
             const configs = await getPromAlarmConfigs(
               instanceId,
-              classification
+              classification,
             );
             alarmConfigs.push(...configs);
           }
@@ -449,14 +453,14 @@ async function batchUpdatePromRules(
           .info()
           .str('function', 'batchUpdatePromRules')
           .msg(
-            `Updating Prometheus rules for all instances in batch under namespace: ${namespace}`
+            `Updating Prometheus rules for all instances in batch under namespace: ${namespace}`,
           );
 
         await managePromNamespaceAlarms(
           prometheusWorkspaceId,
           namespace,
           ruleGroupName,
-          alarmConfigs
+          alarmConfigs,
         );
 
         log
@@ -472,16 +476,16 @@ async function batchUpdatePromRules(
           .num('retryCount', retryCount)
           .str('error', error as string)
           .msg(
-            `Retry ${retryCount}/${maxRetries} failed. Retrying in ${retryDelay / 1000} seconds...`
+            `Retry ${retryCount}/${maxRetries} failed. Retrying in ${retryDelay / 1000} seconds...`,
           );
 
         if (retryCount >= maxRetries) {
           throw new Error(
-            `Error during batch update of Prometheus rules after ${maxRetries} retries (${totalRetryTimeMinutes} minutes): ${error}`
+            `Error during batch update of Prometheus rules after ${maxRetries} retries (${totalRetryTimeMinutes} minutes): ${error}`,
           );
         }
 
-        await new Promise(resolve => setTimeout(resolve, retryDelay));
+        await new Promise((resolve) => setTimeout(resolve, retryDelay));
       }
     }
   } catch (error) {
@@ -525,11 +529,13 @@ async function getAlarmConfig(
   instanceId: string,
   type: AlarmClassification,
   metricTagName: string,
-  tags: Tag
+  tags: Tag,
 ): Promise<{
   staticThresholdAlarmName: string;
   anomalyAlarmName: string;
   extendedAnomalyStatistic: string;
+  // TODO Fix the use of any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   threshold: any;
   durationStaticTime: number;
   durationStaticPeriods: number;
@@ -548,6 +554,8 @@ async function getAlarmConfig(
     .msg('Fetching alarm configuration');
 
   // Initialize variables with default values
+  // TODO Fix the use of any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let threshold: any;
   let durationStaticTime: number;
   let durationStaticPeriods: number;
@@ -620,7 +628,7 @@ async function getAlarmConfig(
         .str('tagKey', cwTagKey)
         .str('tagValue', tags[cwTagKey])
         .msg(
-          'Invalid tag values/delimiters. Please use 4 values separated by a "/". Using default values'
+          'Invalid tag values/delimiters. Please use 4 values separated by a "/". Using default values',
         );
     } else {
       switch (type) {
@@ -710,7 +718,7 @@ async function getAlarmConfig(
         .str('tagKey', anomalyTagKey)
         .str('tagValue', tags[anomalyTagKey])
         .msg(
-          "Invalid extended statistic value. Please use a valid percentile value. Using default value of 'p90'"
+          "Invalid extended statistic value. Please use a valid percentile value. Using default value of 'p90'",
         );
       values[0] = defaultExtendedAnomalyStatistic;
     }
@@ -731,7 +739,7 @@ async function getAlarmConfig(
         .str('tagKey', anomalyTagKey)
         .str('tagValue', tags[anomalyTagKey])
         .msg(
-          'Invalid tag values/delimiters. Please use 3 values separated by a "|". Using default values'
+          'Invalid tag values/delimiters. Please use 3 values separated by a "|". Using default values',
         );
     } else {
       useAnomalyDetection = true;
@@ -771,11 +779,11 @@ async function getAlarmConfig(
     .str('metricTagName', metricTagName)
     .str(
       'staticThresholdAlarmName',
-      `AutoAlarm-EC2-StaticThreshold-${instanceId}-${metricTagName}-Utilization-${type}`
+      `AutoAlarm-EC2-StaticThreshold-${instanceId}-${metricTagName}-Utilization-${type}`,
     )
     .str(
       'anomalyAlarmName',
-      `AutoAlarm-EC2-AnomalyDetection-${instanceId}-${metricTagName}-Utilization-Critical`
+      `AutoAlarm-EC2-AnomalyDetection-${instanceId}-${metricTagName}-Utilization-Critical`,
     )
     .str('extendedStatistic', extendedStatistic)
     .num('threshold', threshold)
@@ -803,7 +811,7 @@ async function getAlarmConfig(
 // This function is used to confirm that memory metrics are being reported for an instance
 async function getMemoryMetricsFromCloudWatch(
   instanceId: string,
-  metricName: string
+  metricName: string,
 ): Promise<boolean> {
   const params = {
     Namespace: 'CWAgent',
@@ -843,7 +851,7 @@ async function getMemoryMetricsFromCloudWatch(
 // This function is used to get the storage paths and their associated dimensions from CloudWatch for our ManageStorageAlarmForInstance function
 async function getStoragePathsFromCloudWatch(
   instanceId: string,
-  metricName: string
+  metricName: string,
 ): Promise<PathMetrics> {
   // First, determine if the instance is running Windows
   const instanceDetailProps = await getInstanceDetails(instanceId);
@@ -890,13 +898,13 @@ async function getStoragePathsFromCloudWatch(
   for (const metric of metrics) {
     // Initialize a map to hold dimension values for this metric
     const dimensionMap: Record<string, string> = {};
-    requiredDimensions.forEach(dim => {
+    requiredDimensions.forEach((dim) => {
       dimensionMap[dim] = ''; // Initialize all required dimensions with empty strings
     });
     dimensionMap['InstanceId'] = instanceId; // Always set InstanceId
 
     // Populate the dimension map with metric's values
-    metric.Dimensions?.forEach(dim => {
+    metric.Dimensions?.forEach((dim) => {
       if (dim.Name && dim.Value && requiredDimensions.includes(dim.Name)) {
         dimensionMap[dim.Name] = dim.Value;
       }
@@ -913,7 +921,7 @@ async function getStoragePathsFromCloudWatch(
       !path.startsWith('/boot')
     ) {
       // Build an array of dimensions
-      const dimensionsArray = requiredDimensions.map(name => ({
+      const dimensionsArray = requiredDimensions.map((name) => ({
         Name: name,
         Value: dimensionMap[name],
       }));
@@ -929,14 +937,14 @@ async function getStoragePathsFromCloudWatch(
 //this function is used to get the instance OS platform type for CW metrics specific to mem and storage and private IP
 // address for promQL queries
 async function getInstanceDetails(
-  instanceId: string
+  instanceId: string,
 ): Promise<{platform: string | null; privateIp: string}> {
   try {
     const describeInstancesCommand = new DescribeInstancesCommand({
       InstanceIds: [instanceId],
     });
     const describeInstancesResponse = await ec2Client.send(
-      describeInstancesCommand
+      describeInstancesCommand,
     );
 
     if (
@@ -989,6 +997,8 @@ async function createCloudWatchAlarms(
   alarmName: string,
   metricName: string,
   namespace: string,
+  // TODO Fix the use of any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   dimensions: any[],
   threshold: number,
   durationTime: number,
@@ -996,7 +1006,7 @@ async function createCloudWatchAlarms(
   severityType: AlarmClassification,
   missingDataTreatment: MissingDataTreatment = 'ignore',
   statistic?: Statistic,
-  extendedStatistic?: string
+  extendedStatistic?: string,
 ): Promise<void> {
   const alarmProps = {
     threshold: threshold,
@@ -1017,7 +1027,7 @@ async function createCloudWatchAlarms(
     severityType,
     missingDataTreatment,
     statistic,
-    extendedStatistic
+    extendedStatistic,
   );
 }
 
@@ -1025,7 +1035,7 @@ export async function manageCPUUsageAlarmForInstance(
   instanceId: string,
   tags: Tag,
   type: AlarmClassification,
-  usePrometheus: boolean
+  usePrometheus: boolean,
 ): Promise<void> {
   const {
     staticThresholdAlarmName,
@@ -1049,7 +1059,7 @@ export async function manageCPUUsageAlarmForInstance(
       .str('usePrometheus', usePrometheus.toString())
       .str('Static Threshold AlarmName', staticThresholdAlarmName)
       .msg(
-        'autoalarm:target set to prometheus. Skipping CloudWatch alarm creation.'
+        'autoalarm:target set to prometheus. Skipping CloudWatch alarm creation.',
       );
     return;
   } else {
@@ -1061,7 +1071,7 @@ export async function manageCPUUsageAlarmForInstance(
       .str('Static Threshold Alarm Name', staticThresholdAlarmName)
       .str('Anomaly Alarm Name', anomalyAlarmName)
       .msg(
-        'autoalarm:target tag set to cloudwatch. Skipping prometheus rules and creating CW alarms.'
+        'autoalarm:target tag set to cloudwatch. Skipping prometheus rules and creating CW alarms.',
       );
 
     if (useAnomalyDetection) {
@@ -1074,7 +1084,7 @@ export async function manageCPUUsageAlarmForInstance(
         extendedAnomalyStatistic,
         durationAnomalyTime,
         durationAnomalyPeriods,
-        'CRITICAL' as AlarmClassification
+        'CRITICAL' as AlarmClassification,
       );
     } else {
       log
@@ -1082,7 +1092,7 @@ export async function manageCPUUsageAlarmForInstance(
         .str('function', 'manageCPUUsageAlarmForInstance')
         .str('instanceId', instanceId)
         .msg(
-          'Anomaly Detection is not enabled. Skipping and deleting anomaly alarm if it exists.'
+          'Anomaly Detection is not enabled. Skipping and deleting anomaly alarm if it exists.',
         );
       await deleteCWAlarm(anomalyAlarmName, instanceId);
     }
@@ -1101,7 +1111,7 @@ export async function manageCPUUsageAlarmForInstance(
       .str('instanceId', instanceId)
       .str('autoalarm:ec2-cpu', tags['autoalarm:ec2-cpu'])
       .msg(
-        'CPU alarm threshold for warning is set to be disabled. Skipping static cpu warning alarm creation.'
+        'CPU alarm threshold for warning is set to be disabled. Skipping static cpu warning alarm creation.',
       );
     await deleteCWAlarm(staticThresholdAlarmName, instanceId);
     return;
@@ -1118,7 +1128,7 @@ export async function manageCPUUsageAlarmForInstance(
       .str('instanceId', instanceId)
       .str('autoalarm:ec2-cpu', tags['autoalarm:ec2-cpu'])
       .msg(
-        'CPU alarm threshold for critical is not defined. Skipping static cpu critical alarm creation.'
+        'CPU alarm threshold for critical is not defined. Skipping static cpu critical alarm creation.',
       );
     await deleteCWAlarm(staticThresholdAlarmName, instanceId);
     return;
@@ -1138,7 +1148,7 @@ export async function manageCPUUsageAlarmForInstance(
       type,
       'ignore' as MissingDataTreatment,
       undefined,
-      staticStatistic
+      staticStatistic,
     );
   } else {
     await createCloudWatchAlarms(
@@ -1153,7 +1163,7 @@ export async function manageCPUUsageAlarmForInstance(
       type,
       'ignore' as MissingDataTreatment,
       staticStatistic as Statistic,
-      undefined
+      undefined,
     );
   }
 }
@@ -1162,7 +1172,7 @@ export async function manageStorageAlarmForInstance(
   instanceId: string,
   tags: Tag,
   type: AlarmClassification,
-  usePrometheus: boolean
+  usePrometheus: boolean,
 ): Promise<void> {
   const {
     staticThresholdAlarmName,
@@ -1192,7 +1202,7 @@ export async function manageStorageAlarmForInstance(
       .str('usePrometheus', usePrometheus.toString())
       .str('isCloudWatch', isCloudWatch.toString())
       .msg(
-        'Autoalarm:target set to prometheus. Skipping CloudWatch alarm creation.'
+        'Autoalarm:target set to prometheus. Skipping CloudWatch alarm creation.',
       );
     return;
   } else {
@@ -1202,11 +1212,11 @@ export async function manageStorageAlarmForInstance(
       .str('autoalarm:target', tags['autoalarm:target'])
       .str('instanceId', instanceId)
       .msg(
-        'autoalaram:target tag set to cloudwatch. Skipping prometheus rules and creating CW alarms.'
+        'autoalaram:target tag set to cloudwatch. Skipping prometheus rules and creating CW alarms.',
       );
     const storagePaths = await getStoragePathsFromCloudWatch(
       instanceId,
-      metricName
+      metricName,
     );
     let staticThresholdStorageAlarmName = '';
     let anomalyStorageAlarmName = '';
@@ -1227,7 +1237,7 @@ export async function manageStorageAlarmForInstance(
             extendedAnomalyStatistic,
             durationAnomalyTime,
             durationAnomalyPeriods,
-            'CRITICAL' as AlarmClassification
+            'CRITICAL' as AlarmClassification,
           );
           log
             .info()
@@ -1241,7 +1251,7 @@ export async function manageStorageAlarmForInstance(
             .str('function', 'manageStorageAlarmForInstance')
             .str('instanceId', instanceId)
             .msg(
-              'Anomaly Detection is not enabled. Skipping and deleting anomaly alarm if it exists.'
+              'Anomaly Detection is not enabled. Skipping and deleting anomaly alarm if it exists.',
             );
           await deleteCWAlarm(anomalyAlarmName, instanceId);
         }
@@ -1259,7 +1269,7 @@ export async function manageStorageAlarmForInstance(
             .str('instanceId', instanceId)
             .str('autoalarm:cw-ec2-storage', tags['autoalarm:cw-ec2-storage'])
             .msg(
-              'Storage alarm threshold for warning is not defined. Skipping static storage warning alarm creation. And deleting if they exist.'
+              'Storage alarm threshold for warning is not defined. Skipping static storage warning alarm creation. And deleting if they exist.',
             );
           await deleteCWAlarm(staticThresholdStorageAlarmName, instanceId);
         } else if (
@@ -1276,7 +1286,7 @@ export async function manageStorageAlarmForInstance(
             .str('instanceId', instanceId)
             .str('autoalarm:cw-ec2-storage', tags['autoalarm:cw-ec2-storage'])
             .msg(
-              'Storage alarm threshold for critical is not defined. Skipping static storage critical alarm creation. And deleting if they exist.'
+              'Storage alarm threshold for critical is not defined. Skipping static storage critical alarm creation. And deleting if they exist.',
             );
           await deleteCWAlarm(staticThresholdStorageAlarmName, instanceId);
         } else {
@@ -1293,7 +1303,7 @@ export async function manageStorageAlarmForInstance(
               type,
               'ignore' as MissingDataTreatment,
               undefined,
-              staticStatistic
+              staticStatistic,
             );
           } else {
             await createCloudWatchAlarms(
@@ -1308,7 +1318,7 @@ export async function manageStorageAlarmForInstance(
               type,
               'ignore' as MissingDataTreatment,
               staticStatistic as Statistic,
-              undefined
+              undefined,
             );
           }
         }
@@ -1319,7 +1329,7 @@ export async function manageStorageAlarmForInstance(
         .str('function', 'manageStorageAlarmForInstance')
         .str('instanceId', instanceId)
         .msg(
-          'CloudWatch metrics not found for storage paths. Skipping alarm creation.'
+          'CloudWatch metrics not found for storage paths. Skipping alarm creation.',
         );
     }
   }
@@ -1329,7 +1339,7 @@ export async function manageMemoryAlarmForInstance(
   instanceId: string,
   tags: Tag,
   type: AlarmClassification,
-  usePrometheus: boolean
+  usePrometheus: boolean,
 ): Promise<void> {
   const {
     staticThresholdAlarmName,
@@ -1360,7 +1370,7 @@ export async function manageMemoryAlarmForInstance(
       .str('usePrometheus', usePrometheus.toString())
       .str('isCloudWatch', isCloudWatch.toString())
       .msg(
-        'Prometheus Metrics being recieved from instance. Skipping CloudWatch alarm creation.'
+        'Prometheus Metrics being recieved from instance. Skipping CloudWatch alarm creation.',
       );
     return;
   } else {
@@ -1370,7 +1380,7 @@ export async function manageMemoryAlarmForInstance(
       .str('autoalarm:target', tags['autoalarm:target'])
       .str('instanceId', instanceId)
       .msg(
-        'autoalarm:target set to cloudwatch. Skipping prometheus rules and checking if memory metrics are being reported to CW.'
+        'autoalarm:target set to cloudwatch. Skipping prometheus rules and checking if memory metrics are being reported to CW.',
       );
     if (await getMemoryMetricsFromCloudWatch(instanceId, metricName)) {
       log
@@ -1389,7 +1399,7 @@ export async function manageMemoryAlarmForInstance(
           extendedAnomalyStatistic,
           durationAnomalyTime,
           durationAnomalyPeriods,
-          'CRITICAL' as AlarmClassification
+          'CRITICAL' as AlarmClassification,
         );
       } else {
         log
@@ -1397,7 +1407,7 @@ export async function manageMemoryAlarmForInstance(
           .str('function', 'manageMemoryAlarmForInstance')
           .str('instanceId', instanceId)
           .msg(
-            'Anomaly Detection is not enabled. Skipping and deleting anomaly alarm if it exists.'
+            'Anomaly Detection is not enabled. Skipping and deleting anomaly alarm if it exists.',
           );
         await deleteCWAlarm(anomalyAlarmName, instanceId);
       }
@@ -1415,7 +1425,7 @@ export async function manageMemoryAlarmForInstance(
           .str('instanceId', instanceId)
           .str('autoalarm:cw-ec2-memory', tags['autoalarm:cw-ec2-memory'])
           .msg(
-            'Memory alarm threshold for warning is not defined. Skipping static memory warning alarm creation.'
+            'Memory alarm threshold for warning is not defined. Skipping static memory warning alarm creation.',
           );
         await deleteCWAlarm(staticThresholdAlarmName, instanceId);
         return;
@@ -1432,7 +1442,7 @@ export async function manageMemoryAlarmForInstance(
           .str('instanceId', instanceId)
           .str('autoalarm:cw-ec2-memory', tags['autoalarm:cw-ec2-memory'])
           .msg(
-            'Memory alarm threshold for critical is not defined. Skipping static memory critical alarm creation.'
+            'Memory alarm threshold for critical is not defined. Skipping static memory critical alarm creation.',
           );
         await deleteCWAlarm(staticThresholdAlarmName, instanceId);
         return;
@@ -1451,7 +1461,7 @@ export async function manageMemoryAlarmForInstance(
             .str('missingDataTreatment', 'ignore')
             .str('static satistic', staticStatistic)
             .msg(
-              'regex matched for extended statistic. Creating alarm with extended statistic'
+              'regex matched for extended statistic. Creating alarm with extended statistic',
             );
 
           await createCloudWatchAlarms(
@@ -1466,7 +1476,7 @@ export async function manageMemoryAlarmForInstance(
             type,
             'ignore' as MissingDataTreatment,
             undefined,
-            staticStatistic
+            staticStatistic,
           );
         } else {
           log
@@ -1482,7 +1492,7 @@ export async function manageMemoryAlarmForInstance(
             .str('missingDataTreatment', 'ignore')
             .str('static satistic', staticStatistic)
             .msg(
-              'regex NOT matched for extended statisstic. Creating alarm with standard statistic'
+              'regex NOT matched for extended statisstic. Creating alarm with standard statistic',
             );
           await createCloudWatchAlarms(
             instanceId,
@@ -1496,7 +1506,7 @@ export async function manageMemoryAlarmForInstance(
             type,
             'ignore' as MissingDataTreatment,
             staticStatistic as Statistic,
-            undefined
+            undefined,
           );
         }
       }
@@ -1513,7 +1523,9 @@ export async function manageMemoryAlarmForInstance(
 
 export async function createStatusAlarmForInstance(
   instanceId: string,
-  doesAlarmExist: Function
+  // TODO Fix lint error
+  // eslint-disable-next-line @typescript-eslint/ban-types
+  doesAlarmExist: Function,
 ): Promise<void> {
   const alarmName = `AutoAlarm-EC2-${instanceId}-StatusCheckFailed`;
   const alarmExists = await doesAlarmExist(alarmName);
@@ -1532,7 +1544,7 @@ export async function createStatusAlarmForInstance(
         Dimensions: [{Name: 'InstanceId', Value: instanceId}],
         Tags: [{Key: 'severity', Value: 'critical'}],
         TreatMissingData: 'breaching',
-      })
+      }),
     );
     log
       .info()
@@ -1562,7 +1574,7 @@ async function checkAndManageStatusAlarm(instanceId: string, tags: Tag) {
       .warn()
       .str('function', 'checkAndManageStatusAlarm')
       .msg(
-        'autoalarm:enabled tag exists but has unexpected value. checking for alarm and creating if it does not exist'
+        'autoalarm:enabled tag exists but has unexpected value. checking for alarm and creating if it does not exist',
       );
     await createStatusAlarmForInstance(instanceId, doesAlarmExist);
   }
@@ -1572,7 +1584,7 @@ async function checkAndManageStatusAlarm(instanceId: string, tags: Tag) {
 async function callAlarmFunctions(
   instanceId: string,
   tags: Tag,
-  shouldUpdatePromRules: boolean
+  shouldUpdatePromRules: boolean,
 ) {
   for (const classification of Object.values(AlarmClassification)) {
     try {
@@ -1580,19 +1592,19 @@ async function callAlarmFunctions(
         instanceId,
         tags,
         classification,
-        shouldUpdatePromRules
+        shouldUpdatePromRules,
       );
       await manageStorageAlarmForInstance(
         instanceId,
         tags,
         classification,
-        shouldUpdatePromRules
+        shouldUpdatePromRules,
       );
       await manageMemoryAlarmForInstance(
         instanceId,
         tags,
         classification,
-        shouldUpdatePromRules
+        shouldUpdatePromRules,
       );
     } catch (e) {
       log
@@ -1607,7 +1619,7 @@ async function callAlarmFunctions(
 
 export async function manageActiveInstanceAlarms(
   instanceId: string,
-  tags: Tag
+  tags: Tag,
 ) {
   // Reset flags so prior lambda runs don't carry over old values
   shouldDeletePromAlarm = false;
@@ -1634,7 +1646,7 @@ export async function manageActiveInstanceAlarms(
       .str('Prometheus', tags['autoalarm:target'])
       .msg(
         'Instance is tagged for Prometheus or does not have a autoalarm:target tag but found prometheus workspaceId. ' +
-          'Setting isCloudWatch to false.'
+          'Setting isCloudWatch to false.',
       );
     isCloudWatch = false;
   }
@@ -1649,7 +1661,7 @@ export async function manageActiveInstanceAlarms(
       .bool('isCloudWatch', isCloudWatch)
       .str('autoalarm:target', tags['autoalarm:target'])
       .msg(
-        'Instance that triggered eventbridge rule is configured for and reporting to Prometheus. Setting shouldUpdatePromRules flag to true.'
+        'Instance that triggered eventbridge rule is configured for and reporting to Prometheus. Setting shouldUpdatePromRules flag to true.',
       );
     shouldUpdatePromRules = true;
   } else {
@@ -1660,7 +1672,7 @@ export async function manageActiveInstanceAlarms(
       .str('isCloudWatch', isCloudWatch.toString())
       .str('autoalarm:target', tags['autoalarm:target'])
       .msg(
-        'Instance that triggered eventbridge rule is not configured for Prometheus. Setting shouldDeletePromAlarm flag to true.'
+        'Instance that triggered eventbridge rule is not configured for Prometheus. Setting shouldDeletePromAlarm flag to true.',
       );
     shouldDeletePromAlarm = true;
     isCloudWatch = true;
@@ -1673,7 +1685,7 @@ export async function manageActiveInstanceAlarms(
         shouldUpdatePromRules,
         prometheusWorkspaceId,
         'ec2',
-        region
+        region,
       );
       log
         .info()
@@ -1682,12 +1694,12 @@ export async function manageActiveInstanceAlarms(
         .str('isCloudWatch', isCloudWatch.toString())
         .str('autoalarm:target', tags['autoalarm:target'])
         .msg(
-          'Instance that triggered eventbridge rule is reporting to Prometheus. Deleting CloudWatch alarms for instance'
+          'Instance that triggered eventbridge rule is reporting to Prometheus. Deleting CloudWatch alarms for instance',
         );
 
       const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
         'EC2',
-        instanceId
+        instanceId,
       );
       log
         .info()
@@ -1698,7 +1710,7 @@ export async function manageActiveInstanceAlarms(
 
       // Filter out status check alarm from deletion as the status check alarm should always be live
       const filteredAutoAlarms = activeAutoAlarms.filter(
-        alarm => !alarm.includes('StatusCheckFailed')
+        (alarm) => !alarm.includes('StatusCheckFailed'),
       );
       log
         .info()
@@ -1706,12 +1718,12 @@ export async function manageActiveInstanceAlarms(
         .str('instanceId', instanceId)
         .obj('filteredAutoAlarms', filteredAutoAlarms)
         .msg(
-          'Filtering out StatusCheckFailed alarm from deletion and deleting all other cloudwatch alarms.'
+          'Filtering out StatusCheckFailed alarm from deletion and deleting all other cloudwatch alarms.',
         );
       await Promise.all(
-        filteredAutoAlarms.map(alarmName =>
-          deleteCWAlarm(alarmName, instanceId)
-        )
+        filteredAutoAlarms.map((alarmName) =>
+          deleteCWAlarm(alarmName, instanceId),
+        ),
       );
     } catch (e) {
       log
@@ -1732,7 +1744,7 @@ export async function manageActiveInstanceAlarms(
       .str('autoalarm:target', tags['autoalarm:target'])
       .str('isCloudWatch', isCloudWatch.toString())
       .msg(
-        'isCloudWatch is true. Deleting Prometheus alarm rules for instance'
+        'isCloudWatch is true. Deleting Prometheus alarm rules for instance',
       );
     shouldUpdatePromRules = false;
     await callAlarmFunctions(instanceId, tags, shouldUpdatePromRules);
@@ -1740,7 +1752,7 @@ export async function manageActiveInstanceAlarms(
     await batchPromRulesDeletion(
       shouldDeletePromAlarm,
       prometheusWorkspaceId,
-      'ec2'
+      'ec2',
     );
     log
       .info()
@@ -1756,15 +1768,15 @@ export async function manageInactiveInstanceAlarms(instanceId: string) {
   try {
     const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
       'EC2',
-      instanceId
+      instanceId,
     );
     await Promise.all(
-      activeAutoAlarms.map(alarmName => deleteCWAlarm(alarmName, instanceId))
+      activeAutoAlarms.map((alarmName) => deleteCWAlarm(alarmName, instanceId)),
     );
     await batchPromRulesDeletion(
       shouldDeletePromAlarm, //this is a boolean that is set to true if any prometheus rules have been marked for deletion in favor of cloudwatch alarms
       prometheusWorkspaceId,
-      'ec2'
+      'ec2',
     );
     log
       .info()
@@ -1783,7 +1795,9 @@ export async function manageInactiveInstanceAlarms(instanceId: string) {
 }
 
 export async function getEC2IdAndState(
-  event: any
+  // TODO Fix the use of any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  event: any,
 ): Promise<{instanceId: string; state: ValidInstanceState}> {
   const instanceId = event.resources[0].split('/').pop();
   log.info().str('resourceId', instanceId).msg('Processing tag event');
@@ -1791,7 +1805,7 @@ export async function getEC2IdAndState(
   const describeInstancesResponse = await ec2Client.send(
     new DescribeInstancesCommand({
       InstanceIds: [instanceId],
-    })
+    }),
   );
   const instance = describeInstancesResponse.Reservations?.[0]?.Instances?.[0];
   const state = instance?.State?.Name as ValidInstanceState;
@@ -1799,17 +1813,17 @@ export async function getEC2IdAndState(
 }
 
 export async function fetchInstanceTags(
-  instanceId: string
+  instanceId: string,
 ): Promise<{[key: string]: string}> {
   try {
     const response = await ec2Client.send(
       new DescribeTagsCommand({
         Filters: [{Name: 'resource-id', Values: [instanceId]}],
-      })
+      }),
     );
 
     const tags: {[key: string]: string} = {};
-    response.Tags?.forEach(tag => {
+    response.Tags?.forEach((tag) => {
       if (tag.Key && tag.Value) {
         tags[tag.Key] = tag.Value;
       }

@@ -30,6 +30,8 @@ const log = logging.initialize({
   level,
 });
 
+// TODO Fix the use of any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function processEC2Event(event: any) {
   const instanceId = event.detail['instance-id'];
   const state = event.detail.state;
@@ -53,6 +55,8 @@ async function processEC2Event(event: any) {
   }
 }
 
+// TODO Fix the use of any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function processEC2TagEvent(event: any) {
   const {instanceId, state} = await getEC2IdAndState(event);
   const tags = await fetchInstanceTags(instanceId);
@@ -75,10 +79,14 @@ async function processEC2TagEvent(event: any) {
   }
 }
 
+// TODO Fix the use of any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function processALBEvent(event: any) {
   await parseALBEventAndCreateAlarms(event);
 }
 
+// TODO Fix the use of any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function processTargetGroupEvent(event: any) {
   const eventName = event.detail.eventName;
 
@@ -87,10 +95,14 @@ export async function processTargetGroupEvent(event: any) {
   }
 }
 
+// TODO Fix the use of any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function processSQSEvent(event: any) {
   await parseSQSEventAndCreateAlarms(event);
 }
 
+// TODO Fix the use of any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function processOpenSearchEvent(event: any) {
   const domainName = event.detail['domain-name'];
   const state = event.detail.state;
@@ -103,6 +115,8 @@ export async function processOpenSearchEvent(event: any) {
   }
 }
 
+// TODO Fix the use of any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function processOpenSearchTagEvent(event: any) {
   const {domainArn, state, tags} = await getOpenSearchState(event);
 
@@ -117,6 +131,8 @@ export async function processOpenSearchTagEvent(event: any) {
   }
 }
 
+// TODO Fix the use of any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function routeTagEvent(event: any) {
   const detail = event.detail;
   const resourceType = detail['resource-type'];
@@ -142,6 +158,8 @@ async function routeTagEvent(event: any) {
 }
 
 // Handler function
+// TODO Fix the use of any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const handler: Handler = async (event: any): Promise<void> => {
   log.trace().unknown('event', event).msg('Received event');
 

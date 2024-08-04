@@ -44,7 +44,7 @@ const client = new AmpClient({region, credentials: defaultProvider()}); //used f
 
 export async function doesAlarmExist(alarmName: string): Promise<boolean> {
   const response = await cloudWatchClient.send(
-    new DescribeAlarmsCommand({AlarmNames: [alarmName]})
+    new DescribeAlarmsCommand({AlarmNames: [alarmName]}),
   );
   log
     .info()
@@ -58,11 +58,11 @@ export async function doesAlarmExist(alarmName: string): Promise<boolean> {
 // returns true if the alarm needs to be updated whether it exists or does not. For Anomaly Detection CW alarms
 export async function anomalyCWAlarmNeedsUpdate(
   alarmName: string,
-  newProps: AnomalyAlarmProps
+  newProps: AnomalyAlarmProps,
 ): Promise<boolean> {
   try {
     const existingAlarm = await cloudWatchClient.send(
-      new DescribeAlarmsCommand({AlarmNames: [alarmName]})
+      new DescribeAlarmsCommand({AlarmNames: [alarmName]}),
     );
 
     if (existingAlarm.MetricAlarms && existingAlarm.MetricAlarms.length > 0) {
@@ -87,20 +87,20 @@ export async function anomalyCWAlarmNeedsUpdate(
           .str('alarmName', alarmName)
           .str(
             'existingEvaluationPeriods',
-            existingProps.EvaluationPeriods?.toString() || 'undefined'
+            existingProps.EvaluationPeriods?.toString() || 'undefined',
           )
           .str(
             'newEvaluationPeriods',
-            newProps.evaluationPeriods.toString() || 'undefined'
+            newProps.evaluationPeriods.toString() || 'undefined',
           )
           .str(
             'existingPeriod',
-            existingProps.Period?.toString() || 'undefined'
+            existingProps.Period?.toString() || 'undefined',
           )
           .str('newPeriod', newProps.period.toString() || 'undefined')
           .str(
             'existingExtendedStatistic',
-            existingProps.ExtendedStatistic || 'undefined'
+            existingProps.ExtendedStatistic || 'undefined',
           )
           .str('newExtendedStatistic', newProps.extendedStatistic)
           .msg('Anomaly Detection Alarm needs update');
@@ -128,7 +128,7 @@ export async function anomalyCWAlarmNeedsUpdate(
       .str('function', 'anomalyCWAlarmNeedsUpdate')
       .msg('Failed to determine if anomaly detection alarm needs update:');
     throw new Error(
-      'Failed to determine if anomaly detection alarm needs update.'
+      'Failed to determine if anomaly detection alarm needs update.',
     );
   }
 }
@@ -136,11 +136,11 @@ export async function anomalyCWAlarmNeedsUpdate(
 // returns true if the alarm needs to be updated whether it exists or does not. For Static threshold CW alarms
 export async function staticCWAlarmNeedsUpdate(
   alarmName: string,
-  newProps: AlarmProps
+  newProps: AlarmProps,
 ): Promise<boolean> {
   try {
     const existingAlarm = await cloudWatchClient.send(
-      new DescribeAlarmsCommand({AlarmNames: [alarmName]})
+      new DescribeAlarmsCommand({AlarmNames: [alarmName]}),
     );
 
     if (existingAlarm.MetricAlarms && existingAlarm.MetricAlarms.length > 0) {
@@ -161,25 +161,25 @@ export async function staticCWAlarmNeedsUpdate(
           .str('alarmName', alarmName)
           .str(
             'existingThreshold',
-            existingProps.Threshold?.toString() || 'undefined'
+            existingProps.Threshold?.toString() || 'undefined',
           )
           .str('newThreshold', newProps.threshold?.toString() || 'undefined')
           .str(
             'existingEvaluationPeriods',
-            existingProps.EvaluationPeriods?.toString() || 'undefined'
+            existingProps.EvaluationPeriods?.toString() || 'undefined',
           )
           .str(
             'newEvaluationPeriods',
-            newProps.evaluationPeriods?.toString() || 'undefined'
+            newProps.evaluationPeriods?.toString() || 'undefined',
           )
           .str(
             'existingPeriod',
-            existingProps.Period?.toString() || 'undefined'
+            existingProps.Period?.toString() || 'undefined',
           )
           .str('newPeriod', newProps.period?.toString() || 'undefined')
           .str(
             'existingStatistic',
-            existingStatistic?.toString() || 'undefined'
+            existingStatistic?.toString() || 'undefined',
           )
           .str('newStatistic', newStatistic?.toString() || 'undefined')
           .msg('Alarm needs update');
@@ -204,7 +204,7 @@ export function configureAlarmPropsFromTags(
   durationTime: number,
   durationPeriods: number,
   statistic?: Statistic,
-  extendedStatistic?: string
+  extendedStatistic?: string,
 ): void {
   alarmProps.threshold = threshold;
   log
@@ -220,7 +220,7 @@ export function configureAlarmPropsFromTags(
       .str('function', 'configureAlarmPropsFromTags')
       .num('period', durationTime)
       .msg(
-        'Period value less than 10 is not allowed, must be 10. Using default value of 10'
+        'Period value less than 10 is not allowed, must be 10. Using default value of 10',
       );
   } else if (durationTime < 30 || durationTime <= 45) {
     durationTime = 30;
@@ -229,7 +229,7 @@ export function configureAlarmPropsFromTags(
       .str('function', 'configureAlarmPropsFromTags')
       .num('period', durationTime)
       .msg(
-        'Period value is either 30, < 30, <= 45 or 30. Using default value of 30'
+        'Period value is either 30, < 30, <= 45 or 30. Using default value of 30',
       );
   } else {
     durationTime = Math.ceil(durationTime / 60) * 60;
@@ -238,7 +238,7 @@ export function configureAlarmPropsFromTags(
       .str('function', 'configureAlarmPropsFromTags')
       .num('period', durationTime)
       .msg(
-        'Period value not 10 or 30 must be multiple of 60. Adjusted to nearest multiple of 60'
+        'Period value not 10 or 30 must be multiple of 60. Adjusted to nearest multiple of 60',
       );
   }
   alarmProps.period = durationTime;
@@ -279,7 +279,7 @@ export async function createOrUpdateAnomalyDetectionAlarm(
   extendedStatistic: string,
   durationTime: number,
   durationPeriods: number,
-  classification: AlarmClassification
+  classification: AlarmClassification,
 ) {
   if (durationTime < 10) {
     durationTime = 10;
@@ -288,7 +288,7 @@ export async function createOrUpdateAnomalyDetectionAlarm(
       .str('function', 'createOrUpdateAnomalyDetectionAlarm')
       .num('period', durationTime)
       .msg(
-        'Period value less than 10 is not allowed, must be 10. Using default value of 10'
+        'Period value less than 10 is not allowed, must be 10. Using default value of 10',
       );
   } else if (durationTime < 30 || durationTime <= 45) {
     durationTime = 30;
@@ -297,7 +297,7 @@ export async function createOrUpdateAnomalyDetectionAlarm(
       .str('function', 'createOrUpdateAnomalyDetectionAlarm')
       .num('period', durationTime)
       .msg(
-        'Period value is either 30, < 30, <= 45 or 30. Using default value of 30'
+        'Period value is either 30, < 30, <= 45 or 30. Using default value of 30',
       );
   } else {
     durationTime = Math.ceil(durationTime / 60) * 60;
@@ -306,7 +306,7 @@ export async function createOrUpdateAnomalyDetectionAlarm(
       .str('function', 'createOrUpdateAnomalyDetectionAlarm')
       .num('period', durationTime)
       .msg(
-        'Period value not 10 or 30 must be multiple of 60. Adjusted to nearest multiple of 60'
+        'Period value not 10 or 30 must be multiple of 60. Adjusted to nearest multiple of 60',
       );
   }
   const newProps: AnomalyAlarmProps = {
@@ -340,7 +340,7 @@ export async function createOrUpdateAnomalyDetectionAlarm(
         .obj('input', anomalyDetectorInput)
         .msg('Sending PutAnomalyDetectorCommand');
       await cloudWatchClient.send(
-        new PutAnomalyDetectorCommand(anomalyDetectorInput)
+        new PutAnomalyDetectorCommand(anomalyDetectorInput),
       );
 
       // Create anomaly detection alarm
@@ -387,7 +387,7 @@ export async function createOrUpdateAnomalyDetectionAlarm(
         .str('alarmName', alarmName)
         .str('serviceIdentifier', dimensionNameValue)
         .msg(
-          `Failed to create or update ${alarmName} anomaly detection alarm due to an error ${e}`
+          `Failed to create or update ${alarmName} anomaly detection alarm due to an error ${e}`,
         );
     }
   }
@@ -410,7 +410,7 @@ export async function createOrUpdateCWAlarm(
   severityType: string,
   missingDataTreatment: MissingDataTreatment = 'ignore', // Default to 'ignore' if not specified
   statistic?: Statistic | undefined,
-  extendedStatistic?: string | undefined
+  extendedStatistic?: string | undefined,
 ) {
   try {
     log
@@ -429,7 +429,7 @@ export async function createOrUpdateCWAlarm(
       durationTime,
       durationPeriods,
       statistic,
-      extendedStatistic
+      extendedStatistic,
     );
 
     log
@@ -472,7 +472,7 @@ export async function createOrUpdateCWAlarm(
           Dimensions: props.dimensions,
           Tags: [{Key: 'severity', Value: severityType.toLowerCase()}],
           TreatMissingData: missingDataTreatment,
-        })
+        }),
       );
       log
         .info()
@@ -491,7 +491,7 @@ export async function createOrUpdateCWAlarm(
         .str('alarmName', alarmName)
         .str('instanceId', serviceIdentifier)
         .msg(
-          `Failed to create or update ${alarmName} alarm due to an error ${e}`
+          `Failed to create or update ${alarmName} alarm due to an error ${e}`,
         );
     }
   }
@@ -509,13 +509,13 @@ export async function createOrUpdateCWAlarm(
 // RDS: ...
 export async function getCWAlarmsForInstance(
   serviceIdentifier: string,
-  instanceIdentifier: string
+  instanceIdentifier: string,
 ): Promise<string[]> {
   const activeAutoAlarms: string[] = [];
   try {
     const describeAlarmsCommand = new DescribeAlarmsCommand({});
     const describeAlarmsResponse = await cloudWatchClient.send(
-      describeAlarmsCommand
+      describeAlarmsCommand,
     );
     const alarms = describeAlarmsResponse.MetricAlarms || [];
 
@@ -527,28 +527,28 @@ export async function getCWAlarmsForInstance(
       .str('instanceIdentifier', instanceIdentifier)
       .str(
         'alarm prefix',
-        `AutoAlarm-${serviceIdentifier}-${instanceIdentifier}`
+        `AutoAlarm-${serviceIdentifier}-${instanceIdentifier}`,
       )
       .msg('Filtering alarms by name');
     const instanceAlarms = alarms.filter(
-      alarm =>
+      (alarm) =>
         alarm.AlarmName &&
         (alarm.AlarmName.startsWith(
-          `AutoAlarm-${serviceIdentifier}-${instanceIdentifier}`
+          `AutoAlarm-${serviceIdentifier}-${instanceIdentifier}`,
         ) ||
           alarm.AlarmName.startsWith(
-            `AutoAlarm-${serviceIdentifier}-${instanceIdentifier}-Anomaly`
+            `AutoAlarm-${serviceIdentifier}-${instanceIdentifier}-Anomaly`,
           ) ||
           alarm.AlarmName.startsWith(
-            `AutoAlarm-${serviceIdentifier}-${instanceIdentifier}`
-          ))
+            `AutoAlarm-${serviceIdentifier}-${instanceIdentifier}`,
+          )),
     );
 
     // Push the alarm names to activeAutoAlarmAlarms, ensuring AlarmName is defined
     activeAutoAlarms.push(
       ...instanceAlarms
-        .map(alarm => alarm.AlarmName)
-        .filter((alarmName): alarmName is string => !!alarmName)
+        .map((alarm) => alarm.AlarmName)
+        .filter((alarmName): alarmName is string => !!alarmName),
     );
 
     log
@@ -572,7 +572,7 @@ export async function getCWAlarmsForInstance(
 
 export async function deleteCWAlarm(
   alarmName: string,
-  instanceIdentifier: string
+  instanceIdentifier: string,
 ): Promise<void> {
   log
     .info()
@@ -588,7 +588,7 @@ export async function deleteCWAlarm(
       .str('instanceId', instanceIdentifier)
       .msg('Attempting to delete alarm');
     await cloudWatchClient.send(
-      new DeleteAlarmsCommand({AlarmNames: [alarmName]})
+      new DeleteAlarmsCommand({AlarmNames: [alarmName]}),
     );
     log
       .info()
@@ -615,7 +615,9 @@ export async function deleteCWAlarm(
 // credentials needed to sign the request. We then sign the request using aws4 and make the request using https.request.
 const makeSignedRequest = async (
   path: string,
-  region: string
+  region: string,
+  // TODO Fix the use of any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<any> => {
   const hostname = `aps-workspaces.${region}.amazonaws.com`;
 
@@ -628,7 +630,7 @@ const makeSignedRequest = async (
     path,
     method: 'GET',
     headers: {
-      host: hostname,
+      'host': hostname,
       'Content-Type': 'application/json',
     },
   };
@@ -647,16 +649,16 @@ const makeSignedRequest = async (
       accessKeyId: credentials.accessKeyId,
       secretAccessKey: credentials.secretAccessKey,
       sessionToken: credentials.sessionToken,
-    }
+    },
   );
 
   // Add signed headers to the request options
   Object.assign(options.headers, signer.headers);
 
   return new Promise((resolve, reject) => {
-    const req = https.request(options, res => {
+    const req = https.request(options, (res) => {
       let data = '';
-      res.on('data', chunk => {
+      res.on('data', (chunk) => {
         data += chunk;
       });
       res.on('end', () => {
@@ -688,7 +690,7 @@ const makeSignedRequest = async (
       });
     });
 
-    req.on('error', error => {
+    req.on('error', (error) => {
       log
         .error()
         .str('function', 'makeSignedRequest')
@@ -720,7 +722,7 @@ const makeSignedRequest = async (
 export async function queryPrometheusForService(
   serviceType: string,
   promWorkspaceID: string,
-  region: string
+  region: string,
 ): Promise<string[]> {
   const queryPath = `/workspaces/${promWorkspaceID}/api/v1/query?query=`;
 
@@ -743,7 +745,7 @@ export async function queryPrometheusForService(
         query = 'go_info';
         const response = await makeSignedRequest(
           queryPath + encodeURIComponent(query),
-          region
+          region,
         );
 
         // Log the raw Prometheus query result
@@ -782,6 +784,8 @@ export async function queryPrometheusForService(
         const ec2InstanceIdRegex = /^i-[a-zA-Z0-9]+$/;
 
         // Extract unique instances private IPs or instance IDs from query results
+        // TODO Fix the use of any
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         response.data.result.forEach((item: any) => {
           const instance = item.metric.instance;
 
@@ -853,10 +857,10 @@ export async function queryPrometheusForService(
   }
 }
 
-const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 // Function to list namespaces
 const listNamespaces = async (
-  workspaceId: string
+  workspaceId: string,
 ): Promise<RuleGroupsNamespaceSummary[]> => {
   const command = new ListRuleGroupsNamespacesCommand({workspaceId});
   log.info().str('workspaceId', workspaceId).msg('Listing namespaces');
@@ -877,7 +881,7 @@ const listNamespaces = async (
 // Function to describe a namespace
 export const describeNamespace = async (
   workspaceId: string,
-  namespace: string
+  namespace: string,
 ): Promise<NamespaceDetails | null> => {
   const command = new DescribeRuleGroupsNamespaceCommand({
     workspaceId,
@@ -894,7 +898,7 @@ export const describeNamespace = async (
     const response = await client.send(command);
     if (response.ruleGroupsNamespace) {
       const dataStr = new TextDecoder().decode(
-        response.ruleGroupsNamespace.data
+        response.ruleGroupsNamespace.data,
       );
       log
         .info()
@@ -943,7 +947,9 @@ export const describeNamespace = async (
 async function createNamespace(
   promWorkspaceId: string,
   namespace: string,
-  alarmConfigs: any[]
+  // TODO Fix the use of any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  alarmConfigs: any[],
 ) {
   log
     .info()
@@ -956,7 +962,7 @@ async function createNamespace(
     groups: [
       {
         name: 'AutoAlarm',
-        rules: alarmConfigs.map(config => ({
+        rules: alarmConfigs.map((config) => ({
           alert: config.alarmName,
           expr: config.alarmQuery,
           for: config.duration,
@@ -1044,7 +1050,9 @@ export async function managePromNamespaceAlarms(
   promWorkspaceId: string,
   namespace: string,
   ruleGroupName: string,
-  alarmConfigs: any[]
+  // TODO Fix the use of any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  alarmConfigs: any[],
 ) {
   log
     .info()
@@ -1053,9 +1061,11 @@ export async function managePromNamespaceAlarms(
     .str('namespace', namespace)
     .str('ruleGroupName', ruleGroupName)
     .msg(
-      'Starting managePromNamespaceAlarms and checking if workspace exists...'
+      'Starting managePromNamespaceAlarms and checking if workspace exists...',
     );
 
+  // TODO Fix the use of any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const workspaceDescription: any = await verifyPromWorkspace(promWorkspaceId);
   if (!workspaceDescription) {
     log
@@ -1064,7 +1074,7 @@ export async function managePromNamespaceAlarms(
       .str('promWorkspaceId', promWorkspaceId)
       .msg('Invalid or empty workspace details. Halting Prometheus logic.');
     throw new Error(
-      'Invalid or empty workspace details. Halting Prometheus logic.'
+      'Invalid or empty workspace details. Halting Prometheus logic.',
     );
   }
 
@@ -1082,13 +1092,13 @@ export async function managePromNamespaceAlarms(
   for (const ns of namespaces) {
     const nsDetails = await describeNamespace(
       promWorkspaceId,
-      ns.name as string
+      ns.name as string,
     );
     if (nsDetails && isNamespaceDetails(nsDetails)) {
       // Add the number of rules in the current namespace to the total count
       totalWSRules += nsDetails.groups.reduce(
         (count, group) => count + group.rules.length,
-        0
+        0,
       );
     }
   }
@@ -1105,12 +1115,12 @@ export async function managePromNamespaceAlarms(
       .str('function', 'managePromNamespaceAlarms')
       .msg('The workspace has 2000 or more rules. Halting Prometheus logic.');
     throw new Error(
-      'The workspace has 2000 or more rules. Halting and falling back to CW Alarms.'
+      'The workspace has 2000 or more rules. Halting and falling back to CW Alarms.',
     );
   }
 
   // Check if the namespace exists
-  const specificNamespace = namespaces.find(ns => ns.name === namespace);
+  const specificNamespace = namespaces.find((ns) => ns.name === namespace);
 
   if (!specificNamespace) {
     log
@@ -1123,7 +1133,7 @@ export async function managePromNamespaceAlarms(
       .str('function', 'managePromNamespaceAlarms')
       .str('namespace', namespace)
       .msg(
-        'Created new namespace and added rules. Waiting 90 seconds to allow namespace to propagate.'
+        'Created new namespace and added rules. Waiting 90 seconds to allow namespace to propagate.',
       );
     await wait(90000); // Wait for 90 seconds after creating the namespace
     return;
@@ -1147,7 +1157,7 @@ export async function managePromNamespaceAlarms(
       .str('function', 'managePromNamespaceAlarms')
       .str('namespace', namespace)
       .msg(
-        'Namespace is empty. Deleting and recreating it with updated rules.'
+        'Namespace is empty. Deleting and recreating it with updated rules.',
       );
 
     const deleteNamespaceCommand = new DeleteRuleGroupsNamespaceCommand({
@@ -1178,21 +1188,21 @@ export async function managePromNamespaceAlarms(
         .err(error)
         .msg('Failed to delete empty namespace.');
       throw new Error(
-        `Failed to delete empty namespace: ${error}. Function will be unable to proceed.`
+        `Failed to delete empty namespace: ${error}. Function will be unable to proceed.`,
       );
     }
   }
 
   // Find the rule group within the namespace or create a new one
   const ruleGroup = nsDetails.groups.find(
-    (rg): rg is RuleGroup => rg.name === ruleGroupName
+    (rg): rg is RuleGroup => rg.name === ruleGroupName,
   ) || {name: ruleGroupName, rules: []};
 
   // Iterate over the alarm configurations and update or add rules
   for (const config of alarmConfigs) {
     // Find the index of the existing rule with the same name
     const existingRuleIndex = ruleGroup.rules.findIndex(
-      (rule): rule is Rule => rule.alert === config.alarmName
+      (rule): rule is Rule => rule.alert === config.alarmName,
     );
 
     if (existingRuleIndex !== -1) {
@@ -1207,7 +1217,7 @@ export async function managePromNamespaceAlarms(
           .str('existingRuleIndex', ruleGroup.rules[existingRuleIndex].expr)
           .str('updated rule', config.alarmQuery)
           .msg(
-            'Rule exists but expression has changed. Updating the rule expression.'
+            'Rule exists but expression has changed. Updating the rule expression.',
           );
         ruleGroup.rules[existingRuleIndex].expr = config.alarmQuery;
       } else {
@@ -1280,7 +1290,7 @@ export async function managePromNamespaceAlarms(
 export async function deletePromRulesForService(
   promWorkspaceId: string,
   service: string,
-  serviceIdentifiers: string[]
+  serviceIdentifiers: string[],
 ): Promise<void> {
   const namespace = `AutoAlarm-${service.toUpperCase()}`;
   const ruleGroupName = 'AutoAlarm';
@@ -1294,6 +1304,8 @@ export async function deletePromRulesForService(
   while (retryCount < maxRetries) {
     try {
       // checking if the workspace exists. If not, we can return early.
+      // TODO Fix the use of any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const workspaceDescription: any =
         await verifyPromWorkspace(promWorkspaceId);
       if (!workspaceDescription) {
@@ -1314,7 +1326,7 @@ export async function deletePromRulesForService(
       }
 
       const ruleGroup = nsDetails.groups.find(
-        (rg): rg is RuleGroup => rg.name === ruleGroupName
+        (rg): rg is RuleGroup => rg.name === ruleGroupName,
       );
 
       if (!ruleGroup) {
@@ -1328,13 +1340,13 @@ export async function deletePromRulesForService(
 
       // Filter out rules associated with any of the serviceIdentifiers
       ruleGroup.rules = ruleGroup.rules.filter(
-        rule => !serviceIdentifiers.some(id => rule.alert.includes(id))
+        (rule) => !serviceIdentifiers.some((id) => rule.alert.includes(id)),
       );
 
       if (ruleGroup.rules.length === 0) {
         // If no rules are left, remove the rule group from the namespace
         nsDetails.groups = nsDetails.groups.filter(
-          rg => rg.name !== ruleGroupName
+          (rg) => rg.name !== ruleGroupName,
         );
         log
           .info()
@@ -1404,16 +1416,16 @@ export async function deletePromRulesForService(
         .msg(
           `Retry ${retryCount + 1}/${maxRetries} failed. Retrying in ${
             retryDelay / 1000
-          } seconds...`
+          } seconds...`,
         );
 
       if (++retryCount >= maxRetries) {
         throw new Error(
-          `Failed to complete operation after ${maxRetries} retries (${totalRetryTimeMinutes} minutes): ${error}`
+          `Failed to complete operation after ${maxRetries} retries (${totalRetryTimeMinutes} minutes): ${error}`,
         );
       }
 
-      await new Promise(resolve => setTimeout(resolve, retryDelay));
+      await new Promise((resolve) => setTimeout(resolve, retryDelay));
     }
   }
 }
