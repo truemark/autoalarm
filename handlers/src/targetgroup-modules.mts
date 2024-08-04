@@ -293,17 +293,6 @@ async function checkAndManageTGStatusAlarms(
       if (defaults.stat) {
         // Create critical alarm
         if (defaults.stat !== '-' && defaults.stat !== 'disabled') {
-          //await createOrUpdateAnomalyDetectionAlarm(
-          //  alarmName,
-          //  'TargetGroup',
-          //  targetGroupName,
-          //  config.metricName,
-          //  config.namespace,
-          //  defaults.stat,
-          //  defaults.duration,
-          //  defaults.periods,
-          //  AlarmClassification.Critical
-          //);
           try {
             // Create anomaly detector with the latest parameters
             const anomalyDetectorInput = {
