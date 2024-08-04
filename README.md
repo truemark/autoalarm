@@ -54,49 +54,49 @@ The system is event-driven, responding to EC2 state change notifications and tag
 ## Supported Tags
 Note that tagging format is different for ALBs, Target Groups and SQS which require a '/' delimiter in place of the '|' delimiter used for EC2 instances. This is a limitation on the AWS side.
 
-| Tag                                                    | Default Value             | Enabled By Default   | CloudWatch Only                 |
-|--------------------------------------------------------|---------------------------|----------------------|---------------------------------|
-| `autoalarm:enabled`                                    | `false`                   | No                   | N/A                             |
-| `autoalarm:alb-4xx-count`                              | "-\/-\/60\/2\/Sum         | No                   | Yes                             |
-| `autoalarm:alb-4xx-count-anomaly`                      | "p90/60/2"                | No                   | Yes                             | 
-| `autoalarm:alb-5xx-count`                              | "-\/-\/60\/2\/Sum         | No                   | Yes                             |
-| `autoalarm:alb-5xx-count-anomaly`                      | "p90/60/2"                | Yes                  | Yes                             |
-| `autoalarm:alb-request-count`                          | "-\/-\/60\/2\\/Sum        | No                   | Yes                             |
-| `autoalarm:alb-request-count-anomaly`                  | "p90/60/2"                | No                   | Yes                             |
-| `autoalarm:ec2-cpu`                                    | "95\/98\/300\/2\/p90"     | Yes                  | No                              |
-| `autoalarm:ec2-cpu-anomaly`                            | "p90\|60\|2"              | No                   | Yes                             |
-| `autoalarm:ec2-memory`                                 | "96\/98\/300\/2\/p90"     | Yes                  | No                              |
-| `autoalarm:ec2-memory-anomaly`                         | "p90\|60\|2"              | No                   | Yes (Requires CloudWatch Agent) |
-| `autoalarm:ec2-storage`                                | "96\/98\/300\/2\/Maximum" | Yes                  | No                              |
-| `autoalarm:ec2-storage-anomaly`                        | "p90\|60\|2"              | No                   | Yes (Requires CloudWatch Agent) |
-| `autoalarm:sqs-number-of-empty-receives`               | "-\/-\/300\/1\/Sum"       | No                   | Yes                             |
-| `autoalarm:sqs-number-of-empty-receives-anomaly`       | "Sum\/300\/1"             | No                   | Yes                             |
-| `autoalarm:sqs-number-of-messages-delayed`             | "-\/-\/300\/1\/Maximum"   | No                   | Yes                             |
-| `autoalarm:sqs-number-of-messages-delayed-anomaly`     | "Maximum\/300\/1"         | No                   | Yes                             |
-| `autoalarm:sqs-number-of-messages-deleted`             | "-\/-\/300\/1\/Sum"       | No                   | Yes                             |
-| `autoalarm:sqs-number-of-messages-deleted-anomaly`     | "Sum\/300\/1"             | No                   | Yes                             |
-| `autoalarm:sqs-number-of-messages-not-visible`         | "-\/-\/300\/1\/Maximum"   | No                   | Yes                             |
-| `autoalarm:sqs-number-of-messages-not-visible-anomaly` | "Maximum\/300\/1"         | No                   | Yes                             |
-| `autoalarm:sqs-number-of-messages-received`            | "-\/-\/300\/1\/Sum"       | No                   | Yes                             |
-| `autoalarm:sqs-number-of-messages-received-anomaly`    | "Sum\/300\/1"             | No                   | Yes                             |
-| `autoalarm:sqs-number-of-messages-sent`                | "-\/-\/300\/1\/Sum"       | No                   | Yes                             |
-| `autoalarm:sqs-number-of-messages-sent-anomaly`        | "Sum\/300\/1"             | No                   | Yes                             |
-| `autoalarm:sqs-number-of-messages-visible`             | "-\/-\/300\/1\/Maximum"   | No                   | Yes                             |
-| `autoalarm:sqs-number-of-messages-visible-anomaly`     | "Maximum\/300\/1"         | No                   | Yes                             |
-| `autoalarm:sqs-sent-messsge-size`                      | "-\/-\/300\/1\/Average"   | No                   | Yes                             |
-| `autoalarm:sqs-sent-message-size-anomaly`              | "Average\/300\/1"         | No                   | Yes                             |
-| `autoalarm:sqs-age-of-oldest-message`                  | "-\/-\/300\/1\/Maximum"   | No                   | Yes                             |
-| `autoalarm:sqs-age-of-oldest-message-anomaly`          | "Maximum\/300\/1"         | Yes                  | Yes                             |
-| `autoalarm:tg-4xx-count`                               | "-\/-\/60\/2\/Sum"        | No                   | Yes                             |
-| `autoalarm:tg-4xx-count-anomaly`                       | "p90/60/2"                | No                   | Yes                             |
-| `autoalarm:tg-5xx-count`                               | "-\/-\/60\/2\/Sum"        | No                   | Yes                             |
-| `autoalarm:tg-5xx-count-anomaly`                       | "p90/60/2"                | Yes                  | Yes                             |
-| `autoalarm:tg-request-count`                           | "-\/-\/60\/2\/Sum"        | No                   | Yes                             |
-| `autoalarm:tg-request-count-anomaly`                   | "p90/60/2"                | No                   | Yes                             |
-| `autoalarm:tg-response-time`                           | "-\/-\/60\/2\/p90"        | No                   | Yes                             |
-| `autoalarm:tg-response-time-anomaly`                   | "p90/60/2"                | Yes                  | Yes                             |
-| `autoalarm:tg-unhealthy-host-count`                    | "-\/1\/60\/3\/Sum"        | Yes                  | Yes                             |
-| `autoalarm:tg-unhealthy-host-count-anomaly`            | "p90/60/2"                | No                   | Yes                             |
+| Tag                                           | Default Value             | Enabled By Default | CloudWatch Only                 |
+|-----------------------------------------------|---------------------------|--------------------|---------------------------------|
+| `autoalarm:enabled`                           | `false`                   | No                 | N/A                             |
+| `autoalarm:alb-4xx-count`                     | "-\/-\/60\/2\/Sum         | No                 | Yes                             |
+| `autoalarm:alb-4xx-count-anomaly`             | "p90/60/2"                | No                 | Yes                             | 
+| `autoalarm:alb-5xx-count`                     | "-\/-\/60\/2\/Sum         | No                 | Yes                             |
+| `autoalarm:alb-5xx-count-anomaly`             | "p90/60/2"                | Yes                | Yes                             |
+| `autoalarm:alb-request-count`                 | "-\/-\/60\/2\\/Sum        | No                 | Yes                             |
+| `autoalarm:alb-request-count-anomaly`         | "p90/60/2"                | No                 | Yes                             |
+| `autoalarm:ec2-cpu`                           | "95\/98\/300\/2\/p90"     | Yes                | No                              |
+| `autoalarm:ec2-cpu-anomaly`                   | "p90\|60\|2"              | No                 | Yes                             |
+| `autoalarm:ec2-memory`                        | "96\/98\/300\/2\/p90"     | Yes                | No                              |
+| `autoalarm:ec2-memory-anomaly` c              | "p90\|60\|2"              | No                 | Yes (Requires CloudWatch Agent) |
+| `autoalarm:ec2-storage`                       | "96\/98\/300\/2\/Maximum" | Yes                | No                              |
+| `autoalarm:ec2-storage-anomaly`               | "p90\|60\|2"              | No                 | Yes (Requires CloudWatch Agent) |
+| `autoalarm:sqs-empty-receives`                | "-\/-\/300\/1\/Sum"       | No                 | Yes                             |
+| `autoalarm:sqs-empty-receives-anomaly`        | "Sum\/300\/1"             | No                 | Yes                             |
+| `autoalarm:sqs-messages-delayed`              | "-\/-\/300\/1\/Maximum"   | No                 | Yes                             |
+| `autoalarm:sqs-messages-delayed-anomaly`      | "Maximum\/300\/1"         | No                 | Yes                             |
+| `autoalarm:sqs-messages-deleted`              | "-\/-\/300\/1\/Sum"       | No                 | Yes                             |
+| `autoalarm:sqs-messages-deleted-anomaly`      | "Sum\/300\/1"             | No                 | Yes                             |
+| `autoalarm:sqs-messages-not-visible`          | "-\/-\/300\/1\/Maximum"   | No                 | Yes                             |
+| `autoalarm:sqs-messages-not-visible-anomaly`  | "Maximum\/300\/1"         | No                 | Yes                             |
+| `autoalarm:sqs-messages-received`             | "-\/-\/300\/1\/Sum"       | No                 | Yes                             |
+| `autoalarm:sqs-messages-received-anomaly`     | "Sum\/300\/1"             | No                 | Yes                             |
+| `autoalarm:sqs-messages-sent`                 | "-\/-\/300\/1\/Sum"       | No                 | Yes                             |
+| `autoalarm:sqs-messages-sent-anomaly`         | "Sum\/300\/1"             | No                 | Yes                             |
+| `autoalarm:sqs-messages-visible`              | "-\/-\/300\/1\/Maximum"   | No                 | Yes                             |
+| `autoalarm:sqs-messages-visible-anomaly`      | "Maximum\/300\/1"         | Yes                | Yes                             |
+| `autoalarm:sqs-sent-messsge-size`             | "-\/-\/300\/1\/Average"   | No                 | Yes                             |
+| `autoalarm:sqs-sent-message-size-anomaly`     | "Average\/300\/1"         | No                 | Yes                             |
+| `autoalarm:sqs-age-of-oldest-message`         | "-\/-\/300\/1\/Maximum"   | No                 | Yes                             |
+| `autoalarm:sqs-age-of-oldest-message-anomaly` | "Maximum\/300\/1"         | Yes                | Yes                             |
+| `autoalarm:tg-4xx-count`                      | "-\/-\/60\/2\/Sum"        | No                 | Yes                             |
+| `autoalarm:tg-4xx-count-anomaly`              | "p90/60/2"                | No                 | Yes                             |
+| `autoalarm:tg-5xx-count`                      | "-\/-\/60\/2\/Sum"        | No                 | Yes                             |
+| `autoalarm:tg-5xx-count-anomaly`              | "p90/60/2"                | Yes                | Yes                             |
+| `autoalarm:tg-request-count`                  | "-\/-\/60\/2\/Sum"        | No                 | Yes                             |
+| `autoalarm:tg-request-count-anomaly`          | "p90/60/2"                | No                 | Yes                             |
+| `autoalarm:tg-response-time`                  | "-\/-\/60\/2\/p90"        | No                 | Yes                             |
+| `autoalarm:tg-response-time-anomaly`          | "p90/60/2"                | Yes                | Yes                             |
+| `autoalarm:tg-unhealthy-host-count`           | "-\/1\/60\/3\/Sum"        | Yes                | Yes                             |
+| `autoalarm:tg-unhealthy-host-count-anomaly`   | "p90/60/2"                | No                 | Yes                             |
 
 
 
