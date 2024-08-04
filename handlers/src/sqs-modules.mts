@@ -72,7 +72,7 @@ const metricConfigs: MetricConfig[] = [
     defaultValue: 'Maximum/300/1',
   },
   {
-    tagKey: 'sqs-number-of-messages-not-visible',
+    tagKey: 'sqs-messages-not-visible',
     metricName: 'ApproximateNumberOfMessagesNotVisible',
     namespace: 'AWS/SQS',
     isDefault: false,
@@ -80,7 +80,7 @@ const metricConfigs: MetricConfig[] = [
     defaultValue: '-/-/300/1/Maximum',
   },
   {
-    tagKey: 'sqs-number-of-messages-not-visible-anomaly',
+    tagKey: 'sqs-messages-not-visible-anomaly',
     metricName: 'ApproximateNumberOfMessagesNotVisible',
     namespace: 'AWS/SQS',
     isDefault: false,
@@ -88,7 +88,7 @@ const metricConfigs: MetricConfig[] = [
     defaultValue: 'Maximum/300/1',
   },
   {
-    tagKey: 'sqs-number-of-messages-visible',
+    tagKey: 'sqs-messages-visible',
     metricName: 'ApproximateNumberOfMessagesVisible',
     namespace: 'AWS/SQS',
     isDefault: false,
@@ -96,7 +96,7 @@ const metricConfigs: MetricConfig[] = [
     defaultValue: '-/-/300/1/Maximum',
   },
   {
-    tagKey: 'sqs-number-of-messages-visible-anomaly',
+    tagKey: 'sqs-messages-visible-anomaly',
     metricName: 'ApproximateNumberOfMessagesVisible',
     namespace: 'AWS/SQS',
     isDefault: true,
@@ -104,7 +104,7 @@ const metricConfigs: MetricConfig[] = [
     defaultValue: 'Maximum/300/1',
   },
   {
-    tagKey: 'sqs-number-of-empty-receives',
+    tagKey: 'sqs-empty-receives',
     metricName: 'NumberOfEmptyReceive',
     namespace: 'AWS/SQS',
     isDefault: false,
@@ -112,7 +112,7 @@ const metricConfigs: MetricConfig[] = [
     defaultValue: '-/-/300/1/Sum',
   },
   {
-    tagKey: 'sqs-number-of-empty-receives-anomaly',
+    tagKey: 'sqs-empty-receives-anomaly',
     metricName: 'NumberOfEmptyReceive',
     namespace: 'AWS/SQS',
     isDefault: false,
@@ -120,7 +120,7 @@ const metricConfigs: MetricConfig[] = [
     defaultValue: 'Sum/300/1',
   },
   {
-    tagKey: 'sqs-number-of-messages-deleted',
+    tagKey: 'sqs-messages-deleted',
     metricName: 'NumberOfMessagesDeleted',
     namespace: 'AWS/SQS',
     isDefault: false,
@@ -128,7 +128,7 @@ const metricConfigs: MetricConfig[] = [
     defaultValue: '-/-/300/1/Sum',
   },
   {
-    tagKey: 'sqs-number-of-messages-deleted-anomaly',
+    tagKey: 'sqs-messages-deleted-anomaly',
     metricName: 'NumberOfMessagesDeleted',
     namespace: 'AWS/SQS',
     isDefault: false,
@@ -136,7 +136,7 @@ const metricConfigs: MetricConfig[] = [
     defaultValue: 'Sum/300/1',
   },
   {
-    tagKey: 'sqs-number-of-messages-received',
+    tagKey: 'sqs-messages-received',
     metricName: 'NumberOfMessagesReceived',
     namespace: 'AWS/SQS',
     isDefault: false,
@@ -144,7 +144,7 @@ const metricConfigs: MetricConfig[] = [
     defaultValue: '-/-/300/1/Sum',
   },
   {
-    tagKey: 'sqs-number-of-messages-received-anomaly',
+    tagKey: 'sqs-messages-received-anomaly',
     metricName: 'NumberOfMessagesReceived',
     namespace: 'AWS/SQS',
     isDefault: false,
@@ -152,7 +152,7 @@ const metricConfigs: MetricConfig[] = [
     defaultValue: 'Sum/300/1',
   },
   {
-    tagKey: 'sqs-number-of-messages-sent',
+    tagKey: 'sqs-messages-sent',
     metricName: 'NumberOfMessagesSent',
     namespace: 'AWS/SQS',
     isDefault: false,
@@ -160,7 +160,7 @@ const metricConfigs: MetricConfig[] = [
     defaultValue: '-/-/300/1/Sum',
   },
   {
-    tagKey: 'sqs-number-of-messages-sent-anomaly',
+    tagKey: 'sqs-messages-sent-anomaly',
     metricName: 'NumberOfMessagesSent',
     namespace: 'AWS/SQS',
     isDefault: false,
