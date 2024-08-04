@@ -598,7 +598,7 @@ export async function parseTGEventAndCreateAlarms(event: any): Promise<{
     throw new Error('Load balancer ARN not found');
   }
   const lbArn = arnparser.parse(loadBalancerArn);
-  const loadBalancerName = lbArn.resource;
+  const loadBalancerName = lbArn.resource.replace('loadbalancer/', '');
   const arn = arnparser.parse(targetGroupArn);
   const targetGroupName = arn.resource;
   if (!targetGroupName) {
