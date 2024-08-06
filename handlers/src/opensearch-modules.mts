@@ -1,14 +1,21 @@
 import {OpenSearchClient, ListTagsCommand} from '@aws-sdk/client-opensearch';
 import * as logging from '@nr1e/logging';
-import {AlarmProps, Tag} from './types.mjs';
+import {Tag} from './types.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
-import {AlarmClassification, ValidOpenSearchState} from './enums.mjs';
+import {AlarmClassification} from './enums.mjs';
 import {
-  createOrUpdateCWAlarm,
   getCWAlarmsForInstance,
   deleteCWAlarm,
-  createOrUpdateAnomalyDetectionAlarm,
+  doesAlarmExist,
 } from './alarm-tools.mjs';
+import {
+  CloudWatchClient,
+  ComparisonOperator,
+  DeleteAlarmsCommand,
+  PutAnomalyDetectorCommand,
+  PutMetricAlarmCommand,
+  Statistic,
+} from '@aws-sdk/client-cloudwatch';
 
 const log: logging.Logger = logging.getLogger('opensearch-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -17,272 +24,187 @@ const openSearchClient: OpenSearchClient = new OpenSearchClient({
   region,
   retryStrategy,
 });
-const metricConfigs = [
-  {metricName: 'ClusterStatus.yellow', namespace: 'AWS/OpenSearchService'},
-  {metricName: 'ClusterStatus.red', namespace: 'AWS/OpenSearchService'},
-  {metricName: 'FreeStorageSpace', namespace: 'AWS/OpenSearchService'},
-  {metricName: 'JVMMemoryPressure', namespace: 'AWS/OpenSearchService'},
-  {metricName: 'CPUUtilization', namespace: 'AWS/OpenSearchService'},
-];
 
-const getDefaultThreshold = (metricName: string, type: AlarmClassification) => {
-  if (
-    metricName === 'ClusterStatus.yellow' ||
-    metricName === 'ClusterStatus.red'
-  ) {
-    return type === 'Critical' ? 1 : 0;
-  } else if (metricName === 'FreeStorageSpace') {
-    return type === 'Critical' ? 10 : 5;
-  } else if (metricName === 'JVMMemoryPressure') {
-    return type === 'Critical' ? 95 : 90;
-  } else if (metricName === 'CPUUtilization') {
-    return type === 'Critical' ? 95 : 90;
-  }
-  return 0;
+const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
+  region: region,
+  retryStrategy: retryStrategy,
+});
+
+type MetricConfig = {
+  tagKey: string;
+  metricName: string;
+  namespace: string;
+  isDefault: boolean;
+  anomaly: boolean;
+  defaultValue: string;
 };
 
-// Default values for duration and periods
-const defaultStaticDurationTime = 60; // e.g., 300 seconds
-const defaultStaticDurationPeriods = 2; // e.g., 5 periods
-const defaultAnomalyDurationTime = 60; // e.g., 300 seconds
-const defaultAnomalyDurationPeriods = 2; // e.g., 5 periods
-const defaultExtendedStatistic: string = 'p90';
+const metricConfigs = [
+  {
+    tagKey: 'os-yellow-cluster',
+    metricName: 'ClusterStatus.yellow',
+    namespace: 'AWS/ES',
+    isDefault: true,
+    anomaly: false,
+    defaultValue: '-/-/300/1/Maximum',
+  },
+  {
+    tagKey: 'os-yellow-cluster-anomaly',
+    metricName: 'ClusterStatus.yellow',
+    namespace: 'AWS/ES',
+    isDefault: true,
+    anomaly: true,
+    defaultValue: 'Maximum/300/1',
+  },
+  {
+    tagKey: 'os-red-cluster',
+    metricName: 'ClusterStatus.red',
+    namespace: 'AWS/ES',
+    isDefault: true,
+    anomaly: false,
+    defaultValue: '0-/-/300/1/Maximum',
+  },
+  {
+    tagKey: 'os-red-cluster-anomaly',
+    metricName: 'ClusterStatus.red',
+    namespace: 'AWS/ES',
+    isDefault: true,
+    anomaly: true,
+    defaultValue: 'Maximum/300/1',
+  },
+  {
+    tagKey: 'os-storage',
+    metricName: 'FreeStorageSpace',
+    namespace: 'AWS/ES',
+    isDefault: true,
+    anomaly: false,
+    defaultValue: '-/-/300/1/Maximum',
+  },
+  {
+    tagKey: 'os-storage-anomaly',
+    metricName: 'FreeStorageSpace',
+    namespace: 'AWS/ES',
+    isDefault: true,
+    anomaly: true,
+    defaultValue: 'Maximum/300/1',
+  },
+  {
+    tagKey: 'os-jvm-memory',
+    metricName: 'JVMMemoryPressure',
+    namespace: 'AWS/ES',
+    isDefault: true,
+    anomaly: false,
+    defaultValue: '-/-/300/1/Maximum',
+  },
+  {
+    tagKey: 'os-jvm-memory-anomaly',
+    metricName: 'JVMMemoryPressure',
+    namespace: 'AWS/ES',
+    isDefault: true,
+    anomaly: true,
+    defaultValue: 'Maximum/300/1',
+  },
+  {
+    tagKey: 'os-cpu',
+    metricName: 'CPUUtilization',
+    namespace: 'AWS/ES',
+    isDefault: true,
+    anomaly: false,
+    defaultValue: '-/-/300/1/Maximum',
+  },
+  {
+    tagKey: 'os-cpu-anomaly',
+    metricName: 'CPUUtilization',
+    namespace: 'AWS/ES',
+    isDefault: true,
+    anomaly: true,
+    defaultValue: 'Maximum/300/1',
+  },
+];
 
-async function getOSAlarmConfig(
-  domainName: string,
-  type: AlarmClassification,
-  service: string,
-  metricName: string,
-  tags: Tag,
-): Promise<{
-  alarmName: string;
-  staticThresholdAlarmName: string;
-  anomalyAlarmName: string;
-  extendedStatistic: string;
-  threshold: number;
-  durationStaticTime: number;
-  durationStaticPeriods: number;
-  durationAnomalyTime: number;
-  durationAnomalyPeriods: number;
-}> {
-  log
-    .info()
-    .str('function', 'getOSAlarmConfig')
-    .str('domainName', domainName)
-    .str('type', type)
-    .str('metricName', metricName)
-    .msg('Fetching alarm config');
+type TagDefaults = {
+  warning: number | undefined;
+  critical: number | undefined;
+  stat: string;
+  duration: number;
+  periods: number;
+};
 
-  // Initialize variables with default values
-  let threshold = getDefaultThreshold(metricName, type);
-  let extendedStatistic = defaultExtendedStatistic;
-  let durationStaticTime = defaultStaticDurationTime;
-  let durationStaticPeriods = defaultStaticDurationPeriods;
-  let durationAnomalyTime = defaultAnomalyDurationTime;
-  let durationAnomalyPeriods = defaultAnomalyDurationPeriods;
-
-  log
-    .info()
-    .str('function', 'getOSAlarmConfig')
-    .str('domainName', domainName)
-    .msg('Fetching alarm configuration');
-
-  let cwTagKey = '';
-  let anomalyTagKey = '';
-
-  switch (metricName) {
-    case 'ClusterStatus.yellow':
-      cwTagKey = 'autoalarm:cw-opensearch-yellow-cluster-status';
-      anomalyTagKey = 'autoalarm:anomaly-opensearch-yellow-status';
-      break;
-    case 'ClusterStatus.red':
-      cwTagKey = 'autoalarm:cw-opensearch-red-cluster-status';
-      anomalyTagKey = 'autoalarm:anomaly-opensearch-red-status';
-      break;
-    case 'FreeStorageSpace':
-      cwTagKey = 'autoalarm:cw-opensearch-storage';
-      anomalyTagKey = 'autoalarm:anomaly-opensearch-storage';
-      break;
-    case 'JVMMemoryPressure':
-      cwTagKey = 'autoalarm:cw-opensearch-jvm-memory';
-      anomalyTagKey = 'autoalarm:anomaly-opensearch-jvm-memory';
-      break;
-    case 'CPUUtilization':
-      cwTagKey = 'autoalarm:cw-opensearch-cpu';
-      anomalyTagKey = 'autoalarm:anomaly-opensearch-cpu';
-      break;
-    default:
-      log
-        .info()
-        .str('function', 'getOSAlarmConfig')
-        .str('domainName', domainName)
-        .str('metricName', metricName)
-        .msg('Invalid metric name');
-      break;
-  }
-  log
-    .info()
-    .str('function', 'getOSAlarmConfig')
-    .str('domainName', domainName)
-    .str('tags', JSON.stringify(tags))
-    .str('cwTagKey', cwTagKey)
-    .str('cwTagKey', cwTagKey)
-    .str('cwTagValue', tags[cwTagKey])
-    .str('anomalyTagKey', anomalyTagKey)
-    .str('anomalyTagValue', tags[anomalyTagKey])
-    .msg('Fetched instance tags');
-
-  // Extract and parse the tag value
-  if (tags[cwTagKey]) {
-    const staticValues = tags[cwTagKey].split('/');
-    log
-      .info()
-      .str('function', 'getOSAlarmConfig')
-      .str('domainName', domainName)
-      .str('tagKey', cwTagKey)
-      .str('tagValue', tags[cwTagKey])
-      .str('staticValues', JSON.stringify(staticValues))
-      .msg('Fetched static threshold tag values');
-
-    if (staticValues.length < 1 || staticValues.length > 4) {
-      log
-        .warn()
-        .str('function', 'getOSAlarmConfig')
-        .str('domainName', domainName)
-        .str('tagKey', cwTagKey)
-        .str('tagValue', tags[cwTagKey])
-        .msg(
-          'Invalid tag values/delimiters. Please use 4 values separated by a "/". Using default values',
-        );
-    } else {
-      switch (type) {
-        case 'Warning':
-          threshold =
-            staticValues[0] !== undefined &&
-            staticValues[0] !== '' &&
-            !isNaN(parseInt(staticValues[0], 10))
-              ? parseInt(staticValues[0], 10)
-              : getDefaultThreshold(metricName, type);
-          durationStaticTime =
-            staticValues[2] !== undefined &&
-            staticValues[2] !== '' &&
-            !isNaN(parseInt(staticValues[2], 10))
-              ? parseInt(staticValues[2], 10)
-              : defaultStaticDurationTime;
-          durationStaticPeriods =
-            staticValues[3] !== undefined &&
-            staticValues[3] !== '' &&
-            !isNaN(parseInt(staticValues[3], 10))
-              ? parseInt(staticValues[3], 10)
-              : defaultStaticDurationPeriods;
-          break;
-        case 'Critical':
-          threshold =
-            staticValues[1] !== undefined &&
-            staticValues[1] !== '' &&
-            !isNaN(parseInt(staticValues[1], 10))
-              ? parseInt(staticValues[1], 10)
-              : getDefaultThreshold(metricName, type);
-          durationStaticTime =
-            staticValues[2] !== undefined &&
-            staticValues[2] !== '' &&
-            !isNaN(parseInt(staticValues[2], 10))
-              ? parseInt(staticValues[2], 10)
-              : defaultStaticDurationTime;
-          durationStaticPeriods =
-            staticValues[3] !== undefined &&
-            staticValues[3] !== '' &&
-            !isNaN(parseInt(staticValues[3], 10))
-              ? parseInt(staticValues[3], 10)
-              : defaultStaticDurationPeriods;
-          break;
+function getTagDefaults(config: MetricConfig, tagValue: string): TagDefaults {
+  const parts = tagValue ? tagValue.split('/') : [];
+  const defaultParts = config.defaultValue.split('/');
+  const defaults = defaultParts.map((defaultValue, index) => {
+    if (parts.length > index) {
+      if (parts[index] !== '') {
+        return parts[index];
       }
     }
-  }
-  // Extract and parse the anomaly detection tag value
-  if (tags[anomalyTagKey]) {
-    const values = tags[anomalyTagKey].split('|');
-    log
-      .info()
-      .str('function', 'getOSAlarmConfig')
-      .str('domainName', domainName)
-      .str('tagKey', anomalyTagKey)
-      .str('tagValue', tags[anomalyTagKey])
-      .str('values', JSON.stringify(values))
-      .msg('Fetched anomaly detection tag values');
-    if (values.length < 1 || values.length > 3) {
-      log
-        .warn()
-        .str('function', 'getOSAlarmConfig')
-        .str('domainName', domainName)
-        .str('tagKey', anomalyTagKey)
-        .str('tagValue', tags[anomalyTagKey])
-        .msg(
-          'Invalid tag values/delimiters. Please use 3 values separated by a "|". Using default values',
-        );
-    } else {
-      extendedStatistic =
-        typeof values[0] === 'string' && values[0].trim() !== ''
-          ? values[0].trim()
-          : defaultExtendedStatistic;
-      durationAnomalyTime =
-        values[1] !== undefined &&
-        values[1] !== '' &&
-        !isNaN(parseInt(values[1], 10))
-          ? parseInt(values[1], 10)
-          : defaultAnomalyDurationTime;
-      durationAnomalyPeriods =
-        values[2] !== undefined &&
-        values[2] !== '' &&
-        !isNaN(parseInt(values[2], 10))
-          ? parseInt(values[2], 10)
-          : defaultAnomalyDurationPeriods;
-      log
-        .info()
-        .str('function', 'getOSAlarmConfig')
-        .str('domainName', domainName)
-        .str('tagKey', anomalyTagKey)
-        .str('tagValue', tags[anomalyTagKey])
-        .str('extendedStatistic', extendedStatistic)
-        .num('durationAnomalyTime', durationAnomalyTime)
-        .num('durationAnomalyPeriods', durationAnomalyPeriods)
-        .msg('Parsed anomaly detection tag values');
+    return defaultValue;
+  });
+  if (config.anomaly) {
+    // Take the default value which we know is good
+    let duration = Number.parseInt(defaultParts[1]);
+    try {
+      // Override the default if it's a valid number
+      duration = Number.parseInt(defaults[1]);
+    } catch (err) {
+      // do nothing
     }
+    // Take the default value which we know is good
+    let periods = Number.parseInt(defaultParts[2]);
+    try {
+      // Override the default is it's a valid number
+      periods = Number.parseInt(defaults[2]);
+    } catch (err) {
+      // do nothing
+    }
+    return {
+      warning: undefined,
+      critical: undefined,
+      stat: defaults[0],
+      duration,
+      periods,
+    };
+  } else {
+    let warning = undefined;
+    try {
+      // If we can't parse the number, we won't create the alarm and it remains undefined
+      warning = Number.parseInt(defaults[0]);
+    } catch (err) {
+      // do nothing
+    }
+    let critical = undefined;
+    try {
+      // If we can't parse the number, we won't create the alarm and it remains undefined
+      critical = Number.parseInt(defaults[1]);
+    } catch (err) {
+      // do nothing
+    }
+    let duration = Number.parseInt(defaultParts[2]);
+    try {
+      // If we can't parse the number, we won't create the alarm and it remains undefined
+      duration = Number.parseInt(defaults[2]);
+    } catch (err) {
+      // do nothing
+    }
+    let periods = Number.parseInt(defaultParts[3]);
+    try {
+      // If we can't parse the number, we won't create the alarm and it remains undefined
+      periods = Number.parseInt(defaults[3]);
+    } catch (err) {
+      // do nothing
+    }
+    return {
+      warning,
+      critical,
+      duration,
+      periods,
+      stat: defaults[4],
+    };
   }
-  log
-    .info()
-    .str('function', 'getOSAlarmConfig')
-    .str('domainName', domainName)
-    .str('type', type)
-    .str('metric', metricName)
-    .str(
-      'staticThresholdAlarmName',
-      `AutoAlarm-OpenSearch-StaticThreshold-${domainName}-${type}-${metricName.toUpperCase()}`,
-    )
-    .str(
-      'anomalyAlarmName',
-      `AutoAlarm-OpenSearch-AnomalyDetection-${domainName}-${type}-${metricName.toUpperCase()}`,
-    )
-    .str('extendedStatistic', extendedStatistic)
-    .num('threshold', threshold)
-    .num('durationStaticTime', durationStaticTime)
-    .num('durationStaticPeriods', durationStaticPeriods)
-    .num('durationAnomalyTime', durationAnomalyTime)
-    .num('durationAnomalyPeriods', durationAnomalyPeriods)
-    .msg('Fetched alarm configuration');
-
-  return {
-    alarmName: `AutoAlarm-${service.toUpperCase()}-${domainName}-${type}-${metricName.toUpperCase()}`,
-    staticThresholdAlarmName: `AutoAlarm-${service.toUpperCase()}-StaticThreshold-${domainName}-${type}-${metricName.toUpperCase()}`,
-    anomalyAlarmName: `AutoAlarm-${service.toUpperCase()}-AnomalyDetection-${domainName}-${type}-${metricName.toUpperCase()}`,
-    extendedStatistic,
-    threshold,
-    durationStaticTime,
-    durationStaticPeriods,
-    durationAnomalyTime,
-    durationAnomalyPeriods,
-  };
 }
+
+const extendedStatRegex = /^p.*|^tm.*|^tc.*|^ts.*|^wm.*|^IQM$/;
 
 export async function fetchOpenSearchTags(domainArn: string): Promise<Tag> {
   try {
@@ -319,153 +241,206 @@ export async function fetchOpenSearchTags(domainArn: string): Promise<Tag> {
 
 async function checkAndManageOpenSearchStatusAlarms(
   domainName: string,
+  accountID: string,
   tags: Tag,
 ) {
-  if (tags['autoalarm:enabled'] === 'false' || !tags['autoalarm:enabled']) {
-    const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
-      'OpenSearch',
-      domainName,
-    );
+  const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
+
+  log.info().msg(accountID);
+  if (!isAlarmEnabled) {
+    const activeAutoAlarms = await getCWAlarmsForInstance('OS', domainName);
     await Promise.all(
       activeAutoAlarms.map((alarmName) => deleteCWAlarm(alarmName, domainName)),
     );
     log.info().msg('Status check alarm creation skipped due to tag settings.');
-  } else if (tags['autoalarm:enabled'] === undefined) {
+    return;
+  }
+
+  if (!isAlarmEnabled) {
+    const activeAutoAlarms = await getCWAlarmsForInstance('OS', domainName);
+    await Promise.all(
+      activeAutoAlarms.map((alarmName) => deleteCWAlarm(alarmName, domainName)),
+    );
+    log.info().msg('Status check alarm creation skipped due to tag settings.');
+  }
+
+  // Check and manage alarms for each metric configuration
+  for (const config of metricConfigs) {
     log
       .info()
-      .msg(
-        'Status check alarm creation skipped due to missing autoalarm:enabled tag.',
-      );
-    return;
-  } else {
-    for (const config of metricConfigs) {
-      const {metricName, namespace} = config;
-      let cwTagKey = '';
-      let anomalyTagKey = '';
-      switch (metricName) {
-        case 'ClusterStatus.yellow':
-          cwTagKey = 'autoalarm:cw-opensearch-yellow-cluster-status';
-          anomalyTagKey = 'autoalarm:anomaly-opensearch-yellow-status';
-          break;
-        case 'ClusterStatus.red':
-          cwTagKey = 'autoalarm:cw-opensearch-red-cluster-status';
-          anomalyTagKey = 'autoalarm:anomaly-opensearch-red-status';
-          break;
-        case 'FreeStorageSpace':
-          cwTagKey = 'autoalarm:cw-opensearch-storage';
-          anomalyTagKey = 'autoalarm:anomaly-opensearch-storage';
-          break;
-        case 'JVMMemoryPressure':
-          cwTagKey = 'autoalarm:cw-opensearch-jvm-memory';
-          anomalyTagKey = 'autoalarm:anomaly-opensearch-jvm-memory';
-          break;
-        case 'CPUUtilization':
-          cwTagKey = 'autoalarm:cw-opensearch-cpu';
-          anomalyTagKey = 'autoalarm:anomaly-opensearch-cpu';
-          break;
-        default:
-          log
-            .info()
-            .str('function', 'getOSAlarmConfig')
-            .str('domainName', domainName)
-            .str('metricName', metricName)
-            .msg('Invalid metric name');
-          break;
-      }
+      .str('function', 'checkAndManageOpenSearchStatusAlarms')
+      .obj('config', config)
+      .str('domainName', domainName)
+      .msg('Tag values before processing');
 
+    const tagValue = tags[`autoalarm:${config.tagKey}`];
+
+    if (!config.isDefault && tagValue === undefined) {
       log
         .info()
-        .str('function', 'checkAndManageOpenSearchStatusAlarms')
-        .str('domainName', domainName)
-        .str('cwTagKey', cwTagKey)
-        .str('cwTagValue', tags[cwTagKey] || 'undefined')
-        .str('anomalyTagKey', anomalyTagKey)
-        .str('anomalyTagValue', tags[anomalyTagKey] || 'undefined')
-        .msg('Tag values before processing');
-      for (const type of ['Warning', 'Critical'] as AlarmClassification[]) {
-        const {
-          staticThresholdAlarmName,
-          anomalyAlarmName,
-          extendedStatistic,
-          threshold,
-          durationStaticTime,
-          durationStaticPeriods,
-          durationAnomalyTime,
-          durationAnomalyPeriods,
-        } = await getOSAlarmConfig(
-          domainName,
-          type,
-          'OpenSearch',
-          metricName,
-          tags,
-        );
-        await createOrUpdateAnomalyDetectionAlarm(
-          anomalyAlarmName,
-          'OpenSearch',
-          domainName,
-          metricName,
-          namespace,
-          extendedStatistic,
-          durationAnomalyTime,
-          durationAnomalyPeriods,
-          'Critical' as AlarmClassification,
-        );
-        // Check and create or delete static threshold alarm based on tag values
-        if (
-          type === 'Warning' &&
-          (!tags[cwTagKey] ||
-            tags[cwTagKey].split('/')[0] === undefined ||
-            tags[cwTagKey].split('/')[0] === '' ||
-            !tags[cwTagKey].split('/')[0])
-        ) {
-          log
-            .info()
-            .str('function', 'checkAndManageOpenSearchStatusAlarms')
-            .str('domainName', domainName)
-            .str(cwTagKey, tags[cwTagKey])
-            .msg(
-              `OS alarm threshold for ${metricName} Warning is not defined. Skipping static ${metricName} Warning alarm creation.`,
-            );
-          await deleteCWAlarm(staticThresholdAlarmName, domainName);
-        } else if (
-          type === 'Critical' &&
-          (!tags[cwTagKey] ||
-            tags[cwTagKey].split('/')[1] === '' ||
-            tags[cwTagKey].split('/')[1] === undefined ||
-            !tags[cwTagKey].split('/')[1])
-        ) {
-          log
-            .info()
-            .str('function', 'checkAndManageOpenSearchStatusAlarms')
-            .str('domainName', domainName)
-            .str(cwTagKey, tags[cwTagKey])
-            .msg(
-              `OS alarm threshold for ${metricName} Critical is not defined. Skipping static ${metricName} Critical alarm creation.`,
-            );
-          await deleteCWAlarm(staticThresholdAlarmName, domainName);
-        } else {
-          const alarmProps: AlarmProps = {
-            threshold: threshold,
-            period: 60,
-            namespace: namespace,
-            evaluationPeriods: 5,
-            metricName: metricName,
-            dimensions: [{Name: 'DomainName', Value: domainName}],
-          };
+        .obj('config', config)
+        .msg('Not default and tag value is undefined, skipping');
+      continue; // not a default and not overridden
+    }
 
-          await createOrUpdateCWAlarm(
-            staticThresholdAlarmName,
-            domainName,
-            alarmProps,
-            threshold,
-            durationStaticTime,
-            durationStaticPeriods,
-            'Maximum',
-            'ignore',
-            // TODO This need to be fixed. Don't use //@ts-ignore
-            // type as AlarmClassification,
-          );
+    const defaults = getTagDefaults(config, tagValue);
+    if (config.anomaly) {
+      const alarmName = `AutoAlarm-OS-${domainName}-${config.metricName}-Anomaly-Critical`;
+      if (defaults.stat) {
+        // Create critical alarm
+        if (defaults.stat !== '-' && defaults.stat !== 'disabled') {
+          try {
+            // Create anomaly detector with the latest parameters
+            const anomalyDetectorInput = {
+              Namespace: config.namespace,
+              MetricName: config.metricName,
+              Dimensions: [
+                {
+                  Name: 'DomainName',
+                  Value: domainName,
+                },
+                {
+                  Name: 'ClientId',
+                  Value: accountID,
+                },
+              ],
+              Stat: defaults.stat,
+              Configuration: {
+                MetricTimezone: 'UTC',
+              },
+            };
+            log
+              .debug()
+              .obj('input', anomalyDetectorInput)
+              .msg('Sending PutAnomalyDetectorCommand');
+            await cloudWatchClient.send(
+              new PutAnomalyDetectorCommand(anomalyDetectorInput),
+            );
+
+            // Create anomaly detection alarm
+            const metricAlarmInput = {
+              AlarmName: alarmName,
+              ComparisonOperator: ComparisonOperator.GreaterThanUpperThreshold,
+              EvaluationPeriods: defaults.periods,
+              Metrics: [
+                {
+                  Id: 'primaryMetric',
+                  MetricStat: {
+                    Metric: {
+                      Namespace: config.namespace,
+                      MetricName: config.metricName,
+                      Dimensions: [
+                        {
+                          Name: 'DomainName',
+                          Value: domainName,
+                        },
+                        {
+                          Name: 'ClientId',
+                          Value: accountID,
+                        },
+                      ],
+                    },
+                    Period: defaults.duration,
+                    Stat: defaults.stat,
+                  },
+                },
+                {
+                  Id: 'anomalyDetectorBand',
+                  Expression: 'ANOMALY_DETECTION_BAND(primaryMetric)',
+                },
+              ],
+              ThresholdMetricId: 'anomalyDetectorBand',
+              ActionsEnabled: false,
+              Tags: [{Key: ' severity', Value: AlarmClassification.Critical}],
+              TreatMissingData: 'ignore', // Adjust as needed
+            };
+            await cloudWatchClient.send(
+              new PutMetricAlarmCommand(metricAlarmInput),
+            );
+
+            log
+              .info()
+              .str('function', 'createOrUpdateAnomalyDetectionAlarm')
+              .str('alarmName', alarmName)
+              .obj('anomalyDetectorInput', anomalyDetectorInput)
+              .obj('metricAlarmInput', metricAlarmInput)
+              .msg(`${alarmName} Anomaly Detection Alarm created or updated.`);
+          } catch (e) {
+            log
+              .error()
+              .str('function', 'createOrUpdateAnomalyDetectionAlarm')
+              .err(e)
+              .str('alarmName', alarmName)
+              .msg(
+                `Failed to create or update ${alarmName} anomaly detection alarm due to an error ${e}`,
+              );
+          }
         }
+      } else if (await doesAlarmExist(alarmName)) {
+        await cloudWatchClient.send(
+          new DeleteAlarmsCommand({AlarmNames: [alarmName]}),
+        );
+      }
+    } else {
+      const alarmNamePrefix = `AutoAlarm-OS-${domainName}-${config.metricName}`;
+      // Create warning alarm
+      if (defaults.warning) {
+        await cloudWatchClient.send(
+          new PutMetricAlarmCommand({
+            AlarmName: `${alarmNamePrefix}-Warning`,
+            ComparisonOperator: 'GreaterThanThreshold',
+            EvaluationPeriods: defaults.periods,
+            MetricName: config.metricName,
+            Namespace: config.namespace,
+            Period: defaults.duration,
+            ...(extendedStatRegex.test(defaults.stat)
+              ? {ExtendedStatistic: defaults.stat}
+              : {Statistic: defaults.stat as Statistic}),
+            Threshold: defaults.warning,
+            ActionsEnabled: false,
+            Dimensions: [
+              {Name: 'DomainName', Value: domainName},
+              {Name: 'ClientId', Value: accountID},
+            ],
+            Tags: [{Key: 'severity', Value: 'Warning'}],
+            TreatMissingData: 'ignore',
+          }),
+        );
+      } else if (await doesAlarmExist(`${alarmNamePrefix}-Warning`)) {
+        await cloudWatchClient.send(
+          new DeleteAlarmsCommand({AlarmNames: [`${alarmNamePrefix}-Warning`]}),
+        );
+      }
+
+      // Create critical alarm
+      if (defaults.critical) {
+        await cloudWatchClient.send(
+          new PutMetricAlarmCommand({
+            AlarmName: `${alarmNamePrefix}-Critical`,
+            ComparisonOperator: 'GreaterThanThreshold',
+            EvaluationPeriods: defaults.periods,
+            MetricName: config.metricName,
+            Namespace: config.namespace,
+            Period: defaults.duration,
+            ...(extendedStatRegex.test(defaults.stat)
+              ? {ExtendedStatistic: defaults.stat}
+              : {Statistic: defaults.stat as Statistic}),
+            Threshold: defaults.critical,
+            ActionsEnabled: false,
+            Dimensions: [
+              {Name: 'DomainName', Value: domainName},
+              {Name: 'ClientId', Value: accountID},
+            ],
+            Tags: [{Key: 'severity', Value: 'Critical'}],
+            TreatMissingData: 'ignore',
+          }),
+        );
+      } else if (await doesAlarmExist(`${alarmNamePrefix}-Critical`)) {
+        await cloudWatchClient.send(
+          new DeleteAlarmsCommand({
+            AlarmNames: [`${alarmNamePrefix}-Critical`],
+          }),
+        );
       }
     }
   }
@@ -473,15 +448,16 @@ async function checkAndManageOpenSearchStatusAlarms(
 
 export async function manageOpenSearchAlarms(
   domainName: string,
+  accountID: string,
   tags: Tag,
 ): Promise<void> {
-  await checkAndManageOpenSearchStatusAlarms(domainName, tags);
+  await checkAndManageOpenSearchStatusAlarms(domainName, accountID, tags);
 }
 
 export async function manageInactiveOpenSearchAlarms(domainName: string) {
   try {
     const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
-      'OpenSearch',
+      'OS',
       domainName,
     );
     await Promise.all(
@@ -493,20 +469,136 @@ export async function manageInactiveOpenSearchAlarms(domainName: string) {
   }
 }
 
-export async function getOpenSearchState(
-  // TODO Fix the use of any
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  event: any,
-): Promise<{domainArn: string; state: ValidOpenSearchState; tags: Tag}> {
-  const domainArn = event.detail['domain-arn'];
-  const state = event.detail.state;
-  const tags = await fetchOpenSearchTags(domainArn);
+function extractOSDomainNameFromArn(arn: string): string {
+  const regex = /domain\/([^/]+)$/;
+  const match = arn.match(regex);
+  return match ? match[1] : '';
+}
 
-  if (domainArn && state === ValidOpenSearchState.Active) {
-    await manageOpenSearchAlarms(domainArn, tags);
-  } else if (state === ValidOpenSearchState.Deleted) {
-    await manageInactiveOpenSearchAlarms(domainArn);
+function extractAccountIdFromArn(arn: string): string {
+  const parts = arn.split(':');
+  return parts.length > 4 ? parts[4] : '';
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function parseOSEventAndCreateAlarms(event: any): Promise<{
+  domainArn: string;
+  accountID: string;
+  eventType: string;
+  tags: Record<string, string>;
+}> {
+  let domainArn: string = '';
+  let eventType: string = '';
+  let tags: Record<string, string> = {};
+
+  switch (event['detail-type']) {
+    case 'Tag Change on Resource':
+      domainArn = event.resources[0];
+      eventType = 'Domain TagChange';
+      tags = event.detail.tags || {};
+      log
+        .info()
+        .str('function', 'parseOSEventAndCreateAlarms')
+        .str('eventType', eventType)
+        .str('domainArn', domainArn)
+        .str('changedTags', JSON.stringify(event.detail['changed-tag-keys']))
+        .msg('Processing Tag Change event');
+      break;
+
+    case 'AWS API Call via CloudTrail':
+      switch (event.detail.eventName) {
+        case 'CreateDomain':
+          domainArn = event.detail.responseElements?.domain?.arn;
+          eventType = 'Create';
+          log
+            .info()
+            .str('function', 'parseOSEventAndCreateAlarms')
+            .str('eventType', 'Create')
+            .str('domainArn', domainArn)
+            .str('requestId', event.detail.requestID)
+            .msg('Processing CreateDomain event');
+          if (domainArn) {
+            tags = await fetchOpenSearchTags(domainArn);
+            log
+              .info()
+              .str('function', 'parseOSEventAndCreateAlarms')
+              .str('domainArn', domainArn)
+              .str('tags', JSON.stringify(tags))
+              .msg('Fetched tags for new domain');
+          } else {
+            log
+              .warn()
+              .str('function', 'parseOSEventAndCreateAlarms')
+              .str('eventType', 'Create')
+              .msg('DomainArn not found in CreateDomain event');
+          }
+          break;
+
+        case 'DeleteDomain':
+          domainArn = event.detail.requestParameters?.domainArn;
+          eventType = 'Delete';
+          log
+            .info()
+            .str('function', 'parseOSEventAndCreateAlarms')
+            .str('eventType', 'Delete')
+            .str('domainArn', domainArn)
+            .str('requestId', event.detail.requestID)
+            .msg('Processing DeleteDomain event');
+          break;
+
+        default:
+          log
+            .warn()
+            .str('function', 'parseOSEventAndCreateAlarms')
+            .str('eventName', event.detail.eventName)
+            .str('requestId', event.detail.requestID)
+            .msg('Unexpected CloudTrail event type');
+      }
+      break;
+
+    default:
+      log
+        .warn()
+        .str('function', 'parseOSEventAndCreateAlarms')
+        .str('detail-type', event['detail-type'])
+        .msg('Unexpected event type');
   }
 
-  return {domainArn, state, tags};
+  const domainName = extractOSDomainNameFromArn(domainArn);
+  const accountID = extractAccountIdFromArn(domainArn);
+  if (!domainName) {
+    log
+      .error()
+      .str('function', 'parseOSEventAndCreateAlarms')
+      .str('domainArn', domainArn)
+      .msg('Extracted domain name is empty');
+  }
+
+  log
+    .info()
+    .str('function', 'parseOSEventAndCreateAlarms')
+    .str('domainArn', domainArn)
+    .str('eventType', eventType)
+    .msg('Finished processing domain event');
+
+  if (
+    domainArn &&
+    (eventType === 'Create' || eventType === 'Domain TagChange')
+  ) {
+    log
+      .info()
+      .str('function', 'parseOSEventAndCreateAlarms')
+      .str('domainArn', domainArn)
+      .msg('Starting to manage domain alarms');
+    await manageOpenSearchAlarms(domainName, accountID, tags);
+  } else if (eventType === 'Delete') {
+    log
+      .info()
+      .str('function', 'parseOSEventAndCreateAlarms')
+      .str('domainArn', domainArn)
+      .msg('Starting to manage inactive domain alarms');
+    await manageInactiveOpenSearchAlarms(domainName);
+  }
+
+  return {domainArn, accountID, eventType, tags};
 }
