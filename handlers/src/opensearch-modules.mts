@@ -46,7 +46,7 @@ const metricConfigs = [
     namespace: 'AWS/ES',
     isDefault: true,
     anomaly: false,
-    defaultValue: '-/-/300/1/Maximum',
+    defaultValue: '1/1/300/1/Maximum',
   },
   {
     tagKey: 'os-yellow-cluster-anomaly',
@@ -62,7 +62,7 @@ const metricConfigs = [
     namespace: 'AWS/ES',
     isDefault: true,
     anomaly: false,
-    defaultValue: '0-/-/300/1/Maximum',
+    defaultValue: '1/1/300/1/Maximum',
   },
   {
     tagKey: 'os-red-cluster-anomaly',
@@ -78,7 +78,7 @@ const metricConfigs = [
     namespace: 'AWS/ES',
     isDefault: true,
     anomaly: false,
-    defaultValue: '-/-/300/1/Maximum',
+    defaultValue: '1/1/300/1/Maximum',
   },
   {
     tagKey: 'os-storage-anomaly',
@@ -94,7 +94,7 @@ const metricConfigs = [
     namespace: 'AWS/ES',
     isDefault: true,
     anomaly: false,
-    defaultValue: '-/-/300/1/Maximum',
+    defaultValue: '1/1/300/1/Maximum',
   },
   {
     tagKey: 'os-jvm-memory-anomaly',
@@ -110,7 +110,7 @@ const metricConfigs = [
     namespace: 'AWS/ES',
     isDefault: true,
     anomaly: false,
-    defaultValue: '-/-/300/1/Maximum',
+    defaultValue: '1/1/300/1/Maximum',
   },
   {
     tagKey: 'os-cpu-anomaly',
