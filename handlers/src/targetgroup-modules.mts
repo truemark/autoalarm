@@ -21,6 +21,7 @@ import {
   doesAlarmExist,
 } from './alarm-tools.mjs';
 import * as arnparser from '@aws-sdk/util-arn-parser';
+import {TGEvent} from "./event-types.mjs";
 
 const log: logging.Logger = logging.getLogger('targetgroup-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -483,9 +484,7 @@ export async function manageInactiveTGAlarms(targetGroupName: string) {
   }
 }
 
-// TODO Fix the use of any
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function parseTGEventAndCreateAlarms(event: any): Promise<{
+export async function parseTGEventAndCreateAlarms(event: TGEvent): Promise<{
   targetGroupArn: string;
   eventType: string;
   tags: Record<string, string>;

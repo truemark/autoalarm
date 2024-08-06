@@ -18,6 +18,7 @@ import {
   createOrUpdateAnomalyDetectionAlarm,
   doesAlarmExist,
 } from './alarm-tools.mjs';
+import {ALBEvent} from "./event-types.mjs";
 
 const log: logging.Logger = logging.getLogger('alb-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -370,7 +371,7 @@ function extractAlbNameFromArn(arn: string): string {
 
 // TODO Fix the use of any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function parseALBEventAndCreateAlarms(event: any): Promise<{
+export async function parseALBEventAndCreateAlarms(event: ALBEvent): Promise<{
   loadBalancerArn: string;
   eventType: string;
   tags: Record<string, string>;

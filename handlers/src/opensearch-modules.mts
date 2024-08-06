@@ -8,6 +8,7 @@ import {
   deleteCWAlarm,
   doesAlarmExist,
 } from './alarm-tools.mjs';
+import {OSEvent} from './event-types.mjs';
 import {
   CloudWatchClient,
   ComparisonOperator,
@@ -480,8 +481,7 @@ function extractAccountIdFromArn(arn: string): string {
   return parts.length > 4 ? parts[4] : '';
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function parseOSEventAndCreateAlarms(event: any): Promise<{
+export async function parseOSEventAndCreateAlarms(event: OSEvent): Promise<{
   domainArn: string;
   accountID: string;
   eventType: string;

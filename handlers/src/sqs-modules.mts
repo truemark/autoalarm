@@ -16,6 +16,7 @@ import {
   PutMetricAlarmCommand,
   Statistic,
 } from '@aws-sdk/client-cloudwatch';
+import {SQSEvent} from "./event-types.mjs";
 
 const log: logging.Logger = logging.getLogger('sqs-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -510,9 +511,7 @@ function extractQueueName(queueUrl: string): string {
   return parts[parts.length - 1];
 }
 
-// TODO Fix the use of any
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function parseSQSEventAndCreateAlarms(event: any): Promise<{
+export async function parseSQSEventAndCreateAlarms(event: SQSEvent): Promise<{
   queueUrl: string;
   eventType: string;
   tags: Record<string, string>;
