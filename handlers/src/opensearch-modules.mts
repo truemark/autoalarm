@@ -79,7 +79,7 @@ const metricConfigs = [
     namespace: 'AWS/ES',
     isDefault: false,
     anomaly: false,
-    defaultValue: '-/-/300/1/Maximum',
+    defaultValue: '96/98/300/2/Maximum',
   },
   {
     tagKey: 'os-storage-anomaly',
@@ -87,7 +87,7 @@ const metricConfigs = [
     namespace: 'AWS/ES',
     isDefault: true,
     anomaly: true,
-    defaultValue: 'Maximum/300/1',
+    defaultValue: 'p90|60|2',
   },
   {
     tagKey: 'os-jvm-memory',
@@ -95,7 +95,7 @@ const metricConfigs = [
     namespace: 'AWS/ES',
     isDefault: false,
     anomaly: false,
-    defaultValue: '-/-/300/1/Maximum',
+    defaultValue: '96/98/300/2/p90',
   },
   {
     tagKey: 'os-jvm-memory-anomaly',
@@ -103,7 +103,7 @@ const metricConfigs = [
     namespace: 'AWS/ES',
     isDefault: true,
     anomaly: true,
-    defaultValue: 'Maximum/300/1',
+    defaultValue: 'p90|60|2',
   },
   {
     tagKey: 'os-cpu',
@@ -111,7 +111,7 @@ const metricConfigs = [
     namespace: 'AWS/ES',
     isDefault: false,
     anomaly: false,
-    defaultValue: '-/-/300/1/Maximum',
+    defaultValue: '95/98/300/2/p90',
   },
   {
     tagKey: 'os-cpu-anomaly',
@@ -119,7 +119,7 @@ const metricConfigs = [
     namespace: 'AWS/ES',
     isDefault: true,
     anomaly: true,
-    defaultValue: 'Maximum/300/1',
+    defaultValue: 'p90|60|2',
   },
 ];
 

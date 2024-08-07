@@ -67,7 +67,7 @@ The system is event-driven, responding to EC2 state change notifications and tag
 Note that tagging format is different for ALBs, Target Groups and SQS which require a '/' delimiter in place of the '|' delimiter used for EC2 instances. This is a limitation on the AWS side.
 
 | Tag                                           | Default Value             | Enabled By Default | CloudWatch Only                 |
-| --------------------------------------------- | ------------------------- | ------------------ | ------------------------------- |
+|-----------------------------------------------|---------------------------|--------------------|---------------------------------|
 | `autoalarm:enabled`                           | `false`                   | No                 | N/A                             |
 | `autoalarm:alb-4xx-count`                     | "-\/-\/60\/2\/Sum         | No                 | Yes                             |
 | `autoalarm:alb-4xx-count-anomaly`             | "p90/60/2"                | No                 | Yes                             |
@@ -109,7 +109,7 @@ Note that tagging format is different for ALBs, Target Groups and SQS which requ
 | `autoalarm:tg-response-time-anomaly`          | "p90/60/2"                | Yes                | Yes                             |
 | `autoalarm:tg-unhealthy-host-count`           | "-\/1\/60\/3\/Sum"        | Yes                | Yes                             |
 | `autoalarm:tg-unhealthy-host-count-anomaly`   | "p90/60/2"                | No                 | Yes                             |
-| `autoalarm:os-yellow-cluster`                 | "-\/1\/300\/1\/Maximum    | No                 | Yes                             |
+| `autoalarm:os-yellow-cluster`                 | "-\/1\/300\/1\/Maximum"   | No                 | Yes                             |
 | `autoalarm:os-yellow-cluster-anomaly`         | "Maximum\/300\/1"         | Yes                | Yes                             |
 | `autoalarm:os-red-cluster`                    | "-\/1\/300\/1\/Maximum"   | No                 | Yes                             |
 | `autoalarm:os-red-cluster-anomaly`            | "Maximum\/300\/1"         | Yes                | Yes                             |
