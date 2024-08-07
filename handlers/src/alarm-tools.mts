@@ -24,7 +24,6 @@ import * as aws4 from 'aws4';
 import {defaultProvider} from '@aws-sdk/credential-provider-node';
 import * as logging from '@nr1e/logging';
 import {
-  AlarmProps,
   RuleGroup,
   NamespaceDetails,
   Rule,
@@ -136,7 +135,10 @@ export async function anomalyCWAlarmNeedsUpdate(
 // returns true if the alarm needs to be updated whether it exists or does not. For Static threshold CW alarms
 export async function staticCWAlarmNeedsUpdate(
   alarmName: string,
-  newProps: AlarmProps,
+  threshold: number,
+  statistic: Statistic | string,
+  period: number,
+  evaluationPeriods: number,
 ): Promise<boolean> {
   try {
     const existingAlarm = await cloudWatchClient.send(
@@ -148,13 +150,14 @@ export async function staticCWAlarmNeedsUpdate(
 
       const existingStatistic =
         existingProps.Statistic || existingProps.ExtendedStatistic;
-      const newStatistic = newProps.statistic || newProps.extendedStatistic;
+
+
 
       if (
-        existingProps.Threshold !== newProps.threshold ||
-        existingProps.EvaluationPeriods !== newProps.evaluationPeriods ||
-        existingProps.Period !== newProps.period ||
-        existingStatistic !== newStatistic
+        existingProps.Threshold !== threshold ||
+        existingProps.EvaluationPeriods !== evaluationPeriods ||
+        existingProps.Period !== period ||
+        existingStatistic !== statistic
       ) {
         log
           .info()
@@ -163,25 +166,25 @@ export async function staticCWAlarmNeedsUpdate(
             'existingThreshold',
             existingProps.Threshold?.toString() || 'undefined',
           )
-          .str('newThreshold', newProps.threshold?.toString() || 'undefined')
+          .str('newThreshold', threshold?.toString() || 'undefined')
           .str(
             'existingEvaluationPeriods',
             existingProps.EvaluationPeriods?.toString() || 'undefined',
           )
           .str(
             'newEvaluationPeriods',
-            newProps.evaluationPeriods?.toString() || 'undefined',
+            evaluationPeriods?.toString() || 'undefined',
           )
           .str(
             'existingPeriod',
             existingProps.Period?.toString() || 'undefined',
           )
-          .str('newPeriod', newProps.period?.toString() || 'undefined')
+          .str('newPeriod', period?.toString() || 'undefined')
           .str(
             'existingStatistic',
             existingStatistic?.toString() || 'undefined',
           )
-          .str('newStatistic', newStatistic?.toString() || 'undefined')
+          .str('newStatistic', statistic.toString() || 'undefined')
           .msg('Alarm needs update');
         return true;
       }
@@ -198,120 +201,47 @@ export async function staticCWAlarmNeedsUpdate(
   }
 }
 
-export function configureAlarmPropsFromTags(
-  alarmProps: AlarmProps,
-  threshold: number,
-  durationTime: number,
-  durationPeriods: number,
-  statistic?: Statistic,
-  extendedStatistic?: string,
-): void {
-  alarmProps.threshold = threshold;
-  log
-    .info()
-    .str('function', 'configureAlarmPropsFromTags')
-    .num('threshold', threshold)
-    .msg('Adjusted threshold based on tag');
-
-  if (durationTime < 10) {
-    durationTime = 10;
-    log
-      .info()
-      .str('function', 'configureAlarmPropsFromTags')
-      .num('period', durationTime)
-      .msg(
-        'Period value less than 10 is not allowed, must be 10. Using default value of 10',
-      );
-  } else if (durationTime < 30 || durationTime <= 45) {
-    durationTime = 30;
-    log
-      .info()
-      .str('function', 'configureAlarmPropsFromTags')
-      .num('period', durationTime)
-      .msg(
-        'Period value is either 30, < 30, <= 45 or 30. Using default value of 30',
-      );
-  } else {
-    durationTime = Math.ceil(durationTime / 60) * 60;
-    log
-      .info()
-      .str('function', 'configureAlarmPropsFromTags')
-      .num('period', durationTime)
-      .msg(
-        'Period value not 10 or 30 must be multiple of 60. Adjusted to nearest multiple of 60',
-      );
-  }
-  alarmProps.period = durationTime;
-  log
-    .info()
-    .str('function', 'configureAlarmPropsFromTags')
-    .num('period', durationTime)
-    .msg('Adjusted period based on tag');
-
-  // Adjust evaluation periods based on tags or use default if not present as defined in alarm props
-
-  alarmProps.evaluationPeriods = durationPeriods;
-  log
-    .info()
-    .str('function', 'configureAlarmPropsFromTags')
-    .num('evaluationPeriods', durationPeriods)
-    .msg('Adjusted evaluation periods based on tag');
-
-  if (statistic) {
-    alarmProps.statistic = statistic;
-    log
-      .info()
-      .str('function', 'configureAlarmPropsFromTags')
-      .str('statistic', statistic)
-      .msg('Adjusted statistic based on tag');
-  }
-  if (extendedStatistic) {
-    alarmProps.extendedStatistic = extendedStatistic;
-  }
-}
-
 export async function createOrUpdateAnomalyDetectionAlarm(
   alarmName: string,
-  dimensionName: string,
-  dimensionNameValue: string,
+  dimensions: {Name: string; Value: string}[],
   metricName: string,
   namespace: string,
   extendedStatistic: string,
-  durationTime: number,
-  durationPeriods: number,
+  period: number,
+  evaluationPeriods: number,
   classification: AlarmClassification,
 ) {
-  if (durationTime < 10) {
-    durationTime = 10;
+  if (period < 10) {
+    period = 10;
     log
       .info()
       .str('function', 'createOrUpdateAnomalyDetectionAlarm')
-      .num('period', durationTime)
+      .num('period', period)
       .msg(
         'Period value less than 10 is not allowed, must be 10. Using default value of 10',
       );
-  } else if (durationTime < 30 || durationTime <= 45) {
-    durationTime = 30;
+  } else if (period < 30 || period <= 45) {
+    period = 30;
     log
       .info()
       .str('function', 'createOrUpdateAnomalyDetectionAlarm')
-      .num('period', durationTime)
+      .num('period', period)
       .msg(
         'Period value is either 30, < 30, <= 45 or 30. Using default value of 30',
       );
   } else {
-    durationTime = Math.ceil(durationTime / 60) * 60;
+    period = Math.ceil(period / 60) * 60;
     log
       .info()
       .str('function', 'createOrUpdateAnomalyDetectionAlarm')
-      .num('period', durationTime)
+      .num('period', period)
       .msg(
         'Period value not 10 or 30 must be multiple of 60. Adjusted to nearest multiple of 60',
       );
   }
   const newProps: AnomalyAlarmProps = {
-    evaluationPeriods: durationPeriods,
-    period: durationTime,
+    evaluationPeriods: evaluationPeriods,
+    period: period,
     extendedStatistic: extendedStatistic,
   };
   const alarmExists = await doesAlarmExist(alarmName);
@@ -324,12 +254,7 @@ export async function createOrUpdateAnomalyDetectionAlarm(
       const anomalyDetectorInput = {
         Namespace: namespace,
         MetricName: metricName,
-        Dimensions: [
-          {
-            Name: dimensionName,
-            Value: dimensionNameValue,
-          },
-        ],
+        Dimensions: dimensions,
         Stat: extendedStatistic,
         Configuration: {
           MetricTimezone: 'UTC',
@@ -347,7 +272,7 @@ export async function createOrUpdateAnomalyDetectionAlarm(
       const metricAlarmInput = {
         AlarmName: alarmName,
         ComparisonOperator: ComparisonOperator.GreaterThanUpperThreshold,
-        EvaluationPeriods: durationPeriods,
+        EvaluationPeriods: evaluationPeriods,
         Metrics: [
           {
             Id: 'primaryMetric',
@@ -355,9 +280,9 @@ export async function createOrUpdateAnomalyDetectionAlarm(
               Metric: {
                 Namespace: namespace,
                 MetricName: metricName,
-                Dimensions: [{Name: dimensionName, Value: dimensionNameValue}],
+                Dimensions: dimensions,
               },
-              Period: durationTime,
+              Period: period,
               Stat: extendedStatistic,
             },
           },
@@ -377,7 +302,7 @@ export async function createOrUpdateAnomalyDetectionAlarm(
         .info()
         .str('function', 'createOrUpdateAnomalyDetectionAlarm')
         .str('alarmName', alarmName)
-        .str('serviceIdentifier', dimensionNameValue)
+        .obj('Dimesntions', dimensions)
         .msg(`${alarmName} Anomaly Detection Alarm created or updated.`);
     } catch (e) {
       log
@@ -385,7 +310,7 @@ export async function createOrUpdateAnomalyDetectionAlarm(
         .str('function', 'createOrUpdateAnomalyDetectionAlarm')
         .err(e)
         .str('alarmName', alarmName)
-        .str('serviceIdentifier', dimensionNameValue)
+        .obj('Dimesntions', dimensions)
         .msg(
           `Failed to create or update ${alarmName} anomaly detection alarm due to an error ${e}`,
         );
@@ -396,22 +321,21 @@ export async function createOrUpdateAnomalyDetectionAlarm(
 // Define the possible values for MissingDataTreatment
 export type MissingDataTreatment = 'breaching' | 'notBreaching' | 'ignore';
 
-// Define the possible values for Statistic
-//type Statistic = 'Average' | 'Sum' | 'Minimum' | 'Maximum';
-
 // This function is used to create or update a CW alarm based on the provided values.
 export async function createOrUpdateCWAlarm(
   alarmName: string,
   serviceIdentifier: string,
-  props: AlarmProps,
   threshold: number,
-  durationTime: number,
-  durationPeriods: number,
+  period: number,
+  evaluationPeriods: number,
+  metricName: string,
+  namespace: string,
+  dimensions: {Name: string; Value: string}[],
   severityType: string,
   missingDataTreatment: MissingDataTreatment = 'ignore', // Default to 'ignore' if not specified
-  statistic?: Statistic | undefined,
-  extendedStatistic?: string | undefined,
+  statistic: Statistic | string,
 ) {
+  const extendedStatRegex = /^p.*|^tm.*|^tc.*|^ts.*|^wm.*|^IQM$/;
   try {
     log
       .info()
@@ -419,27 +343,47 @@ export async function createOrUpdateCWAlarm(
       .str('alarmName', alarmName)
       .str('Service Identifier', serviceIdentifier)
       .num('threshold', threshold)
-      .num('period', durationTime)
-      .num('evaluationPeriods', durationPeriods)
+      .num('period', period)
+      .num('evaluationPeriods', evaluationPeriods)
       .msg('Configuring alarm props from provided values');
 
-    configureAlarmPropsFromTags(
-      props,
-      threshold,
-      durationTime,
-      durationPeriods,
-      statistic,
-      extendedStatistic,
-    );
+    if (period < 10) {
+    period = 10;
+    log
+      .info()
+      .str('function', 'configureAlarmPropsFromTags')
+      .num('period', period)
+      .msg(
+        'Period value less than 10 is not allowed, must be 10. Using default value of 10',
+      );
+  } else if (period < 30 || period <= 45) {
+    period = 30;
+    log
+      .info()
+      .str('function', 'configureAlarmPropsFromTags')
+      .num('period', period)
+      .msg(
+        'Period value is either 30, < 30, <= 45 or 30. Using default value of 30',
+      );
+  } else {
+    period = Math.ceil(period / 60) * 60;
+    log
+      .info()
+      .str('function', 'configureAlarmPropsFromTags')
+      .num('period', period)
+      .msg(
+        'Period value not 10 or 30 must be multiple of 60. Adjusted to nearest multiple of 60',
+      );
+  }
 
     log
       .info()
       .str('function', 'createOrUpdateCWAlarm')
       .str('alarmName', alarmName)
       .str('Service Identifier', serviceIdentifier)
-      .num('threshold', props.threshold)
-      .num('period', props.period)
-      .num('evaluationPeriods', props.evaluationPeriods)
+      .num('threshold', threshold)
+      .num('period', period)
+      .num('evaluationPeriods', evaluationPeriods)
       .msg('Alarm props configured from provided values');
   } catch (e) {
     log
@@ -453,24 +397,24 @@ export async function createOrUpdateCWAlarm(
   const alarmExists = await doesAlarmExist(alarmName);
   if (
     !alarmExists ||
-    (alarmExists && (await staticCWAlarmNeedsUpdate(alarmName, props)))
+    (alarmExists && (await staticCWAlarmNeedsUpdate(alarmName, threshold, statistic, period, evaluationPeriods)))
   ) {
     try {
       await cloudWatchClient.send(
         new PutMetricAlarmCommand({
           AlarmName: alarmName,
           ComparisonOperator: 'GreaterThanThreshold',
-          EvaluationPeriods: props.evaluationPeriods,
-          MetricName: props.metricName,
-          Namespace: props.namespace,
-          Period: props.period,
-          ...(statistic
-            ? {Statistic: statistic}
-            : {ExtendedStatistic: extendedStatistic}),
-          Threshold: props.threshold,
+          EvaluationPeriods: evaluationPeriods,
+          MetricName: metricName,
+          Namespace: namespace,
+          Period: period,
+         ...(extendedStatRegex.test(statistic)
+              ? {ExtendedStatistic: statistic}
+              : {Statistic: statistic as Statistic}),
+          Threshold: threshold,
           ActionsEnabled: false,
-          Dimensions: props.dimensions,
-          Tags: [{Key: 'severity', Value: severityType.toLowerCase()}],
+          Dimensions: dimensions,
+          Tags: [{Key: 'severity', Value: severityType}],
           TreatMissingData: missingDataTreatment,
         }),
       );
@@ -479,9 +423,9 @@ export async function createOrUpdateCWAlarm(
         .str('function', 'createOrUpdateCWAlarm')
         .str('alarmName', alarmName)
         .str('serviceIdentifier', serviceIdentifier)
-        .num('threshold', props.threshold)
-        .num('period', props.period)
-        .num('evaluationPeriods', props.evaluationPeriods)
+        .num('threshold', threshold)
+        .num('period', period)
+        .num('evaluationPeriods', evaluationPeriods)
         .msg(`${alarmName} Alarm configured or updated.`);
     } catch (e) {
       log
