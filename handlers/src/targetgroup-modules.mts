@@ -1,17 +1,26 @@
 import {
   ElasticLoadBalancingV2Client,
   DescribeTagsCommand,
+  DescribeTargetGroupsCommand,
 } from '@aws-sdk/client-elastic-load-balancing-v2';
 import * as logging from '@nr1e/logging';
-import {AlarmProps, Tag} from './types.mjs';
+import {Tag} from './types.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
+import {
+  CloudWatchClient,
+  ComparisonOperator,
+  DeleteAlarmsCommand,
+  PutAnomalyDetectorCommand,
+  PutMetricAlarmCommand,
+  Statistic,
+} from '@aws-sdk/client-cloudwatch';
 import {AlarmClassification} from './enums.mjs';
 import {
-  createOrUpdateCWAlarm,
   getCWAlarmsForInstance,
   deleteCWAlarm,
-  createOrUpdateAnomalyDetectionAlarm,
+  doesAlarmExist,
 } from './alarm-tools.mjs';
+import * as arnparser from '@aws-sdk/util-arn-parser';
 
 const log: logging.Logger = logging.getLogger('targetgroup-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -21,270 +30,186 @@ const elbClient: ElasticLoadBalancingV2Client =
     region,
     retryStrategy,
   });
+const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
+  region: region,
+  retryStrategy: retryStrategy,
+});
 
-const getDefaultThreshold = (
-  metricName: string,
-  type: AlarmClassification
-): number => {
-  if (metricName === 'UnHealthyHostCount') {
-    return type === 'CRITICAL' ? 2 : 1;
-  } else if (metricName === 'TargetResponseTime') {
-    return type === 'CRITICAL' ? 3 : 2;
-  } else {
-    return type === 'CRITICAL' ? 1500 : 1000; // Default threshold for other metrics
-  }
+type MetricConfig = {
+  tagKey: string;
+  metricName: string;
+  namespace: string;
+  isDefault: boolean;
+  anomaly: boolean;
+  defaultValue: string;
 };
 
-// Default values for duration and periods
-const defaultStaticDurationTime = 60; // e.g., 300 seconds
-const defaultStaticDurationPeriods = 2; // e.g., 5 periods
-const defaultAnomalyDurationTime = 60; // e.g., 300 seconds
-const defaultAnomalyDurationPeriods = 2; // e.g., 5 periods
-const defaultExtendedStatistic: string = 'p90';
-
-const metricConfigs = [
-  {metricName: 'UnHealthyHostCount', namespace: 'AWS/ApplicationELB'},
-  {metricName: 'TargetResponseTime', namespace: 'AWS/ApplicationELB'},
-  {metricName: 'RequestCountPerTarget', namespace: 'AWS/ApplicationELB'},
-  {metricName: 'HTTPCode_Target_4XX_Count', namespace: 'AWS/ApplicationELB'},
-  {metricName: 'HTTPCode_Target_5XX_Count', namespace: 'AWS/ApplicationELB'},
+const metricConfigs: MetricConfig[] = [
+  {
+    tagKey: 'tg-unhealthy-host-count',
+    metricName: 'UnHealthyHostCount',
+    namespace: 'AWS/ApplicationELB',
+    isDefault: true,
+    anomaly: false,
+    defaultValue: '-/1/60/3/Sum',
+  },
+  {
+    tagKey: 'tg-unhealthy-host-count-anomaly',
+    metricName: 'UnHealthyHostCount',
+    namespace: 'AWS/ApplicationELB',
+    isDefault: false,
+    anomaly: true,
+    defaultValue: 'p90/60/2',
+  },
+  {
+    tagKey: 'tg-response-time',
+    metricName: 'TargetResponseTime',
+    namespace: 'AWS/ApplicationELB',
+    isDefault: false,
+    anomaly: false,
+    defaultValue: '-/-/60/2/p90',
+  },
+  {
+    tagKey: 'tg-response-time-anomaly',
+    metricName: 'TargetResponseTime',
+    namespace: 'AWS/ApplicationELB',
+    isDefault: true,
+    anomaly: true,
+    defaultValue: 'p90/60/2',
+  },
+  {
+    tagKey: 'tg-request-count',
+    metricName: 'RequestCountPerTarget',
+    namespace: 'AWS/ApplicationELB',
+    isDefault: false,
+    anomaly: false,
+    defaultValue: '-/-/60/2/Sum',
+  },
+  {
+    tagKey: 'tg-request-count-anomaly',
+    metricName: 'RequestCountPerTarget',
+    namespace: 'AWS/ApplicationELB',
+    isDefault: false,
+    anomaly: true,
+    defaultValue: 'p90/60/2',
+  },
+  {
+    tagKey: 'tg-4xx-count',
+    metricName: 'HTTPCode_Target_4XX_Count',
+    namespace: 'AWS/ApplicationELB',
+    isDefault: false,
+    anomaly: false,
+    defaultValue: '-/-/60/2/Sum',
+  },
+  {
+    tagKey: 'tg-4xx-count-anomaly',
+    metricName: 'HTTPCode_Target_4XX_Count',
+    namespace: 'AWS/ApplicationELB',
+    isDefault: false,
+    anomaly: false,
+    defaultValue: 'p90/60/2',
+  },
+  {
+    tagKey: 'tg-5xx-count',
+    metricName: 'HTTPCode_Target_5XX_Count',
+    namespace: 'AWS/ApplicationELB',
+    isDefault: false,
+    anomaly: false,
+    defaultValue: '-/-/60/2/Sum',
+  },
+  {
+    tagKey: 'tg-5xx-count-anomaly',
+    metricName: 'HTTPCode_Target_5XX_Count',
+    namespace: 'AWS/ApplicationELB',
+    isDefault: true,
+    anomaly: true,
+    defaultValue: 'p90/60/2',
+  },
 ];
 
-async function getTGAlarmConfig(
-  targetGroupName: string,
-  type: AlarmClassification,
-  service: string,
-  metricName: string,
-  tags: Tag
-): Promise<{
-  alarmName: string;
-  staticThresholdAlarmName: string;
-  anomalyAlarmName: string;
-  extendedStatistic: string;
-  threshold: number;
-  durationStaticTime: number;
-  durationStaticPeriods: number;
-  durationAnomalyTime: number;
-  durationAnomalyPeriods: number;
-}> {
-  log
-    .info()
-    .str('function', 'getTGAlarmConfig')
-    .str('TargetGroupName', targetGroupName)
-    .str('type', type)
-    .str('metric', metricName)
-    .msg('Fetching alarm configuration');
+type TagDefaults = {
+  warning: number | undefined;
+  critical: number | undefined;
+  stat: string;
+  duration: number;
+  periods: number;
+};
 
-  // Initialize variables with default values
-  let threshold = getDefaultThreshold(metricName, type);
-  let extendedStatistic = defaultExtendedStatistic;
-  let durationStaticTime = defaultStaticDurationTime;
-  let durationStaticPeriods = defaultStaticDurationPeriods;
-  let durationAnomalyTime = defaultAnomalyDurationTime;
-  let durationAnomalyPeriods = defaultAnomalyDurationPeriods;
-
-  log
-    .info()
-    .str('function', 'getTGAlarmConfig')
-    .str('TargetGroupName', targetGroupName)
-    .msg('Fetching alarm configuration');
-
-  // Define tag key based on metric
-  let cwTagKey = '';
-  let anomalyTagKey = '';
-
-  switch (metricName) {
-    case 'UnHealthyHostCount':
-      cwTagKey = 'autoalarm:cw-tg-unhealthy-host-count';
-      anomalyTagKey = 'autoalarm:anomaly-tg-unhealthy-host-count';
-      break;
-    case 'TargetResponseTime':
-      cwTagKey = 'autoalarm:cw-tg-response-time';
-      anomalyTagKey = 'autoalarm:anomaly-tg-response-time';
-      break;
-    case 'RequestCountPerTarget':
-      cwTagKey = 'autoalarm:cw-tg-request-count';
-      anomalyTagKey = 'autoalarm:anomaly-tg-request-count';
-      break;
-    case 'HTTPCode_Target_4XX_Count':
-      cwTagKey = 'autoalarm:cw-tg-4xx-count';
-      anomalyTagKey = 'autoalarm:anomaly-tg-4xx-count';
-      break;
-    case 'HTTPCode_Target_5XX_Count':
-      cwTagKey = 'autoalarm:cw-tg-5xx-count';
-      anomalyTagKey = 'autoalarm:anomaly-tg-5xx-count';
-      break;
-    default:
-      log
-        .warn()
-        .str('function', 'getTGAlarmConfig')
-        .str('TargetGroupName', targetGroupName)
-        .str('metricName', metricName)
-        .msg('Invalid metric name');
-      break;
-  }
-  log
-    .info()
-    .str('function', 'getTGAlarmConfig')
-    .str('TargetGroupName', targetGroupName)
-    .str('tags', JSON.stringify(tags))
-    .str('cwTagKey', cwTagKey)
-    .str('cwTagValue', tags[cwTagKey])
-    .str('anomalyTagKey', anomalyTagKey)
-    .str('anomalyTagValue', tags[anomalyTagKey])
-    .msg('Fetched instance tags');
-
-  // Extract and parse the tag value
-  if (tags[cwTagKey]) {
-    const staticValues = tags[cwTagKey].split('/');
-    log
-      .info()
-      .str('function', 'getTGAlarmConfig')
-      .str('TargetGroupName', targetGroupName)
-      .str('tagKey', cwTagKey)
-      .str('tagValue', tags[cwTagKey])
-      .str('staticValues', JSON.stringify(staticValues))
-      .msg('Fetched static threshold tag values');
-
-    if (staticValues.length < 1 || staticValues.length > 4) {
-      log
-        .warn()
-        .str('function', 'getTGAlarmConfig')
-        .str('TargetGroupName', targetGroupName)
-        .str('tagKey', cwTagKey)
-        .str('tagValue', tags[cwTagKey])
-        .msg(
-          'Invalid tag values/delimiters. Please use 4 values separated by a "/". Using default values'
-        );
-    } else {
-      switch (type) {
-        case 'WARNING':
-          threshold =
-            staticValues[0] !== undefined &&
-            staticValues[0] !== '' &&
-            !isNaN(parseInt(staticValues[0], 10))
-              ? parseInt(staticValues[0], 10)
-              : getDefaultThreshold(metricName, type);
-          durationStaticTime =
-            staticValues[2] !== undefined &&
-            staticValues[2] !== '' &&
-            !isNaN(parseInt(staticValues[2], 10))
-              ? parseInt(staticValues[2], 10)
-              : defaultStaticDurationTime;
-          durationStaticPeriods =
-            staticValues[3] !== undefined &&
-            staticValues[3] !== '' &&
-            !isNaN(parseInt(staticValues[3], 10))
-              ? parseInt(staticValues[3], 10)
-              : defaultStaticDurationPeriods;
-          break;
-        case 'CRITICAL':
-          threshold =
-            staticValues[1] !== undefined &&
-            staticValues[1] !== '' &&
-            !isNaN(parseInt(staticValues[1], 10))
-              ? parseInt(staticValues[1], 10)
-              : getDefaultThreshold(metricName, type);
-          durationStaticTime =
-            staticValues[2] !== undefined &&
-            staticValues[2] !== '' &&
-            !isNaN(parseInt(staticValues[2], 10))
-              ? parseInt(staticValues[2], 10)
-              : defaultStaticDurationTime;
-          durationStaticPeriods =
-            staticValues[3] !== undefined &&
-            staticValues[3] !== '' &&
-            !isNaN(parseInt(staticValues[3], 10))
-              ? parseInt(staticValues[3], 10)
-              : defaultStaticDurationPeriods;
-          break;
+function getTagDefaults(config: MetricConfig, tagValue: string): TagDefaults {
+  const parts = tagValue ? tagValue.split('/') : [];
+  const defaultParts = config.defaultValue.split('/');
+  const defaults = defaultParts.map((defaultValue, index) => {
+    if (parts.length > index) {
+      if (parts[index] !== '') {
+        return parts[index];
       }
     }
-  }
-
-  // Extract and parse the anomaly detection tag value
-  if (tags[anomalyTagKey]) {
-    const values = tags[anomalyTagKey].split('|');
-    log
-      .info()
-      .str('function', 'getTGAlarmConfig')
-      .str('TargetGroupName', targetGroupName)
-      .str('tagKey', anomalyTagKey)
-      .str('tagValue', tags[anomalyTagKey])
-      .str('values', JSON.stringify(values))
-      .msg('Fetched anomaly detection tag values');
-    if (values.length < 1 || values.length > 3) {
-      log
-        .warn()
-        .str('function', 'getTGAlarmConfig')
-        .str('TargetGroupName', targetGroupName)
-        .str('tagKey', anomalyTagKey)
-        .str('tagValue', tags[anomalyTagKey])
-        .msg(
-          'Invalid tag values/delimiters. Please use 3 values separated by a "|". Using default values'
-        );
-    } else {
-      extendedStatistic =
-        typeof values[0] === 'string' && values[0].trim() !== ''
-          ? values[0].trim()
-          : defaultExtendedStatistic;
-      durationAnomalyTime =
-        values[1] !== undefined &&
-        values[1] !== '' &&
-        !isNaN(parseInt(values[1], 10))
-          ? parseInt(values[1], 10)
-          : defaultAnomalyDurationTime;
-      durationAnomalyPeriods =
-        values[2] !== undefined &&
-        values[2] !== '' &&
-        !isNaN(parseInt(values[2], 10))
-          ? parseInt(values[2], 10)
-          : defaultAnomalyDurationPeriods;
-      log
-        .info()
-        .str('function', 'getTGAlarmConfig')
-        .str('TargetGroupName', targetGroupName)
-        .str('tagKey', anomalyTagKey)
-        .str('tagValue', tags[anomalyTagKey])
-        .str('extendedStatistic', extendedStatistic)
-        .num('durationAnomalyTime', durationAnomalyTime)
-        .num('durationAnomalyPeriods', durationAnomalyPeriods)
-        .msg('Parsed anomaly detection tag values');
+    return defaultValue;
+  });
+  if (config.anomaly) {
+    // Take the default value which we know is good
+    let duration = Number.parseInt(defaultParts[1]);
+    try {
+      // Override the default if it's a valid number
+      duration = Number.parseInt(defaults[1]);
+    } catch (err) {
+      // do nothing
     }
+    // Take the default value which we know is good
+    let periods = Number.parseInt(defaultParts[2]);
+    try {
+      // Override the default is it's a valid number
+      periods = Number.parseInt(defaults[2]);
+    } catch (err) {
+      // do nothing
+    }
+    return {
+      warning: undefined,
+      critical: undefined,
+      stat: defaults[0],
+      duration,
+      periods,
+    };
+  } else {
+    let warning = undefined;
+    try {
+      // If we can't parse the number, we won't create the alarm and it remains undefined
+      warning = Number.parseInt(defaults[0]);
+    } catch (err) {
+      // do nothing
+    }
+    let critical = undefined;
+    try {
+      // If we can't parse the number, we won't create the alarm and it remains undefined
+      critical = Number.parseInt(defaults[1]);
+    } catch (err) {
+      // do nothing
+    }
+    let duration = Number.parseInt(defaultParts[2]);
+    try {
+      // If we can't parse the number, we won't create the alarm and it remains undefined
+      duration = Number.parseInt(defaults[2]);
+    } catch (err) {
+      // do nothing
+    }
+    let periods = Number.parseInt(defaultParts[3]);
+    try {
+      // If we can't parse the number, we won't create the alarm and it remains undefined
+      periods = Number.parseInt(defaults[3]);
+    } catch (err) {
+      // do nothing
+    }
+    return {
+      warning,
+      critical,
+      duration,
+      periods,
+      stat: defaults[4],
+    };
   }
-  log
-    .info()
-    .str('function', 'getTGAlarmConfig')
-    .str('TargetGroupName', targetGroupName)
-    .str('type', type)
-    .str('metric', metricName)
-    .str(
-      'staticThresholdAlarmName',
-      `AutoAlarm-TG-StaticThreshold - ${targetGroupName} - ${type} - ${metricName.toUpperCase()} `
-    )
-    .str(
-      'anomalyAlarmName',
-      `AutoAlarm-TG-AnomalyDetection - ${targetGroupName} - CRITICAL - ${metricName.toUpperCase()} `
-    )
-    .str('extendedStatistic', extendedStatistic)
-    .num('threshold', threshold)
-    .num('durationStaticTime', durationStaticTime)
-    .num('durationStaticPeriods', durationStaticPeriods)
-    .num('durationAnomalyTime', durationAnomalyTime)
-    .num('durationAnomalyPeriods', durationAnomalyPeriods)
-    .msg('Fetched alarm configuration');
-  return {
-    alarmName: `AutoAlarm-${service.toUpperCase()}-${targetGroupName}-${type}-${metricName.toUpperCase()}`,
-    staticThresholdAlarmName: `AutoAlarm-TG-StaticThreshold-${targetGroupName}-${type}-${metricName.toUpperCase()}`,
-    anomalyAlarmName: `AutoAlarm-TG-AnomalyDetection-${targetGroupName}-CRITICAL-${metricName.toUpperCase()}`,
-    extendedStatistic,
-    threshold,
-    durationStaticTime,
-    durationStaticPeriods,
-    durationAnomalyTime,
-    durationAnomalyPeriods,
-  };
 }
+
+const extendedStatRegex = /^p.*|^tm.*|^tc.*|^ts.*|^wm.*|^IQM$/;
 
 export async function fetchTGTags(targetGroupArn: string): Promise<Tag> {
   try {
@@ -294,8 +219,8 @@ export async function fetchTGTags(targetGroupArn: string): Promise<Tag> {
     const response = await elbClient.send(command);
     const tags: Tag = {};
 
-    response.TagDescriptions?.forEach(tagDescription => {
-      tagDescription.Tags?.forEach(tag => {
+    response.TagDescriptions?.forEach((tagDescription) => {
+      tagDescription.Tags?.forEach((tag) => {
         if (tag.Key && tag.Value) {
           tags[tag.Key] = tag.Value;
         }
@@ -323,156 +248,207 @@ export async function fetchTGTags(targetGroupArn: string): Promise<Tag> {
 
 async function checkAndManageTGStatusAlarms(
   targetGroupName: string,
-  tags: Tag
+  loadBalancerName: string,
+  tags: Tag,
 ) {
-  if (tags['autoalarm:enabled'] === 'false' || !tags['autoalarm:enabled']) {
-    const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
+  const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
+
+  if (!isAlarmEnabled) {
+    const activeAutoAlarms = await getCWAlarmsForInstance(
       'TG',
-      targetGroupName
+      targetGroupName,
     );
     await Promise.all(
-      activeAutoAlarms.map(alarmName =>
-        deleteCWAlarm(alarmName, targetGroupName)
-      )
+      activeAutoAlarms.map((alarmName) =>
+        deleteCWAlarm(alarmName, targetGroupName),
+      ),
     );
     log.info().msg('Status check alarm creation skipped due to tag settings.');
-  } else if (tags['autoalarm:enabled'] === undefined) {
+    return;
+  }
+
+  // Check and manage alarms for each metric configuration
+  for (const config of metricConfigs) {
     log
       .info()
-      .msg(
-        'Status check alarm creation skipped due to missing autoalarm:enabled tag.'
-      );
-    return;
-  } else {
-    for (const config of metricConfigs) {
-      const {metricName, namespace} = config;
-      let cwTagKey = '';
-      let anomalyTagKey = '';
+      .str('function', 'checkAndManageTGStatusAlarms')
+      .obj('config', config)
+      .str('TargetGroupName', targetGroupName)
+      .msg('Tag values before processing');
 
-      switch (metricName) {
-        case 'UnHealthyHostCount':
-          cwTagKey = 'autoalarm:cw-tg-unhealthy-host-count';
-          anomalyTagKey = 'autoalarm:anomaly-tg-unhealthy-host-count';
-          break;
-        case 'TargetResponseTime':
-          cwTagKey = 'autoalarm:cw-tg-response-time';
-          anomalyTagKey = 'autoalarm:anomaly-tg-response-time';
-          break;
-        case 'RequestCountPerTarget':
-          cwTagKey = 'autoalarm:cw-tg-request-count';
-          anomalyTagKey = 'autoalarm:anomaly-tg-request-count';
-          break;
-        case 'HTTPCode_Target_4XX_Count':
-          cwTagKey = 'autoalarm:cw-tg-4xx-count';
-          anomalyTagKey = 'autoalarm:anomaly-tg-4xx-count';
-          break;
-        case 'HTTPCode_Target_5XX_Count':
-          cwTagKey = 'autoalarm:cw-tg-5xx-count';
-          anomalyTagKey = 'autoalarm:anomaly-tg-5xx-count';
-          break;
-        default:
-          log
-            .warn()
-            .str('function', 'checkAndManageTGStatusAlarms')
-            .str('TargetGroupName', targetGroupName)
-            .str('metricName', metricName)
-            .msg('Invalid metric name');
-          break;
-      }
+    const tagValue = tags[`autoalarm:${config.tagKey}`];
 
+    if (!config.isDefault && tagValue === undefined) {
       log
         .info()
-        .str('function', 'checkAndManageTGStatusAlarms')
-        .str('TargetGroupName', targetGroupName)
-        .str('cwTagKey', cwTagKey)
-        .str('cwTagValue', tags[cwTagKey] || 'undefined')
-        .str('anomalyTagKey', anomalyTagKey)
-        .str('anomalyTagValue', tags[anomalyTagKey] || 'undefined')
-        .msg('Tag values before processing');
+        .obj('config', config)
+        .msg('Not default and tag value is undefined, skipping.');
+      continue; // not a default and not overridden
+    }
 
-      for (const type of ['WARNING', 'CRITICAL'] as AlarmClassification[]) {
-        const {
-          staticThresholdAlarmName,
-          anomalyAlarmName,
-          extendedStatistic,
-          threshold,
-          durationStaticTime,
-          durationStaticPeriods,
-          durationAnomalyTime,
-          durationAnomalyPeriods,
-        } = await getTGAlarmConfig(
-          targetGroupName,
-          type,
-          'tg',
-          metricName,
-          tags
-        );
-        await createOrUpdateAnomalyDetectionAlarm(
-          anomalyAlarmName,
-          'TargetGroup',
-          targetGroupName,
-          metricName,
-          namespace,
-          extendedStatistic,
-          durationAnomalyTime,
-          durationAnomalyPeriods,
-          'CRITICAL' as AlarmClassification
-        );
-        // Check and create or delete static threshold alarm based on tag values
-        if (
-          type === 'WARNING' &&
-          (!tags[cwTagKey] ||
-            tags[cwTagKey].split('/')[0] === undefined ||
-            tags[cwTagKey].split('/')[0] === '' ||
-            !tags[cwTagKey].split('/')[0])
-        ) {
-          log
-            .info()
-            .str('function', 'checkAndManageTGStatusAlarms')
-            .str('targetGroupName', targetGroupName)
-            .str(cwTagKey, tags[cwTagKey])
-            .msg(
-              `TG alarm threshold for ${metricName} WARNING is not defined. Skipping static ${metricName} warning alarm creation.`
-            );
-          await deleteCWAlarm(staticThresholdAlarmName, targetGroupName);
-        } else if (
-          type === 'CRITICAL' &&
-          (!tags[cwTagKey] ||
-            tags[cwTagKey].split('/')[1] === '' ||
-            tags[cwTagKey].split('/')[1] === undefined ||
-            !tags[cwTagKey].split('/')[1])
-        ) {
-          log
-            .info()
-            .str('function', 'checkAndManageTGStatusAlarms')
-            .str('targetGroupName', targetGroupName)
-            .str(cwTagKey, tags[cwTagKey])
-            .msg(
-              `TG alarm threshold for ${metricName} CRITICAL is not defined. Skipping static ${metricName} critical alarm creation.`
-            );
-          await deleteCWAlarm(staticThresholdAlarmName, targetGroupName);
-        } else {
-          const alarmProps: AlarmProps = {
-            threshold: threshold,
-            period: 60,
-            namespace: namespace,
-            evaluationPeriods: 5,
-            metricName: metricName,
-            dimensions: [{Name: 'TargetGroup', Value: targetGroupName}],
-          };
+    const defaults = getTagDefaults(config, tagValue);
+    if (config.anomaly) {
+      const alarmName = `AutoAlarm-TG-${targetGroupName}-${config.metricName}-Anomaly-Critical`;
 
-          // Create standard CloudWatch alarm
-          await createOrUpdateCWAlarm(
-            staticThresholdAlarmName,
-            targetGroupName,
-            alarmProps,
-            threshold,
-            durationStaticTime,
-            durationStaticPeriods,
-            'Maximum',
-            type as AlarmClassification
-          );
+      if (defaults.stat) {
+        // Create critical alarm
+        if (defaults.stat !== '-' && defaults.stat !== 'disabled') {
+          try {
+            // Create anomaly detector with the latest parameters
+            const anomalyDetectorInput = {
+              Namespace: config.namespace,
+              MetricName: config.metricName,
+              Dimensions: [
+                {
+                  Name: 'TargetGroup',
+                  Value: targetGroupName,
+                },
+                {
+                  Name: 'LoadBalancer',
+                  Value: loadBalancerName,
+                },
+              ],
+              Stat: defaults.stat,
+              Configuration: {
+                MetricTimezone: 'UTC',
+              },
+            };
+            log
+              .debug()
+              .obj('input', anomalyDetectorInput)
+              .msg('Sending PutAnomalyDetectorCommand');
+            await cloudWatchClient.send(
+              new PutAnomalyDetectorCommand(anomalyDetectorInput),
+            );
+
+            // Create anomaly detection alarm
+            const metricAlarmInput = {
+              AlarmName: alarmName,
+              ComparisonOperator: ComparisonOperator.GreaterThanUpperThreshold,
+              EvaluationPeriods: defaults.periods,
+              Metrics: [
+                {
+                  Id: 'primaryMetric',
+                  MetricStat: {
+                    Metric: {
+                      Namespace: config.namespace,
+                      MetricName: config.metricName,
+                      Dimensions: [
+                        {
+                          Name: 'TargetGroup',
+                          Value: targetGroupName,
+                        },
+                        {
+                          Name: 'LoadBalancer',
+                          Value: loadBalancerName,
+                        },
+                      ],
+                    },
+                    Period: defaults.duration,
+                    Stat: defaults.stat,
+                  },
+                },
+                {
+                  Id: 'anomalyDetectionBand',
+                  Expression: 'ANOMALY_DETECTION_BAND(primaryMetric)',
+                },
+              ],
+              ThresholdMetricId: 'anomalyDetectionBand',
+              ActionsEnabled: false,
+              Tags: [{Key: 'severity', Value: AlarmClassification.Critical}],
+              TreatMissingData: 'ignore', // Adjust as needed
+            };
+            await cloudWatchClient.send(
+              new PutMetricAlarmCommand(metricAlarmInput),
+            );
+
+            log
+              .info()
+              .str('function', 'createOrUpdateAnomalyDetectionAlarm')
+              .str('alarmName', alarmName)
+              .obj('anomalyDetectorInput', anomalyDetectorInput)
+              .obj('metricAlarmInput', metricAlarmInput)
+              .msg(`${alarmName} Anomaly Detection Alarm created or updated.`);
+          } catch (e) {
+            log
+              .error()
+              .str('function', 'createOrUpdateAnomalyDetectionAlarm')
+              .err(e)
+              .str('alarmName', alarmName)
+              .msg(
+                `Failed to create or update ${alarmName} anomaly detection alarm due to an error ${e}`,
+              );
+          }
         }
+      } else if (await doesAlarmExist(alarmName)) {
+        await cloudWatchClient.send(
+          new DeleteAlarmsCommand({
+            AlarmNames: [alarmName],
+          }),
+        );
+      }
+    } else {
+      const alarmNamePrefix = `AutoAlarm-TG-${targetGroupName}-${config.metricName}`;
+      // Create warning alarm
+      if (defaults.warning) {
+        await cloudWatchClient.send(
+          new PutMetricAlarmCommand({
+            AlarmName: `${alarmNamePrefix}-Warning`,
+            ComparisonOperator: 'GreaterThanThreshold',
+            EvaluationPeriods: defaults.periods,
+            MetricName: config.metricName,
+            Namespace: config.namespace,
+            Period: defaults.duration,
+            ...(extendedStatRegex.test(defaults.stat)
+              ? {ExtendedStatistic: defaults.stat}
+              : {Statistic: defaults.stat as Statistic}),
+            Threshold: defaults.warning,
+            ActionsEnabled: false,
+            Dimensions: [
+              {Name: 'TargetGroup', Value: targetGroupName},
+              {Name: 'LoadBalancer', Value: loadBalancerName},
+            ],
+            Tags: [{Key: 'severity', Value: 'Warning'}],
+            TreatMissingData: 'ignore',
+          }),
+        );
+      } else if (await doesAlarmExist(`${alarmNamePrefix}-Warning`)) {
+        await cloudWatchClient.send(
+          new DeleteAlarmsCommand({
+            AlarmNames: [`${alarmNamePrefix}-Warning`],
+          }),
+        );
+      }
+
+      // Create critical alarm
+      if (defaults.critical) {
+        await cloudWatchClient.send(
+          new PutMetricAlarmCommand({
+            AlarmName: `${alarmNamePrefix}-Critical`,
+            ComparisonOperator: 'GreaterThanThreshold',
+            EvaluationPeriods: defaults.periods,
+            MetricName: config.metricName,
+            Namespace: config.namespace,
+            Period: defaults.duration,
+            ...(extendedStatRegex.test(defaults.stat)
+              ? {ExtendedStatistic: defaults.stat}
+              : {Statistic: defaults.stat as Statistic}),
+            Threshold: defaults.critical,
+            ActionsEnabled: false,
+            Dimensions: [
+              {Name: 'TargetGroup', Value: targetGroupName},
+              {Name: 'LoadBalancer', Value: loadBalancerName},
+            ],
+            Tags: [{Key: 'severity', Value: 'Critical'}],
+            TreatMissingData: 'ignore',
+          }),
+        );
+      } else if (await doesAlarmExist(`${alarmNamePrefix}-Critical`)) {
+        await cloudWatchClient.send(
+          new DeleteAlarmsCommand({
+            AlarmNames: [`${alarmNamePrefix}-Critical`],
+          }),
+        );
       }
     }
   }
@@ -480,21 +456,22 @@ async function checkAndManageTGStatusAlarms(
 
 export async function manageTGAlarms(
   targetGroupName: string,
-  tags: Tag
+  loadBalancerName: string,
+  tags: Tag,
 ): Promise<void> {
-  await checkAndManageTGStatusAlarms(targetGroupName, tags);
+  await checkAndManageTGStatusAlarms(targetGroupName, loadBalancerName, tags);
 }
 
 export async function manageInactiveTGAlarms(targetGroupName: string) {
   try {
     const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
       'TG',
-      targetGroupName
+      targetGroupName,
     );
     await Promise.all(
-      activeAutoAlarms.map(alarmName =>
-        deleteCWAlarm(alarmName, targetGroupName)
-      )
+      activeAutoAlarms.map((alarmName) =>
+        deleteCWAlarm(alarmName, targetGroupName),
+      ),
     );
   } catch (e) {
     log
@@ -506,12 +483,8 @@ export async function manageInactiveTGAlarms(targetGroupName: string) {
   }
 }
 
-function extractTGNameFromArn(arn: string): string {
-  const regex = /targetgroup\/([^/]+)\/[^/]+$/;
-  const match = arn.match(regex);
-  return match ? match[1] : '';
-}
-
+// TODO Fix the use of any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function parseTGEventAndCreateAlarms(event: any): Promise<{
   targetGroupArn: string;
   eventType: string;
@@ -595,7 +568,30 @@ export async function parseTGEventAndCreateAlarms(event: any): Promise<{
         .msg('Unexpected event type');
   }
 
-  const targetGroupName = extractTGNameFromArn(targetGroupArn);
+  const response = await elbClient.send(
+    new DescribeTargetGroupsCommand({
+      TargetGroupArns: [targetGroupArn],
+    }),
+  );
+  let loadBalancerArn: string | undefined = undefined;
+  if (response.TargetGroups && response.TargetGroups.length > 0) {
+    const loadBalancerArns = response.TargetGroups[0].LoadBalancerArns;
+    if (loadBalancerArns && loadBalancerArns.length > 0) {
+      loadBalancerArn = loadBalancerArns[0];
+    }
+  }
+  if (!loadBalancerArn) {
+    log
+      .error()
+      .str('function', 'parseTGEventAndCreateAlarms')
+      .str('targetGroupArn', targetGroupArn)
+      .msg('Load balancer ARN not found');
+    throw new Error('Load balancer ARN not found');
+  }
+  const lbArn = arnparser.parse(loadBalancerArn);
+  const loadBalancerName = lbArn.resource.replace('loadbalancer/', '');
+  const arn = arnparser.parse(targetGroupArn);
+  const targetGroupName = arn.resource;
   if (!targetGroupName) {
     log
       .error()
@@ -620,7 +616,7 @@ export async function parseTGEventAndCreateAlarms(event: any): Promise<{
       .str('function', 'parseTGEventAndCreateAlarms')
       .str('targetGroupArn', targetGroupArn)
       .msg('Starting to manage target group alarms');
-    await manageTGAlarms(targetGroupName, tags);
+    await manageTGAlarms(targetGroupName, loadBalancerName, tags);
   } else if (eventType === 'Delete') {
     log
       .info()

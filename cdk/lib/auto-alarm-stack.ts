@@ -1,7 +1,11 @@
 import {Construct} from 'constructs';
 import {AutoAlarmConstruct} from './auto-alarm-construct';
-import {ExtendedStack} from 'truemark-cdk-lib/aws-cdk';
-import {ExtendedAutoAlarmProps} from './auto-alarm-stack-props'; // Import the extended interface
+import {ExtendedStack, ExtendedStackProps} from 'truemark-cdk-lib/aws-cdk';
+
+export interface ExtendedAutoAlarmProps extends ExtendedStackProps {
+  version: string;
+  prometheusWorkspaceId?: string;
+}
 
 export class AutoAlarmStack extends ExtendedStack {
   constructor(scope: Construct, id: string, props: ExtendedAutoAlarmProps) {
@@ -11,6 +15,6 @@ export class AutoAlarmStack extends ExtendedStack {
       prometheusWorkspaceId: props.prometheusWorkspaceId,
     });
     this.outputParameter('Name', 'AutoAlarm');
-    this.outputParameter('Version', '1.3.0');
+    this.outputParameter('Version', props.version);
   }
 }

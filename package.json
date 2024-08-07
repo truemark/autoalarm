@@ -1,6 +1,6 @@
 {
   "name": "autoalarm",
-  "version": "0.0.1",
+  "version": "1.3.2",
   "scripts": {
     "install-handlers": "cd handlers && pnpm i --frozen-lockfile",
     "install-cdk": "cd cdk && pnpm i --frozen-lockfile",
@@ -9,9 +9,12 @@
     "build-handlers": "cd handlers && pnpm run build",
     "build-cdk": "cd cdk && pnpm run build",
     "build": "concurrently \"pnpm:build-handlers\" \"pnpm:build-cdk\" -c blue,green",
-    "makepretty-handlers": "cd handlers && pnpm run makepretty",
-    "makepretty-cdk": "cd cdk && pnpm run makepretty",
-    "makepretty": "concurrently \"pnpm:makepretty-handlers\" \"pnpm:makepretty-cdk\" -c blue,green",
+    "test-handlers": "cd handlers && pnpm run test",
+    "test-cdk": "cd cdk && pnpm run test",
+    "test": "concurrently \"pnpm:test-handlers\" \"pnpm:test-cdk\" -c blue,green",
+    "fmt-handlers": "cd handlers && pnpm run fmt",
+    "fmt-cdk": "cd cdk && pnpm run fmt",
+    "fmt": "concurrently \"pnpm:fmt-handlers\" \"pnpm:fmt-cdk\" -c blue,green",
     "watch-handlers": "cd handlers && pnpm run watch",
     "watch-cdk": "cd cdk && cdk watch",
     "deploy-cdk": "cd cdk && cdk deploy",

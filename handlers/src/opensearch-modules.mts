@@ -30,13 +30,13 @@ const getDefaultThreshold = (metricName: string, type: AlarmClassification) => {
     metricName === 'ClusterStatus.yellow' ||
     metricName === 'ClusterStatus.red'
   ) {
-    return type === 'CRITICAL' ? 1 : 0;
+    return type === 'Critical' ? 1 : 0;
   } else if (metricName === 'FreeStorageSpace') {
-    return type === 'CRITICAL' ? 10 : 5;
+    return type === 'Critical' ? 10 : 5;
   } else if (metricName === 'JVMMemoryPressure') {
-    return type === 'CRITICAL' ? 95 : 90;
+    return type === 'Critical' ? 95 : 90;
   } else if (metricName === 'CPUUtilization') {
-    return type === 'CRITICAL' ? 95 : 90;
+    return type === 'Critical' ? 95 : 90;
   }
   return 0;
 };
@@ -53,7 +53,7 @@ async function getOSAlarmConfig(
   type: AlarmClassification,
   service: string,
   metricName: string,
-  tags: Tag
+  tags: Tag,
 ): Promise<{
   alarmName: string;
   staticThresholdAlarmName: string;
@@ -152,11 +152,11 @@ async function getOSAlarmConfig(
         .str('tagKey', cwTagKey)
         .str('tagValue', tags[cwTagKey])
         .msg(
-          'Invalid tag values/delimiters. Please use 4 values separated by a "/". Using default values'
+          'Invalid tag values/delimiters. Please use 4 values separated by a "/". Using default values',
         );
     } else {
       switch (type) {
-        case 'WARNING':
+        case 'Warning':
           threshold =
             staticValues[0] !== undefined &&
             staticValues[0] !== '' &&
@@ -176,7 +176,7 @@ async function getOSAlarmConfig(
               ? parseInt(staticValues[3], 10)
               : defaultStaticDurationPeriods;
           break;
-        case 'CRITICAL':
+        case 'Critical':
           threshold =
             staticValues[1] !== undefined &&
             staticValues[1] !== '' &&
@@ -218,7 +218,7 @@ async function getOSAlarmConfig(
         .str('tagKey', anomalyTagKey)
         .str('tagValue', tags[anomalyTagKey])
         .msg(
-          'Invalid tag values/delimiters. Please use 3 values separated by a "|". Using default values'
+          'Invalid tag values/delimiters. Please use 3 values separated by a "|". Using default values',
         );
     } else {
       extendedStatistic =
@@ -257,11 +257,11 @@ async function getOSAlarmConfig(
     .str('metric', metricName)
     .str(
       'staticThresholdAlarmName',
-      `AutoAlarm-OpenSearch-StaticThreshold-${domainName}-${type}-${metricName.toUpperCase()}`
+      `AutoAlarm-OpenSearch-StaticThreshold-${domainName}-${type}-${metricName.toUpperCase()}`,
     )
     .str(
       'anomalyAlarmName',
-      `AutoAlarm-OpenSearch-AnomalyDetection-${domainName}-${type}-${metricName.toUpperCase()}`
+      `AutoAlarm-OpenSearch-AnomalyDetection-${domainName}-${type}-${metricName.toUpperCase()}`,
     )
     .str('extendedStatistic', extendedStatistic)
     .num('threshold', threshold)
@@ -292,7 +292,7 @@ export async function fetchOpenSearchTags(domainArn: string): Promise<Tag> {
     const response = await openSearchClient.send(command);
     const tags: Tag = {};
 
-    response.TagList?.forEach(tag => {
+    response.TagList?.forEach((tag) => {
       if (tag.Key && tag.Value) {
         tags[tag.Key] = tag.Value;
       }
@@ -319,22 +319,22 @@ export async function fetchOpenSearchTags(domainArn: string): Promise<Tag> {
 
 async function checkAndManageOpenSearchStatusAlarms(
   domainName: string,
-  tags: Tag
+  tags: Tag,
 ) {
   if (tags['autoalarm:enabled'] === 'false' || !tags['autoalarm:enabled']) {
     const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
       'OpenSearch',
-      domainName
+      domainName,
     );
     await Promise.all(
-      activeAutoAlarms.map(alarmName => deleteCWAlarm(alarmName, domainName))
+      activeAutoAlarms.map((alarmName) => deleteCWAlarm(alarmName, domainName)),
     );
     log.info().msg('Status check alarm creation skipped due to tag settings.');
   } else if (tags['autoalarm:enabled'] === undefined) {
     log
       .info()
       .msg(
-        'Status check alarm creation skipped due to missing autoalarm:enabled tag.'
+        'Status check alarm creation skipped due to missing autoalarm:enabled tag.',
       );
     return;
   } else {
@@ -382,7 +382,7 @@ async function checkAndManageOpenSearchStatusAlarms(
         .str('anomalyTagKey', anomalyTagKey)
         .str('anomalyTagValue', tags[anomalyTagKey] || 'undefined')
         .msg('Tag values before processing');
-      for (const type of ['WARNING', 'CRITICAL'] as AlarmClassification[]) {
+      for (const type of ['Warning', 'Critical'] as AlarmClassification[]) {
         const {
           staticThresholdAlarmName,
           anomalyAlarmName,
@@ -397,7 +397,7 @@ async function checkAndManageOpenSearchStatusAlarms(
           type,
           'OpenSearch',
           metricName,
-          tags
+          tags,
         );
         await createOrUpdateAnomalyDetectionAlarm(
           anomalyAlarmName,
@@ -408,11 +408,11 @@ async function checkAndManageOpenSearchStatusAlarms(
           extendedStatistic,
           durationAnomalyTime,
           durationAnomalyPeriods,
-          'CRITICAL' as AlarmClassification
+          'Critical' as AlarmClassification,
         );
         // Check and create or delete static threshold alarm based on tag values
         if (
-          type === 'WARNING' &&
+          type === 'Warning' &&
           (!tags[cwTagKey] ||
             tags[cwTagKey].split('/')[0] === undefined ||
             tags[cwTagKey].split('/')[0] === '' ||
@@ -424,11 +424,11 @@ async function checkAndManageOpenSearchStatusAlarms(
             .str('domainName', domainName)
             .str(cwTagKey, tags[cwTagKey])
             .msg(
-              `OS alarm threshold for ${metricName} WARNING is not defined. Skipping static ${metricName} warning alarm creation.`
+              `OS alarm threshold for ${metricName} Warning is not defined. Skipping static ${metricName} Warning alarm creation.`,
             );
           await deleteCWAlarm(staticThresholdAlarmName, domainName);
         } else if (
-          type === 'CRITICAL' &&
+          type === 'Critical' &&
           (!tags[cwTagKey] ||
             tags[cwTagKey].split('/')[1] === '' ||
             tags[cwTagKey].split('/')[1] === undefined ||
@@ -440,7 +440,7 @@ async function checkAndManageOpenSearchStatusAlarms(
             .str('domainName', domainName)
             .str(cwTagKey, tags[cwTagKey])
             .msg(
-              `OS alarm threshold for ${metricName} CRITICAL is not defined. Skipping static ${metricName} critical alarm creation.`
+              `OS alarm threshold for ${metricName} Critical is not defined. Skipping static ${metricName} Critical alarm creation.`,
             );
           await deleteCWAlarm(staticThresholdAlarmName, domainName);
         } else {
@@ -461,7 +461,9 @@ async function checkAndManageOpenSearchStatusAlarms(
             durationStaticTime,
             durationStaticPeriods,
             'Maximum',
-            type as AlarmClassification
+            'ignore',
+            // TODO This need to be fixed. Don't use //@ts-ignore
+            // type as AlarmClassification,
           );
         }
       }
@@ -471,7 +473,7 @@ async function checkAndManageOpenSearchStatusAlarms(
 
 export async function manageOpenSearchAlarms(
   domainName: string,
-  tags: Tag
+  tags: Tag,
 ): Promise<void> {
   await checkAndManageOpenSearchStatusAlarms(domainName, tags);
 }
@@ -480,10 +482,10 @@ export async function manageInactiveOpenSearchAlarms(domainName: string) {
   try {
     const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
       'OpenSearch',
-      domainName
+      domainName,
     );
     await Promise.all(
-      activeAutoAlarms.map(alarmName => deleteCWAlarm(alarmName, domainName))
+      activeAutoAlarms.map((alarmName) => deleteCWAlarm(alarmName, domainName)),
     );
   } catch (e) {
     log.error().err(e).msg(`Error deleting OpenSearch alarms: ${e}`);
@@ -492,7 +494,9 @@ export async function manageInactiveOpenSearchAlarms(domainName: string) {
 }
 
 export async function getOpenSearchState(
-  event: any
+  // TODO Fix the use of any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  event: any,
 ): Promise<{domainArn: string; state: ValidOpenSearchState; tags: Tag}> {
   const domainArn = event.detail['domain-arn'];
   const state = event.detail.state;

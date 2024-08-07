@@ -3,7 +3,6 @@ import {MainFunction} from './main-function';
 import {StandardQueue} from 'truemark-cdk-lib/aws-sqs';
 import {Rule} from 'aws-cdk-lib/aws-events';
 import {LambdaFunction} from 'aws-cdk-lib/aws-events-targets';
-import {ExtendedAutoAlarmProps} from './auto-alarm-stack-props';
 import {
   Role,
   ServicePrincipal,
@@ -12,8 +11,12 @@ import {
 } from 'aws-cdk-lib/aws-iam';
 import {Stack} from 'aws-cdk-lib';
 
+export interface AutoAlarmConstructProps {
+  readonly prometheusWorkspaceId?: string;
+}
+
 export class AutoAlarmConstruct extends Construct {
-  constructor(scope: Construct, id: string, props: ExtendedAutoAlarmProps) {
+  constructor(scope: Construct, id: string, props: AutoAlarmConstructProps) {
     super(scope, id);
 
     //the following four consts are used to pass the correct ARN for whichever prometheus ID is being used as well as to the lambda.
@@ -145,12 +148,12 @@ export class AutoAlarmConstruct extends Construct {
           'resource-type': ['instance'],
           'changed-tag-keys': [
             'autoalarm:enabled',
-            'autoalarm:cw-ec2-cpu',
-            'autoalarm:cw-ec2-storage',
-            'autoalarm:cw-ec2-memory',
-            'autoalarm:anomaly-ec2-cpu',
-            'autoalarm:anomaly-ec2-storage',
-            'autoalarm:anomaly-ec2-memory',
+            'autoalarm:ec2-cpu',
+            'autoalarm:ec2-storage',
+            'autoalarm:ec2-memory',
+            'autoalarm:ec2-cpu-anomaly',
+            'autoalarm:ec2-storage-anomaly',
+            'autoalarm:ec2-memory-anomaly',
             'autoalarm:target', // cloudwatch or prometheus
           ],
         },
@@ -167,7 +170,7 @@ export class AutoAlarmConstruct extends Construct {
           state: [
             'running',
             'terminated',
-            //'stopped', //to be removed. for testing only
+            //'stopped', //for testing only
             //'shutting-down', //to be removed. for testing only
             //'pending',
           ],
@@ -190,14 +193,14 @@ export class AutoAlarmConstruct extends Construct {
           'resource-type': ['loadbalancer'],
           'changed-tag-keys': [
             'autoalarm:enabled',
-            'autoalarm:cw-alb-request-count',
-            'autoalarm:cw-alb-4xx-count',
-            'autoalarm:cw-alb-5xx-count',
-            'autoalarm:cw-alb-response-time',
-            'autoalarm:anomaly-alb-request-count',
-            'autoalarm:anomaly-alb-4xx-count',
-            'autoalarm:anomaly-alb-5xx-count',
-            'autoalarm:anomaly-alb-response-time',
+            'autoalarm:alb-request-count',
+            'autoalarm:alb-4xx-count',
+            'autoalarm:alb-5xx-count',
+            'autoalarm:alb-response-time',
+            'autoalarm:alb-request-count-anomaly',
+            'autoalarm:alb-4xx-count-anomaly',
+            'autoalarm:alb-5xx-count-anomaly',
+            'autoalarm:alb-response-time-anomaly',
           ],
         },
       },
@@ -229,16 +232,16 @@ export class AutoAlarmConstruct extends Construct {
           'resource-type': ['targetgroup'],
           'changed-tag-keys': [
             'autoalarm:enabled',
-            'autoalarm:cw-tg-unhealthy-host-count',
-            'autoalarm:cw-tg-response-time',
-            'autoalarm:cw-tg-request-count',
-            'autoalarm:cw-tg-4xx-count',
-            'autoalarm:cw-tg-5xx-count',
-            'autoalarm:anomaly-tg-unhealthy-host-count',
-            'autoalarm:anomaly-tg-request-count',
-            'autoalarm:anomaly-tg-response-time',
-            'autoalarm:anomaly-tg-4xx-count',
-            'autoalarm:anomaly-tg-5xx-count',
+            'autoalarm:tg-unhealthy-host-count',
+            'autoalarm:tg-response-time',
+            'autoalarm:tg-request-count',
+            'autoalarm:tg-4xx-count',
+            'autoalarm:tg-5xx-count',
+            'autoalarm:tg-unhealthy-host-count-anomaly',
+            'autoalarm:tg-request-count-anomaly',
+            'autoalarm:tg-response-time-anomaly',
+            'autoalarm:tg-4xx-count-anomaly',
+            'autoalarm:tg-5xx-count-anomaly',
           ],
         },
       },

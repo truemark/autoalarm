@@ -1,14 +1,21 @@
 import {SQSClient, ListQueueTagsCommand} from '@aws-sdk/client-sqs';
 import * as logging from '@nr1e/logging';
-import {AlarmProps, Tag} from './types.mjs';
+import {Tag} from './types.mjs';
 import {AlarmClassification} from './enums.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
-  createOrUpdateCWAlarm,
   getCWAlarmsForInstance,
   deleteCWAlarm,
-  createOrUpdateAnomalyDetectionAlarm,
+  doesAlarmExist,
 } from './alarm-tools.mjs';
+import {
+  CloudWatchClient,
+  ComparisonOperator,
+  DeleteAlarmsCommand,
+  PutAnomalyDetectorCommand,
+  PutMetricAlarmCommand,
+  Statistic,
+} from '@aws-sdk/client-cloudwatch';
 
 const log: logging.Logger = logging.getLogger('sqs-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -17,249 +24,250 @@ const sqsClient: SQSClient = new SQSClient({
   region,
   retryStrategy,
 });
+const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
+  region: region,
+  retryStrategy: retryStrategy,
+});
 
-const metricConfigs = [
-  {metricName: 'ApproximateNumberOfMessagesVisible', namespace: 'AWS/SQS'},
-  {metricName: 'ApproximateAgeOfOldestMessage', namespace: 'AWS/SQS'},
-  {metricName: 'NumberOfMessagesSent', namespace: 'AWS/SQS'},
+type MetricConfig = {
+  tagKey: string;
+  metricName: string;
+  namespace: string;
+  isDefault: boolean;
+  anomaly: boolean;
+  defaultValue: string;
+};
+
+const metricConfigs: MetricConfig[] = [
+  {
+    tagKey: 'sqs-age-of-oldest-message',
+    metricName: 'ApproximateAgeOfOldestMessage',
+    namespace: 'AWS/SQS',
+    isDefault: false,
+    anomaly: false,
+    defaultValue: '-/-/300/1/Maximum',
+  },
+  {
+    tagKey: 'sqs-age-of-oldest-message-anomaly',
+    metricName: 'ApproximateAgeOfOldestMessage',
+    namespace: 'AWS/SQS',
+    isDefault: true,
+    anomaly: true,
+    defaultValue: 'Maximum/300/1',
+  },
+  {
+    tagKey: 'sqs-number-of-messages-delayed',
+    metricName: 'ApproximateNumberOfMessagesDelayed',
+    namespace: 'AWS/SQS',
+    isDefault: false,
+    anomaly: false,
+    defaultValue: '-/-/300/1/Maximum',
+  },
+  {
+    tagKey: 'sqs-number-of-messages-delayed-anomaly',
+    metricName: 'ApproximateNumberOfMessagesDelayed',
+    namespace: 'AWS/SQS',
+    isDefault: false,
+    anomaly: true,
+    defaultValue: 'Maximum/300/1',
+  },
+  {
+    tagKey: 'sqs-messages-not-visible',
+    metricName: 'ApproximateNumberOfMessagesNotVisible',
+    namespace: 'AWS/SQS',
+    isDefault: false,
+    anomaly: false,
+    defaultValue: '-/-/300/1/Maximum',
+  },
+  {
+    tagKey: 'sqs-messages-not-visible-anomaly',
+    metricName: 'ApproximateNumberOfMessagesNotVisible',
+    namespace: 'AWS/SQS',
+    isDefault: false,
+    anomaly: true,
+    defaultValue: 'Maximum/300/1',
+  },
+  {
+    tagKey: 'sqs-messages-visible',
+    metricName: 'ApproximateNumberOfMessagesVisible',
+    namespace: 'AWS/SQS',
+    isDefault: false,
+    anomaly: false,
+    defaultValue: '-/-/300/1/Maximum',
+  },
+  {
+    tagKey: 'sqs-messages-visible-anomaly',
+    metricName: 'ApproximateNumberOfMessagesVisible',
+    namespace: 'AWS/SQS',
+    isDefault: true,
+    anomaly: true,
+    defaultValue: 'Maximum/300/1',
+  },
+  {
+    tagKey: 'sqs-empty-receives',
+    metricName: 'NumberOfEmptyReceive',
+    namespace: 'AWS/SQS',
+    isDefault: false,
+    anomaly: false,
+    defaultValue: '-/-/300/1/Sum',
+  },
+  {
+    tagKey: 'sqs-empty-receives-anomaly',
+    metricName: 'NumberOfEmptyReceive',
+    namespace: 'AWS/SQS',
+    isDefault: false,
+    anomaly: true,
+    defaultValue: 'Sum/300/1',
+  },
+  {
+    tagKey: 'sqs-messages-deleted',
+    metricName: 'NumberOfMessagesDeleted',
+    namespace: 'AWS/SQS',
+    isDefault: false,
+    anomaly: false,
+    defaultValue: '-/-/300/1/Sum',
+  },
+  {
+    tagKey: 'sqs-messages-deleted-anomaly',
+    metricName: 'NumberOfMessagesDeleted',
+    namespace: 'AWS/SQS',
+    isDefault: false,
+    anomaly: true,
+    defaultValue: 'Sum/300/1',
+  },
+  {
+    tagKey: 'sqs-messages-received',
+    metricName: 'NumberOfMessagesReceived',
+    namespace: 'AWS/SQS',
+    isDefault: false,
+    anomaly: false,
+    defaultValue: '-/-/300/1/Sum',
+  },
+  {
+    tagKey: 'sqs-messages-received-anomaly',
+    metricName: 'NumberOfMessagesReceived',
+    namespace: 'AWS/SQS',
+    isDefault: false,
+    anomaly: true,
+    defaultValue: 'Sum/300/1',
+  },
+  {
+    tagKey: 'sqs-messages-sent',
+    metricName: 'NumberOfMessagesSent',
+    namespace: 'AWS/SQS',
+    isDefault: false,
+    anomaly: false,
+    defaultValue: '-/-/300/1/Sum',
+  },
+  {
+    tagKey: 'sqs-messages-sent-anomaly',
+    metricName: 'NumberOfMessagesSent',
+    namespace: 'AWS/SQS',
+    isDefault: false,
+    anomaly: true,
+    defaultValue: 'Sum/300/1',
+  },
+  {
+    tagKey: 'sqs-sent-message-size',
+    metricName: 'SentMessageSize',
+    namespace: 'AWS/SQS',
+    isDefault: false,
+    anomaly: false,
+    defaultValue: '-/-/300/1/Average',
+  },
+  {
+    tagKey: 'sqs-sent-message-size-anomaly',
+    metricName: 'SentMessageSize',
+    namespace: 'AWS/SQS',
+    isDefault: false,
+    anomaly: true,
+    defaultValue: 'Average/300/1',
+  },
 ];
 
-const defaultThreshold = (type: AlarmClassification) =>
-  type === 'CRITICAL' ? 1000 : 500;
+type TagDefaults = {
+  warning: number | undefined;
+  critical: number | undefined;
+  stat: string;
+  duration: number;
+  periods: number;
+};
 
-// Default values for duration and periods
-const defaultStaticDurationTime = 60; // e.g., 300 seconds
-const defaultStaticDurationPeriods = 2; // e.g., 5 periods
-const defaultAnomalyDurationTime = 60; // e.g., 300 seconds
-const defaultAnomalyDurationPeriods = 2; // e.g., 5 periods
-const defaultExtendedStatistic: string = 'p90';
-
-async function getSQSAlarmConfig(
-  queueName: string,
-  type: AlarmClassification,
-  metricName: string,
-  tags: Tag
-): Promise<{
-  alarmName: string;
-  staticThresholdAlarmName: string;
-  anomalyAlarmName: string;
-  extendedStatistic: string;
-  threshold: number;
-  durationStaticTime: number;
-  durationStaticPeriods: number;
-  durationAnomalyTime: number;
-  durationAnomalyPeriods: number;
-}> {
-  log
-    .info()
-    .str('function', 'getSQSAlarmConfig')
-    .str('queueName', queueName)
-    .str('type', type)
-    .str('metric', metricName)
-    .msg('Fetching alarm configuration');
-
-  // Initialize variables with default values
-  let threshold = defaultThreshold(type);
-  let extendedStatistic = defaultExtendedStatistic;
-  let durationStaticTime = defaultStaticDurationTime;
-  let durationStaticPeriods = defaultStaticDurationPeriods;
-  let durationAnomalyTime = defaultAnomalyDurationTime;
-  let durationAnomalyPeriods = defaultAnomalyDurationPeriods;
-
-  log
-    .info()
-    .str('function', 'getSQSAlarmConfig')
-    .str('queueName', queueName)
-    .msg('Fetching alarm configuration');
-
-  // Define tag key based on metric
-  let cwTagKey = '';
-  let anomalyTagKey = '';
-
-  switch (metricName) {
-    case 'ApproximateNumberOfMessagesVisible':
-      cwTagKey = 'autoalarm:cw-sqs-messages-visible';
-      anomalyTagKey = 'autoalarm:anomaly-sqs-messages-visible';
-      break;
-    case 'ApproximateAgeOfOldestMessage':
-      cwTagKey = 'autoalarm:cw-sqs-oldest-message-age';
-      anomalyTagKey = 'autoalarm:anomaly-sqs-oldest-message-age';
-      break;
-    case 'NumberOfMessagesSent':
-      cwTagKey = 'autoalarm:cw-sqs-messages-sent';
-      anomalyTagKey = 'autoalarm:anomaly-sqs-messages-sent';
-      break;
-    default:
-      log
-        .warn()
-        .str('function', 'getSQSAlarmConfig')
-        .str('metricName', metricName)
-        .msg('Unexpected metric name');
-  }
-
-  log
-    .info()
-    .str('function', 'getSQSAlarmConfig')
-    .str('queueName', queueName)
-    .str('tags', JSON.stringify(tags))
-    .str('cwTagKey', cwTagKey)
-    .str('cwTagValue', tags[cwTagKey])
-    .str('anomalyTagKey', anomalyTagKey)
-    .str('anomalyTagValue', tags[anomalyTagKey])
-    .msg('Fetched instance tags');
-
-  // Extract and parse the static threshold tag values
-  if (tags[cwTagKey]) {
-    const staticValues = tags[cwTagKey].split('/');
-    log
-      .warn()
-      .str('function', 'getSQSAlarmConfig')
-      .str('queueName', queueName)
-      .str('cwTagKey', cwTagKey)
-      .str('cwTagValue', tags[cwTagKey])
-      .str('staticValues', JSON.stringify(staticValues))
-      .msg('Fetched Static Threshold tag values');
-
-    if (staticValues.length < 1 || staticValues.length > 4) {
-      log
-        .warn()
-        .str('function', 'getSQSAlarmConfig')
-        .str('queueName', queueName)
-        .str('cwTagKey', cwTagKey)
-        .str('cwTagValue', tags[cwTagKey])
-        .msg(
-          'Invalid tag values/delimiters. Please use 4 values separated by a "|". Using default values'
-        );
-    } else {
-      switch (type) {
-        case 'WARNING':
-          threshold =
-            staticValues[0] !== undefined &&
-            staticValues[0] !== '' &&
-            !isNaN(parseInt(staticValues[0], 10))
-              ? parseInt(staticValues[0], 10)
-              : defaultThreshold(type);
-          durationStaticTime =
-            staticValues[2] !== undefined &&
-            staticValues[2] !== '' &&
-            !isNaN(parseInt(staticValues[2], 10))
-              ? parseInt(staticValues[2], 10)
-              : defaultStaticDurationTime;
-          durationStaticPeriods =
-            staticValues[3] !== undefined &&
-            staticValues[3] !== '' &&
-            !isNaN(parseInt(staticValues[3], 10))
-              ? parseInt(staticValues[3], 10)
-              : defaultStaticDurationPeriods;
-          break;
-        case 'CRITICAL':
-          threshold =
-            staticValues[1] !== undefined &&
-            staticValues[1] !== '' &&
-            !isNaN(parseInt(staticValues[1], 10))
-              ? parseInt(staticValues[1], 10)
-              : defaultThreshold(type);
-          durationStaticTime =
-            staticValues[2] !== undefined &&
-            staticValues[2] !== '' &&
-            !isNaN(parseInt(staticValues[2], 10))
-              ? parseInt(staticValues[2], 10)
-              : defaultStaticDurationTime;
-          durationStaticPeriods =
-            staticValues[3] !== undefined &&
-            staticValues[3] !== '' &&
-            !isNaN(parseInt(staticValues[3], 10))
-              ? parseInt(staticValues[3], 10)
-              : defaultStaticDurationPeriods;
-          break;
+function getTagDefaults(config: MetricConfig, tagValue: string): TagDefaults {
+  const parts = tagValue ? tagValue.split('/') : [];
+  const defaultParts = config.defaultValue.split('/');
+  const defaults = defaultParts.map((defaultValue, index) => {
+    if (parts.length > index) {
+      if (parts[index] !== '') {
+        return parts[index];
       }
     }
-  }
-
-  // Extract and parse the anomaly detection tag values
-  if (tags[anomalyTagKey]) {
-    const values = tags[anomalyTagKey].split('/');
-    log
-      .info()
-      .str('function', 'getSQSAlarmConfig')
-      .str('queueName', queueName)
-      .str('anomalyTagKey', anomalyTagKey)
-      .str('anomalyTagValue', tags[anomalyTagKey])
-      .str('values', JSON.stringify(values))
-      .msg('Fetched Anomaly Detection tag values');
-
-    if (values.length < 1 || values.length > 3) {
-      log
-        .warn()
-        .str('function', 'getSQSAlarmConfig')
-        .str('queueName', queueName)
-        .str('anomalyTagKey', anomalyTagKey)
-        .str('anomalyTagValue', tags[anomalyTagKey])
-        .msg(
-          'Invalid tag values/delimiters. Please use 3 values separated by a "/". Using default values'
-        );
-    } else {
-      extendedStatistic =
-        typeof values[0] === 'string' && values[0].trim() !== ''
-          ? values[0].trim()
-          : defaultExtendedStatistic;
-      durationAnomalyTime =
-        values[1] !== undefined &&
-        values[1] !== '' &&
-        !isNaN(parseInt(values[1], 10))
-          ? parseInt(values[1], 10)
-          : defaultAnomalyDurationTime;
-      durationAnomalyPeriods =
-        values[2] !== undefined &&
-        values[2] !== '' &&
-        !isNaN(parseInt(values[2], 10))
-          ? parseInt(values[2], 10)
-          : defaultAnomalyDurationPeriods;
-      log
-        .info()
-        .str('function', 'getSQSAlarmConfig')
-        .str('queueName', queueName)
-        .str('anomalyTagKey', anomalyTagKey)
-        .str('anomalyTagValue', tags[anomalyTagKey])
-        .str('extendedStatistic', extendedStatistic)
-        .num('durationTime', durationAnomalyTime)
-        .num('durationPeriods', durationAnomalyPeriods)
-        .msg('Fetched Anomaly Detection tag values');
+    return defaultValue;
+  });
+  if (config.anomaly) {
+    // Take the default value which we know is good
+    let duration = Number.parseInt(defaultParts[1]);
+    try {
+      // Override the default if it's a valid number
+      duration = Number.parseInt(defaults[1]);
+    } catch (err) {
+      // do nothing
     }
+    // Take the default value which we know is good
+    let periods = Number.parseInt(defaultParts[2]);
+    try {
+      // Override the default is it's a valid number
+      periods = Number.parseInt(defaults[2]);
+    } catch (err) {
+      // do nothing
+    }
+    return {
+      warning: undefined,
+      critical: undefined,
+      stat: defaults[0],
+      duration,
+      periods,
+    };
+  } else {
+    let warning = undefined;
+    try {
+      // If we can't parse the number, we won't create the alarm and it remains undefined
+      warning = Number.parseInt(defaults[0]);
+    } catch (err) {
+      // do nothing
+    }
+    let critical = undefined;
+    try {
+      // If we can't parse the number, we won't create the alarm and it remains undefined
+      critical = Number.parseInt(defaults[1]);
+    } catch (err) {
+      // do nothing
+    }
+    let duration = Number.parseInt(defaultParts[2]);
+    try {
+      // If we can't parse the number, we won't create the alarm and it remains undefined
+      duration = Number.parseInt(defaults[2]);
+    } catch (err) {
+      // do nothing
+    }
+    let periods = Number.parseInt(defaultParts[3]);
+    try {
+      // If we can't parse the number, we won't create the alarm and it remains undefined
+      periods = Number.parseInt(defaults[3]);
+    } catch (err) {
+      // do nothing
+    }
+    return {
+      warning,
+      critical,
+      duration,
+      periods,
+      stat: defaults[4],
+    };
   }
-  log
-    .info()
-    .str('function', 'getSQSAlarmConfig')
-    .str('queueName', queueName)
-    .str('type', type)
-    .str('metric', metricName)
-    .str(
-      'staticThresholdAlarmName',
-      `AutoAlarm-SQS-${queueName}-${type}-${metricName.toUpperCase()}`
-    )
-    .str(
-      'anomalyAlarmName',
-      `AutoAlarm-SQS-${queueName}-CRITICAL-${metricName.toUpperCase()}`
-    )
-    .str('extendedStatistic', extendedStatistic)
-    .num('threshold', threshold)
-    .num('durationStaticTime', durationStaticTime)
-    .num('durationStaticPeriods', durationStaticPeriods)
-    .num('durationAnomalyTime', durationAnomalyTime)
-    .num('durationAnomalyPeriods', durationAnomalyPeriods)
-    .msg('Fetched alarm configuration');
-  return {
-    alarmName: `AutoAlarm-SQS-${queueName}-${type}-${metricName.toUpperCase()}`,
-    staticThresholdAlarmName: `AutoAlarm-SQS-StaticThreshold-${queueName}-${type}-${metricName.toUpperCase()}`,
-    anomalyAlarmName: `AutoAlarm-SQS-AnomalyDetection-${queueName}-CRITICAL-${metricName.toUpperCase()}`,
-    extendedStatistic,
-    threshold,
-    durationStaticTime,
-    durationStaticPeriods,
-    durationAnomalyTime,
-    durationAnomalyPeriods,
-  };
 }
+
+const extendedStatRegex = /^p.*|^tm.*|^tc.*|^ts.*|^wm.*|^IQM$/;
 
 export async function fetchSQSTags(queueUrl: string): Promise<Tag> {
   try {
@@ -286,149 +294,195 @@ export async function fetchSQSTags(queueUrl: string): Promise<Tag> {
   }
 }
 
-async function checkAndManageSQSStatusAlarms(queueUrl: string, tags: Tag) {
-  const queueName = extractQueueName(queueUrl);
-  if (tags['autoalarm:enabled'] === 'false' || !tags['autoalarm:enabled']) {
-    const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
-      'SQS',
-      queueName
-    );
+async function checkAndManageSQSStatusAlarms(queueName: string, tags: Tag) {
+  const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
+
+  if (!isAlarmEnabled) {
+    const activeAutoAlarms = await getCWAlarmsForInstance('SQS', queueName);
     await Promise.all(
-      activeAutoAlarms.map(alarmName => deleteCWAlarm(alarmName, queueName))
+      activeAutoAlarms.map((alarmName) => deleteCWAlarm(alarmName, queueName)),
     );
     log.info().msg('Status check alarm creation skipped due to tag settings.');
-  } else if (tags['autoalarm:enabled'] === undefined) {
+    return;
+  }
+
+  // Check and manage alarms for each metric configuration
+  for (const config of metricConfigs) {
     log
       .info()
-      .msg(
-        'Status check alarm creation skipped due to missing autoalarm:enabled tag.'
-      );
-    return;
-  } else {
-    for (const config of metricConfigs) {
-      const {metricName, namespace} = config;
-      let cwTagKey = '';
-      let anomalyTagKey = '';
-      switch (metricName) {
-        case 'ApproximateNumberOfMessagesVisible':
-          cwTagKey = 'autoalarm:cw-sqs-messages-visible';
-          anomalyTagKey = 'autoalarm:anomaly-sqs-messages-visible';
-          break;
-        case 'ApproximateAgeOfOldestMessage':
-          cwTagKey = 'autoalarm:cw-sqs-oldest-message-age';
-          anomalyTagKey = 'autoalarm:anomaly-sqs-oldest-message-age';
-          break;
-        case 'NumberOfMessagesSent':
-          cwTagKey = 'autoalarm:cw-sqs-messages-sent';
-          anomalyTagKey = 'autoalarm:anomaly-sqs-messages-sent';
-          break;
-        default:
-          log
-            .warn()
-            .str('function', 'getSQSAlarmConfig')
-            .str('metricName', metricName)
-            .msg('Unexpected metric name');
-      }
+      .str('function', 'checkAndManageSQSStatusAlarms')
+      .obj('config', config)
+      .str('QueueName', queueName)
+      .msg('Tag values before processing');
 
+    const tagValue = tags[`autoalarm:${config.tagKey}`];
+
+    if (!config.isDefault && tagValue === undefined) {
       log
         .info()
-        .str('function', 'checkAndManageSQSStatusAlarms')
-        .str('queueName', queueName)
-        .str('cwTagKey', cwTagKey)
-        .str('cwTagValue', tags[cwTagKey] || 'undefined')
-        .str('anomalyTagKey', anomalyTagKey)
-        .str('anomalyTagValue', tags[anomalyTagKey] || 'undefined')
-        .msg('Tag values before processing');
+        .obj('config', config)
+        .msg('Not default and tag value is undefined, skipping.');
+      continue; // not a default and not overridden
+    }
 
-      for (const type of ['WARNING', 'CRITICAL'] as AlarmClassification[]) {
-        const {
-          staticThresholdAlarmName,
-          anomalyAlarmName,
-          extendedStatistic,
-          threshold,
-          durationStaticTime,
-          durationStaticPeriods,
-          durationAnomalyTime,
-          durationAnomalyPeriods,
-        } = await getSQSAlarmConfig(queueName, type, metricName, tags);
-
-        // Create or update anomaly detection alarm
-        await createOrUpdateAnomalyDetectionAlarm(
-          anomalyAlarmName,
-          'SQS',
-          queueName,
-          metricName,
-          namespace,
-          extendedStatistic,
-          durationAnomalyTime,
-          durationAnomalyPeriods,
-          'CRITICAL' as AlarmClassification
-        );
-
-        // Check and create or delete static threshold alarm based on tag values
-        if (
-          type === 'WARNING' &&
-          (!tags[cwTagKey] ||
-            tags[cwTagKey].split('/')[0] === undefined ||
-            tags[cwTagKey].split('/')[0] === '' ||
-            !tags[cwTagKey].split('/')[0])
-        ) {
-          log
-            .info()
-            .str('function', 'checkAndManageSQSStatusAlarms')
-            .str('queueName', queueName)
-            .str(cwTagKey, tags[cwTagKey])
-            .msg(
-              `SQS alarm threshold for ${metricName} WARNING is not defined. Skipping static ${metricName} warning alarm creation.`
+    const defaults = getTagDefaults(config, tagValue);
+    if (config.anomaly) {
+      const alarmName = `AutoAlarm-SQS-${queueName}-${config.metricName}-Anomaly-Critical`;
+      if (defaults.stat) {
+        // Create critical alarm
+        if (defaults.stat !== '-' && defaults.stat !== 'disabled') {
+          try {
+            // Create anomaly detector with the latest parameters
+            const anomalyDetectorInput = {
+              Namespace: config.namespace,
+              MetricName: config.metricName,
+              Dimensions: [
+                {
+                  Name: 'QueueName',
+                  Value: queueName,
+                },
+              ],
+              Stat: defaults.stat,
+              Configuration: {
+                MetricTimezone: 'UTC',
+              },
+            };
+            log
+              .debug()
+              .obj('input', anomalyDetectorInput)
+              .msg('Sending PutAnomalyDetectorCommand');
+            await cloudWatchClient.send(
+              new PutAnomalyDetectorCommand(anomalyDetectorInput),
             );
-          await deleteCWAlarm(staticThresholdAlarmName, queueName);
-        } else if (
-          type === 'CRITICAL' &&
-          (!tags[cwTagKey] ||
-            tags[cwTagKey].split('/')[1] === '' ||
-            tags[cwTagKey].split('/')[1] === undefined ||
-            !tags[cwTagKey].split('/')[1])
-        ) {
-          log
-            .info()
-            .str('function', 'checkAndManageSQSStatusAlarms')
-            .str('queueName', queueName)
-            .str(cwTagKey, tags[cwTagKey])
-            .msg(
-              `SQS alarm threshold for ${metricName} CRITICAL is not defined. Skipping static ${metricName} critical alarm creation.`
-            );
-          await deleteCWAlarm(staticThresholdAlarmName, queueName);
-        } else {
-          const alarmProps: AlarmProps = {
-            threshold: threshold,
-            period: 60,
-            namespace: namespace,
-            evaluationPeriods: 5,
-            metricName: metricName,
-            dimensions: [{Name: 'QueueName', Value: queueName}],
-          };
 
-          await createOrUpdateCWAlarm(
-            staticThresholdAlarmName,
-            queueName,
-            alarmProps,
-            threshold,
-            durationStaticTime,
-            durationStaticPeriods,
-            'Maximum',
-            type as AlarmClassification
-          );
+            // Create anomaly detection alarm
+            const metricAlarmInput = {
+              AlarmName: alarmName,
+              ComparisonOperator: ComparisonOperator.GreaterThanUpperThreshold,
+              EvaluationPeriods: defaults.periods,
+              Metrics: [
+                {
+                  Id: 'primaryMetric',
+                  MetricStat: {
+                    Metric: {
+                      Namespace: config.namespace,
+                      MetricName: config.metricName,
+                      Dimensions: [
+                        {
+                          Name: 'QueueName',
+                          Value: queueName,
+                        },
+                      ],
+                    },
+                    Period: defaults.duration,
+                    Stat: defaults.stat,
+                  },
+                },
+                {
+                  Id: 'anomalyDetectionBand',
+                  Expression: 'ANOMALY_DETECTION_BAND(primaryMetric)',
+                },
+              ],
+              ThresholdMetricId: 'anomalyDetectionBand',
+              ActionsEnabled: false,
+              Tags: [{Key: 'severity', Value: AlarmClassification.Critical}],
+              TreatMissingData: 'ignore', // Adjust as needed
+            };
+            await cloudWatchClient.send(
+              new PutMetricAlarmCommand(metricAlarmInput),
+            );
+
+            log
+              .info()
+              .str('function', 'createOrUpdateAnomalyDetectionAlarm')
+              .str('alarmName', alarmName)
+              .obj('anomalyDetectorInput', anomalyDetectorInput)
+              .obj('metricAlarmInput', metricAlarmInput)
+              .msg(`${alarmName} Anomaly Detection Alarm created or updated.`);
+          } catch (e) {
+            log
+              .error()
+              .str('function', 'createOrUpdateAnomalyDetectionAlarm')
+              .err(e)
+              .str('alarmName', alarmName)
+              .msg(
+                `Failed to create or update ${alarmName} anomaly detection alarm due to an error ${e}`,
+              );
+          }
         }
+      } else if (await doesAlarmExist(alarmName)) {
+        await cloudWatchClient.send(
+          new DeleteAlarmsCommand({
+            AlarmNames: [alarmName],
+          }),
+        );
+      }
+    } else {
+      const alarmNamePrefix = `AutoAlarm-SQS-${queueName}-${config.metricName}`;
+      // Create warning alarm
+      if (defaults.warning) {
+        await cloudWatchClient.send(
+          new PutMetricAlarmCommand({
+            AlarmName: `${alarmNamePrefix}-Warning`,
+            ComparisonOperator: 'GreaterThanThreshold',
+            EvaluationPeriods: defaults.periods,
+            MetricName: config.metricName,
+            Namespace: config.namespace,
+            Period: defaults.duration,
+            ...(extendedStatRegex.test(defaults.stat)
+              ? {ExtendedStatistic: defaults.stat}
+              : {Statistic: defaults.stat as Statistic}),
+            Threshold: defaults.warning,
+            ActionsEnabled: false,
+            Dimensions: [{Name: 'QueueName', Value: queueName}],
+            Tags: [{Key: 'severity', Value: 'Warning'}],
+            TreatMissingData: 'ignore',
+          }),
+        );
+      } else if (await doesAlarmExist(`${alarmNamePrefix}-Warning`)) {
+        await cloudWatchClient.send(
+          new DeleteAlarmsCommand({
+            AlarmNames: [`${alarmNamePrefix}-Warning`],
+          }),
+        );
+      }
+
+      // Create critical alarm
+      if (defaults.critical) {
+        await cloudWatchClient.send(
+          new PutMetricAlarmCommand({
+            AlarmName: `${alarmNamePrefix}-Critical`,
+            ComparisonOperator: 'GreaterThanThreshold',
+            EvaluationPeriods: defaults.periods,
+            MetricName: config.metricName,
+            Namespace: config.namespace,
+            Period: defaults.duration,
+            ...(extendedStatRegex.test(defaults.stat)
+              ? {ExtendedStatistic: defaults.stat}
+              : {Statistic: defaults.stat as Statistic}),
+            Threshold: defaults.critical,
+            ActionsEnabled: false,
+            Dimensions: [{Name: 'QueueName', Value: queueName}],
+            Tags: [{Key: 'severity', Value: 'Critical'}],
+            TreatMissingData: 'ignore',
+          }),
+        );
+      } else if (await doesAlarmExist(`${alarmNamePrefix}-Critical`)) {
+        await cloudWatchClient.send(
+          new DeleteAlarmsCommand({
+            AlarmNames: [`${alarmNamePrefix}-Critical`],
+          }),
+        );
       }
     }
   }
 }
 
 export async function manageSQSAlarms(
-  queueUrl: string,
-  tags: Tag
+  queueName: string,
+  tags: Tag,
 ): Promise<void> {
-  await checkAndManageSQSStatusAlarms(queueUrl, tags);
+  await checkAndManageSQSStatusAlarms(queueName, tags);
 }
 
 export async function manageInactiveSQSAlarms(queueUrl: string) {
@@ -436,10 +490,10 @@ export async function manageInactiveSQSAlarms(queueUrl: string) {
   try {
     const activeAutoAlarms: string[] = await getCWAlarmsForInstance(
       'SQS',
-      queueName
+      queueName,
     );
     await Promise.all(
-      activeAutoAlarms.map(alarmName => deleteCWAlarm(alarmName, queueName))
+      activeAutoAlarms.map((alarmName) => deleteCWAlarm(alarmName, queueName)),
     );
   } catch (e) {
     log
@@ -456,6 +510,8 @@ function extractQueueName(queueUrl: string): string {
   return parts[parts.length - 1];
 }
 
+// TODO Fix the use of any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function parseSQSEventAndCreateAlarms(event: any): Promise<{
   queueUrl: string;
   eventType: string;
@@ -599,7 +655,7 @@ export async function parseSQSEventAndCreateAlarms(event: any): Promise<{
       .str('function', 'parseSQSEventAndCreateAlarms')
       .str('queueUrl', queueUrl)
       .msg('Starting to manage SQS alarms');
-    await manageSQSAlarms(queueUrl, tags);
+    await manageSQSAlarms(queueName, tags);
   } else if (eventType === 'Delete' || eventType === 'RemoveTag') {
     log
       .info()
