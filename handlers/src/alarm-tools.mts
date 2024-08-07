@@ -351,7 +351,7 @@ export async function createOrUpdateCWAlarm(
     period = 10;
     log
       .info()
-      .str('function', 'configureAlarmPropsFromTags')
+      .str('function', 'createOrUpdateCWAlarm')
       .num('period', period)
       .msg(
         'Period value less than 10 is not allowed, must be 10. Using default value of 10',
@@ -360,7 +360,7 @@ export async function createOrUpdateCWAlarm(
     period = 30;
     log
       .info()
-      .str('function', 'configureAlarmPropsFromTags')
+      .str('function', 'createOrUpdateCWAlarm')
       .num('period', period)
       .msg(
         'Period value is either 30, < 30, <= 45 or 30. Using default value of 30',
@@ -369,7 +369,7 @@ export async function createOrUpdateCWAlarm(
     period = Math.ceil(period / 60) * 60;
     log
       .info()
-      .str('function', 'configureAlarmPropsFromTags')
+      .str('function', 'createOrUpdateCWAlarm')
       .num('period', period)
       .msg(
         'Period value not 10 or 30 must be multiple of 60. Adjusted to nearest multiple of 60',
