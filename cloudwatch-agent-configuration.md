@@ -8,6 +8,7 @@ This guide provides step-by-step instructions on how to install and configure th
 - **EC2 Instance(s)**: Running Amazon Linux 2 or other supported OS.
 - **IAM Role**: An IAM role for EC2 with permissions to access Systems Manager and CloudWatch.
 - **AWS CLI**: Optionally, the AWS CLI installed on your local machine for running commands.
+- **SSM Parameter Configuration**: Create SSM parameter with cloudwatch agent configuration for Windows and Linux instances.
 
 ## Step 1: Attach IAM Role to EC2 Instances
 
@@ -15,9 +16,8 @@ Ensure that your EC2 instances have an IAM role with the necessary permissions t
 
 1. Go to the IAM Management Console.
 2. Create a new role and select AWS service -> EC2.
-3. Attach the `AmazonSSMManagedInstanceCore` and `CloudWatchAgentServerPolicy` policies.
-4. The action `ssm:PutParameter` is required for the CloudWatch Agent to store configuration parameters.
-5. Attach this role to your EC2 instances.
+3. Attach the `AmazonSSMManagedInstanceCore`, `CloudWatchAgentServerPolicy` and `AmazonSSMFullAccess` policies.
+4. Attach this role to your EC2 instances.
 
 ## Step 2: Install the SSM Agent
 
@@ -39,36 +39,7 @@ Use SSM to run commands on your EC2 instances to install the CloudWatch Agent.
 8. Uncheck `Enable an S3 bucket` in Output options.
 9. Click on **Run**.
 
-## Step 4: Configure the CloudWatch Agent
-
-Use the wizard to configure the CloudWatch Agent on your EC2 instances. The wizard will guide you through setting up the agent and creating a configuration file. You can save this configuration to an SSM parameter for easy management.
-
-Once the configuration is saved, you can apply it to multiple instances using SSM.
-
-### Linux Configuration Wizard
-
-1. SSH into your EC2 instance.
-2. Run the following command to start the configuration wizard:
-   ```sh
-   sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-config-wizard
-   ```
-3. Follow the prompts to configure the agent.
-4. Save the configuration to an SSM parameter.
-
-### Windows Configuration Wizard
-
-1. RDP into your Windows EC2 instance.
-2. Run the following command to start the configuration wizard:
-   ```sh
-   cd "C:\Program Files\Amazon\AmazonCloudWatchAgent"
-   ```
-   ```sh
-   .\amazon-cloudwatch-agent-config-wizard.exe
-   ```
-3. Follow the prompts to configure the agent.
-4. Save the configuration to an SSM parameter.
-
-## Step 5: Apply the Configuration Using SSM
+## Step 4: Apply the Configuration Using SSM
 
 ### Using AWS Management Console
 
