@@ -21,7 +21,7 @@ import {
   doesAlarmExist,
 } from './alarm-tools.mjs';
 import * as arnparser from '@aws-sdk/util-arn-parser';
-import {TGEvent} from "./event-types.mjs";
+import {TGEvent} from './event-types.mjs';
 
 const log: logging.Logger = logging.getLogger('targetgroup-modules');
 const region: string = process.env.AWS_REGION || '';

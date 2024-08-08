@@ -18,7 +18,7 @@ import {
   createOrUpdateAnomalyDetectionAlarm,
   doesAlarmExist,
 } from './alarm-tools.mjs';
-import {ALBEvent} from "./event-types.mjs";
+import {ALBEvent} from './event-types.mjs';
 
 const log: logging.Logger = logging.getLogger('alb-modules');
 const region: string = process.env.AWS_REGION || '';

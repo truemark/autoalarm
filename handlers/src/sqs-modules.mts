@@ -16,7 +16,7 @@ import {
   PutMetricAlarmCommand,
   Statistic,
 } from '@aws-sdk/client-cloudwatch';
-import {SQSEvent} from "./event-types.mjs";
+import {SQSEvent} from './event-types.mjs';
 
 const log: logging.Logger = logging.getLogger('sqs-modules');
 const region: string = process.env.AWS_REGION || '';

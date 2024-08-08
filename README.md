@@ -114,11 +114,29 @@ Note that tagging format is different for ALBs, Target Groups and SQS which requ
 | `autoalarm:os-red-cluster`                    | "-\/1\/300\/1\/Maximum"   | No                 | Yes                             |
 | `autoalarm:os-red-cluster-anomaly`            | "Maximum\/300\/1"         | Yes                | Yes                             |
 | `autoalarm:os-storage`                        | "96\/98\/300\/2\/Maximum" | No                 | Yes                             |
-| `autoalarm:os-storage-anomaly`                | "p90\|60\|2"              | Yes                | Yes                             |
+| `autoalarm:os-storage-anomaly`                | "p90\/60\/2"              | Yes                | Yes                             |
 | `autoalarm:os-jvm-memory`                     | "96\/98\/300\/2\/p90"     | No                 | Yes                             |
-| `autoalarm:os-jvm-memory-anomaly`             | "p90\|60\|2"              | Yes                | Yes                             |
+| `autoalarm:os-jvm-memory-anomaly`             | "p90\/60\/2"              | Yes                | Yes                             |
 | `autoalarm:os-cpu`                            | "95\/98\/300\/2\/p90"     | No                 | Yes                             |
-| `autoalarm:os-cpu-anomaly`                    | "p90\|60\|2"              | Yes                | Yes                             |
+| `autoalarm:os-cpu-anomaly`                    | "p90\/60\/2"              | Yes                | Yes                             |
+| `autoalarm:os-iops-throttle`                  | "-\/1\/300\/1\/Maximum"   | No                 | Yes                             |
+| `autoalarm:os-iops-throttle-anomaly`          | "Maximum\/300\/1"         | Yes                | Yes                             |
+| `autoalarm:os-throughput-throttle`            | "-\/1\/300\/1\/Maximum"   | No                 | Yes                             |
+| `autoalarm:os-throughput-throttle-anomaly`    | "Maximum\/300\/1"         | Yes                | Yes                             |
+| `autoalarm:os-write-latency`                  | "100\/200\/300\/2\/p90"   | No                 | Yes                             |
+| `autoalarm:os-write-latency-anomaly`          | "p90\/60\/2"              | Yes                | Yes                             |
+| `autoalarm:os-read-latency`                   | "100\/200\/300\/2\/p90"   | No                 | Yes                             |
+| `autoalarm:os-read-latency-anomaly`           | "p90\/60\/2"              | Yes                | Yes                             |
+| `autoalarm:os-search-latency`                 | "100\/200\/300\/2\/p90"   | No                 | Yes                             |
+| `autoalarm:os-search-latency-anomaly`         | "p90\/60\/2"              | Yes                | Yes                             |
+| `autoalarm:os-4xx-count`                      | "-\/-\/60\/2\/Sum"        | No                 | Yes                             |
+| `autoalarm:os-4xx-count-anomaly`              | "p90\/60\/2"              | No                 | Yes                             |
+| `autoalarm:os-5xx-count`                      | "-\/-\/60\/2\/Sum"        | No                 | Yes                             |
+| `autoalarm:os-5xx-count-anomaly`              | "p90\/60\/2"              | Yes                | Yes                             |
+| `autoalarm:os-sys-memory-util`                | "85\/90\/300\/2\/p90"     | No                 | Yes                             |
+| `autoalarm:os-sys-memory-util-anomaly`        | "p90\/60\/2"              | Yes                | Yes                             |
+| `autoalarm:os-snapshot-failures`              | "-\/1\/300\/1\/Sum"       | No                 | Yes                             |
+| `autoalarm:os-snapshot-failures-anomaly`      | "Maximum\/300\/1"         | Yes                | Yes                             |
 
 ### Default Alarm Behavior
 
