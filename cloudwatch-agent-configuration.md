@@ -16,7 +16,8 @@ Ensure that your EC2 instances have an IAM role with the necessary permissions t
 
 1. Go to the IAM Management Console.
 2. Create a new role and select AWS service -> EC2.
-3. Attach the `AmazonSSMManagedInstanceCore`, `CloudWatchAgentServerPolicy` and `AmazonSSMFullAccess` policies.
+     - If you already have an EC2 role the below permissions can be added to the existing role.
+3. Attach the `AmazonSSMManagedInstanceCore`, `CloudWatchAgentServerPolicy` policies.
 4. Attach this role to your EC2 instances.
 
 ## Step 2: Install the SSM Agent
@@ -33,7 +34,7 @@ Use SSM to run commands on your EC2 instances to install the CloudWatch Agent.
 2. In the navigation pane, choose **Run Command**.
 3. Choose **Run command**.
 4. In the **Command document** list, choose `AWS-ConfigureAWSPackage`.
-5. In the **Targets** area, select the instances where you want to install the agent.
+5. In the **Targets** area, select `Specify Instance Tags` and specify the tag `autoalarm:enabled` and leave the value empty.
 6. In the **Action** options, select **Install**.
 7. For **Name**, type `AmazonCloudWatchAgent`.
 8. Uncheck `Enable an S3 bucket` in Output options.
