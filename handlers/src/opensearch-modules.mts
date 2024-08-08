@@ -127,7 +127,7 @@ const metricConfigs = [
     namespace: 'AWS/ES',
     isDefault: false,
     anomaly: false,
-    defaultValue: '-/1/300/1/Maximum',
+    defaultValue: '10/20/300/1/Maximum',
   },
   {
     tagKey: 'os-iops-throttle-anomaly',
@@ -143,7 +143,7 @@ const metricConfigs = [
     namespace: 'AWS/ES',
     isDefault: false,
     anomaly: false,
-    defaultValue: '-/1/300/1/Maximum',
+    defaultValue: '10/20/300/1/Maximum',
   },
   {
     tagKey: 'os-throughput-throttle-anomaly',
@@ -159,7 +159,7 @@ const metricConfigs = [
     namespace: 'AWS/ES',
     isDefault: false,
     anomaly: false,
-    defaultValue: '100/200/300/2/p90',
+    defaultValue: '500/1000/300/2/Average', //500ms/1000ms
   },
   {
     tagKey: 'os-write-latency-anomaly',
@@ -175,7 +175,7 @@ const metricConfigs = [
     namespace: 'AWS/ES',
     isDefault: false,
     anomaly: false,
-    defaultValue: '100/200/300/2/p90',
+    defaultValue: '500/1000/300/2/Average', //500ms/1000ms
   },
   {
     tagKey: 'os-read-latency-anomaly',
@@ -191,7 +191,7 @@ const metricConfigs = [
     namespace: 'AWS/ES',
     isDefault: false,
     anomaly: false,
-    defaultValue: '100/200/300/2/p90',
+    defaultValue: '3000/5000/300/2/Average', //3000ms/5000ms
   },
   {
     tagKey: 'os-search-latency-anomaly',
@@ -207,7 +207,7 @@ const metricConfigs = [
     namespace: 'AWS/ES',
     isDefault: false,
     anomaly: false,
-    defaultValue: '-/-/300/1/Maximum',
+    defaultValue: '100/300/300/1/Sum',
   },
   {
     tagKey: 'os-4xx-errors-anomaly',
@@ -223,7 +223,7 @@ const metricConfigs = [
     namespace: 'AWS/ES',
     isDefault: false,
     anomaly: false,
-    defaultValue: '-/-/300/1/Maximum',
+    defaultValue: '-/-/300/1/Sum',
   },
   {
     tagKey: 'os-5xx-errors-anomaly',
