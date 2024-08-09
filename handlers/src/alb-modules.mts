@@ -256,8 +256,12 @@ async function checkAndManageALBStatusAlarms(
         if (defaults.stat !== '-' && defaults.stat !== 'disabled') {
           await createOrUpdateAnomalyDetectionAlarm(
             alarmName,
-            'LoadBalancer',
-            loadBalancerName,
+            [
+              {
+                Name: 'LoadBalancer',
+                Value: loadBalancerName,
+              },
+            ],
             config.metricName,
             config.namespace,
             defaults.stat,

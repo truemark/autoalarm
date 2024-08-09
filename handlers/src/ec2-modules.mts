@@ -1032,9 +1032,7 @@ export async function manageCPUUsageAlarmForInstance(
     if (useAnomalyDetection) {
       await createOrUpdateAnomalyDetectionAlarm(
         anomalyAlarmName,
-        [
-          {Name: 'InstanceId', Value: instanceId},
-        ],
+        [{Name: 'InstanceId', Value: instanceId}],
         'CPUUtilization',
         'AWS/EC2',
         extendedAnomalyStatistic,
@@ -1089,19 +1087,19 @@ export async function manageCPUUsageAlarmForInstance(
     await deleteCWAlarm(staticThresholdAlarmName, instanceId);
     return;
   }
-    await createOrUpdateCWAlarm(
-      staticThresholdAlarmName,
-      instanceId,
-      threshold,
-      durationStaticTime,
-      durationStaticPeriods,
-      'CPUUtilization',
-      'AWS/EC2',
-      [{Name: 'InstanceId', Value: instanceId}],
-      type,
-      'ignore' as MissingDataTreatment,
-      staticStatistic,
-    );
+  await createOrUpdateCWAlarm(
+    staticThresholdAlarmName,
+    instanceId,
+    threshold,
+    durationStaticTime,
+    durationStaticPeriods,
+    'CPUUtilization',
+    'AWS/EC2',
+    [{Name: 'InstanceId', Value: instanceId}],
+    type,
+    'ignore' as MissingDataTreatment,
+    staticStatistic,
+  );
 }
 
 export async function manageStorageAlarmForInstance(
@@ -1159,27 +1157,24 @@ export async function manageStorageAlarmForInstance(
     const paths = Object.keys(storagePaths);
     if (paths.length > 0) {
       for (const path of paths) {
-        const dimensions_props = storagePaths[path].map(dimension => ({
+        const dimensions_props = storagePaths[path].map((dimension) => ({
           Name: dimension.Name,
-          Value: dimension.Value
+          Value: dimension.Value,
         }));
         staticThresholdStorageAlarmName = `${staticThresholdAlarmName}-${path}`;
         anomalyStorageAlarmName = `${anomalyAlarmName}-${path}`;
 
         if (useAnomalyDetection) {
-            await createOrUpdateAnomalyDetectionAlarm(
-              anomalyStorageAlarmName,
-              [
-                {Name: 'InstanceID', Value: instanceId},
-                ...dimensions_props
-              ],
-              metricName,
-              'CWAgent',
-              extendedAnomalyStatistic,
-              durationAnomalyTime,
-              durationAnomalyPeriods,
-              'CRITICAL' as AlarmClassification,
-            );
+          await createOrUpdateAnomalyDetectionAlarm(
+            anomalyStorageAlarmName,
+            [{Name: 'InstanceID', Value: instanceId}, ...dimensions_props],
+            metricName,
+            'CWAgent',
+            extendedAnomalyStatistic,
+            durationAnomalyTime,
+            durationAnomalyPeriods,
+            AlarmClassification.Critical,
+          );
           log
             .info()
             .str('function', 'manageStorageAlarmForInstance')
@@ -1239,10 +1234,7 @@ export async function manageStorageAlarmForInstance(
             durationStaticPeriods,
             metricName,
             'CWAgent',
-            [
-              {Name: 'InstanceID', Value: instanceId},
-                ...dimensions_props,
-              ],
+            [{Name: 'InstanceID', Value: instanceId}, ...dimensions_props],
             type,
             'ignore' as MissingDataTreatment,
             staticStatistic,
@@ -1318,9 +1310,7 @@ export async function manageMemoryAlarmForInstance(
       if (useAnomalyDetection) {
         await createOrUpdateAnomalyDetectionAlarm(
           anomalyAlarmName,
-          [
-            {Name: 'InstanceId', Value: instanceId},
-          ],
+          [{Name: 'InstanceId', Value: instanceId}],
           metricName,
           'CWAgent',
           extendedAnomalyStatistic,
@@ -1374,19 +1364,19 @@ export async function manageMemoryAlarmForInstance(
         await deleteCWAlarm(staticThresholdAlarmName, instanceId);
         return;
       } else {
-          await createOrUpdateCWAlarm(
-            staticThresholdAlarmName,
-            instanceId,
-            threshold,
-            durationStaticTime,
-            durationStaticPeriods,
-            metricName,
-            'CWAgent',
-            [{Name: 'InstanceId', Value: instanceId}],
-            type,
-            'ignore' as MissingDataTreatment,
-            staticStatistic,
-          );
+        await createOrUpdateCWAlarm(
+          staticThresholdAlarmName,
+          instanceId,
+          threshold,
+          durationStaticTime,
+          durationStaticPeriods,
+          metricName,
+          'CWAgent',
+          [{Name: 'InstanceId', Value: instanceId}],
+          type,
+          'ignore' as MissingDataTreatment,
+          staticStatistic,
+        );
       }
     } else {
       log

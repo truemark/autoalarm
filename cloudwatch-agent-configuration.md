@@ -4,10 +4,10 @@ This guide provides step-by-step instructions on how to install and configure th
 
 ## Prerequisites
 
-- **AWS Account**: Ensure you have an AWS account.
-- **EC2 Instance(s)**: Running Amazon Linux 2 or other supported OS.
-- **IAM Role**: An IAM role for EC2 with permissions to access Systems Manager and CloudWatch.
-- **AWS CLI**: Optionally, the AWS CLI installed on your local machine for running commands.
+-   **AWS Account**: Ensure you have an AWS account.
+-   **EC2 Instance(s)**: Running Amazon Linux 2 or other supported OS.
+-   **IAM Role**: An IAM role for EC2 with permissions to access Systems Manager and CloudWatch.
+-   **AWS CLI**: Optionally, the AWS CLI installed on your local machine for running commands.
 
 ## Step 1: Attach IAM Role to EC2 Instances
 
@@ -49,9 +49,9 @@ Once the configuration is saved, you can apply it to multiple instances using SS
 
 1. SSH into your EC2 instance.
 2. Run the following command to start the configuration wizard:
-   ```sh
-   sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-config-wizard
-   ```
+    ```sh
+    sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-config-wizard
+    ```
 3. Follow the prompts to configure the agent.
 4. Save the configuration to an SSM parameter.
 
@@ -59,12 +59,12 @@ Once the configuration is saved, you can apply it to multiple instances using SS
 
 1. RDP into your Windows EC2 instance.
 2. Run the following command to start the configuration wizard:
-   ```sh
-   cd "C:\Program Files\Amazon\AmazonCloudWatchAgent"
-   ```
-   ```sh
-   .\amazon-cloudwatch-agent-config-wizard.exe
-   ```
+    ```sh
+    cd "C:\Program Files\Amazon\AmazonCloudWatchAgent"
+    ```
+    ```sh
+    .\amazon-cloudwatch-agent-config-wizard.exe
+    ```
 3. Follow the prompts to configure the agent.
 4. Save the configuration to an SSM parameter.
 

@@ -151,8 +151,6 @@ export async function staticCWAlarmNeedsUpdate(
       const existingStatistic =
         existingProps.Statistic || existingProps.ExtendedStatistic;
 
-
-
       if (
         existingProps.Threshold !== threshold ||
         existingProps.EvaluationPeriods !== evaluationPeriods ||
@@ -201,6 +199,7 @@ export async function staticCWAlarmNeedsUpdate(
   }
 }
 
+//TODO: add parameter for anomaly detection threshold
 export async function createOrUpdateAnomalyDetectionAlarm(
   alarmName: string,
   dimensions: {Name: string; Value: string}[],
@@ -209,6 +208,7 @@ export async function createOrUpdateAnomalyDetectionAlarm(
   extendedStatistic: string,
   period: number,
   evaluationPeriods: number,
+  //anomalyThreshold: number,
   classification: AlarmClassification,
 ) {
   if (period < 10) {
@@ -273,6 +273,7 @@ export async function createOrUpdateAnomalyDetectionAlarm(
         AlarmName: alarmName,
         ComparisonOperator: ComparisonOperator.GreaterThanUpperThreshold,
         EvaluationPeriods: evaluationPeriods,
+
         Metrics: [
           {
             Id: 'primaryMetric',
@@ -284,6 +285,8 @@ export async function createOrUpdateAnomalyDetectionAlarm(
               },
               Period: period,
               Stat: extendedStatistic,
+              //threshold: anomalyThreshold, removed to finish current refactors
+              //PeriodicSpikes: true //for testing now to see if it works
             },
           },
           {
@@ -331,7 +334,7 @@ export async function createOrUpdateCWAlarm(
   metricName: string,
   namespace: string,
   dimensions: {Name: string; Value: string}[],
-  severityType: string,
+  severityType: AlarmClassification,
   missingDataTreatment: MissingDataTreatment = 'ignore', // Default to 'ignore' if not specified
   statistic: Statistic | string,
 ) {
@@ -348,33 +351,33 @@ export async function createOrUpdateCWAlarm(
       .msg('Configuring alarm props from provided values');
 
     if (period < 10) {
-    period = 10;
-    log
-      .info()
-      .str('function', 'createOrUpdateCWAlarm')
-      .num('period', period)
-      .msg(
-        'Period value less than 10 is not allowed, must be 10. Using default value of 10',
-      );
-  } else if (period < 30 || period <= 45) {
-    period = 30;
-    log
-      .info()
-      .str('function', 'createOrUpdateCWAlarm')
-      .num('period', period)
-      .msg(
-        'Period value is either 30, < 30, <= 45 or 30. Using default value of 30',
-      );
-  } else {
-    period = Math.ceil(period / 60) * 60;
-    log
-      .info()
-      .str('function', 'createOrUpdateCWAlarm')
-      .num('period', period)
-      .msg(
-        'Period value not 10 or 30 must be multiple of 60. Adjusted to nearest multiple of 60',
-      );
-  }
+      period = 10;
+      log
+        .info()
+        .str('function', 'createOrUpdateCWAlarm')
+        .num('period', period)
+        .msg(
+          'Period value less than 10 is not allowed, must be 10. Using default value of 10',
+        );
+    } else if (period < 30 || period <= 45) {
+      period = 30;
+      log
+        .info()
+        .str('function', 'createOrUpdateCWAlarm')
+        .num('period', period)
+        .msg(
+          'Period value is either 30, < 30, <= 45 or 30. Using default value of 30',
+        );
+    } else {
+      period = Math.ceil(period / 60) * 60;
+      log
+        .info()
+        .str('function', 'createOrUpdateCWAlarm')
+        .num('period', period)
+        .msg(
+          'Period value not 10 or 30 must be multiple of 60. Adjusted to nearest multiple of 60',
+        );
+    }
 
     log
       .info()
@@ -397,7 +400,14 @@ export async function createOrUpdateCWAlarm(
   const alarmExists = await doesAlarmExist(alarmName);
   if (
     !alarmExists ||
-    (alarmExists && (await staticCWAlarmNeedsUpdate(alarmName, threshold, statistic, period, evaluationPeriods)))
+    (alarmExists &&
+      (await staticCWAlarmNeedsUpdate(
+        alarmName,
+        threshold,
+        statistic,
+        period,
+        evaluationPeriods,
+      )))
   ) {
     try {
       await cloudWatchClient.send(
@@ -408,9 +418,9 @@ export async function createOrUpdateCWAlarm(
           MetricName: metricName,
           Namespace: namespace,
           Period: period,
-         ...(extendedStatRegex.test(statistic)
-              ? {ExtendedStatistic: statistic}
-              : {Statistic: statistic as Statistic}),
+          ...(extendedStatRegex.test(statistic)
+            ? {ExtendedStatistic: statistic}
+            : {Statistic: statistic as Statistic}),
           Threshold: threshold,
           ActionsEnabled: false,
           Dimensions: dimensions,

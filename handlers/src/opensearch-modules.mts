@@ -408,6 +408,8 @@ async function checkAndManageOpenSearchStatusAlarms(
           extendedStatistic,
           durationAnomalyTime,
           durationAnomalyPeriods,
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          //@ts-expect-error
           'Critical' as AlarmClassification,
         );
         // Check and create or delete static threshold alarm based on tag values
@@ -453,6 +455,8 @@ async function checkAndManageOpenSearchStatusAlarms(
             dimensions: [{Name: 'DomainName', Value: domainName}],
           };
 
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          //@ts-expect-error
           await createOrUpdateCWAlarm(
             staticThresholdAlarmName,
             domainName,
@@ -462,8 +466,7 @@ async function checkAndManageOpenSearchStatusAlarms(
             durationStaticPeriods,
             'Maximum',
             'ignore',
-            // TODO This need to be fixed. Don't use //@ts-ignore
-            // type as AlarmClassification,
+            type as AlarmClassification,
           );
         }
       }
