@@ -1167,7 +1167,7 @@ export async function manageStorageAlarmForInstance(
         if (useAnomalyDetection) {
           await createOrUpdateAnomalyDetectionAlarm(
             anomalyStorageAlarmName,
-            [{Name: 'InstanceID', Value: instanceId}, ...dimensions_props],
+            [...dimensions_props],
             metricName,
             'CWAgent',
             extendedAnomalyStatistic,
@@ -1179,6 +1179,7 @@ export async function manageStorageAlarmForInstance(
             .info()
             .str('function', 'manageStorageAlarmForInstance')
             .str('instanceId', instanceId)
+            .obj('dimensions', [...dimensions_props])
             .str('path', path)
             .msg('Creating Anomaly storage alarm');
         } else {
@@ -1234,11 +1235,19 @@ export async function manageStorageAlarmForInstance(
             durationStaticPeriods,
             metricName,
             'CWAgent',
-            [{Name: 'InstanceID', Value: instanceId}, ...dimensions_props],
+            [...dimensions_props],
             type,
             'ignore' as MissingDataTreatment,
             staticStatistic,
           );
+          log
+            .info()
+            .str('function', 'manageStorageAlarmForInstance')
+            .str('instanceId', instanceId)
+            .str('alarmName', staticThresholdStorageAlarmName)
+            .str('metricName', metricName)
+            .obj('dimensions', [...dimensions_props])
+            .msg('Creating static storage alarm');
         }
       }
     } else {
