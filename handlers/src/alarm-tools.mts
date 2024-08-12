@@ -208,8 +208,8 @@ export async function createOrUpdateAnomalyDetectionAlarm(
   extendedStatistic: string,
   period: number,
   evaluationPeriods: number,
-  //anomalyThreshold: number,
   classification: AlarmClassification,
+  anomalyDetectionThreshold?: number,
 ) {
   if (period < 10) {
     period = 10;
@@ -285,13 +285,13 @@ export async function createOrUpdateAnomalyDetectionAlarm(
               },
               Period: period,
               Stat: extendedStatistic,
-              //threshold: anomalyThreshold, removed to finish current refactors
-              //PeriodicSpikes: true //for testing now to see if it works
             },
           },
           {
             Id: 'anomalyDetectionBand',
-            Expression: 'ANOMALY_DETECTION_BAND(primaryMetric)',
+            Expression: anomalyDetectionThreshold
+              ? `ANOMALY_DETECTION_BAND(primaryMetric, ${anomalyDetectionThreshold})`
+              : `ANOMALY_DETECTION_BAND(primaryMetric)`,
           },
         ],
         ThresholdMetricId: 'anomalyDetectionBand',
