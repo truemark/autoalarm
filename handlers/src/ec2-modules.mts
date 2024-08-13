@@ -36,7 +36,7 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   region: region,
   retryStrategy: retryStrategy,
 });
-//the follwing environment variables are used to get the prometheus workspace id and the region
+//the following environment variables are used to get the prometheus workspace id and the region
 const prometheusWorkspaceId: string = process.env.PROMETHEUS_WORKSPACE_ID || '';
 
 //these vars are used in the prometheus alarm logic.
