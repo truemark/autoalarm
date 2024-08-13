@@ -18,6 +18,7 @@ import {
   DescribeWorkspaceCommand,
   DescribeWorkspaceCommandInput,
 } from '@aws-sdk/client-amp';
+import {MissingDataTreatment} from './alarm-configs.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import * as yaml from 'js-yaml';
 import * as aws4 from 'aws4';
@@ -200,8 +201,10 @@ export async function staticCWAlarmNeedsUpdate(
 }
 
 //TODO: add parameter for anomaly detection threshold
+
 export async function createOrUpdateAnomalyDetectionAlarm(
   alarmName: string,
+  comparisonOperator: ComparisonOperator,
   dimensions: {Name: string; Value: string}[],
   metricName: string,
   namespace: string,
@@ -209,6 +212,7 @@ export async function createOrUpdateAnomalyDetectionAlarm(
   period: number,
   evaluationPeriods: number,
   classification: AlarmClassification,
+  missingDataTreatment: MissingDataTreatment,
   anomalyDetectionThreshold?: number,
 ) {
   if (period < 10) {
@@ -239,16 +243,11 @@ export async function createOrUpdateAnomalyDetectionAlarm(
         'Period value not 10 or 30 must be multiple of 60. Adjusted to nearest multiple of 60',
       );
   }
-  const newProps: AnomalyAlarmProps = {
-    evaluationPeriods: evaluationPeriods,
-    period: period,
-    extendedStatistic: extendedStatistic,
-  };
-  const alarmExists = await doesAlarmExist(alarmName);
-  if (
-    !alarmExists ||
-    (alarmExists && (await anomalyCWAlarmNeedsUpdate(alarmName, newProps)))
-  ) {
+  //const alarmExists = await doesAlarmExist(alarmName);
+  //if (
+  //  !alarmExists ||
+  //  (alarmExists && (await anomalyCWAlarmNeedsUpdate(alarmName, newProps)))
+  //) {
     try {
       // Create anomaly detector with the latest parameters
       const anomalyDetectorInput = {
@@ -271,7 +270,7 @@ export async function createOrUpdateAnomalyDetectionAlarm(
       // Create anomaly detection alarm
       const metricAlarmInput = {
         AlarmName: alarmName,
-        ComparisonOperator: ComparisonOperator.GreaterThanUpperThreshold,
+        ComparisonOperator: comparisonOperator,
         EvaluationPeriods: evaluationPeriods,
 
         Metrics: [
@@ -297,7 +296,7 @@ export async function createOrUpdateAnomalyDetectionAlarm(
         ThresholdMetricId: 'anomalyDetectionBand',
         ActionsEnabled: false,
         Tags: [{Key: 'severity', Value: classification}],
-        TreatMissingData: 'ignore', // Adjust as needed
+        TreatMissingData: missingDataTreatment, // Adjust as needed
       };
       await cloudWatchClient.send(new PutMetricAlarmCommand(metricAlarmInput));
 
@@ -318,16 +317,14 @@ export async function createOrUpdateAnomalyDetectionAlarm(
           `Failed to create or update ${alarmName} anomaly detection alarm due to an error ${e}`,
         );
     }
-  }
+  //}
 }
-
-// Define the possible values for MissingDataTreatment
-export type MissingDataTreatment = 'breaching' | 'notBreaching' | 'ignore';
 
 // This function is used to create or update a CW alarm based on the provided values.
 export async function createOrUpdateCWAlarm(
   alarmName: string,
   serviceIdentifier: string,
+  comparisonOperator: ComparisonOperator,
   threshold: number,
   period: number,
   evaluationPeriods: number,
@@ -335,7 +332,7 @@ export async function createOrUpdateCWAlarm(
   namespace: string,
   dimensions: {Name: string; Value: string}[],
   severityType: AlarmClassification,
-  missingDataTreatment: MissingDataTreatment = 'ignore', // Default to 'ignore' if not specified
+  missingDataTreatment: MissingDataTreatment, // Default to 'ignore' if not specified
   statistic: Statistic | string,
 ) {
   const extendedStatRegex = /^p.*|^tm.*|^tc.*|^ts.*|^wm.*|^IQM$/;
@@ -396,59 +393,60 @@ export async function createOrUpdateCWAlarm(
       .msg('Error configuring alarm props from provided values');
     throw new Error('Error configuring alarm props from provided values');
   }
-
-  const alarmExists = await doesAlarmExist(alarmName);
-  if (
-    !alarmExists ||
-    (alarmExists &&
-      (await staticCWAlarmNeedsUpdate(
-        alarmName,
-        threshold,
-        statistic,
-        period,
-        evaluationPeriods,
-      )))
-  ) {
-    try {
-      await cloudWatchClient.send(
-        new PutMetricAlarmCommand({
-          AlarmName: alarmName,
-          ComparisonOperator: 'GreaterThanThreshold',
-          EvaluationPeriods: evaluationPeriods,
-          MetricName: metricName,
-          Namespace: namespace,
-          Period: period,
-          ...(extendedStatRegex.test(statistic)
-            ? {ExtendedStatistic: statistic}
-            : {Statistic: statistic as Statistic}),
-          Threshold: threshold,
-          ActionsEnabled: false,
-          Dimensions: dimensions,
-          Tags: [{Key: 'severity', Value: severityType}],
-          TreatMissingData: missingDataTreatment,
-        }),
+  /* Removed the logic to check if alarm exists because we should just replace the alarm every time. It's only a single API call. Leaving here for testing.
+  *const alarmExists = await doesAlarmExist(alarmName);
+  *if (
+  *  !alarmExists ||
+  *  (alarmExists &&
+  *    (await staticCWAlarmNeedsUpdate(
+  *      alarmName,
+  *      threshold,
+  *      statistic,
+  *      period,
+  *      evaluationPeriods,
+  *    )))
+  *) {
+  */
+  try {
+    await cloudWatchClient.send(
+      new PutMetricAlarmCommand({
+        AlarmName: alarmName,
+        ComparisonOperator: comparisonOperator,
+        EvaluationPeriods: evaluationPeriods,
+        MetricName: metricName,
+        Namespace: namespace,
+        Period: period,
+        ...(extendedStatRegex.test(statistic)
+          ? {ExtendedStatistic: statistic}
+          : {Statistic: statistic as Statistic}),
+        Threshold: threshold,
+        ActionsEnabled: false,
+        Dimensions: dimensions,
+        Tags: [{Key: 'severity', Value: severityType}],
+        TreatMissingData: missingDataTreatment,
+      }),
+    );
+    log
+      .info()
+      .str('function', 'createOrUpdateCWAlarm')
+      .str('alarmName', alarmName)
+      .str('serviceIdentifier', serviceIdentifier)
+      .num('threshold', threshold)
+      .num('period', period)
+      .num('evaluationPeriods', evaluationPeriods)
+      .msg(`${alarmName} Alarm configured or updated.`);
+  } catch (e) {
+    log
+      .error()
+      .str('function', 'createOrUpdateCWAlarm')
+      .err(e)
+      .str('alarmName', alarmName)
+      .str('instanceId', serviceIdentifier)
+      .msg(
+        `Failed to create or update ${alarmName} alarm due to an error ${e}`,
       );
-      log
-        .info()
-        .str('function', 'createOrUpdateCWAlarm')
-        .str('alarmName', alarmName)
-        .str('serviceIdentifier', serviceIdentifier)
-        .num('threshold', threshold)
-        .num('period', period)
-        .num('evaluationPeriods', evaluationPeriods)
-        .msg(`${alarmName} Alarm configured or updated.`);
-    } catch (e) {
-      log
-        .error()
-        .str('function', 'createOrUpdateCWAlarm')
-        .err(e)
-        .str('alarmName', alarmName)
-        .str('instanceId', serviceIdentifier)
-        .msg(
-          `Failed to create or update ${alarmName} alarm due to an error ${e}`,
-        );
-    }
   }
+  //} //related to if statement on line 404
 }
 
 // This function is used to grab all active CW auto alarms for a given instance and then pushes those to the activeAutoAlarms array
