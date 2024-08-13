@@ -95,7 +95,7 @@ const metricConfigs = [
     namespace: 'AWS/ES',
     isDefault: false,
     anomaly: false,
-    defaultValue: '85/90/300/2/p90',
+    defaultValue: '85/90/60/2/p90',
   },
   {
     tagKey: 'os-jvm-memory-anomaly',
