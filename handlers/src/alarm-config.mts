@@ -11,7 +11,6 @@ export type ComparisonOperator =
   | 'LessThanLowerOrGreaterThanUpperThreshold'
   | 'LessThanLowerThreshold'
   | 'GreaterThanUpperThreshold';
-export type AlarmCatagory = 'Anomaly' | 'StaticThreshold';
 
 // Note that these apply to both anomaly and non-anomaly alarms in CloudWatch.
 export interface MetricAlarmOptions {
@@ -22,9 +21,6 @@ export interface MetricAlarmOptions {
   // Anomaly: Based on a standard deviation. Higher number means thicker band, lower number means thinner band.
   // Non-Anomaly: The value against which the specified statistic is compared.
   criticalThreshold: number | null;
-
-  //anomaly detection threshold.
-  anomalyDetectionThreshold: number | null;
 
   // The period, in seconds, over which the statistic is applied.
   period: number;
@@ -70,22 +66,17 @@ function parseThresholdOption(
   defaultValue: number | null,
 ): number | null {
   const trimmed = value.trim();
-
   if (trimmed === '-') {
     return null;
   }
-
   if (trimmed === '') {
     return defaultValue;
   }
-
-  const parsedValue = parseFloat(trimmed);
-
-  if (isNaN(parsedValue)) {
+  try {
+    return parseFloat(trimmed);
+  } catch (err) {
     return defaultValue;
   }
-
-  return parsedValue;
 }
 
 function parseIntegerOption(value: string, defaultValue: number): number {
@@ -174,85 +165,45 @@ function parseMissingDataTreatmentOption(
 export function parseMetricAlarmOptions(
   value: string,
   defaults: MetricAlarmOptions,
-  alarmCatagory: AlarmCatagory,
 ): MetricAlarmOptions {
   const parts = value.split('/');
-  if (alarmCatagory === 'Anomaly') {
-    return {
-      warningThreshold: null,
-      criticalThreshold: null,
-      anomalyDetectionThreshold:
-        parts.length > 0
-          ? parseThresholdOption(parts[0], defaults.anomalyDetectionThreshold)
-          : defaults.anomalyDetectionThreshold,
-      statistic:
-        parts.length > 1
-          ? parseStatisticOption(parts[1], defaults.statistic)
-          : defaults.statistic,
-      period:
-        parts.length > 2
-          ? parseIntegerOption(parts[2], defaults.period)
-          : defaults.period,
-      evaluationPeriods:
-        parts.length > 3
-          ? parseIntegerOption(parts[3], defaults.evaluationPeriods)
-          : defaults.evaluationPeriods,
-      dataPointsToAlarm:
-        parts.length > 4
-          ? parseIntegerOption(parts[4], defaults.dataPointsToAlarm)
-          : defaults.dataPointsToAlarm,
-      comparisonOperator:
-        parts.length > 5
-          ? parseComparisonOperatorOption(parts[5], defaults.comparisonOperator)
-          : defaults.comparisonOperator,
-      missingDataTreatment:
-        parts.length > 6
-          ? parseMissingDataTreatmentOption(
-              parts[6],
-              defaults.missingDataTreatment,
-            )
-          : defaults.missingDataTreatment,
-    };
-  } else {
-    return {
-      anomalyDetectionThreshold: null,
-      warningThreshold:
-        parts.length > 0
-          ? parseThresholdOption(parts[0], defaults.warningThreshold)
-          : defaults.warningThreshold,
-      criticalThreshold:
-        parts.length > 1
-          ? parseThresholdOption(parts[1], defaults.criticalThreshold)
-          : defaults.criticalThreshold,
-      period:
-        parts.length > 2
-          ? parseIntegerOption(parts[2], defaults.period)
-          : defaults.period,
-      evaluationPeriods:
-        parts.length > 3
-          ? parseIntegerOption(parts[3], defaults.evaluationPeriods)
-          : defaults.evaluationPeriods,
-      statistic:
-        parts.length > 4
-          ? parseStatisticOption(parts[4], defaults.statistic)
-          : defaults.statistic,
-      dataPointsToAlarm:
-        parts.length > 5
-          ? parseIntegerOption(parts[5], defaults.dataPointsToAlarm)
-          : defaults.dataPointsToAlarm,
-      comparisonOperator:
-        parts.length > 6
-          ? parseComparisonOperatorOption(parts[6], defaults.comparisonOperator)
-          : defaults.comparisonOperator,
-      missingDataTreatment:
-        parts.length > 7
-          ? parseMissingDataTreatmentOption(
-              parts[7],
-              defaults.missingDataTreatment,
-            )
-          : defaults.missingDataTreatment,
-    };
-  }
+  return {
+    warningThreshold:
+      parts.length > 0
+        ? parseThresholdOption(parts[0], defaults.warningThreshold)
+        : defaults.warningThreshold,
+    criticalThreshold:
+      parts.length > 1
+        ? parseThresholdOption(parts[1], defaults.criticalThreshold)
+        : defaults.criticalThreshold,
+    period:
+      parts.length > 2
+        ? parseIntegerOption(parts[2], defaults.period)
+        : defaults.period,
+    evaluationPeriods:
+      parts.length > 3
+        ? parseIntegerOption(parts[3], defaults.evaluationPeriods)
+        : defaults.evaluationPeriods,
+    statistic:
+      parts.length > 4
+        ? parseStatisticOption(parts[4], defaults.statistic)
+        : defaults.statistic,
+    dataPointsToAlarm:
+      parts.length > 5
+        ? parseIntegerOption(parts[5], defaults.dataPointsToAlarm)
+        : defaults.dataPointsToAlarm,
+    comparisonOperator:
+      parts.length > 6
+        ? parseComparisonOperatorOption(parts[6], defaults.comparisonOperator)
+        : defaults.comparisonOperator,
+    missingDataTreatment:
+      parts.length > 7
+        ? parseMissingDataTreatmentOption(
+          parts[7],
+          defaults.missingDataTreatment,
+        )
+        : defaults.missingDataTreatment,
+  };
 }
 
 export interface MetricAlarmConfig {
@@ -267,8 +218,6 @@ export interface MetricAlarmConfig {
 // You are expected to collaborate and get approval from the team lead for each team that owns the service
 // to determine the appropriate alarm configurations. Do not make assumptions and ensure any alarm configurations
 // are approved by the team lead. At the end of the day, the team lead is responsible for the service and the alarms.
-
-//TODO: add key/value for anomaly detection threshold for anomaly alarm configs
 export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
   // Keep these in alphabetical order or your PRs will be rejected
 
@@ -284,7 +233,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'Sum',
@@ -302,7 +250,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: 3,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'p90',
@@ -320,7 +267,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'Sum',
@@ -338,7 +284,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'p90',
@@ -356,7 +301,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'Sum',
@@ -374,7 +318,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'p90',
@@ -396,7 +339,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'Sum',
@@ -414,7 +356,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'p90',
@@ -432,7 +373,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'Sum',
@@ -450,7 +390,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'p90',
@@ -468,7 +407,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'Sum',
@@ -486,7 +424,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'p90',
@@ -519,7 +456,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Maximum',
@@ -537,7 +473,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Maximum',
@@ -555,7 +490,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Maximum',
@@ -573,7 +507,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Maximum',
@@ -591,7 +524,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: 85,
         criticalThreshold: 90,
-        anomalyDetectionThreshold: null,
         period: 300,
         evaluationPeriods: 2,
         statistic: 'Maximum',
@@ -609,7 +541,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'p90',
@@ -627,7 +558,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: 85,
         criticalThreshold: 90,
-        anomalyDetectionThreshold: null,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'p90',
@@ -645,7 +575,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'p90',
@@ -663,7 +592,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: 85,
         criticalThreshold: 90,
-        anomalyDetectionThreshold: null,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'p90',
@@ -681,7 +609,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'p90',
@@ -699,7 +626,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: 10,
         criticalThreshold: 20,
-        anomalyDetectionThreshold: null,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Maximum',
@@ -717,7 +643,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: 3,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Maximum',
@@ -735,7 +660,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: 10,
         criticalThreshold: 20,
-        anomalyDetectionThreshold: null,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Maximum',
@@ -753,7 +677,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Maximum',
@@ -771,7 +694,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: 500,
         criticalThreshold: 1000,
-        anomalyDetectionThreshold: null,
         period: 300,
         evaluationPeriods: 2,
         statistic: 'Average',
@@ -789,7 +711,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: 3,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'p90',
@@ -807,7 +728,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: 500,
         criticalThreshold: 1000,
-        anomalyDetectionThreshold: null,
         period: 300,
         evaluationPeriods: 2,
         statistic: 'Average',
@@ -825,7 +745,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: 3,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'p90',
@@ -843,7 +762,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: 3000,
         criticalThreshold: 5000,
-        anomalyDetectionThreshold: null,
         period: 300,
         evaluationPeriods: 2,
         statistic: 'Average',
@@ -861,7 +779,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: 3,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'p90',
@@ -879,7 +796,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: 100,
         criticalThreshold: 300,
-        anomalyDetectionThreshold: null,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Sum',
@@ -897,7 +813,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Maximum',
@@ -915,7 +830,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: 100,
         criticalThreshold: 300,
-        anomalyDetectionThreshold: null,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Sum',
@@ -933,7 +847,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Maximum',
@@ -951,7 +864,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: 85,
         criticalThreshold: 90,
-        anomalyDetectionThreshold: null,
         period: 300,
         evaluationPeriods: 2,
         statistic: 'Maximum',
@@ -969,7 +881,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'p90',
@@ -987,7 +898,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: 1,
-        anomalyDetectionThreshold: null,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Sum',
@@ -1005,7 +915,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Maximum',
@@ -1039,7 +948,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Maximum',
@@ -1057,7 +965,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: 3,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Maximum',
@@ -1075,7 +982,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Maximum',
@@ -1093,7 +999,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: 3,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Maximum',
@@ -1111,7 +1016,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Maximum',
@@ -1129,7 +1033,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: 3,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Maximum',
@@ -1147,7 +1050,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Maximum',
@@ -1165,7 +1067,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: 3,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Maximum',
@@ -1183,7 +1084,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Sum',
@@ -1201,7 +1101,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: 3,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Sum',
@@ -1219,7 +1118,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Sum',
@@ -1237,7 +1135,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: 3,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Sum',
@@ -1255,7 +1152,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Sum',
@@ -1273,7 +1169,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: 3,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Sum',
@@ -1291,7 +1186,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Sum',
@@ -1309,7 +1203,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: 3,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Sum',
@@ -1327,7 +1220,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Average',
@@ -1345,7 +1237,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: 3,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Average',
@@ -1367,7 +1258,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: 1,
-        anomalyDetectionThreshold: null,
         period: 60,
         evaluationPeriods: 3,
         statistic: 'Maximum',
@@ -1385,7 +1275,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: 1,
-        anomalyDetectionThreshold: 3,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'p90',
@@ -1403,7 +1292,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'p90',
@@ -1421,7 +1309,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: 3,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'p90',
@@ -1439,7 +1326,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'Sum',
@@ -1457,7 +1343,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: 3,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'p90',
@@ -1475,7 +1360,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'Sum',
@@ -1493,7 +1377,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: 3,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'p90',
@@ -1511,7 +1394,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: null,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'Sum',
@@ -1529,7 +1411,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        anomalyDetectionThreshold: 3,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'p90',
