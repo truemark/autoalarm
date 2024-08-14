@@ -16,7 +16,9 @@ import {
   PutMetricAlarmCommand,
   Statistic,
 } from '@aws-sdk/client-cloudwatch';
+import {MetricAlarmConfigs, parseMetricAlarmOptions} from './alarm-config.mjs';
 
+const metricConfigs = MetricAlarmConfigs['SQS'];
 const log: logging.Logger = logging.getLogger('sqs-modules');
 const region: string = process.env.AWS_REGION || '';
 const retryStrategy = new ConfiguredRetryStrategy(20);
@@ -28,244 +30,6 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   region: region,
   retryStrategy: retryStrategy,
 });
-
-type MetricConfig = {
-  tagKey: string;
-  metricName: string;
-  namespace: string;
-  isDefault: boolean;
-  anomaly: boolean;
-  defaultValue: string;
-};
-
-const metricConfigs: MetricConfig[] = [
-  {
-    tagKey: 'sqs-age-of-oldest-message',
-    metricName: 'ApproximateAgeOfOldestMessage',
-    namespace: 'AWS/SQS',
-    isDefault: false,
-    anomaly: false,
-    defaultValue: '-/-/300/1/Maximum',
-  },
-  {
-    tagKey: 'sqs-age-of-oldest-message-anomaly',
-    metricName: 'ApproximateAgeOfOldestMessage',
-    namespace: 'AWS/SQS',
-    isDefault: true,
-    anomaly: true,
-    defaultValue: 'Maximum/300/1',
-  },
-  {
-    tagKey: 'sqs-number-of-messages-delayed',
-    metricName: 'ApproximateNumberOfMessagesDelayed',
-    namespace: 'AWS/SQS',
-    isDefault: false,
-    anomaly: false,
-    defaultValue: '-/-/300/1/Maximum',
-  },
-  {
-    tagKey: 'sqs-number-of-messages-delayed-anomaly',
-    metricName: 'ApproximateNumberOfMessagesDelayed',
-    namespace: 'AWS/SQS',
-    isDefault: false,
-    anomaly: true,
-    defaultValue: 'Maximum/300/1',
-  },
-  {
-    tagKey: 'sqs-messages-not-visible',
-    metricName: 'ApproximateNumberOfMessagesNotVisible',
-    namespace: 'AWS/SQS',
-    isDefault: false,
-    anomaly: false,
-    defaultValue: '-/-/300/1/Maximum',
-  },
-  {
-    tagKey: 'sqs-messages-not-visible-anomaly',
-    metricName: 'ApproximateNumberOfMessagesNotVisible',
-    namespace: 'AWS/SQS',
-    isDefault: false,
-    anomaly: true,
-    defaultValue: 'Maximum/300/1',
-  },
-  {
-    tagKey: 'sqs-messages-visible',
-    metricName: 'ApproximateNumberOfMessagesVisible',
-    namespace: 'AWS/SQS',
-    isDefault: false,
-    anomaly: false,
-    defaultValue: '-/-/300/1/Maximum',
-  },
-  {
-    tagKey: 'sqs-messages-visible-anomaly',
-    metricName: 'ApproximateNumberOfMessagesVisible',
-    namespace: 'AWS/SQS',
-    isDefault: true,
-    anomaly: true,
-    defaultValue: 'Maximum/300/1',
-  },
-  {
-    tagKey: 'sqs-empty-receives',
-    metricName: 'NumberOfEmptyReceive',
-    namespace: 'AWS/SQS',
-    isDefault: false,
-    anomaly: false,
-    defaultValue: '-/-/300/1/Sum',
-  },
-  {
-    tagKey: 'sqs-empty-receives-anomaly',
-    metricName: 'NumberOfEmptyReceive',
-    namespace: 'AWS/SQS',
-    isDefault: false,
-    anomaly: true,
-    defaultValue: 'Sum/300/1',
-  },
-  {
-    tagKey: 'sqs-messages-deleted',
-    metricName: 'NumberOfMessagesDeleted',
-    namespace: 'AWS/SQS',
-    isDefault: false,
-    anomaly: false,
-    defaultValue: '-/-/300/1/Sum',
-  },
-  {
-    tagKey: 'sqs-messages-deleted-anomaly',
-    metricName: 'NumberOfMessagesDeleted',
-    namespace: 'AWS/SQS',
-    isDefault: false,
-    anomaly: true,
-    defaultValue: 'Sum/300/1',
-  },
-  {
-    tagKey: 'sqs-messages-received',
-    metricName: 'NumberOfMessagesReceived',
-    namespace: 'AWS/SQS',
-    isDefault: false,
-    anomaly: false,
-    defaultValue: '-/-/300/1/Sum',
-  },
-  {
-    tagKey: 'sqs-messages-received-anomaly',
-    metricName: 'NumberOfMessagesReceived',
-    namespace: 'AWS/SQS',
-    isDefault: false,
-    anomaly: true,
-    defaultValue: 'Sum/300/1',
-  },
-  {
-    tagKey: 'sqs-messages-sent',
-    metricName: 'NumberOfMessagesSent',
-    namespace: 'AWS/SQS',
-    isDefault: false,
-    anomaly: false,
-    defaultValue: '-/-/300/1/Sum',
-  },
-  {
-    tagKey: 'sqs-messages-sent-anomaly',
-    metricName: 'NumberOfMessagesSent',
-    namespace: 'AWS/SQS',
-    isDefault: false,
-    anomaly: true,
-    defaultValue: 'Sum/300/1',
-  },
-  {
-    tagKey: 'sqs-sent-message-size',
-    metricName: 'SentMessageSize',
-    namespace: 'AWS/SQS',
-    isDefault: false,
-    anomaly: false,
-    defaultValue: '-/-/300/1/Average',
-  },
-  {
-    tagKey: 'sqs-sent-message-size-anomaly',
-    metricName: 'SentMessageSize',
-    namespace: 'AWS/SQS',
-    isDefault: false,
-    anomaly: true,
-    defaultValue: 'Average/300/1',
-  },
-];
-
-type TagDefaults = {
-  warning: number | undefined;
-  critical: number | undefined;
-  stat: string;
-  duration: number;
-  periods: number;
-};
-
-function getTagDefaults(config: MetricConfig, tagValue: string): TagDefaults {
-  const parts = tagValue ? tagValue.split('/') : [];
-  const defaultParts = config.defaultValue.split('/');
-  const defaults = defaultParts.map((defaultValue, index) => {
-    if (parts.length > index) {
-      if (parts[index] !== '') {
-        return parts[index];
-      }
-    }
-    return defaultValue;
-  });
-  if (config.anomaly) {
-    // Take the default value which we know is good
-    let duration = Number.parseInt(defaultParts[1]);
-    try {
-      // Override the default if it's a valid number
-      duration = Number.parseInt(defaults[1]);
-    } catch (err) {
-      // do nothing
-    }
-    // Take the default value which we know is good
-    let periods = Number.parseInt(defaultParts[2]);
-    try {
-      // Override the default is it's a valid number
-      periods = Number.parseInt(defaults[2]);
-    } catch (err) {
-      // do nothing
-    }
-    return {
-      warning: undefined,
-      critical: undefined,
-      stat: defaults[0],
-      duration,
-      periods,
-    };
-  } else {
-    let warning = undefined;
-    try {
-      // If we can't parse the number, we won't create the alarm and it remains undefined
-      warning = Number.parseInt(defaults[0]);
-    } catch (err) {
-      // do nothing
-    }
-    let critical = undefined;
-    try {
-      // If we can't parse the number, we won't create the alarm and it remains undefined
-      critical = Number.parseInt(defaults[1]);
-    } catch (err) {
-      // do nothing
-    }
-    let duration = Number.parseInt(defaultParts[2]);
-    try {
-      // If we can't parse the number, we won't create the alarm and it remains undefined
-      duration = Number.parseInt(defaults[2]);
-    } catch (err) {
-      // do nothing
-    }
-    let periods = Number.parseInt(defaultParts[3]);
-    try {
-      // If we can't parse the number, we won't create the alarm and it remains undefined
-      periods = Number.parseInt(defaults[3]);
-    } catch (err) {
-      // do nothing
-    }
-    return {
-      warning,
-      critical,
-      duration,
-      periods,
-      stat: defaults[4],
-    };
-  }
-}
 
 const extendedStatRegex = /^p.*|^tm.*|^tc.*|^ts.*|^wm.*|^IQM$/;
 
@@ -317,7 +81,7 @@ async function checkAndManageSQSStatusAlarms(queueName: string, tags: Tag) {
 
     const tagValue = tags[`autoalarm:${config.tagKey}`];
 
-    if (!config.isDefault && tagValue === undefined) {
+    if (!config.defaultCreate && tagValue === undefined) {
       log
         .info()
         .obj('config', config)
@@ -325,16 +89,16 @@ async function checkAndManageSQSStatusAlarms(queueName: string, tags: Tag) {
       continue; // not a default and not overridden
     }
 
-    const defaults = getTagDefaults(config, tagValue);
+    const defaults = parseMetricAlarmOptions(tagValue || '', config.defaults);
     if (config.anomaly) {
       const alarmName = `AutoAlarm-SQS-${queueName}-${config.metricName}-Anomaly-Critical`;
-      if (defaults.stat) {
+      if (defaults.statistic) {
         // Create critical alarm
-        if (defaults.stat !== '-' && defaults.stat !== 'disabled') {
+        if (defaults.statistic !== '-' && defaults.statistic !== 'disabled') {
           try {
             // Create anomaly detector with the latest parameters
             const anomalyDetectorInput = {
-              Namespace: config.namespace,
+              Namespace: config.metricNamespace,
               MetricName: config.metricName,
               Dimensions: [
                 {
@@ -342,7 +106,7 @@ async function checkAndManageSQSStatusAlarms(queueName: string, tags: Tag) {
                   Value: queueName,
                 },
               ],
-              Stat: defaults.stat,
+              Stat: defaults.statistic,
               Configuration: {
                 MetricTimezone: 'UTC',
               },
@@ -359,13 +123,13 @@ async function checkAndManageSQSStatusAlarms(queueName: string, tags: Tag) {
             const metricAlarmInput = {
               AlarmName: alarmName,
               ComparisonOperator: ComparisonOperator.GreaterThanUpperThreshold,
-              EvaluationPeriods: defaults.periods,
+              EvaluationPeriods: defaults.evaluationPeriods,
               Metrics: [
                 {
                   Id: 'primaryMetric',
                   MetricStat: {
                     Metric: {
-                      Namespace: config.namespace,
+                      Namespace: config.metricNamespace,
                       MetricName: config.metricName,
                       Dimensions: [
                         {
@@ -374,8 +138,8 @@ async function checkAndManageSQSStatusAlarms(queueName: string, tags: Tag) {
                         },
                       ],
                     },
-                    Period: defaults.duration,
-                    Stat: defaults.stat,
+                    Period: defaults.period,
+                    Stat: defaults.statistic,
                   },
                 },
                 {
@@ -420,19 +184,19 @@ async function checkAndManageSQSStatusAlarms(queueName: string, tags: Tag) {
     } else {
       const alarmNamePrefix = `AutoAlarm-SQS-${queueName}-${config.metricName}`;
       // Create warning alarm
-      if (defaults.warning) {
+      if (defaults.warningThreshold) {
         await cloudWatchClient.send(
           new PutMetricAlarmCommand({
             AlarmName: `${alarmNamePrefix}-Warning`,
             ComparisonOperator: 'GreaterThanThreshold',
-            EvaluationPeriods: defaults.periods,
+            EvaluationPeriods: defaults.evaluationPeriods,
             MetricName: config.metricName,
-            Namespace: config.namespace,
-            Period: defaults.duration,
-            ...(extendedStatRegex.test(defaults.stat)
-              ? {ExtendedStatistic: defaults.stat}
-              : {Statistic: defaults.stat as Statistic}),
-            Threshold: defaults.warning,
+            Namespace: config.metricNamespace,
+            Period: defaults.evaluationPeriods,
+            ...(extendedStatRegex.test(defaults.statistic)
+              ? {ExtendedStatistic: defaults.statistic}
+              : {Statistic: defaults.statistic as Statistic}),
+            Threshold: defaults.warningThreshold,
             ActionsEnabled: false,
             Dimensions: [{Name: 'QueueName', Value: queueName}],
             Tags: [{Key: 'severity', Value: 'Warning'}],
@@ -448,19 +212,19 @@ async function checkAndManageSQSStatusAlarms(queueName: string, tags: Tag) {
       }
 
       // Create critical alarm
-      if (defaults.critical) {
+      if (defaults.criticalThreshold) {
         await cloudWatchClient.send(
           new PutMetricAlarmCommand({
             AlarmName: `${alarmNamePrefix}-Critical`,
             ComparisonOperator: 'GreaterThanThreshold',
-            EvaluationPeriods: defaults.periods,
+            EvaluationPeriods: defaults.evaluationPeriods,
             MetricName: config.metricName,
-            Namespace: config.namespace,
-            Period: defaults.duration,
-            ...(extendedStatRegex.test(defaults.stat)
-              ? {ExtendedStatistic: defaults.stat}
-              : {Statistic: defaults.stat as Statistic}),
-            Threshold: defaults.critical,
+            Namespace: config.metricNamespace,
+            Period: defaults.evaluationPeriods,
+            ...(extendedStatRegex.test(defaults.statistic)
+              ? {ExtendedStatistic: defaults.statistic}
+              : {Statistic: defaults.statistic as Statistic}),
+            Threshold: defaults.criticalThreshold,
             ActionsEnabled: false,
             Dimensions: [{Name: 'QueueName', Value: queueName}],
             Tags: [{Key: 'severity', Value: 'Critical'}],
