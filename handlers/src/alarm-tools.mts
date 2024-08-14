@@ -18,7 +18,7 @@ import {
   DescribeWorkspaceCommand,
   DescribeWorkspaceCommandInput,
 } from '@aws-sdk/client-amp';
-import {MissingDataTreatment} from "./alarm-config.mjs";
+import {MissingDataTreatment} from './alarm-config.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import * as yaml from 'js-yaml';
 import * as aws4 from 'aws4';
@@ -52,6 +52,7 @@ export async function doesAlarmExist(alarmName: string): Promise<boolean> {
     .str('alarmName', alarmName)
     .str('response', JSON.stringify(response))
     .msg('Checking if alarm exists');
+
   return (response.MetricAlarms?.length ?? 0) > 0;
 }
 
@@ -248,75 +249,83 @@ export async function createOrUpdateAnomalyDetectionAlarm(
   //  !alarmExists ||
   //  (alarmExists && (await anomalyCWAlarmNeedsUpdate(alarmName, newProps)))
   //) {
-    try {
-      // Create anomaly detector with the latest parameters
-      const anomalyDetectorInput = {
-        Namespace: namespace,
-        MetricName: metricName,
-        Dimensions: dimensions,
-        Stat: extendedStatistic,
-        Configuration: {
-          MetricTimezone: 'UTC',
-        },
-      };
-      log
-        .debug()
-        .obj('input', anomalyDetectorInput)
-        .msg('Sending PutAnomalyDetectorCommand');
-      await cloudWatchClient.send(
-        new PutAnomalyDetectorCommand(anomalyDetectorInput),
-      );
+  try {
+    // Create anomaly detector with the latest parameters
+    const anomalyDetectorInput = {
+      Namespace: namespace,
+      MetricName: metricName,
+      Dimensions: dimensions,
+      Stat: extendedStatistic,
+      Configuration: {
+        MetricTimezone: 'UTC',
+      },
+    };
+    log
+      .debug()
+      .obj('input', anomalyDetectorInput)
+      .msg('Sending PutAnomalyDetectorCommand');
+    await cloudWatchClient.send(
+      new PutAnomalyDetectorCommand(anomalyDetectorInput),
+    );
 
-      // Create anomaly detection alarm
-      const metricAlarmInput = {
-        AlarmName: alarmName,
-        ComparisonOperator: comparisonOperator,
-        EvaluationPeriods: evaluationPeriods,
+    // Create anomaly detection alarm
+    const metricAlarmInput = {
+      AlarmName: alarmName,
+      ComparisonOperator: comparisonOperator,
+      EvaluationPeriods: evaluationPeriods,
 
-        Metrics: [
-          {
-            Id: 'primaryMetric',
-            MetricStat: {
-              Metric: {
-                Namespace: namespace,
-                MetricName: metricName,
-                Dimensions: dimensions,
-              },
-              Period: period,
-              Stat: extendedStatistic,
+      Metrics: [
+        {
+          Id: 'primaryMetric',
+          MetricStat: {
+            Metric: {
+              Namespace: namespace,
+              MetricName: metricName,
+              Dimensions: dimensions,
             },
+            Period: period,
+            Stat: extendedStatistic,
           },
-          {
-            Id: 'anomalyDetectionBand',
-            Expression: anomalyDetectionThreshold
-              ? `ANOMALY_DETECTION_BAND(primaryMetric, ${anomalyDetectionThreshold})`
-              : `ANOMALY_DETECTION_BAND(primaryMetric)`,
-          },
-        ],
-        ThresholdMetricId: 'anomalyDetectionBand',
-        ActionsEnabled: false,
-        Tags: [{Key: 'severity', Value: classification}],
-        TreatMissingData: missingDataTreatment, // Adjust as needed
-      };
-      await cloudWatchClient.send(new PutMetricAlarmCommand(metricAlarmInput));
+        },
+        {
+          Id: 'anomalyDetectionBand',
+          Expression: anomalyDetectionThreshold
+            ? `ANOMALY_DETECTION_BAND(primaryMetric, ${anomalyDetectionThreshold})`
+            : `ANOMALY_DETECTION_BAND(primaryMetric)`,
+        },
+      ],
+      ThresholdMetricId: 'anomalyDetectionBand',
+      ActionsEnabled: false,
+      Tags: [{Key: 'severity', Value: classification}],
+      TreatMissingData: missingDataTreatment, // Adjust as needed
+    };
 
-      log
-        .info()
-        .str('function', 'createOrUpdateAnomalyDetectionAlarm')
-        .str('alarmName', alarmName)
-        .obj('Dimesntions', dimensions)
-        .msg(`${alarmName} Anomaly Detection Alarm created or updated.`);
-    } catch (e) {
-      log
-        .error()
-        .str('function', 'createOrUpdateAnomalyDetectionAlarm')
-        .err(e)
-        .str('alarmName', alarmName)
-        .obj('Dimesntions', dimensions)
-        .msg(
-          `Failed to create or update ${alarmName} anomaly detection alarm due to an error ${e}`,
-        );
-    }
+    log
+      .info()
+      .str('function', 'createOrUpdateAnomalyDetectionAlarm')
+      .str('alarmName', alarmName)
+      .obj('metric alarm input', metricAlarmInput)
+      .msg('Attempting to create or update anomaly detection alarm');
+
+    await cloudWatchClient.send(new PutMetricAlarmCommand(metricAlarmInput));
+
+    log
+      .info()
+      .str('function', 'createOrUpdateAnomalyDetectionAlarm')
+      .str('alarmName', alarmName)
+      .obj('Dimesntions', dimensions)
+      .msg(`${alarmName} Anomaly Detection Alarm created or updated.`);
+  } catch (e) {
+    log
+      .error()
+      .str('function', 'createOrUpdateAnomalyDetectionAlarm')
+      .err(e)
+      .str('alarmName', alarmName)
+      .obj('Dimesntions', dimensions)
+      .msg(
+        `Failed to create or update ${alarmName} anomaly detection alarm due to an error ${e}`,
+      );
+  }
   //}
 }
 
@@ -394,38 +403,45 @@ export async function createOrUpdateCWAlarm(
     throw new Error('Error configuring alarm props from provided values');
   }
   /* Removed the logic to check if alarm exists because we should just replace the alarm every time. It's only a single API call. Leaving here for testing.
-  *const alarmExists = await doesAlarmExist(alarmName);
-  *if (
-  *  !alarmExists ||
-  *  (alarmExists &&
-  *    (await staticCWAlarmNeedsUpdate(
-  *      alarmName,
-  *      threshold,
-  *      statistic,
-  *      period,
-  *      evaluationPeriods,
-  *    )))
-  *) {
-  */
+   *const alarmExists = await doesAlarmExist(alarmName);
+   *if (
+   *  !alarmExists ||
+   *  (alarmExists &&
+   *    (await staticCWAlarmNeedsUpdate(
+   *      alarmName,
+   *      threshold,
+   *      statistic,
+   *      period,
+   *      evaluationPeriods,
+   *    )))
+   *) {
+   */
+  const metricAlarmInput = {
+    AlarmName: alarmName,
+    ComparisonOperator: comparisonOperator,
+    EvaluationPeriods: evaluationPeriods,
+    MetricName: metricName,
+    Namespace: namespace,
+    Period: period,
+    ...(extendedStatRegex.test(statistic)
+      ? {ExtendedStatistic: statistic}
+      : {Statistic: statistic as Statistic}),
+    Threshold: threshold,
+    ActionsEnabled: false,
+    Dimensions: dimensions,
+    Tags: [{Key: 'severity', Value: severityType}],
+    TreatMissingData: missingDataTreatment,
+  };
+
   try {
-    await cloudWatchClient.send(
-      new PutMetricAlarmCommand({
-        AlarmName: alarmName,
-        ComparisonOperator: comparisonOperator,
-        EvaluationPeriods: evaluationPeriods,
-        MetricName: metricName,
-        Namespace: namespace,
-        Period: period,
-        ...(extendedStatRegex.test(statistic)
-          ? {ExtendedStatistic: statistic}
-          : {Statistic: statistic as Statistic}),
-        Threshold: threshold,
-        ActionsEnabled: false,
-        Dimensions: dimensions,
-        Tags: [{Key: 'severity', Value: severityType}],
-        TreatMissingData: missingDataTreatment,
-      }),
-    );
+    log
+      .info()
+      .str('function', 'createOrUpdateCWAlarm')
+      .str('alarmName', alarmName)
+      .obj('metricAlarmInput', metricAlarmInput)
+      .msg('Attempting to Create or update alarm');
+
+    await cloudWatchClient.send(new PutMetricAlarmCommand(metricAlarmInput));
     log
       .info()
       .str('function', 'createOrUpdateCWAlarm')
