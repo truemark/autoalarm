@@ -22,7 +22,6 @@ import {
   managePromNamespaceAlarms,
   deletePromRulesForService,
   createOrUpdateAnomalyDetectionAlarm,
-  MissingDataTreatment,
 } from './alarm-tools.mjs';
 
 const log: logging.Logger = logging.getLogger('ec2-modules');
@@ -36,7 +35,7 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   region: region,
   retryStrategy: retryStrategy,
 });
-//the following environment variables are used to get the prometheus workspace id and the region
+//the follwing environment variables are used to get the prometheus workspace id and the region
 const prometheusWorkspaceId: string = process.env.PROMETHEUS_WORKSPACE_ID || '';
 
 //these vars are used in the prometheus alarm logic.
@@ -986,51 +985,6 @@ async function getInstanceDetails(
   }
 }
 
-/**this function is used to create the CloudWatch alarms for CPU, Memory, and Storage in addition to reducing redundant logic needed across those 3 functions
- * This function is used to create the CloudWatch alarms for CPU, Memory, and Storage
- * in addition to reducing redundant logic needed across those 3 functions
- */
-
-//type Statistic = 'Average' | 'Sum' | 'Minimum' | 'Maximum';
-async function createCloudWatchAlarms(
-  instanceId: string,
-  alarmName: string,
-  metricName: string,
-  namespace: string,
-  // TODO Fix the use of any
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  dimensions: any[],
-  threshold: number,
-  durationTime: number,
-  durationPeriods: number,
-  severityType: AlarmClassification,
-  missingDataTreatment: MissingDataTreatment = 'ignore',
-  statistic?: Statistic,
-  extendedStatistic?: string,
-): Promise<void> {
-  const alarmProps = {
-    threshold: threshold,
-    period: 60, //TODO: should not be hardcoded
-    namespace: namespace,
-    evaluationPeriods: durationPeriods,
-    metricName: metricName,
-    dimensions: dimensions,
-  };
-
-  await createOrUpdateCWAlarm(
-    alarmName,
-    instanceId,
-    alarmProps,
-    threshold,
-    durationTime,
-    durationPeriods,
-    severityType,
-    missingDataTreatment,
-    statistic,
-    extendedStatistic,
-  );
-}
-
 export async function manageCPUUsageAlarmForInstance(
   instanceId: string,
   tags: Tag,
@@ -1077,14 +1031,15 @@ export async function manageCPUUsageAlarmForInstance(
     if (useAnomalyDetection) {
       await createOrUpdateAnomalyDetectionAlarm(
         anomalyAlarmName,
-        'InstanceId',
-        instanceId,
+        'GreaterThanThreshold',
+        [{Name: 'InstanceId', Value: instanceId}],
         'CPUUtilization',
         'AWS/EC2',
         extendedAnomalyStatistic,
         durationAnomalyTime,
         durationAnomalyPeriods,
         'CRITICAL' as AlarmClassification,
+        'ignore',
       );
     } else {
       log
@@ -1133,39 +1088,20 @@ export async function manageCPUUsageAlarmForInstance(
     await deleteCWAlarm(staticThresholdAlarmName, instanceId);
     return;
   }
-
-  // using regex to validate the statistic type between statistic and extended statistic
-  if (extendedStatRegex.test(staticStatistic)) {
-    await createCloudWatchAlarms(
-      instanceId,
-      staticThresholdAlarmName,
-      'CPUUtilization',
-      'AWS/EC2',
-      [{Name: 'InstanceId', Value: instanceId}],
-      threshold,
-      durationStaticTime,
-      durationStaticPeriods,
-      type,
-      'ignore' as MissingDataTreatment,
-      undefined,
-      staticStatistic,
-    );
-  } else {
-    await createCloudWatchAlarms(
-      instanceId,
-      staticThresholdAlarmName,
-      'CPUUtilization',
-      'AWS/EC2',
-      [{Name: 'InstanceId', Value: instanceId}],
-      threshold,
-      durationStaticTime,
-      durationStaticPeriods,
-      type,
-      'ignore' as MissingDataTreatment,
-      staticStatistic as Statistic,
-      undefined,
-    );
-  }
+  await createOrUpdateCWAlarm(
+    staticThresholdAlarmName,
+    instanceId,
+    'GreaterThanThreshold',
+    threshold,
+    durationStaticTime,
+    durationStaticPeriods,
+    'CPUUtilization',
+    'AWS/EC2',
+    [{Name: 'InstanceId', Value: instanceId}],
+    type,
+    'ignore',
+    staticStatistic,
+  );
 }
 
 export async function manageStorageAlarmForInstance(
@@ -1223,26 +1159,31 @@ export async function manageStorageAlarmForInstance(
     const paths = Object.keys(storagePaths);
     if (paths.length > 0) {
       for (const path of paths) {
-        const dimensions_props = storagePaths[path];
+        const dimensions_props = storagePaths[path].map((dimension) => ({
+          Name: dimension.Name,
+          Value: dimension.Value,
+        }));
         staticThresholdStorageAlarmName = `${staticThresholdAlarmName}-${path}`;
         anomalyStorageAlarmName = `${anomalyAlarmName}-${path}`;
 
         if (useAnomalyDetection) {
           await createOrUpdateAnomalyDetectionAlarm(
             anomalyStorageAlarmName,
-            'InstanceId',
-            instanceId,
+            'GreaterThanThreshold',
+            [...dimensions_props],
             metricName,
             'CWAgent',
             extendedAnomalyStatistic,
             durationAnomalyTime,
             durationAnomalyPeriods,
-            'CRITICAL' as AlarmClassification,
+            AlarmClassification.Critical,
+            'ignore',
           );
           log
             .info()
             .str('function', 'manageStorageAlarmForInstance')
             .str('instanceId', instanceId)
+            .obj('dimensions', [...dimensions_props])
             .str('path', path)
             .msg('Creating Anomaly storage alarm');
         } else {
@@ -1257,7 +1198,7 @@ export async function manageStorageAlarmForInstance(
         }
         if (
           type === 'Warning' &&
-          tags['autoalarm:ec2-storag'] &&
+          tags['autoalarm:ec2-storage'] &&
           (tags['autoalarm:ec2-storage'].split('/')[0] === 'disabled' ||
             tags['autoalarm:ec2-storage'].split('/')[0] === '-' ||
             tags['autoalarm:ec2-storage'] === 'disabled')
@@ -1274,7 +1215,7 @@ export async function manageStorageAlarmForInstance(
           await deleteCWAlarm(staticThresholdStorageAlarmName, instanceId);
         } else if (
           type === 'Critical' &&
-          tags['autoalarm:ec2-storag'] &&
+          tags['autoalarm:ec2-storage'] &&
           (tags['autoalarm:ec2-storage'].split('/')[1] === 'disabled' ||
             tags['autoalarm:ec2-storage'].split('/')[1] === '-' ||
             tags['autoalarm:ec2-storage'] === 'disabled')
@@ -1290,37 +1231,28 @@ export async function manageStorageAlarmForInstance(
             );
           await deleteCWAlarm(staticThresholdStorageAlarmName, instanceId);
         } else {
-          if (extendedStatRegex.test(staticStatistic)) {
-            await createCloudWatchAlarms(
-              instanceId,
-              staticThresholdStorageAlarmName,
-              metricName,
-              'CWAgent',
-              dimensions_props,
-              threshold,
-              durationStaticTime,
-              durationStaticPeriods,
-              type,
-              'ignore' as MissingDataTreatment,
-              undefined,
-              staticStatistic,
-            );
-          } else {
-            await createCloudWatchAlarms(
-              instanceId,
-              staticThresholdStorageAlarmName,
-              metricName,
-              'CWAgent',
-              dimensions_props,
-              threshold,
-              durationStaticTime,
-              durationStaticPeriods,
-              type,
-              'ignore' as MissingDataTreatment,
-              staticStatistic as Statistic,
-              undefined,
-            );
-          }
+          await createOrUpdateCWAlarm(
+            staticThresholdStorageAlarmName,
+            instanceId,
+            'GreaterThanThreshold',
+            threshold,
+            durationStaticTime,
+            durationStaticPeriods,
+            metricName,
+            'CWAgent',
+            [...dimensions_props],
+            type,
+            'ignore',
+            staticStatistic,
+          );
+          log
+            .info()
+            .str('function', 'manageStorageAlarmForInstance')
+            .str('instanceId', instanceId)
+            .str('alarmName', staticThresholdStorageAlarmName)
+            .str('metricName', metricName)
+            .obj('dimensions', [...dimensions_props])
+            .msg('Creating static storage alarm');
         }
       }
     } else {
@@ -1392,14 +1324,15 @@ export async function manageMemoryAlarmForInstance(
       if (useAnomalyDetection) {
         await createOrUpdateAnomalyDetectionAlarm(
           anomalyAlarmName,
-          'InstanceId',
-          instanceId,
+          'GreaterThanThreshold',
+          [{Name: 'InstanceId', Value: instanceId}],
           metricName,
           'CWAgent',
           extendedAnomalyStatistic,
           durationAnomalyTime,
           durationAnomalyPeriods,
           'CRITICAL' as AlarmClassification,
+          `ignore`,
         );
       } else {
         log
@@ -1447,68 +1380,20 @@ export async function manageMemoryAlarmForInstance(
         await deleteCWAlarm(staticThresholdAlarmName, instanceId);
         return;
       } else {
-        if (extendedStatRegex.test(staticStatistic)) {
-          log
-            .debug()
-            .str('function', 'manageMemoryAlarmForInstance')
-            .str('instanceId', instanceId)
-            .str('metricName', metricName)
-            .str('staticThresholdAlarmName', staticThresholdAlarmName)
-            .str('threshold', threshold.toString())
-            .str('durationStaticTime', durationStaticTime.toString())
-            .str('durationStaticPeriods', durationStaticPeriods.toString())
-            .str('type', type)
-            .str('missingDataTreatment', 'ignore')
-            .str('static satistic', staticStatistic)
-            .msg(
-              'regex matched for extended statistic. Creating alarm with extended statistic',
-            );
-
-          await createCloudWatchAlarms(
-            instanceId,
-            staticThresholdAlarmName,
-            metricName,
-            'CWAgent',
-            [{Name: 'InstanceId', Value: instanceId}],
-            threshold,
-            durationStaticTime,
-            durationStaticPeriods,
-            type,
-            'ignore' as MissingDataTreatment,
-            undefined,
-            staticStatistic,
-          );
-        } else {
-          log
-            .debug()
-            .str('function', 'manageMemoryAlarmForInstance')
-            .str('instanceId', instanceId)
-            .str('metricName', metricName)
-            .str('staticThresholdAlarmName', staticThresholdAlarmName)
-            .str('threshold', threshold.toString())
-            .str('durationStaticTime', durationStaticTime.toString())
-            .str('durationStaticPeriods', durationStaticPeriods.toString())
-            .str('type', type)
-            .str('missingDataTreatment', 'ignore')
-            .str('static satistic', staticStatistic)
-            .msg(
-              'regex NOT matched for extended statisstic. Creating alarm with standard statistic',
-            );
-          await createCloudWatchAlarms(
-            instanceId,
-            staticThresholdAlarmName,
-            metricName,
-            'CWAgent',
-            [{Name: 'InstanceId', Value: instanceId}],
-            threshold,
-            durationStaticTime,
-            durationStaticPeriods,
-            type,
-            'ignore' as MissingDataTreatment,
-            staticStatistic as Statistic,
-            undefined,
-          );
-        }
+        await createOrUpdateCWAlarm(
+          staticThresholdAlarmName,
+          instanceId,
+          `GreaterThanThreshold`,
+          threshold,
+          durationStaticTime,
+          durationStaticPeriods,
+          metricName,
+          'CWAgent',
+          [{Name: 'InstanceId', Value: instanceId}],
+          type,
+          'ignore',
+          staticStatistic,
+        );
       }
     } else {
       log

@@ -1,23 +1,17 @@
-import {
-  ElasticLoadBalancingV2Client,
-  DescribeTagsCommand,
-} from '@aws-sdk/client-elastic-load-balancing-v2';
+import {DescribeTagsCommand, ElasticLoadBalancingV2Client,} from '@aws-sdk/client-elastic-load-balancing-v2';
 import * as logging from '@nr1e/logging';
 import {Tag} from './types.mjs';
 import {AlarmClassification} from './enums.mjs';
-import {
-  CloudWatchClient,
-  DeleteAlarmsCommand,
-  PutMetricAlarmCommand,
-  Statistic,
-} from '@aws-sdk/client-cloudwatch';
+import {CloudWatchClient, DeleteAlarmsCommand} from '@aws-sdk/client-cloudwatch';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
-  getCWAlarmsForInstance,
-  deleteCWAlarm,
   createOrUpdateAnomalyDetectionAlarm,
+  createOrUpdateCWAlarm,
+  deleteCWAlarm,
   doesAlarmExist,
+  getCWAlarmsForInstance,
 } from './alarm-tools.mjs';
+import {MetricAlarmConfigs, parseMetricAlarmOptions} from "./alarm-config.mjs";
 
 const log: logging.Logger = logging.getLogger('alb-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -32,149 +26,7 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   retryStrategy: retryStrategy,
 });
 
-type MetricConfig = {
-  tagKey: string;
-  metricName: string;
-  namespace: string;
-  isDefault: boolean;
-  anomaly: boolean;
-  defaultValue: string;
-};
-
-const metricConfigs: MetricConfig[] = [
-  {
-    tagKey: 'alb-4xx-count',
-    metricName: 'HTTPCode_ELB_4XX_Count',
-    namespace: 'AWS/ApplicationELB',
-    isDefault: false,
-    anomaly: false,
-    defaultValue: '-/-/60/2/Sum',
-  },
-  {
-    tagKey: 'alb-4xx-anomaly',
-    metricName: 'HTTPCode_ELB_4XX_Count',
-    namespace: 'AWS/ApplicationELB',
-    isDefault: false,
-    anomaly: true,
-    defaultValue: 'p90/60/2',
-  },
-  {
-    tagKey: 'alb-5xx-count',
-    metricName: 'HTTPCode_ELB_5XX_Count',
-    namespace: 'AWS/ApplicationELB',
-    isDefault: false,
-    anomaly: false,
-    defaultValue: '-/-/60/2/Sum',
-  },
-  {
-    tagKey: 'alb-5xx-count-anomaly',
-    metricName: 'HTTPCode_ELB_5XX_Count',
-    namespace: 'AWS/ApplicationELB',
-    isDefault: true,
-    anomaly: true,
-    defaultValue: 'p90/60/2',
-  },
-  {
-    tagKey: 'alb-request-count',
-    metricName: 'RequestCount',
-    namespace: 'AWS/ApplicationELB',
-    isDefault: false,
-    anomaly: false,
-    defaultValue: '-/-/60/2/Sum',
-  },
-  {
-    tagKey: 'alb-request-count-anomaly',
-    metricName: 'RequestCount',
-    namespace: 'AWS/ApplicationELB',
-    isDefault: false,
-    anomaly: true,
-    defaultValue: 'p90/60/2',
-  },
-];
-
-type TagDefaults = {
-  warning: number | undefined;
-  critical: number | undefined;
-  stat: string;
-  duration: number;
-  periods: number;
-};
-
-function getTagDefaults(config: MetricConfig, tagValue: string): TagDefaults {
-  const parts = tagValue ? tagValue.split('/') : [];
-  const defaultParts = config.defaultValue.split('/');
-  const defaults = defaultParts.map((defaultValue, index) => {
-    if (parts.length > index) {
-      if (parts[index] !== '') {
-        return parts[index];
-      }
-    }
-    return defaultValue;
-  });
-  if (config.anomaly) {
-    // Take the default value which we know is good
-    let duration = Number.parseInt(defaultParts[1]);
-    try {
-      // Override the default if it's a valid number
-      duration = Number.parseInt(defaults[1]);
-    } catch (err) {
-      // do nothing
-    }
-    // Take the default value which we know is good
-    let periods = Number.parseInt(defaultParts[2]);
-    try {
-      // Override the default is it's a valid number
-      periods = Number.parseInt(defaults[2]);
-    } catch (err) {
-      // do nothing
-    }
-    return {
-      warning: undefined,
-      critical: undefined,
-      stat: defaults[0],
-      duration,
-      periods,
-    };
-  } else {
-    let warning = undefined;
-    try {
-      // If we can't parse the number, we won't create the alarm and it remains undefined
-      warning = Number.parseInt(defaults[0]);
-    } catch (err) {
-      // do nothing
-    }
-    let critical = undefined;
-    try {
-      // If we can't parse the number, we won't create the alarm and it remains undefined
-      critical = Number.parseInt(defaults[1]);
-    } catch (err) {
-      // do nothing
-    }
-    let duration = Number.parseInt(defaultParts[2]);
-    try {
-      // If we can't parse the number, we won't create the alarm and it remains undefined
-      duration = Number.parseInt(defaults[2]);
-    } catch (err) {
-      // do nothing
-    }
-    let periods = Number.parseInt(defaultParts[3]);
-    try {
-      // If we can't parse the number, we won't create the alarm and it remains undefined
-      periods = Number.parseInt(defaults[3]);
-    } catch (err) {
-      // do nothing
-    }
-    return {
-      warning,
-      critical,
-      duration,
-      periods,
-      stat: defaults[4],
-    };
-  }
-}
-
-const extendedStatRegex = /^p.*|^tm.*|^tc.*|^ts.*|^wm.*|^IQM$/;
+const metricConfigs = MetricAlarmConfigs['ALB'];
 
 export async function fetchALBTags(loadBalancerArn: string): Promise<Tag> {
   try {
@@ -240,96 +92,102 @@ async function checkAndManageALBStatusAlarms(
 
     const tagValue = tags[`autoalarm:${config.tagKey}`];
 
-    if (!config.isDefault && tagValue === undefined) {
+    if (!config.defaultCreate && tagValue === undefined) {
       log
         .info()
         .obj('config', config)
         .msg('Not default and tag value is undefined, skipping.');
+     for (const alarmClassification of Object.values(AlarmClassification)) {
+        const alarmName = `AutoAlarm-ALB-${loadBalancerName}-${config.metricName}-${alarmClassification}`;
+        if (await doesAlarmExist(alarmName)) {
+          await cloudWatchClient.send(
+            new DeleteAlarmsCommand({
+              AlarmNames: [alarmName],
+            }),
+          );
+        }
+     }
       continue; // not a default and not overridden
     }
 
-    const defaults = getTagDefaults(config, tagValue);
-    if (config.anomaly) {
-      const alarmName = `AutoAlarm-ALB-${loadBalancerName}-${config.metricName}-Anomaly-Critical`;
-      if (defaults.stat) {
-        // Create critical alarm
-        if (defaults.stat !== '-' && defaults.stat !== 'disabled') {
-          await createOrUpdateAnomalyDetectionAlarm(
-            alarmName,
-            'LoadBalancer',
-            loadBalancerName,
-            config.metricName,
-            config.namespace,
-            defaults.stat,
-            defaults.duration,
-            defaults.periods,
-            AlarmClassification.Critical,
-          );
-        }
-      } else if (await doesAlarmExist(alarmName)) {
-        await cloudWatchClient.send(
-          new DeleteAlarmsCommand({
-            AlarmNames: [alarmName],
-          }),
-        );
-      }
-    } else {
-      const alarmNamePrefix = `AutoAlarm-ALB-${loadBalancerName}-${config.metricName}`;
-      // Create warning alarm
-      if (defaults.warning) {
-        await cloudWatchClient.send(
-          new PutMetricAlarmCommand({
-            AlarmName: `${alarmNamePrefix}-Warning`,
-            ComparisonOperator: 'GreaterThanThreshold',
-            EvaluationPeriods: defaults.periods,
-            MetricName: config.metricName,
-            Namespace: config.namespace,
-            Period: defaults.duration,
-            ...(extendedStatRegex.test(defaults.stat)
-              ? {ExtendedStatistic: defaults.stat}
-              : {Statistic: defaults.stat as Statistic}),
-            Threshold: defaults.warning,
-            ActionsEnabled: false,
-            Dimensions: [{Name: 'LoadBalancer', Value: loadBalancerName}],
-            Tags: [{Key: 'severity', Value: 'Warning'}],
-            TreatMissingData: 'ignore',
-          }),
-        );
-      } else if (await doesAlarmExist(`${alarmNamePrefix}-Warning`)) {
-        await cloudWatchClient.send(
-          new DeleteAlarmsCommand({
-            AlarmNames: [`${alarmNamePrefix}-Warning`],
-          }),
-        );
-      }
+    const updatedDefaults = parseMetricAlarmOptions(tagValue || '', config.defaults);
 
-      // Create critical alarm
-      if (defaults.critical) {
-        await cloudWatchClient.send(
-          new PutMetricAlarmCommand({
-            AlarmName: `${alarmNamePrefix}-Critical`,
-            ComparisonOperator: 'GreaterThanThreshold',
-            EvaluationPeriods: defaults.periods,
-            MetricName: config.metricName,
-            Namespace: config.namespace,
-            Period: defaults.duration,
-            ...(extendedStatRegex.test(defaults.stat)
-              ? {ExtendedStatistic: defaults.stat}
-              : {Statistic: defaults.stat as Statistic}),
-            Threshold: defaults.critical,
-            ActionsEnabled: false,
-            Dimensions: [{Name: 'LoadBalancer', Value: loadBalancerName}],
-            Tags: [{Key: 'severity', Value: 'Critical'}],
-            TreatMissingData: 'ignore',
-          }),
+    const alarmNamePrefix = `AutoAlarm-ALB-${loadBalancerName}-${config.metricName}`;
+    // Create warning alarm
+    if (updatedDefaults.warningThreshold && !config.tagKey.includes('anomaly')) {
+      //TODO: replace with createOrUpdateCWAlarm Function
+      await createOrUpdateCWAlarm(
+        `${alarmNamePrefix}-Warning`,
+        loadBalancerName,
+        updatedDefaults.comparisonOperator,
+        updatedDefaults.warningThreshold,
+        updatedDefaults.period,
+        updatedDefaults.evaluationPeriods,
+        config.metricName,
+        config.metricNamespace,
+        [{Name: 'LoadBalancer', Value: loadBalancerName}],
+        AlarmClassification.Warning,
+        updatedDefaults.missingDataTreatment,
+        updatedDefaults.statistic,
+      );
+    } else if (updatedDefaults.warningThreshold && config.tagKey.includes('anomaly')) {
+      await createOrUpdateAnomalyDetectionAlarm(
+        `${alarmNamePrefix}-Warning`,
+        updatedDefaults.comparisonOperator,
+        [{Name: 'LoadBalancer', Value: loadBalancerName}],
+        config.metricName,
+        config.metricNamespace,
+        updatedDefaults.statistic,
+        updatedDefaults.period,
+        updatedDefaults.evaluationPeriods,
+        AlarmClassification.Warning,
+        updatedDefaults.missingDataTreatment,
+        updatedDefaults.warningThreshold,
+      );
+    } else if (await doesAlarmExist(`${alarmNamePrefix}-Warning`)) {
+      await cloudWatchClient.send(
+        new DeleteAlarmsCommand({
+          AlarmNames: [`${alarmNamePrefix}-Warning`],
+        }),
+      );
+    }
+
+    // Create critical alarm
+    if (updatedDefaults.criticalThreshold && !config.tagKey.includes('anomaly')) {
+        await createOrUpdateCWAlarm(
+          `${alarmNamePrefix}-Critical`,
+          loadBalancerName,
+          updatedDefaults.comparisonOperator,
+          updatedDefaults.criticalThreshold,
+          updatedDefaults.period,
+          updatedDefaults.evaluationPeriods,
+          config.metricName,
+          config.metricNamespace,
+          [{Name: 'LoadBalancer', Value: loadBalancerName}],
+          AlarmClassification.Critical,
+          updatedDefaults.missingDataTreatment,
+          updatedDefaults.statistic,
         );
-      } else if (await doesAlarmExist(`${alarmNamePrefix}-Critical`)) {
-        await cloudWatchClient.send(
-          new DeleteAlarmsCommand({
-            AlarmNames: [`${alarmNamePrefix}-Critical`],
-          }),
-        );
-      }
+    } else if (updatedDefaults.criticalThreshold && config.tagKey.includes('anomaly')) {
+      await createOrUpdateAnomalyDetectionAlarm(
+        `${alarmNamePrefix}-Critical`,
+        updatedDefaults.comparisonOperator,
+        [{Name: 'LoadBalancer', Value: loadBalancerName}],
+        config.metricName,
+        config.metricNamespace,
+        updatedDefaults.statistic,
+        updatedDefaults.period,
+        updatedDefaults.evaluationPeriods,
+        AlarmClassification.Critical,
+        updatedDefaults.missingDataTreatment,
+        updatedDefaults.criticalThreshold,
+      );
+    } else if (await doesAlarmExist(`${alarmNamePrefix}-Critical`)) {
+      await cloudWatchClient.send(
+        new DeleteAlarmsCommand({
+          AlarmNames: [`${alarmNamePrefix}-Critical`],
+        }),
+      );
     }
   }
 }
