@@ -18,7 +18,7 @@ import {
   DescribeWorkspaceCommand,
   DescribeWorkspaceCommandInput,
 } from '@aws-sdk/client-amp';
-import {MissingDataTreatment} from './alarm-configs.mjs';
+import {MissingDataTreatment} from "./alarm-config.mjs";
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import * as yaml from 'js-yaml';
 import * as aws4 from 'aws4';
