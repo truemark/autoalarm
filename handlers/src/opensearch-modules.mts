@@ -399,6 +399,7 @@ async function checkAndManageOpenSearchStatusAlarms(
           metricName,
           tags,
         );
+        // @ts-expect-error pending further refactoring
         await createOrUpdateAnomalyDetectionAlarm(
           anomalyAlarmName,
           'OpenSearch',
@@ -453,6 +454,7 @@ async function checkAndManageOpenSearchStatusAlarms(
             dimensions: [{Name: 'DomainName', Value: domainName}],
           };
 
+          // @ts-expect-error pending further refactoring
           await createOrUpdateCWAlarm(
             staticThresholdAlarmName,
             domainName,
