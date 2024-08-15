@@ -161,6 +161,7 @@ async function handleAnomalyDetectionWorkflow(
   config: MetricAlarmConfig,
   loadBalancerName: string,
   classification: AlarmClassification,
+  threshold: number,
 ) {
   log
     .info()
@@ -206,7 +207,7 @@ async function handleAnomalyDetectionWorkflow(
     },
     {
       Id: 'anomalyDetectionBand',
-      Expression: `ANOMALY_DETECTION_BAND(primaryMetric, ${updatedDefaults.warningThreshold})`,
+      Expression: `ANOMALY_DETECTION_BAND(primaryMetric, ${threshold})`,
     },
   ];
 
@@ -274,6 +275,7 @@ async function handleAnomalyAlarms(
       loadBalancerName,
       AlarmClassification.Warning,
       config.anomaly,
+      updatedDefaults.warningThreshold,
     );
   } else {
     const warningAlarmName = buildAlarmName(
@@ -313,6 +315,7 @@ async function handleAnomalyAlarms(
       loadBalancerName,
       AlarmClassification.Critical,
       config.anomaly,
+      updatedDefaults.criticalThreshold,
     );
   } else {
     const criticalAlarmName = buildAlarmName(
@@ -338,6 +341,7 @@ async function handleStaticThresholdWorkflow(
   config: MetricAlarmConfig,
   loadBalancerName: string,
   classification: AlarmClassification,
+  threshold: number,
 ) {
   log
     .info()
@@ -356,7 +360,7 @@ async function handleStaticThresholdWorkflow(
       ...(extendedStatRegex.test(updatedDefaults.statistic)
         ? {ExtendedStatistic: updatedDefaults.statistic}
         : {Statistic: updatedDefaults.statistic as Statistic}),
-      Threshold: updatedDefaults.warningThreshold as number,
+      Threshold: threshold,
       ActionsEnabled: false,
       Dimensions: [{Name: 'LoadBalancer', Value: loadBalancerName}],
       Tags: [{Key: 'severity', Value: classification}],
@@ -415,6 +419,7 @@ async function handleStaticAlarms(
       loadBalancerName,
       AlarmClassification.Warning,
       config.anomaly, // This remains false for static alarms
+      updatedDefaults.warningThreshold,
     );
   } else {
     const warningAlarmName = buildAlarmName(
@@ -456,6 +461,7 @@ async function handleStaticAlarms(
       loadBalancerName,
       AlarmClassification.Critical,
       config.anomaly, // This remains false for static alarms
+      updatedDefaults.criticalThreshold,
     );
   } else {
     const criticalAlarmName = buildAlarmName(
@@ -482,6 +488,7 @@ async function createOrUpdateAlarm(
   loadBalancerName: string,
   classification: AlarmClassification,
   isAnomaly: boolean,
+  threshold: number,
 ) {
   log
     .info()
@@ -498,6 +505,7 @@ async function createOrUpdateAlarm(
         config,
         loadBalancerName,
         classification,
+        threshold,
       );
     } else {
       await handleStaticThresholdWorkflow(
@@ -506,6 +514,7 @@ async function createOrUpdateAlarm(
         config,
         loadBalancerName,
         classification,
+        threshold,
       );
     }
 
