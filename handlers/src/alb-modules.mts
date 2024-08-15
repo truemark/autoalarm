@@ -1,8 +1,14 @@
-import {DescribeTagsCommand, ElasticLoadBalancingV2Client,} from '@aws-sdk/client-elastic-load-balancing-v2';
+import {
+  DescribeTagsCommand,
+  ElasticLoadBalancingV2Client,
+} from '@aws-sdk/client-elastic-load-balancing-v2';
 import * as logging from '@nr1e/logging';
 import {Tag} from './types.mjs';
 import {AlarmClassification} from './enums.mjs';
-import {CloudWatchClient, DeleteAlarmsCommand} from '@aws-sdk/client-cloudwatch';
+import {
+  CloudWatchClient,
+  DeleteAlarmsCommand,
+} from '@aws-sdk/client-cloudwatch';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
   createOrUpdateAnomalyDetectionAlarm,
@@ -11,7 +17,7 @@ import {
   doesAlarmExist,
   getCWAlarmsForInstance,
 } from './alarm-tools.mjs';
-import {MetricAlarmConfigs, parseMetricAlarmOptions} from "./alarm-config.mjs";
+import {MetricAlarmConfigs, parseMetricAlarmOptions} from './alarm-config.mjs';
 
 const log: logging.Logger = logging.getLogger('alb-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -96,39 +102,43 @@ async function checkAndManageALBStatusAlarms(
       log
         .info()
         .obj('config', config)
-        .msg('Not default and tag value is undefined. Checking if Alarms exist and deleting if they do');
-     for (const alarmClassification of Object.values(AlarmClassification)) {
-        const alarmName = `AutoAlarm-ALB-${loadBalancerName}-${config.metricName}-${alarmClassification}`;
-        if (await doesAlarmExist(alarmName)) {
+        .msg(
+          'Not default and tag value is undefined. Checking if Alarms exist and deleting if they do',
+        );
+      for (const alarmClassification of Object.values(AlarmClassification)) {
+        const alarmName = config.tagKey.includes('anomaly')
+          ? `AutoAlarm-ALB-${loadBalancerName}-${config.metricName}-anomaly-${alarmClassification}`
+          : `AutoAlarm-ALB-${loadBalancerName}-${config.metricName}-${alarmClassification}`;
+
+        try {
+          await cloudWatchClient.send(
+            new DeleteAlarmsCommand({
+              AlarmNames: [alarmName],
+            }),
+          );
+        } catch (e) {
           log
-            .info()
+            .error()
             .str('function', 'checkAndManageALBStatusAlarms')
             .str('alarmName', alarmName)
-            .msg('Deleting alarm');
-          try {
-            await cloudWatchClient.send(
-              new DeleteAlarmsCommand({
-                AlarmNames: [alarmName],
-              }),
-            );
-          } catch (e) {
-            log
-              .error()
-              .str('function', 'checkAndManageALBStatusAlarms')
-              .str('alarmName', alarmName)
-              .err(e)
-              .msg('Error deleting alarm');
-          }
+            .err(e)
+            .msg('Error deleting alarm');
         }
-     }
+      }
       continue; // not a default and not overridden
     }
 
-    const updatedDefaults = parseMetricAlarmOptions(tagValue || '', config.defaults);
+    const updatedDefaults = parseMetricAlarmOptions(
+      tagValue || '',
+      config.defaults,
+    );
 
     const alarmNamePrefix = `AutoAlarm-ALB-${loadBalancerName}-${config.metricName}`;
     // Create warning alarm
-    if (updatedDefaults.warningThreshold && !config.tagKey.includes('anomaly')) {
+    if (
+      updatedDefaults.warningThreshold &&
+      !config.tagKey.includes('anomaly')
+    ) {
       log
         .info()
         .str('function', 'checkAndManageALBStatusAlarms')
@@ -148,7 +158,10 @@ async function checkAndManageALBStatusAlarms(
         updatedDefaults.missingDataTreatment,
         updatedDefaults.statistic,
       );
-    } else if (updatedDefaults.warningThreshold && config.tagKey.includes('anomaly')) {
+    } else if (
+      updatedDefaults.warningThreshold &&
+      config.tagKey.includes('anomaly')
+    ) {
       log
         .info()
         .str('function', 'checkAndManageALBStatusAlarms')
@@ -176,27 +189,33 @@ async function checkAndManageALBStatusAlarms(
     }
 
     // Create critical alarm
-    if (updatedDefaults.criticalThreshold && !config.tagKey.includes('anomaly')) {
+    if (
+      updatedDefaults.criticalThreshold &&
+      !config.tagKey.includes('anomaly')
+    ) {
       log
         .info()
         .str('function', 'checkAndManageALBStatusAlarms')
         .str('Alarm Name', `${alarmNamePrefix}-Critical}`)
         .msg('Creating or updating static threshold alarm');
-        await createOrUpdateCWAlarm(
-          `${alarmNamePrefix}-Critical`,
-          loadBalancerName,
-          updatedDefaults.comparisonOperator,
-          updatedDefaults.criticalThreshold,
-          updatedDefaults.period,
-          updatedDefaults.evaluationPeriods,
-          config.metricName,
-          config.metricNamespace,
-          [{Name: 'LoadBalancer', Value: loadBalancerName}],
-          AlarmClassification.Critical,
-          updatedDefaults.missingDataTreatment,
-          updatedDefaults.statistic,
-        );
-    } else if (updatedDefaults.criticalThreshold && config.tagKey.includes('anomaly')) {
+      await createOrUpdateCWAlarm(
+        `${alarmNamePrefix}-Critical`,
+        loadBalancerName,
+        updatedDefaults.comparisonOperator,
+        updatedDefaults.criticalThreshold,
+        updatedDefaults.period,
+        updatedDefaults.evaluationPeriods,
+        config.metricName,
+        config.metricNamespace,
+        [{Name: 'LoadBalancer', Value: loadBalancerName}],
+        AlarmClassification.Critical,
+        updatedDefaults.missingDataTreatment,
+        updatedDefaults.statistic,
+      );
+    } else if (
+      updatedDefaults.criticalThreshold &&
+      config.tagKey.includes('anomaly')
+    ) {
       log
         .info()
         .str('function', 'checkAndManageALBStatusAlarms')
