@@ -360,7 +360,7 @@ async function handleStaticThresholdWorkflow(
       ActionsEnabled: false,
       Dimensions: [{Name: 'LoadBalancer', Value: loadBalancerName}],
       Tags: [{Key: 'severity', Value: classification}],
-      TreatMissingData: 'updatedDefaults.missingDataTreatment',
+      TreatMissingData: updatedDefaults.missingDataTreatment,
     };
 
     log

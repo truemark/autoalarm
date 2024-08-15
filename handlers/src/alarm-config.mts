@@ -224,6 +224,7 @@ export interface MetricAlarmConfig {
 // are approved by the team lead. At the end of the day, the team lead is responsible for the service and the alarms.
 export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
   // Keep these in alphabetical order or your PRs will be rejected
+  // Anomaly alarms can only use the following comparison operators: GreaterThanUpperThreshold, LessThanLowerOrGreaterThanUpperThreshold, LessThanLowerThreshold
 
   // Owned by Harmony
   ALB: [
@@ -258,7 +259,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         evaluationPeriods: 2,
         statistic: 'p90',
         dataPointsToAlarm: 1,
-        comparisonOperator: 'GreaterThanThreshold',
+        comparisonOperator: 'GreaterThanUpperThreshold',
         missingDataTreatment: 'ignore',
       },
     },
@@ -292,7 +293,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         evaluationPeriods: 2,
         statistic: 'p90',
         dataPointsToAlarm: 1,
-        comparisonOperator: 'GreaterThanThreshold',
+        comparisonOperator: 'GreaterThanUpperThreshold',
         missingDataTreatment: 'ignore',
       },
     },
@@ -326,7 +327,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         evaluationPeriods: 2,
         statistic: 'p90',
         dataPointsToAlarm: 1,
-        comparisonOperator: 'GreaterThanThreshold',
+        comparisonOperator: 'GreaterThanUpperThreshold',
         missingDataTreatment: 'ignore',
       },
     },
@@ -364,7 +365,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         evaluationPeriods: 2,
         statistic: 'p90',
         dataPointsToAlarm: 1,
-        comparisonOperator: 'GreaterThanThreshold',
+        comparisonOperator: 'GreaterThanUpperThreshold',
         missingDataTreatment: 'ignore',
       },
     },
@@ -398,7 +399,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         evaluationPeriods: 2,
         statistic: 'p90',
         dataPointsToAlarm: 1,
-        comparisonOperator: 'GreaterThanThreshold',
+        comparisonOperator: 'GreaterThanUpperThreshold',
         missingDataTreatment: 'ignore',
       },
     },
@@ -432,7 +433,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         evaluationPeriods: 2,
         statistic: 'p90',
         dataPointsToAlarm: 1,
-        comparisonOperator: 'GreaterThanThreshold',
+        comparisonOperator: 'GreaterThanUpperThreshold',
         missingDataTreatment: 'ignore',
       },
     },
@@ -481,7 +482,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         evaluationPeriods: 1,
         statistic: 'Maximum',
         dataPointsToAlarm: 1,
-        comparisonOperator: 'GreaterThanThreshold',
+        comparisonOperator: 'GreaterThanUpperThreshold',
         missingDataTreatment: 'ignore',
       },
     },
@@ -515,7 +516,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         evaluationPeriods: 1,
         statistic: 'Maximum',
         dataPointsToAlarm: 1,
-        comparisonOperator: 'GreaterThanThreshold',
+        comparisonOperator: 'GreaterThanUpperThreshold',
         missingDataTreatment: 'ignore',
       },
     },
