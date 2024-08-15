@@ -150,8 +150,8 @@ function buildAlarmName(
   log
     .info()
     .str('function', 'buildAlarmName')
-    .str('AlarmNamePrefix', alarmName)
-    .msg('Built alarm name prefix');
+    .str('AlarmName', alarmName)
+    .msg('Built alarm name name');
   return alarmName;
 }
 
