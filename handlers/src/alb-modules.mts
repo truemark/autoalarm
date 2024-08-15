@@ -7,7 +7,7 @@ import {Tag} from './types.mjs';
 import {AlarmClassification} from './enums.mjs';
 import {
   CloudWatchClient,
-  DeleteAlarmsCommand,
+  DeleteAlarmsCommand, PutAnomalyDetectorCommand,
 } from '@aws-sdk/client-cloudwatch';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
@@ -162,24 +162,78 @@ async function checkAndManageALBStatusAlarms(
       updatedDefaults.warningThreshold &&
       config.tagKey.includes('anomaly')
     ) {
+      const anomalyDetectorInput = {
+              Namespace: config.metricNamespace,
+              MetricName: config.metricName,
+              Dimensions: [
+                {
+                  Name: 'LoadBalancer',
+                  Value: loadBalancerName
+                },
+              ],
+              Stat: updatedDefaults.statistic,
+              Configuration: {
+                MetricTimezone: 'UTC',
+              },
+            };
+            log
+              .debug()
+              .obj('input', anomalyDetectorInput)
+              .msg('Sending PutAnomalyDetectorCommand');
+            try {
+            await cloudWatchClient.send(
+              new PutAnomalyDetectorCommand(anomalyDetectorInput),
+            );
+            } catch (e) {
+              log
+                .error()
+                .str('function', 'checkAndManageALBStatusAlarms')
+                .str('alarmName', `${alarmNamePrefix}-Warning`)
+                .err(e)
+                .msg('Error creating anomaly detector');
+            }
       log
         .info()
         .str('function', 'checkAndManageALBStatusAlarms')
         .str('Alarm Name', `${alarmNamePrefix}-Warning}`)
         .msg('Creating or updating anomaly alarm');
-      await createOrUpdateAnomalyDetectionAlarm(
-        `${alarmNamePrefix}-Warning`,
-        updatedDefaults.comparisonOperator,
-        [{Name: 'LoadBalancer', Value: loadBalancerName}],
-        config.metricName,
-        config.metricNamespace,
-        updatedDefaults.statistic,
-        updatedDefaults.period,
-        updatedDefaults.evaluationPeriods,
-        AlarmClassification.Warning,
-        updatedDefaults.missingDataTreatment,
-        updatedDefaults.warningThreshold,
-      );
+      if (defaults.warningThreshold) {
+              const warningAlarmInput = {
+                AlarmName: `${alarmNamePrefix}-Warning`,
+                ComparisonOperator:
+                  ComparisonOperator.GreaterThanUpperThreshold,
+                EvaluationPeriods: defaults.evaluationPeriods,
+                Metrics: [
+                  {
+                    Id: 'primaryMetric',
+                    MetricStat: {
+                      Metric: {
+                        Namespace: config.metricNamespace,
+                        MetricName: config.metricName,
+                        Dimensions: [
+                          {
+                            Name: 'QueueName',
+                            Value: queueName,
+                          },
+                        ],
+                      },
+                      Period: defaults.period,
+                      Stat: defaults.statistic,
+                    },
+                  },
+                  {
+                    Id: 'anomalyDetectionBand',
+                    Expression: 'ANOMALY_DETECTION_BAND(primaryMetric)',
+                  },
+                ],
+                ThresholdMetricId: 'anomalyDetectionBand',
+                ActionsEnabled: false,
+                Tags: [{Key: 'severity', Value: AlarmClassification.Warning}],
+                TreatMissingData: defaults.missingDataTreatment,
+              };
+              await cloudWatchClient.send(
+                new PutMetricAlarmCommand(warningAlarmInput),
+              );
     } else if (await doesAlarmExist(`${alarmNamePrefix}-Warning`)) {
       await cloudWatchClient.send(
         new DeleteAlarmsCommand({
