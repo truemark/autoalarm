@@ -253,8 +253,8 @@ async function handleAnomalyAlarms(
   updatedDefaults: MetricAlarmOptions,
 ) {
   if (
-    updatedDefaults.warningThreshold !== undefined ||
-    updatedDefaults.criticalThreshold !== null
+    updatedDefaults.warningThreshold !== undefined &&
+    updatedDefaults.warningThreshold !== null
   ) {
     const warningAlarmName = buildAlarmName(
       config,
@@ -292,7 +292,7 @@ async function handleAnomalyAlarms(
     await deleteAlarm(warningAlarmName);
   }
   if (
-    updatedDefaults.criticalThreshold !== undefined ||
+    updatedDefaults.criticalThreshold !== undefined &&
     updatedDefaults.criticalThreshold !== null
   ) {
     const criticalAlarmName = buildAlarmName(
@@ -394,8 +394,8 @@ async function handleStaticAlarms(
 ) {
   // Handle warning static alarm
   if (
-    updatedDefaults.warningThreshold !== undefined ||
-    updatedDefaults.criticalThreshold !== null
+    updatedDefaults.warningThreshold !== undefined &&
+    updatedDefaults.warningThreshold !== null
   ) {
     const warningAlarmName = buildAlarmName(
       config,
@@ -435,7 +435,7 @@ async function handleStaticAlarms(
 
   // Handle critical static alarm
   if (
-    updatedDefaults.criticalThreshold !== undefined ||
+    updatedDefaults.criticalThreshold !== undefined &&
     updatedDefaults.criticalThreshold !== null
   ) {
     const criticalAlarmName = buildAlarmName(
