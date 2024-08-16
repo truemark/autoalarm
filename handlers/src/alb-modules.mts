@@ -36,10 +36,7 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
 });
 
 const metricConfigs = MetricAlarmConfigs['ALB'];
-// used to match extended statistics in alarm creation
-// TODO This doesn't belong here any more, please just use parseStatisticOption
-const extendedStatRegex = /^p.*|^tm.*|^tc.*|^ts.*|^wm.*|^iqm$/;
-q
+
 export async function fetchALBTags(loadBalancerArn: string): Promise<Tag> {
   try {
     const command = new DescribeTagsCommand({
@@ -378,7 +375,9 @@ async function handleStaticThresholdWorkflow(
       MetricName: config.metricName,
       Namespace: config.metricNamespace,
       Period: updatedDefaults.period,
-      ...(extendedStatRegex.test(updatedDefaults.statistic)
+      ...(['p', 'tm', 'tc', 'ts', 'wm', 'iqm'].some((prefix) =>
+        updatedDefaults.statistic.startsWith(prefix),
+      )
         ? {ExtendedStatistic: updatedDefaults.statistic}
         : {Statistic: updatedDefaults.statistic as Statistic}),
       Threshold: threshold,
@@ -429,7 +428,7 @@ async function handleStaticAlarms(
 
   // If no thresholds are set, log and exit early
   if (!warningThresholdSet && !criticalThresholdSet && !config.defaultCreate) {
-    const alarmPrefix =  `AutoAlarm-ALB-${loadBalancerName}-${config.metricName}`;
+    const alarmPrefix = `AutoAlarm-ALB-${loadBalancerName}-${config.metricName}`;
     log
       .info()
       .str('function', 'handleStaticAlarms')
