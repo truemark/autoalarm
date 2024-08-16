@@ -428,9 +428,7 @@ async function handleStaticAlarms(
 
   // If no thresholds are set, log and exit early
   if (!warningThresholdSet && !criticalThresholdSet && !config.defaultCreate) {
-    const alarmPrefix = config.tagKey.includes('anomaly')
-      ? `AutoAlarm-ALB-${loadBalancerName}-${config.metricName}-anomaly-`
-      : `AutoAlarm-ALB-${loadBalancerName}-${config.metricName}`;
+    const alarmPrefix =  `AutoAlarm-ALB-${loadBalancerName}-${config.metricName}`;
     log
       .info()
       .str('function', 'handleStaticAlarms')
