@@ -607,17 +607,16 @@ async function checkAndManageALBStatusAlarms(
     (alarm) => !alarmsToKeep.has(alarm),
   );
 
-    log
-      .info()
-      .str('function', 'checkAndManageALBStatusAlarms')
-      .obj('alarms to delete', alarmsToDelete)
-      .msg('Deleting alarm that is no longer needed');
-    await cloudWatchClient.send(
+  log
+    .info()
+    .str('function', 'checkAndManageALBStatusAlarms')
+    .obj('alarms to delete', alarmsToDelete)
+    .msg('Deleting alarm that is no longer needed');
+  await cloudWatchClient.send(
     new DeleteAlarmsCommand({
       AlarmNames: [...alarmsToDelete],
     }),
   );
-
 
   log
     .info()
