@@ -37,8 +37,9 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
 
 const metricConfigs = MetricAlarmConfigs['ALB'];
 // used to match extended statistics in alarm creation
+// TODO This doesn't belong here any more, please just use parseStatisticOption
 const extendedStatRegex = /^p.*|^tm.*|^tc.*|^ts.*|^wm.*|^iqm$/;
-
+q
 export async function fetchALBTags(loadBalancerArn: string): Promise<Tag> {
   try {
     const command = new DescribeTagsCommand({
