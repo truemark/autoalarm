@@ -252,7 +252,9 @@ async function handleAnomalyAlarms(
   config: MetricAlarmConfig,
   loadBalancerName: string,
   updatedDefaults: MetricAlarmOptions,
-) {
+): Promise<string[]> {
+  const createdAlarms: string[] = [];
+
   if (
     updatedDefaults.warningThreshold !== undefined &&
     updatedDefaults.warningThreshold !== null
@@ -277,6 +279,7 @@ async function handleAnomalyAlarms(
       config.anomaly,
       updatedDefaults.warningThreshold,
     );
+    createdAlarms.push(warningAlarmName);
   } else {
     const warningAlarmName = buildAlarmName(
       config,
@@ -293,6 +296,7 @@ async function handleAnomalyAlarms(
       );
     await deleteAlarm(warningAlarmName);
   }
+
   if (
     updatedDefaults.criticalThreshold !== undefined &&
     updatedDefaults.criticalThreshold !== null
@@ -317,6 +321,7 @@ async function handleAnomalyAlarms(
       config.anomaly,
       updatedDefaults.criticalThreshold,
     );
+    createdAlarms.push(criticalAlarmName);
   } else {
     const criticalAlarmName = buildAlarmName(
       config,
@@ -333,6 +338,8 @@ async function handleAnomalyAlarms(
       );
     await deleteAlarm(criticalAlarmName);
   }
+
+  return createdAlarms;
 }
 
 async function handleStaticThresholdWorkflow(
@@ -395,12 +402,36 @@ async function handleStaticAlarms(
   config: MetricAlarmConfig,
   loadBalancerName: string,
   updatedDefaults: MetricAlarmOptions,
-) {
-  // Handle warning static alarm
-  if (
+): Promise<string[]> {
+  const createdAlarms: string[] = [];
+
+  // Validate if thresholds are set correctly
+  const warningThresholdSet =
     updatedDefaults.warningThreshold !== undefined &&
-    updatedDefaults.warningThreshold !== null
-  ) {
+    updatedDefaults.warningThreshold !== null;
+  const criticalThresholdSet =
+    updatedDefaults.criticalThreshold !== undefined &&
+    updatedDefaults.criticalThreshold !== null;
+
+  // If no thresholds are set, log and exit early
+  if (!warningThresholdSet && !criticalThresholdSet && !config.defaultCreate) {
+    const alarmPrefix = config.tagKey.includes('anomaly')
+      ? `AutoAlarm-ALB-${loadBalancerName}-${config.metricName}-anomaly-`
+      : `AutoAlarm-ALB-${loadBalancerName}-${config.metricName}`;
+    log
+      .info()
+      .str('function', 'handleStaticAlarms')
+      .str('LoadBalancerName', loadBalancerName)
+      .str('alarm prefix: ', `${alarmPrefix}`)
+      .msg(
+        'No thresholds defined, skipping alarm creation and deleting alarms for config if they exist.',
+      );
+    await deleteAlarmsForConfig(config, loadBalancerName);
+    return createdAlarms;
+  }
+
+  // Handle warning static alarm
+  if (warningThresholdSet) {
     const warningAlarmName = buildAlarmName(
       config,
       loadBalancerName,
@@ -418,9 +449,10 @@ async function handleStaticAlarms(
       config,
       loadBalancerName,
       AlarmClassification.Warning,
-      config.anomaly, // This remains false for static alarms
-      updatedDefaults.warningThreshold,
+      false, // Static alarm, so not anomaly
+      updatedDefaults.warningThreshold as number,
     );
+    createdAlarms.push(warningAlarmName);
   } else {
     const warningAlarmName = buildAlarmName(
       config,
@@ -432,17 +464,12 @@ async function handleStaticAlarms(
       .info()
       .str('function', 'handleStaticAlarms')
       .str('AlarmName', warningAlarmName)
-      .msg(
-        'No warning static threshold defined and not a default alarm. Deleting existing warning static alarm.',
-      );
+      .msg('Deleting existing warning static alarm due to no threshold.');
     await deleteAlarm(warningAlarmName);
   }
 
   // Handle critical static alarm
-  if (
-    updatedDefaults.criticalThreshold !== undefined &&
-    updatedDefaults.criticalThreshold !== null
-  ) {
+  if (criticalThresholdSet) {
     const criticalAlarmName = buildAlarmName(
       config,
       loadBalancerName,
@@ -460,9 +487,10 @@ async function handleStaticAlarms(
       config,
       loadBalancerName,
       AlarmClassification.Critical,
-      config.anomaly, // This remains false for static alarms
-      updatedDefaults.criticalThreshold,
+      false, // Static alarm, so not anomaly
+      updatedDefaults.criticalThreshold as number,
     );
+    createdAlarms.push(criticalAlarmName);
   } else {
     const criticalAlarmName = buildAlarmName(
       config,
@@ -473,12 +501,12 @@ async function handleStaticAlarms(
     log
       .info()
       .str('function', 'handleStaticAlarms')
-      .obj('alarm config', config)
-      .msg(
-        'No critical static threshold defined and not a default alarm. Deleting existing critical static alarm.',
-      );
+      .str('AlarmName', criticalAlarmName)
+      .msg('Deleting existing critical static alarm due to no threshold.');
     await deleteAlarm(criticalAlarmName);
   }
+
+  return createdAlarms;
 }
 
 async function createOrUpdateAlarm(
@@ -554,6 +582,8 @@ async function checkAndManageALBStatusAlarms(
     return;
   }
 
+  const alarmsToKeep = new Set<string>();
+
   for (const config of metricConfigs) {
     log
       .info()
@@ -568,32 +598,65 @@ async function checkAndManageALBStatusAlarms(
       config.defaults,
     );
 
-    // If alarm creation is not default and no tag value is present, delete existing alarms
-    if (!config.defaultCreate && tagValue === undefined) {
-      log
-        .info()
-        .str('function', 'checkAndManageALBStatusAlarms')
-        .msg('No default or overridden alarm. Deleting existing alarms.');
-      await deleteAlarmsForConfig(config, loadBalancerName);
-      continue;
-    }
-
-    // Handle anomaly and static alarms
-    if (config.tagKey.includes('anomaly')) {
-      log
-        .info()
-        .str('function', 'checkAndManageALBStatusAlarms')
-        .str('LoadBalancerName', loadBalancerName)
-        .msg('Tag key indicates anomaly alarm. Handling anomaly alarms');
-      await handleAnomalyAlarms(config, loadBalancerName, updatedDefaults);
+    if (config.defaultCreate || tagValue !== undefined) {
+      if (config.tagKey.includes('anomaly')) {
+        log
+          .info()
+          .str('function', 'checkAndManageALBStatusAlarms')
+          .str('LoadBalancerName', loadBalancerName)
+          .msg('Tag key indicates anomaly alarm. Handling anomaly alarms');
+        const anomalyAlarms = await handleAnomalyAlarms(
+          config,
+          loadBalancerName,
+          updatedDefaults,
+        );
+        anomalyAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
+      } else {
+        log
+          .info()
+          .str('function', 'checkAndManageALBStatusAlarms')
+          .str('LoadBalancerName', loadBalancerName)
+          .msg('Tag key indicates static alarm. Handling static alarms');
+        const staticAlarms = await handleStaticAlarms(
+          config,
+          loadBalancerName,
+          updatedDefaults,
+        );
+        staticAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
+      }
     } else {
       log
         .info()
         .str('function', 'checkAndManageALBStatusAlarms')
         .str('LoadBalancerName', loadBalancerName)
-        .msg('Tag key indicates static alarm. Handling static alarms');
-      await handleStaticAlarms(config, loadBalancerName, updatedDefaults);
+        .str(
+          'alarm prefix: ',
+          buildAlarmName(
+            config,
+            loadBalancerName,
+            AlarmClassification.Warning,
+            'static',
+          ).replace('Warning', ''),
+        )
+        .msg(
+          'No default or overridden alarm values. Marking alarms for deletion.',
+        );
     }
+  }
+
+  // Delete alarms that are not in the alarmsToKeep set
+  const existingAlarms = await getCWAlarmsForInstance('ALB', loadBalancerName);
+  const alarmsToDelete = existingAlarms.filter(
+    (alarm) => !alarmsToKeep.has(alarm),
+  );
+
+  for (const alarmToDelete of alarmsToDelete) {
+    log
+      .info()
+      .str('function', 'checkAndManageALBStatusAlarms')
+      .str('AlarmName', alarmToDelete)
+      .msg('Deleting alarm that is no longer needed');
+    await deleteAlarm(alarmToDelete);
   }
 
   log
