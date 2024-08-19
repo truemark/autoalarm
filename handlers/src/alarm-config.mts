@@ -358,8 +358,8 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
     },
     {
       tagKey: 'ec2-cpu-anomaly',
-      metricName: 'HTTPCode_Target_4XX_Count',  // TODO Wrong metric name
-      metricNamespace: 'AWS/ApplicationELB',  // TODO Wrong namespace
+      metricName: 'HTTPCode_Target_4XX_Count', // TODO Wrong metric name
+      metricNamespace: 'AWS/ApplicationELB', // TODO Wrong namespace
       defaultCreate: false,
       anomaly: true,
       // TODO Not using good anomaly defaults
