@@ -12,9 +12,7 @@ import {ValidTargetGroupEvent} from './enums.mjs';
 import {parseALBEventAndCreateAlarms} from './alb-modules.mjs';
 import {parseTGEventAndCreateAlarms} from './targetgroup-modules.mjs';
 import {parseSQSEventAndCreateAlarms} from './sqs-modules.mjs';
-import {
-parseOSEventAndCreateAlarms
-} from './opensearch-modules.mjs';
+import {parseOSEventAndCreateAlarms} from './opensearch-modules.mjs';
 
 // Initialize logging
 const level = process.env.LOG_LEVEL || 'trace';
