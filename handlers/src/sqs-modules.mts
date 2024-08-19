@@ -3,15 +3,11 @@ import * as logging from '@nr1e/logging';
 import {Tag} from './types.mjs';
 import {AlarmClassification} from './enums.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
-import {
-  getCWAlarmsForInstance,
-  deleteCWAlarm,
-  doesAlarmExist,
-} from './alarm-tools.mjs';
+import {getCWAlarmsForInstance, deleteCWAlarm} from './alarm-tools.mjs';
 import {
   CloudWatchClient,
-  ComparisonOperator,
   DeleteAlarmsCommand,
+  MetricDataQuery,
   PutAnomalyDetectorCommand,
   PutMetricAlarmCommand,
   Statistic,
@@ -19,6 +15,7 @@ import {
 import {
   MetricAlarmConfigs,
   parseMetricAlarmOptions,
+  MetricAlarmConfig,
   MetricAlarmOptions,
 } from './alarm-config.mjs';
 
@@ -33,15 +30,8 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   region: region,
   retryStrategy: retryStrategy,
 });
-const metricConfigs = MetricAlarmConfigs['SQS'];
-const extendedStatRegex = /^p.*|^tm.*|^tc.*|^ts.*|^wm.*|^IQM$/;
 
-function getTagDefaults(
-  config: (typeof metricConfigs)[number],
-  tagValue: string,
-): MetricAlarmOptions {
-  return parseMetricAlarmOptions(tagValue, config.defaults);
-}
+const metricConfigs = MetricAlarmConfigs['SQS'];
 
 export async function fetchSQSTags(queueUrl: string): Promise<Tag> {
   try {
@@ -68,255 +58,554 @@ export async function fetchSQSTags(queueUrl: string): Promise<Tag> {
   }
 }
 
-async function checkAndManageSQSStatusAlarms(queueName: string, tags: Tag) {
-  const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
-  
+async function deleteExistingAlarms(service: string, identifier: string) {
+  log
+    .info()
+    .str('function', 'deleteExistingAlarms')
+    .str('Service', service)
+    .str('Identifier', identifier)
+    .msg('Fetching and deleting existing alarms');
+  const activeAutoAlarms = await getCWAlarmsForInstance(service, identifier);
 
-  if (!isAlarmEnabled) {
-    const activeAutoAlarms = await getCWAlarmsForInstance('SQS', queueName);
-    await Promise.all(
-      activeAutoAlarms.map((alarmName) => deleteCWAlarm(alarmName, queueName)),
+  log
+    .info()
+    .str('function', 'deleteExistingAlarms')
+    .obj('AlarmName', activeAutoAlarms)
+    .msg('Deleting alarm');
+  await cloudWatchClient.send(
+    new DeleteAlarmsCommand({
+      AlarmNames: [...activeAutoAlarms],
+    }),
+  );
+}
+
+async function deleteAlarmsForConfig(
+  config: MetricAlarmConfig,
+  queueName: string,
+) {
+  for (const classification of Object.values(AlarmClassification)) {
+    for (const alarmVariant of ['static', 'anomaly'] as const) {
+      const alarmName = buildAlarmName(
+        config,
+        queueName,
+        classification,
+        alarmVariant,
+      );
+      await deleteAlarm(alarmName);
+    }
+  }
+}
+
+async function deleteAlarm(alarmName: string) {
+  log
+    .info()
+    .str('function', 'deleteAlarm')
+    .str('AlarmName', alarmName)
+    .msg('Attempting to delete alarm');
+  try {
+    await cloudWatchClient.send(
+      new DeleteAlarmsCommand({AlarmNames: [alarmName]}),
     );
-    log.info().msg('Status check alarm creation skipped due to tag settings.');
+    log
+      .info()
+      .str('function', 'deleteAlarm')
+      .str('AlarmName', alarmName)
+      .msg('Successfully deleted alarm');
+  } catch (e) {
+    log
+      .error()
+      .str('function', 'deleteAlarm')
+      .str('AlarmName', alarmName)
+      .err(e)
+      .msg('Error deleting alarm');
+  }
+}
+
+function buildAlarmName(
+  config: MetricAlarmConfig,
+  queueName: string,
+  classification: AlarmClassification,
+  alarmVarient: 'anomaly' | 'static',
+) {
+  const alarmName =
+    alarmVarient === 'anomaly'
+      ? `AutoAlarm-SQS-${queueName}-${config.metricName}-anomaly-${classification}`
+      : `AutoAlarm-SQS-${queueName}-${config.metricName}-${classification}`;
+  log
+    .info()
+    .str('function', 'buildAlarmName')
+    .str('AlarmName', alarmName)
+    .msg('Built alarm name name');
+  return alarmName;
+}
+
+async function handleAnomalyDetectionWorkflow(
+  alarmName: string,
+  updatedDefaults: MetricAlarmOptions,
+  config: MetricAlarmConfig,
+  queueName: string,
+  classification: AlarmClassification,
+  threshold: number,
+) {
+  log
+    .info()
+    .str('function', 'handleAnomalyDetectionWorkflow')
+    .str('AlarmName', alarmName)
+    .msg('Handling anomaly detection alarm workflow');
+
+  const anomalyDetectorInput = {
+    Namespace: config.metricNamespace,
+    MetricName: config.metricName,
+    Dimensions: [{Name: 'QueueName', Value: queueName}],
+    Stat: updatedDefaults.statistic,
+    Configuration: {MetricTimezone: 'UTC'},
+  };
+
+  log
+    .debug()
+    .str('function', 'handleAnomalyDetectionWorkflow')
+    .obj('AnomalyDetectorInput', anomalyDetectorInput)
+    .msg('Sending PutAnomalyDetectorCommand');
+  const response = await cloudWatchClient.send(
+    new PutAnomalyDetectorCommand(anomalyDetectorInput),
+  );
+  log
+    .info()
+    .str('function', 'handleAnomalyDetectionWorkflow')
+    .str('AlarmName', alarmName)
+    .obj('response', response)
+    .msg('Successfully created or updated anomaly detector');
+
+  const metrics: MetricDataQuery[] = [
+    {
+      Id: 'primaryMetric',
+      MetricStat: {
+        Metric: {
+          Namespace: config.metricNamespace,
+          MetricName: config.metricName,
+          Dimensions: [{Name: 'QueueName', Value: queueName}],
+        },
+        Period: updatedDefaults.period,
+        Stat: updatedDefaults.statistic,
+      },
+    },
+    {
+      Id: 'anomalyDetectionBand',
+      Expression: `ANOMALY_DETECTION_BAND(primaryMetric, ${threshold})`,
+    },
+  ];
+
+  try {
+    const alarmInput = {
+      AlarmName: alarmName,
+      ComparisonOperator: updatedDefaults.comparisonOperator,
+      EvaluationPeriods: updatedDefaults.evaluationPeriods,
+      Metrics: metrics,
+      ThresholdMetricId: 'anomalyDetectionBand',
+      ActionsEnabled: false,
+      Tags: [{Key: 'severity', Value: classification}],
+      TreatMissingData: updatedDefaults.missingDataTreatment,
+    };
+
+    log
+      .info()
+      .str('function', 'handleAnomalyDetectionWorkflow')
+      .obj('AlarmInput', alarmInput)
+      .msg('Sending PutMetricAlarmCommand');
+
+    const response = await cloudWatchClient.send(
+      new PutMetricAlarmCommand(alarmInput),
+    );
+    log
+      .info()
+      .str('function', 'handleAnomalyDetectionWorkflow')
+      .str('AlarmName', alarmName)
+      .obj('response', response)
+      .msg('Successfully created or updated anomaly detection alarm');
+  } catch (e) {
+    log
+      .error()
+      .str('function', 'handleAnomalyDetectionWorkflow')
+      .str('AlarmName', alarmName)
+      .err(e)
+      .msg('Error creating or updating anomaly detection alarm');
+  }
+}
+
+async function handleAnomalyAlarms(
+  config: MetricAlarmConfig,
+  queueName: string,
+  updatedDefaults: MetricAlarmOptions,
+): Promise<string[]> {
+  const createdAlarms: string[] = [];
+
+  // Validate if thresholds are set correctly
+  const warningThresholdSet =
+    updatedDefaults.warningThreshold !== undefined &&
+    updatedDefaults.warningThreshold !== null;
+  const criticalThresholdSet =
+    updatedDefaults.criticalThreshold !== undefined &&
+    updatedDefaults.criticalThreshold !== null;
+
+  // If no thresholds are set, log and exit early
+  if (!warningThresholdSet && !criticalThresholdSet && !config.defaultCreate) {
+    const alarmPrefix = `AutoAlarm-SQS-${queueName}-${config.metricName}-anomaly-`;
+    log
+      .info()
+      .str('function', 'handleAnomalyAlarms')
+      .str('queueName', queueName)
+      .str('alarm prefix: ', alarmPrefix)
+      .msg(
+        'No thresholds defined, skipping alarm creation and deleting alarms for config if they exist.',
+      );
+    await deleteAlarmsForConfig(config, queueName);
+    return createdAlarms;
+  }
+
+  // Handle warning anomaly alarm
+  if (warningThresholdSet) {
+    const warningAlarmName = buildAlarmName(
+      config,
+      queueName,
+      AlarmClassification.Warning,
+      'anomaly',
+    );
+    log
+      .info()
+      .str('function', 'handleAnomalyAlarms')
+      .str('AlarmName', warningAlarmName)
+      .msg('Creating or updating warning anomaly alarm');
+    await handleAnomalyDetectionWorkflow(
+      warningAlarmName,
+      updatedDefaults,
+      config,
+      queueName,
+      AlarmClassification.Warning,
+      updatedDefaults.warningThreshold as number,
+    );
+    createdAlarms.push(warningAlarmName);
+  } else {
+    const warningAlarmName = buildAlarmName(
+      config,
+      queueName,
+      AlarmClassification.Warning,
+      'anomaly',
+    );
+    log
+      .info()
+      .str('function', 'handleAnomalyAlarms')
+      .str('AlarmName', warningAlarmName)
+      .msg('Deleting existing warning anomaly alarm due to no threshold.');
+    await deleteAlarm(warningAlarmName);
+  }
+
+  // Handle critical anomaly alarm
+  if (criticalThresholdSet) {
+    const criticalAlarmName = buildAlarmName(
+      config,
+      queueName,
+      AlarmClassification.Critical,
+      'anomaly',
+    );
+    log
+      .info()
+      .str('function', 'handleAnomalyAlarms')
+      .str('AlarmName', criticalAlarmName)
+      .msg('Creating or updating critical anomaly alarm');
+    await handleAnomalyDetectionWorkflow(
+      criticalAlarmName,
+      updatedDefaults,
+      config,
+      queueName,
+      AlarmClassification.Critical,
+      updatedDefaults.criticalThreshold as number,
+    );
+    createdAlarms.push(criticalAlarmName);
+  } else {
+    const criticalAlarmName = buildAlarmName(
+      config,
+      queueName,
+      AlarmClassification.Critical,
+      'anomaly',
+    );
+    log
+      .info()
+      .str('function', 'handleAnomalyAlarms')
+      .str('AlarmName', criticalAlarmName)
+      .msg('Deleting existing critical anomaly alarm due to no threshold.');
+    await deleteAlarm(criticalAlarmName);
+  }
+
+  return createdAlarms;
+}
+
+async function handleStaticThresholdWorkflow(
+  alarmName: string,
+  updatedDefaults: MetricAlarmOptions,
+  config: MetricAlarmConfig,
+  queueName: string,
+  classification: AlarmClassification,
+  threshold: number,
+) {
+  log
+    .info()
+    .str('function', 'handleStaticThresholdWorkflow')
+    .str('AlarmName', alarmName)
+    .msg('Handling static threshold alarm workflow');
+
+  try {
+    const alarmInput = {
+      AlarmName: alarmName,
+      ComparisonOperator: updatedDefaults.comparisonOperator,
+      EvaluationPeriods: updatedDefaults.evaluationPeriods,
+      MetricName: config.metricName,
+      Namespace: config.metricNamespace,
+      Period: updatedDefaults.period,
+      ...(['p', 'tm', 'tc', 'ts', 'wm', 'iqm'].some((prefix) =>
+        updatedDefaults.statistic.startsWith(prefix),
+      )
+        ? {ExtendedStatistic: updatedDefaults.statistic}
+        : {Statistic: updatedDefaults.statistic as Statistic}),
+      Threshold: threshold,
+      ActionsEnabled: false,
+      Dimensions: [{Name: 'QueueName', Value: queueName}],
+      Tags: [{Key: 'severity', Value: classification}],
+      TreatMissingData: updatedDefaults.missingDataTreatment,
+    };
+
+    log
+      .debug()
+      .str('function', 'handleStaticThresholdWorkflow')
+      .obj('AlarmInput', alarmInput)
+      .msg('Sending PutMetricAlarmCommand');
+    const response = await cloudWatchClient.send(
+      new PutMetricAlarmCommand(alarmInput),
+    );
+    log
+      .info()
+      .str('function', 'handleStaticThresholdWorkflow')
+      .str('AlarmName', alarmName)
+      .obj('response', response)
+      .msg('Successfully created or updated static threshold alarm');
+  } catch (e) {
+    log
+      .error()
+      .str('function', 'handleStaticThresholdWorkflow')
+      .str('AlarmName', alarmName)
+      .err(e)
+      .msg('Error creating or updating static threshold alarm');
+  }
+}
+
+async function handleStaticAlarms(
+  config: MetricAlarmConfig,
+  queueName: string,
+  updatedDefaults: MetricAlarmOptions,
+): Promise<string[]> {
+  const createdAlarms: string[] = [];
+
+  // Validate if thresholds are set correctly
+  const warningThresholdSet =
+    updatedDefaults.warningThreshold !== undefined &&
+    updatedDefaults.warningThreshold !== null;
+  const criticalThresholdSet =
+    updatedDefaults.criticalThreshold !== undefined &&
+    updatedDefaults.criticalThreshold !== null;
+
+  // If no thresholds are set, log and exit early
+  if (!warningThresholdSet && !criticalThresholdSet && !config.defaultCreate) {
+    const alarmPrefix = `AutoAlarm-SQS-${queueName}-${config.metricName}`;
+    log
+      .info()
+      .str('function', 'handleStaticAlarms')
+      .str('QueueName', queueName)
+      .str('alarm prefix: ', `${alarmPrefix}`)
+      .msg(
+        'No thresholds defined, skipping alarm creation and deleting alarms for config if they exist.',
+      );
+    await deleteAlarmsForConfig(config, queueName);
+    return createdAlarms;
+  }
+
+  // Handle warning static alarm
+  if (warningThresholdSet) {
+    const warningAlarmName = buildAlarmName(
+      config,
+      queueName,
+      AlarmClassification.Warning,
+      'static',
+    );
+    log
+      .info()
+      .str('function', 'handleStaticAlarms')
+      .str('AlarmName', warningAlarmName)
+      .msg('Creating or updating warning static alarms');
+    await handleStaticThresholdWorkflow(
+      warningAlarmName,
+      updatedDefaults,
+      config,
+      queueName,
+      AlarmClassification.Warning,
+      updatedDefaults.warningThreshold as number,
+    );
+    createdAlarms.push(warningAlarmName);
+  } else {
+    const warningAlarmName = buildAlarmName(
+      config,
+      queueName,
+      AlarmClassification.Warning,
+      'static',
+    );
+    log
+      .info()
+      .str('function', 'handleStaticAlarms')
+      .str('AlarmName', warningAlarmName)
+      .msg('Deleting existing warning static alarm due to no threshold.');
+    await deleteAlarm(warningAlarmName);
+  }
+
+  // Handle critical static alarm
+  if (criticalThresholdSet) {
+    const criticalAlarmName = buildAlarmName(
+      config,
+      queueName,
+      AlarmClassification.Critical,
+      'static',
+    );
+    log
+      .info()
+      .str('function', 'handleStaticAlarms')
+      .str('AlarmName', criticalAlarmName)
+      .msg('Creating or updating critical static alarms');
+    await handleStaticThresholdWorkflow(
+      criticalAlarmName,
+      updatedDefaults,
+      config,
+      queueName,
+      AlarmClassification.Critical,
+      updatedDefaults.criticalThreshold as number,
+    );
+    createdAlarms.push(criticalAlarmName);
+  } else {
+    const criticalAlarmName = buildAlarmName(
+      config,
+      queueName,
+      AlarmClassification.Critical,
+      'static',
+    );
+    log
+      .info()
+      .str('function', 'handleStaticAlarms')
+      .str('AlarmName', criticalAlarmName)
+      .msg('Deleting existing critical static alarm due to no threshold.');
+    await deleteAlarm(criticalAlarmName);
+  }
+
+  return createdAlarms;
+}
+
+async function checkAndManageSQSStatusAlarms(queueName: string, tags: Tag) {
+  log
+    .info()
+    .str('function', 'checkAndManageSQSStatusAlarms')
+    .str('QueueName', queueName)
+    .msg('Starting alarm management process');
+
+  const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
+  if (!isAlarmEnabled) {
+    log
+      .info()
+      .str('function', 'checkAndManageSQSStatusAlarms')
+      .str('QueueName', queueName)
+      .msg('Alarm creation disabled by tag settings');
+    await deleteExistingAlarms('SQS', queueName);
     return;
   }
 
-  // Check and manage alarms for each metric configuration
+  const alarmsToKeep = new Set<string>();
+
   for (const config of metricConfigs) {
     log
       .info()
       .str('function', 'checkAndManageSQSStatusAlarms')
       .obj('config', config)
-      .str('QueueName', queueName)
-      .msg('Tag values before processing');
+      .str('SQS', queueName)
+      .msg('Processing metric configuration');
 
     const tagValue = tags[`autoalarm:${config.tagKey}`];
+    const updatedDefaults = parseMetricAlarmOptions(
+      tagValue || '',
+      config.defaults,
+    );
 
-    if (!config.defaultCreate && tagValue === undefined) {
-      log
-        .info()
-        .obj('config', config)
-        .msg('Not default and tag value is undefined, skipping.');
-      continue; // not a default and not overridden
-    }
-
-    const defaults = getTagDefaults(config, tagValue || '');
-    log
-      .trace()
-      .str('function', 'checkAndManageSQSStatusAlarms')
-      .str('tagValue', tagValue)
-      .str('defaults', JSON.stringify(defaults))
-      .unknown('criticalThreshold', defaults.criticalThreshold)
-      .unknown('warningThreshold', defaults.warningThreshold)
-      .num('evaluationPeriods', defaults.evaluationPeriods)
-      .msg('Tag values after processing');
-    if (config.anomaly) {
-      const alarmNamePrefix = `AutoAlarm-SQS-${queueName}-${config.metricName}-Anomaly`;
-      if (defaults.statistic) {
-        // Create critical alarm
-        if (defaults.statistic !== '-' && defaults.statistic !== 'disabled') {
-          try {
-            // Create anomaly detector with the latest parameters
-            const anomalyDetectorInput = {
-              Namespace: config.metricNamespace,
-              MetricName: config.metricName,
-              Dimensions: [
-                {
-                  Name: 'QueueName',
-                  Value: queueName,
-                },
-              ],
-              Stat: defaults.statistic,
-              Configuration: {
-                MetricTimezone: 'UTC',
-              },
-            };
-            log
-              .debug()
-              .obj('input', anomalyDetectorInput)
-              .msg('Sending PutAnomalyDetectorCommand');
-            await cloudWatchClient.send(
-              new PutAnomalyDetectorCommand(anomalyDetectorInput),
-            );
-            log
-              .trace()
-              .unknown('warningThreshold', defaults.warningThreshold)
-              .unknown('criticalThreshold', defaults.criticalThreshold)
-              .msg('Confirming values for warning and critical thresholds');
-            if (defaults.warningThreshold) {
-              const warningAlarmInput = {
-                AlarmName: `${alarmNamePrefix}-Warning`,
-                ComparisonOperator:
-                  ComparisonOperator.GreaterThanUpperThreshold,
-                EvaluationPeriods: defaults.evaluationPeriods,
-                Metrics: [
-                  {
-                    Id: 'primaryMetric',
-                    MetricStat: {
-                      Metric: {
-                        Namespace: config.metricNamespace,
-                        MetricName: config.metricName,
-                        Dimensions: [
-                          {
-                            Name: 'QueueName',
-                            Value: queueName,
-                          },
-                        ],
-                      },
-                      Period: defaults.period,
-                      Stat: defaults.statistic,
-                    },
-                  },
-                  {
-                    Id: 'anomalyDetectionBand',
-                    Expression: 'ANOMALY_DETECTION_BAND(primaryMetric)',
-                  },
-                ],
-                ThresholdMetricId: 'anomalyDetectionBand',
-                ActionsEnabled: false,
-                Tags: [{Key: 'severity', Value: AlarmClassification.Warning}],
-                TreatMissingData: defaults.missingDataTreatment,
-              };
-              await cloudWatchClient.send(
-                new PutMetricAlarmCommand(warningAlarmInput),
-              );
-            } else if (await doesAlarmExist(`${alarmNamePrefix}-Warning`)) {
-              await cloudWatchClient.send(
-                new DeleteAlarmsCommand({
-                  AlarmNames: [`${alarmNamePrefix}-Warning`],
-                }),
-              );
-            }
-            // Create the critical level anomaly detection alarm
-            if (defaults.criticalThreshold) {
-              const criticalAlarmInput = {
-                AlarmName: `${alarmNamePrefix}-Critical`,
-                ComparisonOperator:
-                  ComparisonOperator.GreaterThanUpperThreshold,
-                EvaluationPeriods: defaults.evaluationPeriods,
-                Metrics: [
-                  {
-                    Id: 'primaryMetric',
-                    MetricStat: {
-                      Metric: {
-                        Namespace: config.metricNamespace,
-                        MetricName: config.metricName,
-                        Dimensions: [
-                          {
-                            Name: 'QueueName',
-                            Value: queueName,
-                          },
-                        ],
-                      },
-                      Period: defaults.period,
-                      Stat: defaults.statistic,
-                    },
-                  },
-                  {
-                    Id: 'anomalyDetectionBand',
-                    Expression: 'ANOMALY_DETECTION_BAND(primaryMetric)',
-                  },
-                ],
-                ThresholdMetricId: 'anomalyDetectionBand',
-                ActionsEnabled: false,
-                Tags: [{Key: 'severity', Value: AlarmClassification.Critical}],
-                TreatMissingData: defaults.missingDataTreatment,
-              };
-              await cloudWatchClient.send(
-                new PutMetricAlarmCommand(criticalAlarmInput),
-              );
-            }
-            log
-              .info()
-              .str('function', 'createOrUpdateAnomalyAlarms')
-              .msg('Anomaly Detection Alarms created or updated.');
-          } catch (e) {
-            log
-              .error()
-              .str('function', 'createOrUpdateAnomalyAlarms')
-              .err(e)
-              .msg('Failed to create or update anomaly detection alarms.');
-          }
-        } else if (await doesAlarmExist(`${alarmNamePrefix}-Critical`)) {
-          await cloudWatchClient.send(
-            new DeleteAlarmsCommand({
-              AlarmNames: [`${alarmNamePrefix}-Critical`],
-            }),
-          );
-        }
+    if (config.defaultCreate || tagValue !== undefined) {
+      if (config.tagKey.includes('anomaly')) {
+        log
+          .info()
+          .str('function', 'checkAndManageSQSStatusAlarms')
+          .str('QueueName', queueName)
+          .msg('Tag key indicates anomaly alarm. Handling anomaly alarms');
+        const anomalyAlarms = await handleAnomalyAlarms(
+          config,
+          queueName,
+          updatedDefaults,
+        );
+        anomalyAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
+      } else {
+        log
+          .info()
+          .str('function', 'checkAndManageSQSStatusAlarms')
+          .str('QueueName', queueName)
+          .msg('Tag key indicates static alarm. Handling static alarms');
+        const staticAlarms = await handleStaticAlarms(
+          config,
+          queueName,
+          updatedDefaults,
+        );
+        staticAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
       }
     } else {
-      const alarmNamePrefix = `AutoAlarm-SQS-${queueName}-${config.metricName}`;
-      // Create warning alarm
-      if (defaults.warningThreshold) {
-        log
-          .trace()
-          .str('function', 'createOrUpdateAnomalyAlarms')
-          .str('tagValue', tagValue)
-          .num('warningThreshold', defaults.warningThreshold)
-          .num('evaluationPeriods', defaults.evaluationPeriods)
-          .msg('Values before creating warning alarm');
-
-        await cloudWatchClient.send(
-          new PutMetricAlarmCommand({
-            AlarmName: `${alarmNamePrefix}-Warning`,
-            ComparisonOperator: 'GreaterThanThreshold',
-            EvaluationPeriods: defaults.evaluationPeriods,
-            MetricName: config.metricName,
-            Namespace: config.metricNamespace,
-            Period: defaults.period,
-            ...(extendedStatRegex.test(defaults.statistic)
-              ? {ExtendedStatistic: defaults.statistic}
-              : {Statistic: defaults.statistic as Statistic}),
-            Threshold: defaults.warningThreshold,
-            ActionsEnabled: false,
-            Dimensions: [{Name: 'QueueName', Value: queueName}],
-            Tags: [{Key: 'severity', Value: AlarmClassification.Warning}],
-            TreatMissingData: defaults.missingDataTreatment,
-          }),
+      log
+        .info()
+        .str('function', 'checkAndManageSQSStatusAlarms')
+        .str('QueueName', queueName)
+        .str(
+          'alarm prefix: ',
+          buildAlarmName(
+            config,
+            queueName,
+            AlarmClassification.Warning,
+            'static',
+          ).replace('Warning', ''),
+        )
+        .msg(
+          'No default or overridden alarm values. Marking alarms for deletion.',
         );
-      } else if (await doesAlarmExist(`${alarmNamePrefix}-Warning`)) {
-        await cloudWatchClient.send(
-          new DeleteAlarmsCommand({
-            AlarmNames: [`${alarmNamePrefix}-Warning`],
-          }),
-        );
-      }
-
-      // Create critical alarm
-      if (defaults.criticalThreshold) {
-        log
-          .trace()
-          .str('function', 'createOrUpdateAnomalyAlarms')
-          .str('tagValue', tagValue)
-          .msg('Creating critical alarm');
-        await cloudWatchClient.send(
-          new PutMetricAlarmCommand({
-            AlarmName: `${alarmNamePrefix}-Critical`,
-            ComparisonOperator: 'GreaterThanThreshold',
-            EvaluationPeriods: defaults.evaluationPeriods,
-            MetricName: config.metricName,
-            Namespace: config.metricNamespace,
-            Period: defaults.period,
-            ...(extendedStatRegex.test(defaults.statistic)
-              ? {ExtendedStatistic: defaults.statistic}
-              : {Statistic: defaults.statistic as Statistic}),
-            Threshold: defaults.criticalThreshold,
-            ActionsEnabled: false,
-            Dimensions: [{Name: 'QueueName', Value: queueName}],
-            Tags: [{Key: 'severity', Value: AlarmClassification.Critical}],
-            TreatMissingData: defaults.missingDataTreatment,
-          }),
-        );
-      } else if (await doesAlarmExist(`${alarmNamePrefix}-Critical`)) {
-        await cloudWatchClient.send(
-          new DeleteAlarmsCommand({
-            AlarmNames: [`${alarmNamePrefix}-Critical`],
-          }),
-        );
-      }
     }
   }
+
+  // Delete alarms that are not in the alarmsToKeep set
+  const existingAlarms = await getCWAlarmsForInstance('SQS', queueName);
+  const alarmsToDelete = existingAlarms.filter(
+    (alarm) => !alarmsToKeep.has(alarm),
+  );
+
+  log
+    .info()
+    .str('function', 'checkAndManageSQSStatusAlarms')
+    .obj('alarms to delete', alarmsToDelete)
+    .msg('Deleting alarm that is no longer needed');
+  await cloudWatchClient.send(
+    new DeleteAlarmsCommand({
+      AlarmNames: [...alarmsToDelete],
+    }),
+  );
+
+  log
+    .info()
+    .str('function', 'checkAndManageSQSStatusAlarms')
+    .str('QueueName', queueName)
+    .msg('Finished alarm management process');
 }
 
 export async function manageSQSAlarms(
@@ -363,19 +652,6 @@ export async function parseSQSEventAndCreateAlarms(event: any): Promise<{
   let tags: Record<string, string> = {};
 
   switch (event['detail-type']) {
-    case 'Tag Change on Resource':
-      queueUrl = event.resources[0];
-      eventType = 'TagChange';
-      tags = event.detail.tags || {};
-      log
-        .info()
-        .str('function', 'parseSQSEventAndCreateAlarms')
-        .str('eventType', 'TagChange')
-        .str('queueUrl', queueUrl)
-        .str('changedTags', JSON.stringify(event.detail['changed-tag-keys']))
-        .msg('Processing Tag Change event');
-      break;
-
     case 'AWS API Call via CloudTrail':
       switch (event.detail.eventName) {
         case 'CreateQueue':
