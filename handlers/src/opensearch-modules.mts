@@ -3,10 +3,7 @@ import * as logging from '@nr1e/logging';
 import {Tag} from './types.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {AlarmClassification} from './enums.mjs';
-import {
-  getCWAlarmsForInstance,
-  deleteCWAlarm,
-} from './alarm-tools.mjs';
+import {getCWAlarmsForInstance, deleteCWAlarm} from './alarm-tools.mjs';
 import {
   CloudWatchClient,
   DeleteAlarmsCommand,
@@ -169,7 +166,10 @@ async function handleAnomalyDetectionWorkflow(
   const anomalyDetectorInput = {
     Namespace: config.metricNamespace,
     MetricName: config.metricName,
-    Dimensions: [{Name: 'DomainName', Value: domainName}, {Name: 'ClientId', Value: accountID}],
+    Dimensions: [
+      {Name: 'DomainName', Value: domainName},
+      {Name: 'ClientId', Value: accountID},
+    ],
     Stat: updatedDefaults.statistic,
     Configuration: {MetricTimezone: 'UTC'},
   };
@@ -196,7 +196,10 @@ async function handleAnomalyDetectionWorkflow(
         Metric: {
           Namespace: config.metricNamespace,
           MetricName: config.metricName,
-          Dimensions: [{Name: 'DomainName', Value: domainName}, {Name: 'ClientId', Value: accountID}],
+          Dimensions: [
+            {Name: 'DomainName', Value: domainName},
+            {Name: 'ClientId', Value: accountID},
+          ],
         },
         Period: updatedDefaults.period,
         Stat: updatedDefaults.statistic,
@@ -386,7 +389,10 @@ async function handleStaticThresholdWorkflow(
         : {Statistic: updatedDefaults.statistic as Statistic}),
       Threshold: threshold,
       ActionsEnabled: false,
-      Dimensions: [{Name: 'DomainName', Value: domainName}, {Name: 'ClientId', Value: accountID}],
+      Dimensions: [
+        {Name: 'DomainName', Value: domainName},
+        {Name: 'ClientId', Value: accountID},
+      ],
       Tags: [{Key: 'severity', Value: classification}],
       TreatMissingData: updatedDefaults.missingDataTreatment,
     };
