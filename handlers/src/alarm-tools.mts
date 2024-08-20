@@ -131,7 +131,7 @@ export function buildAlarmName(
     const alarmName =
       alarmVarient === 'anomaly'
         ? `AutoAlarm-${service}-${serviceIdentifier}-${config.metricName}-anomaly-${classification}`
-        : `AutoAlarm-${service}${serviceIdentifier}-${config.metricName}-${classification}`;
+        : `AutoAlarm-${service}-${serviceIdentifier}-${config.metricName}-${classification}`;
     log
       .info()
       .str('function', 'buildAlarmName')
