@@ -545,7 +545,6 @@ export async function handleStaticAlarms(
 // service identifier should be lowercase e.g. ec2, ecs, eks, rds, etc.
 // serviceIdentifier should be all UPPER CASE
 // instance identifier should be the identifier that is use for cloudwatch to pull alarm information. When adding a new service
-// list it here below:
 // EC2: instanceID
 // ECS: ...
 // EKS: ...
