@@ -227,7 +227,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
   // Anomaly alarms can only use the following comparison operators: GreaterThanUpperThreshold, LessThanLowerOrGreaterThanUpperThreshold, LessThanLowerThreshold
 
   // TODO Stop prefixing alb- and ec2- and os-. It's redundant. The resource that's tag dictates the set to use.
-
   // Owned by Harmony
   ALB: [
     // TODO Add remaining alarms and get buy off from team lead on PR
@@ -349,9 +348,9 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         warningThreshold: 95,
         criticalThreshold: 98,
         period: 60,
-        evaluationPeriods: 2,
-        statistic: 'Sum',
-        dataPointsToAlarm: 1,
+        evaluationPeriods: 5,
+        statistic: 'Maximum',
+        dataPointsToAlarm: 5,
         comparisonOperator: 'GreaterThanThreshold',
         missingDataTreatment: 'ignore',
       },
@@ -364,16 +363,15 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       anomaly: true,
       defaults: {
         warningThreshold: 2,
-        criticalThreshold: 3,
+        criticalThreshold: 5,
         period: 60,
-        evaluationPeriods: 2,
-        statistic: 'p90',
-        dataPointsToAlarm: 1,
+        evaluationPeriods: 5,
+        statistic: 'Average',
+        dataPointsToAlarm: 5,
         comparisonOperator: 'GreaterThanUpperThreshold',
         missingDataTreatment: 'ignore',
       },
     },
-    // TODO I think this static alarm should be enabled by default with a warning of 95 and critical of 98 for 2 periods of 300 seconds, discuss with Trent and get what he wants
     {
       tagKey: 'ec2-memory',
       metricName: '', // Empty string to account for divergent metric names between windows and linux instances for EC2 storage and memory configs. Assigned programmatically in ec2-modules.
@@ -381,17 +379,16 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaultCreate: true,
       anomaly: false,
       defaults: {
-        warningThreshold: 90,
-        criticalThreshold: 95,
+        warningThreshold: 95,
+        criticalThreshold: 98,
         period: 60,
-        evaluationPeriods: 2,
-        statistic: 'Sum',
-        dataPointsToAlarm: 1,
+        evaluationPeriods: 10,
+        statistic: 'Maximum',
+        dataPointsToAlarm: 10,
         comparisonOperator: 'GreaterThanThreshold',
         missingDataTreatment: 'ignore',
       },
     },
-    // TODO I would have this off by default, discuss with Trent and get what he wants
     {
       tagKey: 'ec2-memory-anomaly',
       metricName: '', // Empty string to account for divergent metric names between windows and linux instances for EC2 storage and memory configs. Assigned programmatically in ec2-modules.
@@ -399,13 +396,12 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaultCreate: false,
       anomaly: true,
       defaults: {
-        // TODO Not using good anomaly defaults
         warningThreshold: 2,
-        criticalThreshold: 3,
-        period: 60,
+        criticalThreshold: 5,
+        period: 300,
         evaluationPeriods: 2,
-        statistic: 'p90',
-        dataPointsToAlarm: 1,
+        statistic: 'Average',
+        dataPointsToAlarm: 2,
         comparisonOperator: 'GreaterThanUpperThreshold',
         missingDataTreatment: 'ignore',
       },
@@ -422,7 +418,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         criticalThreshold: 95,
         period: 60,
         evaluationPeriods: 2,
-        statistic: 'Sum',
+        statistic: 'Maximum',
         dataPointsToAlarm: 1,
         comparisonOperator: 'GreaterThanThreshold',
         missingDataTreatment: 'ignore',
@@ -439,7 +435,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         criticalThreshold: 3,
         period: 60,
         evaluationPeriods: 2,
-        statistic: 'p90',
+        statistic: 'Average',
         dataPointsToAlarm: 1,
         comparisonOperator: 'GreaterThanUpperThreshold',
         missingDataTreatment: 'ignore',
@@ -456,8 +452,8 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaultCreate: false,
       anomaly: false,
       defaults: {
-        warningThreshold: 100, // TODO makes no sense to me, I would make null
-        criticalThreshold: 300, // TODO makes no sense to me, I would make null
+        warningThreshold: 100,
+        criticalThreshold: 300,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Sum',
@@ -471,14 +467,14 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       tagKey: 'os-4xx-errors-anomaly',
       metricName: '4xx',
       metricNamespace: 'AWS/ES',
-      defaultCreate: true,
+      defaultCreate: false,
       anomaly: true,
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
         period: 300,
         evaluationPeriods: 1,
-        statistic: 'Maximum',
+        statistic: 'Average',
         dataPointsToAlarm: 1,
         comparisonOperator: 'GreaterThanUpperThreshold',
         missingDataTreatment: 'ignore',
@@ -488,11 +484,11 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       tagKey: 'os-5xx-errors',
       metricName: '5xx',
       metricNamespace: 'AWS/ES',
-      defaultCreate: false, // TODO I think I would enable this by default
+      defaultCreate: true, // TODO I think I would enable this by default
       anomaly: false,
       defaults: {
-        warningThreshold: 100, // TODO This threshold make no sense to me
-        criticalThreshold: 300, // TODO This threshold make no sense to me
+        warningThreshold: 10, // TODO This threshold make no sense to me
+        criticalThreshold: 50, // TODO This threshold make no sense to me
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Sum',
@@ -502,18 +498,17 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      // TODO I think I would use a static threshold and not an anomaly by default. Discuss with Trent and get his decision.
       tagKey: 'os-5xx-errors-anomaly',
       metricName: '5xx',
       metricNamespace: 'AWS/ES',
-      defaultCreate: true,
+      defaultCreate: false,
       anomaly: true,
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
         period: 300,
         evaluationPeriods: 1,
-        statistic: 'Maximum',
+        statistic: 'Average',
         dataPointsToAlarm: 1,
         comparisonOperator: 'GreaterThanUpperThreshold',
         missingDataTreatment: 'ignore',
@@ -523,15 +518,14 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       tagKey: 'os-cpu',
       metricName: 'CPUUtilization',
       metricNamespace: 'AWS/ES',
-      defaultCreate: false, // TODO I think we should enable this by default and have anomaly off by default. Get with Trent and decide.
+      defaultCreate: true,
       anomaly: false,
       defaults: {
-        // TODO Discuss with Trent, these seem to low to me for defaults
-        warningThreshold: 85,
-        criticalThreshold: 90,
-        period: 60,
-        evaluationPeriods: 2,
-        statistic: 'p90',
+        warningThreshold: 98,
+        criticalThreshold: 98,
+        period: 300,
+        evaluationPeriods: 1,
+        statistic: 'Maximum',
         dataPointsToAlarm: 1,
         comparisonOperator: 'GreaterThanThreshold',
         missingDataTreatment: 'ignore',
@@ -541,33 +535,31 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       tagKey: 'os-cpu-anomaly',
       metricName: 'CPUUtilization',
       metricNamespace: 'AWS/ES',
-      defaultCreate: true, // TODO I would not have this enabled by default. Discuss with Trent and get his decision.
+      defaultCreate: false,
       anomaly: true,
       defaults: {
-        // TODO Thresholds should be fixed
-        warningThreshold: null,
-        criticalThreshold: null,
-        period: 60,
-        evaluationPeriods: 2,
-        statistic: 'p90',
+        warningThreshold: 2,
+        criticalThreshold: 2,
+        period: 300,
+        evaluationPeriods: 1,
+        statistic: 'Average',
         dataPointsToAlarm: 1,
         comparisonOperator: 'GreaterThanUpperThreshold',
         missingDataTreatment: 'ignore',
       },
     },
     {
-      // TODO I think this could be set by default with good values and I would not use anomaly by default.
       tagKey: 'os-iops-throttle',
       metricName: 'IopsThrottle',
       metricNamespace: 'AWS/ES',
-      defaultCreate: false,
+      defaultCreate: true,
       anomaly: false,
       defaults: {
-        warningThreshold: 10, // TODO This makes no sense as a default
-        criticalThreshold: 20, // TODO This makes no sense as a default
+        warningThreshold: 5,
+        criticalThreshold: 10,
         period: 300,
         evaluationPeriods: 1,
-        statistic: 'Maximum',
+        statistic: 'Sum',
         dataPointsToAlarm: 1,
         comparisonOperator: 'GreaterThanThreshold',
         missingDataTreatment: 'ignore',
@@ -577,14 +569,14 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       tagKey: 'os-iops-throttle-anomaly',
       metricName: 'IopsThrottle',
       metricNamespace: 'AWS/ES',
-      defaultCreate: true, // TODO I think a static threshold alarm will suffice and work well if set properly.
+      defaultCreate: false,
       anomaly: true,
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
         period: 300,
         evaluationPeriods: 1,
-        statistic: 'Maximum',
+        statistic: 'Average',
         dataPointsToAlarm: 1,
         comparisonOperator: 'GreaterThanUpperThreshold',
         missingDataTreatment: 'ignore',
@@ -594,15 +586,14 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       tagKey: 'os-jvm-memory',
       metricName: 'JVMMemoryPressure',
       metricNamespace: 'AWS/ES',
-      defaultCreate: false, // TODO I think this should be enabled by default.
+      defaultCreate: true,
       anomaly: false,
       defaults: {
-        // TODO Discuss with Trent, these seem to low to me for defaults
         warningThreshold: 85,
-        criticalThreshold: 90,
-        period: 60,
-        evaluationPeriods: 2,
-        statistic: 'p90',
+        criticalThreshold: 92,
+        period: 300,
+        evaluationPeriods: 1,
+        statistic: 'Maximum',
         dataPointsToAlarm: 1,
         comparisonOperator: 'GreaterThanThreshold',
         missingDataTreatment: 'ignore',
@@ -612,14 +603,14 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       tagKey: 'os-jvm-memory-anomaly',
       metricName: 'JVMMemoryPressure',
       metricNamespace: 'AWS/ES',
-      defaultCreate: true, // TODO I would not use anomaly by default. Discuss with Trent and get his decision.
+      defaultCreate: false,
       anomaly: true,
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        period: 60,
-        evaluationPeriods: 2,
-        statistic: 'p90',
+        period: 300,
+        evaluationPeriods: 1,
+        statistic: 'Average',
         dataPointsToAlarm: 1,
         comparisonOperator: 'GreaterThanUpperThreshold',
         missingDataTreatment: 'ignore',
@@ -633,12 +624,12 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaultCreate: false,
       anomaly: false,
       defaults: {
-        warningThreshold: 500, // TODO This value makes no sense to me.
-        criticalThreshold: 1000, // TODO This value makes no sense to me.
-        period: 300,
+        warningThreshold: 0.03, // TODO This value makes no sense to me.
+        criticalThreshold: 0.08, // TODO This value makes no sense to me.
+        period: 60,
         evaluationPeriods: 2,
-        statistic: 'Average',
-        dataPointsToAlarm: 1,
+        statistic: 'Maximum',
+        dataPointsToAlarm: 2,
         comparisonOperator: 'GreaterThanThreshold',
         missingDataTreatment: 'ignore',
       },
@@ -647,34 +638,33 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       tagKey: 'os-read-latency-anomaly',
       metricName: 'ReadLatency',
       metricNamespace: 'AWS/ES',
-      defaultCreate: true, // TODO I would not have this enabled by default
+      defaultCreate: false,
       anomaly: true,
       defaults: {
-        // TODO These aren't good defaults
-        warningThreshold: null,
-        criticalThreshold: null,
-        period: 60,
+        warningThreshold: 2,
+        criticalThreshold: 6,
+        period: 300,
         evaluationPeriods: 2,
-        statistic: 'p90',
-        dataPointsToAlarm: 1,
+        statistic: 'Average',
+        dataPointsToAlarm: 2,
         comparisonOperator: 'GreaterThanUpperThreshold',
         missingDataTreatment: 'ignore',
       },
     },
-    // TODO Discuss with Trent, not sure what's best here. Sort of depends on usage which is hard to set statically.
+    // TODO: temp until we reevaluate. Might need thresholds to be .5/1
     {
       tagKey: 'os-search-latency',
       metricName: 'SearchLatency',
       metricNamespace: 'AWS/ES',
-      defaultCreate: false,
+      defaultCreate: true,
       anomaly: false,
       defaults: {
-        warningThreshold: 3000,
-        criticalThreshold: 5000,
+        warningThreshold: 1,
+        criticalThreshold: 2,
         period: 300,
         evaluationPeriods: 2,
         statistic: 'Average',
-        dataPointsToAlarm: 1,
+        dataPointsToAlarm: 2,
         comparisonOperator: 'GreaterThanThreshold',
         missingDataTreatment: 'ignore',
       },
@@ -688,10 +678,10 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaults: {
         warningThreshold: null,
         criticalThreshold: null,
-        period: 60,
+        period: 300,
         evaluationPeriods: 2,
-        statistic: 'p90',
-        dataPointsToAlarm: 1,
+        statistic: 'Average',
+        dataPointsToAlarm: 2,
         comparisonOperator: 'GreaterThanUpperThreshold',
         missingDataTreatment: 'ignore',
       },
@@ -1394,16 +1384,15 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       tagKey: 'tg-response-time-anomaly',
       metricName: 'TargetResponseTime',
       metricNamespace: 'AWS/ApplicationELB',
-      defaultCreate: true,
+      defaultCreate: false,
       anomaly: true,
       defaults: {
-        // TODO Set more reasonable defaults. Discuss with Trent.
-        warningThreshold: null,
-        criticalThreshold: null,
-        period: 60,
+        warningThreshold: 2,
+        criticalThreshold: 5,
+        period: 300,
         evaluationPeriods: 2,
-        statistic: 'p90',
-        dataPointsToAlarm: 1,
+        statistic: 'Average',
+        dataPointsToAlarm: 2,
         comparisonOperator: 'GreaterThanUpperThreshold',
         missingDataTreatment: 'ignore',
       },
