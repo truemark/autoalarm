@@ -1,6 +1,5 @@
 import {
   CloudWatchClient,
-  ComparisonOperator,
   DeleteAlarmsCommand,
   DescribeAlarmsCommand,
   MetricDataQuery,
@@ -11,11 +10,9 @@ import {
 import {
   MetricAlarmConfig,
   MetricAlarmOptions,
-  MissingDataTreatment,
 } from './alarm-config.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import * as logging from '@nr1e/logging';
-import {AnomalyAlarmProps} from './types.mjs';
 import {AlarmClassification} from './enums.mjs';
 
 const region: string = process.env.AWS_REGION || '';
