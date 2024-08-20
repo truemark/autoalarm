@@ -72,8 +72,8 @@ export async function fetchTGTags(targetGroupArn: string): Promise<Tag> {
 }
 
 async function checkAndManageTGStatusAlarms(
-  loadBalancerName: string,
   targetGroupName: string,
+  loadBalancerName: string,
   tags: Tag,
 ) {
   log

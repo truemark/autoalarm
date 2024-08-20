@@ -29,7 +29,7 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   retryStrategy: retryStrategy,
 });
 
-const metricConfigs = MetricAlarmConfigs['OS'];
+const metricConfigs = MetricAlarmConfigs['OpenSearch'];
 
 export async function fetchOpenSearchTags(domainArn: string): Promise<Tag> {
   try {
