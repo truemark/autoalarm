@@ -113,6 +113,7 @@ async function checkAndManageOpenSearchStatusAlarms(
           .msg('Tag key indicates anomaly alarm. Handling anomaly alarms');
         const anomalyAlarms = await handleAnomalyAlarms(
           config,
+          'OS',
           domainName,
           [
             {Name: 'DomainName', Value: domainName},
@@ -129,6 +130,7 @@ async function checkAndManageOpenSearchStatusAlarms(
           .msg('Tag key indicates static alarm. Handling static alarms');
         const staticAlarms = await handleStaticAlarms(
           config,
+          'OS',
           domainName,
           [
             {Name: 'DomainName', Value: domainName},
@@ -147,6 +149,7 @@ async function checkAndManageOpenSearchStatusAlarms(
           'alarm prefix: ',
           buildAlarmName(
             config,
+            'OS',
             domainName,
             AlarmClassification.Warning,
             'static',

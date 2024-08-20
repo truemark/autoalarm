@@ -2,7 +2,7 @@ import {Handler} from 'aws-lambda';
 import * as logging from '@nr1e/logging';
 import {
   manageInactiveInstanceAlarms,
-  manageActiveInstanceAlarms,
+  manageActiveEC2Alarms,
   getEC2IdAndState,
   fetchInstanceTags,
   liveStates,
@@ -39,7 +39,7 @@ async function processEC2Event(event: any) {
   ) {
     // checking our liveStates set to see if the instance is in a state that we should be managing alarms for.
     // we are iterating over the AlarmClassification enum to manage alarms for each classification: 'Critical'|'Warning'.
-    await manageActiveInstanceAlarms(instanceId, tags);
+    await manageActiveEC2Alarms(instanceId, tags);
   } else if (
     (deadStates.has(state) && tags['autoalarm:enabled'] === 'false') ||
     (tags['autoalarm:enabled'] === 'true' && deadStates.has(state)) ||
@@ -62,7 +62,7 @@ async function processEC2TagEvent(event: any) {
     instanceId &&
     liveStates.has(state)
   ) {
-    await manageActiveInstanceAlarms(instanceId, tags);
+    await manageActiveEC2Alarms(instanceId, tags);
   } else if (
     !tags['autoalarm:enabled'] ||
     tags['autoalarm:enabled'] === undefined

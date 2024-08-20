@@ -122,6 +122,7 @@ async function checkAndManageTGStatusAlarms(
           .msg('Tag key indicates anomaly alarm. Handling anomaly alarms');
         const anomalyAlarms = await handleAnomalyAlarms(
           config,
+          'TG',
           loadBalancerName,
           [
             {Name: 'TargetGroup', Value: targetGroupName},
@@ -139,6 +140,7 @@ async function checkAndManageTGStatusAlarms(
           .msg('Tag key indicates static alarm. Handling static alarms');
         const staticAlarms = await handleStaticAlarms(
           config,
+          'TG',
           targetGroupName,
           [
             {Name: 'TargetGroup', Value: targetGroupName},
@@ -158,6 +160,7 @@ async function checkAndManageTGStatusAlarms(
           'alarm prefix: ',
           buildAlarmName(
             config,
+            'TG',
             targetGroupName,
             AlarmClassification.Warning,
             'static',

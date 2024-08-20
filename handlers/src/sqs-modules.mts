@@ -98,6 +98,7 @@ async function checkAndManageSQSStatusAlarms(queueName: string, tags: Tag) {
           .msg('Tag key indicates anomaly alarm. Handling anomaly alarms');
         const anomalyAlarms = await handleAnomalyAlarms(
           config,
+          'SQS',
           queueName,
           [{Name: 'QueueName', Value: queueName}],
           updatedDefaults,
@@ -111,6 +112,7 @@ async function checkAndManageSQSStatusAlarms(queueName: string, tags: Tag) {
           .msg('Tag key indicates static alarm. Handling static alarms');
         const staticAlarms = await handleStaticAlarms(
           config,
+          'SQS',
           queueName,
           [{Name: 'QueueName', Value: queueName}],
           updatedDefaults,
@@ -126,6 +128,7 @@ async function checkAndManageSQSStatusAlarms(queueName: string, tags: Tag) {
           'alarm prefix: ',
           buildAlarmName(
             config,
+            'SQS',
             queueName,
             AlarmClassification.Warning,
             'static',
