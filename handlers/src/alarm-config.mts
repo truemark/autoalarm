@@ -447,18 +447,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
     },
   ],
   // Owned by Harmony
-  ECS: [
-    // TODO Add alarms and get buy off from team lead on PR
-  ],
-  // Owned by Harmony
-  Lambda: [
-    // TODO Add alarms and get buy off from team lead on PR
-  ],
-  // Owned by Harmony
-  NLB: [
-    // TODO Add alarms and get buy off from team lead on PR
-  ],
-  // Owned by Harmony
   // TODO Once these are settled, please get an issue recorded in the overwatch repo to enable AutoAlarm tags for OpenSearch for Trent / Fouad to implement.
   OpenSearch: [
     {
