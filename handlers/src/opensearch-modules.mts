@@ -242,7 +242,7 @@ export async function parseOSEventAndCreateAlarms(event: any): Promise<{
     case 'AWS API Call via CloudTrail':
       switch (event.detail.eventName) {
         case 'CreateDomain':
-          domainArn = event.detail.responseElements?.domain?.arn;
+          domainArn = event.detail.responseElements?.domain?.arn; //deprecated domain convention still in use in event. Safe to ignore.
           eventType = 'Create';
           log
             .info()

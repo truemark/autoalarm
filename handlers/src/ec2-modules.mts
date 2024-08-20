@@ -15,8 +15,8 @@ import {AlarmClassification, ValidInstanceState} from './enums.mjs';
 import {Tag, PathMetrics} from './types.mjs'; //need to investigate what we were doing with Dimension.
 import {
   doesAlarmExist,
+  deleteAlarm,
   getCWAlarmsForInstance,
-  deleteCWAlarm,
   deleteExistingAlarms,
   handleAnomalyAlarms,
   handleStaticAlarms,
@@ -265,7 +265,7 @@ export async function createStatusAlarmForInstance(
 
 async function checkAndManageStatusAlarm(instanceId: string, tags: Tag) {
   if (tags['autoalarm:enabled'] === 'false') {
-    await deleteCWAlarm(instanceId, 'StatusCheckFailed');
+    await deleteAlarm(`AutoAlarm-EC2-${instanceId}-StatusCheckFailed`);
     log.info().msg('Status check alarm creation skipped due to tag settings.');
   } else if (tags['autoalarm:enabled'] === 'true') {
     // Create status check alarm if not disabled

@@ -80,7 +80,7 @@ async function deleteAlarmsForConfig(
   }
 }
 
-async function deleteAlarm(alarmName: string) {
+export async function deleteAlarm(alarmName: string) {
   log
     .info()
     .str('function', 'deleteAlarm')
@@ -609,41 +609,5 @@ export async function getCWAlarmsForInstance(
       .str(`${serviceIdentifier}`, instanceIdentifier)
       .msg('Failed to fetch alarms for instance');
     return [];
-  }
-}
-
-export async function deleteCWAlarm(
-  alarmName: string,
-  instanceIdentifier: string,
-): Promise<void> {
-  log
-    .info()
-    .str('function', 'deleteCWAlarm')
-    .str('alarmName', alarmName)
-    .msg('checking if alarm exists...');
-  const alarmExists = await doesAlarmExist(alarmName);
-  if (alarmExists) {
-    log
-      .info()
-      .str('function', 'deleteCWAlarm')
-      .str('alarmName', alarmName)
-      .str('instanceId', instanceIdentifier)
-      .msg('Attempting to delete alarm');
-    await cloudWatchClient.send(
-      new DeleteAlarmsCommand({AlarmNames: [alarmName]}),
-    );
-    log
-      .info()
-      .str('function', 'deleteCWAlarm')
-      .str('alarmName', alarmName)
-      .str('instanceId', instanceIdentifier)
-      .msg('Deleted alarm');
-  } else {
-    log
-      .info()
-      .str('function', 'deleteCWAlarm')
-      .str('alarmName', alarmName)
-      .str('instanceId', instanceIdentifier)
-      .msg('Alarm does not exist for instance');
   }
 }
