@@ -115,6 +115,7 @@ async function checkAndManageALBStatusAlarms(
           .msg('Tag key indicates anomaly alarm. Handling anomaly alarms');
         const anomalyAlarms = await handleAnomalyAlarms(
           config,
+          'ALB',
           loadBalancerName,
           [{Name: 'LoadBalancer', Value: loadBalancerName}],
           updatedDefaults,
@@ -128,6 +129,7 @@ async function checkAndManageALBStatusAlarms(
           .msg('Tag key indicates static alarm. Handling static alarms');
         const staticAlarms = await handleStaticAlarms(
           config,
+          'ALB',
           loadBalancerName,
           [{Name: 'LoadBalancer', Value: loadBalancerName}],
           updatedDefaults,
@@ -143,6 +145,7 @@ async function checkAndManageALBStatusAlarms(
           'alarm prefix: ',
           buildAlarmName(
             config,
+            'ALB',
             loadBalancerName,
             AlarmClassification.Warning,
             'static',
