@@ -341,13 +341,13 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
     {
       // TODO I think this static alarm should be enabled by default with a warning of 95 and critical of 98 for 2 periods of 300 seconds, discuss with Trent and get what he wants
       tagKey: 'ec2-cpu',
-      metricName: 'HTTPCode_Target_4XX_Count', // TODO Wrong metric name
-      metricNamespace: 'AWS/ApplicationELB', // TODO Wrong namespace
-      defaultCreate: false,
+      metricName: 'CPUUtilization',
+      metricNamespace: 'AWS/EC2',
+      defaultCreate: true,
       anomaly: false,
       defaults: {
-        warningThreshold: null,
-        criticalThreshold: null,
+        warningThreshold: 95,
+        criticalThreshold: 98,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'Sum',
@@ -358,14 +358,13 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
     },
     {
       tagKey: 'ec2-cpu-anomaly',
-      metricName: 'HTTPCode_Target_4XX_Count', // TODO Wrong metric name
-      metricNamespace: 'AWS/ApplicationELB', // TODO Wrong namespace
+      metricName: 'CPUUtilization',
+      metricNamespace: 'AWS/EC2',
       defaultCreate: false,
       anomaly: true,
-      // TODO Not using good anomaly defaults
       defaults: {
-        warningThreshold: null,
-        criticalThreshold: null,
+        warningThreshold: 2,
+        criticalThreshold: 3,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'p90',
@@ -377,13 +376,13 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
     // TODO I think this static alarm should be enabled by default with a warning of 95 and critical of 98 for 2 periods of 300 seconds, discuss with Trent and get what he wants
     {
       tagKey: 'ec2-memory',
-      metricName: 'HTTPCode_Target_5XX_Count', // TODO Wrong
-      metricNamespace: 'AWS/ApplicationELB', // TODO Wrong
-      defaultCreate: false,
+      metricName: '', // Empty string to account for divergent metric names between windows and linux instances for EC2 storage and memory configs. Assigned programmatically in ec2-modules.
+      metricNamespace: 'CWAgent',
+      defaultCreate: true,
       anomaly: false,
       defaults: {
-        warningThreshold: null,
-        criticalThreshold: null,
+        warningThreshold: 90,
+        criticalThreshold: 95,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'Sum',
@@ -395,14 +394,14 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
     // TODO I would have this off by default, discuss with Trent and get what he wants
     {
       tagKey: 'ec2-memory-anomaly',
-      metricName: 'HTTPCode_Target_5XX_Count', // TODO Wrong
-      metricNamespace: 'AWS/ApplicationELB', // TODO Wrong
-      defaultCreate: true,
+      metricName: '', // Empty string to account for divergent metric names between windows and linux instances for EC2 storage and memory configs. Assigned programmatically in ec2-modules.
+      metricNamespace: 'CWAgent',
+      defaultCreate: false,
       anomaly: true,
       defaults: {
         // TODO Not using good anomaly defaults
-        warningThreshold: null,
-        criticalThreshold: null,
+        warningThreshold: 2,
+        criticalThreshold: 3,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'p90',
@@ -414,13 +413,13 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
     // TODO Discuss with Trent, not sure if there is a way to do percentages, that would be nice. Anomaly may be our best bet. Although we need something static set to know when we have very little left.
     {
       tagKey: 'ec2-storage',
-      metricName: 'RequestCount',
-      metricNamespace: 'AWS/ApplicationELB',
-      defaultCreate: false,
+      metricName: '', // Empty string to account for divergent metric names between windows and linux instances for EC2 storage and memory configs. Assigned programmatically in ec2-modules.
+      metricNamespace: 'CWAgent',
+      defaultCreate: true,
       anomaly: false,
       defaults: {
-        warningThreshold: null,
-        criticalThreshold: null,
+        warningThreshold: 90,
+        criticalThreshold: 95,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'Sum',
@@ -431,13 +430,13 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
     },
     {
       tagKey: 'ec2-storage-anomaly',
-      metricName: 'RequestCount',
-      metricNamespace: 'AWS/ApplicationELB',
+      metricName: '', // Empty string to account for divergent metric names between windows and linux instances for EC2 storage and memory configs. Assigned programmatically in ec2-modules.
+      metricNamespace: 'CWAgent',
       defaultCreate: false,
       anomaly: true,
       defaults: {
-        warningThreshold: null,
-        criticalThreshold: null,
+        warningThreshold: 2,
+        criticalThreshold: 3,
         period: 60,
         evaluationPeriods: 2,
         statistic: 'p90',
@@ -446,18 +445,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         missingDataTreatment: 'ignore',
       },
     },
-  ],
-  // Owned by Harmony
-  ECS: [
-    // TODO Add alarms and get buy off from team lead on PR
-  ],
-  // Owned by Harmony
-  Lambda: [
-    // TODO Add alarms and get buy off from team lead on PR
-  ],
-  // Owned by Harmony
-  NLB: [
-    // TODO Add alarms and get buy off from team lead on PR
   ],
   // Owned by Harmony
   // TODO Once these are settled, please get an issue recorded in the overwatch repo to enable AutoAlarm tags for OpenSearch for Trent / Fouad to implement.
