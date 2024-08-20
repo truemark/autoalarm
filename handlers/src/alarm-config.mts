@@ -225,13 +225,11 @@ export interface MetricAlarmConfig {
 export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
   // Keep these in alphabetical order or your PRs will be rejected
   // Anomaly alarms can only use the following comparison operators: GreaterThanUpperThreshold, LessThanLowerOrGreaterThanUpperThreshold, LessThanLowerThreshold
-
-  // TODO Stop prefixing alb- and ec2- and os-. It's redundant. The resource that's tag dictates the set to use.
   // Owned by Harmony
   ALB: [
     // TODO Add remaining alarms and get buy off from team lead on PR
     {
-      tagKey: 'alb-4xx-count',
+      tagKey: '4xx-count',
       metricName: 'HTTPCode_Target_4XX_Count',
       metricNamespace: 'AWS/ApplicationELB',
       defaultCreate: false,
@@ -248,7 +246,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'alb-4xx-count-anomaly',
+      tagKey: '4xx-count-anomaly',
       metricName: 'HTTPCode_Target_4XX_Count',
       metricNamespace: 'AWS/ApplicationELB',
       defaultCreate: false,
@@ -265,7 +263,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'alb-5xx-count',
+      tagKey: '5xx-count',
       metricName: 'HTTPCode_Target_5XX_Count',
       metricNamespace: 'AWS/ApplicationELB',
       defaultCreate: false,
@@ -282,7 +280,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'alb-5xx-count-anomaly',
+      tagKey: '5xx-count-anomaly',
       metricName: 'HTTPCode_Target_5XX_Count',
       metricNamespace: 'AWS/ApplicationELB',
       defaultCreate: true,
@@ -299,7 +297,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'alb-request-count',
+      tagKey: 'request-count',
       metricName: 'RequestCount',
       metricNamespace: 'AWS/ApplicationELB',
       defaultCreate: false,
@@ -316,7 +314,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'alb-request-count-anomaly',
+      tagKey: 'request-count-anomaly',
       metricName: 'RequestCount',
       metricNamespace: 'AWS/ApplicationELB',
       defaultCreate: false,
@@ -338,8 +336,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
   EC2: [
     // TODO Add alarms and get buy off from team lead on PR
     {
-      // TODO I think this static alarm should be enabled by default with a warning of 95 and critical of 98 for 2 periods of 300 seconds, discuss with Trent and get what he wants
-      tagKey: 'ec2-cpu',
+      tagKey: 'cpu',
       metricName: 'CPUUtilization',
       metricNamespace: 'AWS/EC2',
       defaultCreate: true,
@@ -356,7 +353,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'ec2-cpu-anomaly',
+      tagKey: 'cpu-anomaly',
       metricName: 'CPUUtilization',
       metricNamespace: 'AWS/EC2',
       defaultCreate: false,
@@ -373,7 +370,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'ec2-memory',
+      tagKey: 'memory',
       metricName: '', // Empty string to account for divergent metric names between windows and linux instances for EC2 storage and memory configs. Assigned programmatically in ec2-modules.
       metricNamespace: 'CWAgent',
       defaultCreate: true,
@@ -390,7 +387,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'ec2-memory-anomaly',
+      tagKey: 'memory-anomaly',
       metricName: '', // Empty string to account for divergent metric names between windows and linux instances for EC2 storage and memory configs. Assigned programmatically in ec2-modules.
       metricNamespace: 'CWAgent',
       defaultCreate: false,
@@ -406,9 +403,8 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         missingDataTreatment: 'ignore',
       },
     },
-    // TODO Discuss with Trent, not sure if there is a way to do percentages, that would be nice. Anomaly may be our best bet. Although we need something static set to know when we have very little left.
     {
-      tagKey: 'ec2-storage',
+      tagKey: 'storage',
       metricName: '', // Empty string to account for divergent metric names between windows and linux instances for EC2 storage and memory configs. Assigned programmatically in ec2-modules.
       metricNamespace: 'CWAgent',
       defaultCreate: true,
@@ -425,7 +421,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'ec2-storage-anomaly',
+      tagKey: 'storage-anomaly',
       metricName: '', // Empty string to account for divergent metric names between windows and linux instances for EC2 storage and memory configs. Assigned programmatically in ec2-modules.
       metricNamespace: 'CWAgent',
       defaultCreate: false,
@@ -446,7 +442,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
   // TODO Once these are settled, please get an issue recorded in the overwatch repo to enable AutoAlarm tags for OpenSearch for Trent / Fouad to implement.
   OpenSearch: [
     {
-      tagKey: 'os-4xx-errors',
+      tagKey: '4xx-errors',
       metricName: '4xx',
       metricNamespace: 'AWS/ES',
       defaultCreate: false,
@@ -464,7 +460,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
     },
     {
       // TODO I don't think this should be set by default, but discuss with Trent and have him decide.
-      tagKey: 'os-4xx-errors-anomaly',
+      tagKey: '4xx-errors-anomaly',
       metricName: '4xx',
       metricNamespace: 'AWS/ES',
       defaultCreate: false,
@@ -481,7 +477,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'os-5xx-errors',
+      tagKey: '5xx-errors',
       metricName: '5xx',
       metricNamespace: 'AWS/ES',
       defaultCreate: true, // TODO I think I would enable this by default
@@ -498,7 +494,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'os-5xx-errors-anomaly',
+      tagKey: '5xx-errors-anomaly',
       metricName: '5xx',
       metricNamespace: 'AWS/ES',
       defaultCreate: false,
@@ -515,7 +511,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'os-cpu',
+      tagKey: 'cpu',
       metricName: 'CPUUtilization',
       metricNamespace: 'AWS/ES',
       defaultCreate: true,
@@ -532,7 +528,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'os-cpu-anomaly',
+      tagKey: 'cpu-anomaly',
       metricName: 'CPUUtilization',
       metricNamespace: 'AWS/ES',
       defaultCreate: false,
@@ -549,7 +545,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'os-iops-throttle',
+      tagKey: 'iops-throttle',
       metricName: 'IopsThrottle',
       metricNamespace: 'AWS/ES',
       defaultCreate: true,
@@ -566,7 +562,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'os-iops-throttle-anomaly',
+      tagKey: 'iops-throttle-anomaly',
       metricName: 'IopsThrottle',
       metricNamespace: 'AWS/ES',
       defaultCreate: false,
@@ -583,7 +579,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'os-jvm-memory',
+      tagKey: 'jvm-memory',
       metricName: 'JVMMemoryPressure',
       metricNamespace: 'AWS/ES',
       defaultCreate: true,
@@ -600,7 +596,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'os-jvm-memory-anomaly',
+      tagKey: 'jvm-memory-anomaly',
       metricName: 'JVMMemoryPressure',
       metricNamespace: 'AWS/ES',
       defaultCreate: false,
@@ -618,7 +614,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
     },
     {
       // TODO I would have this enabled by default with high reasonable defaults
-      tagKey: 'os-read-latency',
+      tagKey: 'read-latency',
       metricName: 'ReadLatency',
       metricNamespace: 'AWS/ES',
       defaultCreate: false,
@@ -635,7 +631,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'os-read-latency-anomaly',
+      tagKey: 'read-latency-anomaly',
       metricName: 'ReadLatency',
       metricNamespace: 'AWS/ES',
       defaultCreate: false,
@@ -653,7 +649,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
     },
     // TODO: temp until we reevaluate. Might need thresholds to be .5/1
     {
-      tagKey: 'os-search-latency',
+      tagKey: 'search-latency',
       metricName: 'SearchLatency',
       metricNamespace: 'AWS/ES',
       defaultCreate: true,
@@ -670,7 +666,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'os-search-latency-anomaly',
+      tagKey: 'search-latency-anomaly',
       metricName: 'SearchLatency',
       metricNamespace: 'AWS/ES',
       defaultCreate: true,
@@ -688,7 +684,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
     },
     {
       // TODO I think this should be enabled by default. Discuss with Trent and get his decision.
-      tagKey: 'os-snapshot-failure',
+      tagKey: 'snapshot-failure',
       metricName: 'AutomatedSnapshotFailure',
       metricNamespace: 'AWS/ES',
       defaultCreate: false,
@@ -705,7 +701,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'os-snapshot-failure-anomaly',
+      tagKey: 'snapshot-failure-anomaly',
       metricName: 'AutomatedSnapshotFailure',
       metricNamespace: 'AWS/ES',
       defaultCreate: true, // TODO This should not be enabled by default
@@ -724,7 +720,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
     },
     {
       // TODO I think the static alarm should be enabled by default
-      tagKey: 'os-storage',
+      tagKey: 'storage',
       metricName: 'FreeStorageSpace',
       metricNamespace: 'AWS/ES',
       defaultCreate: false,
@@ -742,7 +738,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'os-storage-anomaly',
+      tagKey: 'storage-anomaly',
       metricName: 'FreeStorageSpace',
       metricNamespace: 'AWS/ES',
       defaultCreate: true, // TODO I would not enable this by default, discuss with Trent.
@@ -760,7 +756,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
     },
     {
       // TODO I think this should be enabled by default. Discuss with Trent and get his decision.
-      tagKey: 'os-sys-memory-util',
+      tagKey: 'sys-memory-util',
       metricName: 'SysMemoryUtilization',
       metricNamespace: 'AWS/ES',
       defaultCreate: false,
@@ -778,7 +774,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'os-sys-memory-util-anomaly',
+      tagKey: 'sys-memory-util-anomaly',
       metricName: 'SysMemoryUtilization',
       metricNamespace: 'AWS/ES',
       defaultCreate: true, // TODO I would not enable by default
@@ -797,7 +793,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
     },
     {
       // TODO I would have these enabled by default with good static thresholds. Discuss with Trent and get his decision.
-      tagKey: 'os-throughput-throttle',
+      tagKey: 'throughput-throttle',
       metricName: 'ThroughputThrottle',
       metricNamespace: 'AWS/ES',
       defaultCreate: false,
@@ -814,7 +810,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'os-throughput-throttle-anomaly',
+      tagKey: 'throughput-throttle-anomaly',
       metricName: 'ThroughputThrottle',
       metricNamespace: 'AWS/ES',
       defaultCreate: true, // TODO I would not enable by default
@@ -832,7 +828,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
     },
     {
       // TODO I think this should be enabled by default. Discuss with Trent and get his decision.
-      tagKey: 'os-write-latency',
+      tagKey: 'write-latency',
       metricName: 'WriteLatency',
       metricNamespace: 'AWS/ES',
       defaultCreate: false,
@@ -849,7 +845,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'os-write-latency-anomaly',
+      tagKey: 'write-latency-anomaly',
       metricName: 'WriteLatency',
       metricNamespace: 'AWS/ES',
       defaultCreate: true, // TODO I would not enable by default
@@ -867,7 +863,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
     },
     {
       // TODO I think this should be enabled by default. Discuss with Trent and get his decision. I also think this should be a critical only alarm by default.
-      tagKey: 'os-yellow-cluster',
+      tagKey: 'yellow-cluster',
       metricName: 'ClusterStatus.yellow',
       metricNamespace: 'AWS/ES',
       defaultCreate: false,
@@ -885,7 +881,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
     },
     {
       // TODO I wouldn't even support an anomaly on this. It makes no sense. I would delete this.
-      tagKey: 'os-yellow-cluster-anomaly',
+      tagKey: 'yellow-cluster-anomaly',
       metricName: 'ClusterStatus.yellow',
       metricNamespace: 'AWS/ES',
       defaultCreate: true,
@@ -902,7 +898,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'os-red-cluster',
+      tagKey: 'red-cluster',
       metricName: 'ClusterStatus.red',
       metricNamespace: 'AWS/ES',
       defaultCreate: false,
@@ -919,7 +915,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'os-red-cluster-anomaly',
+      tagKey: 'red-cluster-anomaly',
       metricName: 'ClusterStatus.red',
       metricNamespace: 'AWS/ES',
       defaultCreate: true,
@@ -952,7 +948,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
   // Owned by Harmony
   SQS: [
     {
-      tagKey: 'sqs-age-of-oldest-message',
+      tagKey: 'age-of-oldest-message',
       metricName: 'ApproximateAgeOfOldestMessage',
       metricNamespace: 'AWS/SQS',
       defaultCreate: false,
@@ -969,7 +965,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'sqs-age-of-oldest-message-anomaly',
+      tagKey: 'age-of-oldest-message-anomaly',
       metricName: 'ApproximateAgeOfOldestMessage',
       metricNamespace: 'AWS/SQS',
       defaultCreate: true,
@@ -986,7 +982,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'sqs-empty-recieves',
+      tagKey: 'empty-recieves',
       metricName: 'NumberOfEmptyReceive',
       metricNamespace: 'AWS/SQS',
       defaultCreate: false,
@@ -1003,7 +999,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'sqs-empty-recieves-anomaly',
+      tagKey: 'empty-recieves-anomaly',
       metricName: 'NumberOfEmptyReceive',
       metricNamespace: 'AWS/SQS',
       defaultCreate: true, // TODO I do not think this should be enabled by default. I also wouldn't enable the static alarm by default either.
@@ -1020,7 +1016,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'sqs-messages-deleted',
+      tagKey: 'messages-deleted',
       metricName: 'NumberOfMessagesDeleted',
       metricNamespace: 'AWS/SQS',
       defaultCreate: false,
@@ -1037,7 +1033,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'sqs-messages-deleted-anomaly',
+      tagKey: 'messages-deleted-anomaly',
       metricName: 'NumberOfMessagesDeleted',
       metricNamespace: 'AWS/SQS',
       defaultCreate: true, // TODO I do not think this should be enabled by default. I also wouldn't enable the static alarm by default either.
@@ -1054,7 +1050,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'sqs-messages-not-visible',
+      tagKey: 'messages-not-visible',
       metricName: 'ApproximateNumberOfMessagesNotVisible',
       metricNamespace: 'AWS/SQS',
       defaultCreate: false,
@@ -1071,7 +1067,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'sqs-messages-not-visible-anomaly',
+      tagKey: 'messages-not-visible-anomaly',
       metricName: 'ApproximateNumberOfMessagesNotVisible',
       metricNamespace: 'AWS/SQS',
       defaultCreate: true, // TODO I do not think this should be enabled by default. I also wouldn't enable the static alarm by default either.
@@ -1088,7 +1084,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'sqs-messages-received',
+      tagKey: 'messages-received',
       metricName: 'NumberOfMessagesReceived',
       metricNamespace: 'AWS/SQS',
       defaultCreate: false,
@@ -1105,7 +1101,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'sqs-messages-received-anomaly',
+      tagKey: 'messages-received-anomaly',
       metricName: 'NumberOfMessagesReceived',
       metricNamespace: 'AWS/SQS',
       defaultCreate: true, // TODO I do not think this should be enabled by default. I also wouldn't enable the static alarm by default either.
@@ -1122,7 +1118,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'sqs-messages-sent',
+      tagKey: 'messages-sent',
       metricName: 'NumberOfMessagesSent',
       metricNamespace: 'AWS/SQS',
       defaultCreate: false,
@@ -1139,7 +1135,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'sqs-messages-sent-anomaly',
+      tagKey: 'messages-sent-anomaly',
       metricName: 'NumberOfMessagesSent',
       metricNamespace: 'AWS/SQS',
       defaultCreate: true, // TODO I do not think this should be enabled by default. I also wouldn't enable the static alarm by default either.
@@ -1156,7 +1152,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'sqs-messages-visible',
+      tagKey: 'messages-visible',
       metricName: 'ApproximateNumberOfMessagesVisible',
       metricNamespace: 'AWS/SQS',
       defaultCreate: false,
@@ -1173,7 +1169,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'sqs-messages-visible-anomaly',
+      tagKey: 'messages-visible-anomaly',
       metricName: 'ApproximateNumberOfMessagesVisible',
       metricNamespace: 'AWS/SQS',
       defaultCreate: true, // TODO I do not think this should be enabled by default. I also wouldn't enable the static alarm by default either.
@@ -1190,7 +1186,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'sqs-number-of-messages-delayed',
+      tagKey: 'number-of-messages-delayed',
       metricName: 'ApproximateNumberOfMessagesDelayed',
       metricNamespace: 'AWS/SQS',
       defaultCreate: false,
@@ -1207,7 +1203,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'sqs-number-of-messages-delayed-anomaly',
+      tagKey: 'number-of-messages-delayed-anomaly',
       metricName: 'ApproximateNumberOfMessagesDelayed',
       metricNamespace: 'AWS/SQS',
       defaultCreate: true, // TODO I do not think this should be enabled by default. I also wouldn't enable the static alarm by default either.
@@ -1224,7 +1220,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'sqs-sent-message-size',
+      tagKey: 'sent-message-size',
       metricName: 'SentMessageSize',
       metricNamespace: 'AWS/SQS',
       defaultCreate: false,
@@ -1241,7 +1237,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'sqs-sent-message-size-anomaly',
+      tagKey: 'sent-message-size-anomaly',
       metricName: 'SentMessageSize',
       metricNamespace: 'AWS/SQS',
       defaultCreate: true, // TODO I do not think this should be enabled by default. I also wouldn't enable the static alarm by default either.
@@ -1261,7 +1257,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
   // Owned by Harmony
   TG: [
     {
-      tagKey: 'tg-4xx-count',
+      tagKey: '4xx-count',
       metricName: 'HTTPCode_Target_4XX_Count',
       metricNamespace: 'AWS/ApplicationELB',
       defaultCreate: false,
@@ -1278,7 +1274,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'tg-4xx-count-anomaly',
+      tagKey: '4xx-count-anomaly',
       metricName: 'HTTPCode_Target_4XX_Count',
       metricNamespace: 'AWS/ApplicationELB',
       defaultCreate: true, // TODO Discuss with Trent, I don't think I would enable this by default
@@ -1295,7 +1291,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'tg-5xx-count',
+      tagKey: '5xx-count',
       metricName: 'HTTPCode_Target_5XX_Count',
       metricNamespace: 'AWS/ApplicationELB',
       defaultCreate: false,
@@ -1312,7 +1308,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'tg-5xx-count-anomaly',
+      tagKey: '5xx-count-anomaly',
       metricName: 'HTTPCode_Target_5XX_Count',
       metricNamespace: 'AWS/ApplicationELB',
       defaultCreate: true,
@@ -1330,7 +1326,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'tg-request-count',
+      tagKey: 'request-count',
       metricName: 'RequestCountPerTarget',
       metricNamespace: 'AWS/ApplicationELB',
       defaultCreate: false,
@@ -1347,7 +1343,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'tg-request-count-anomaly',
+      tagKey: 'request-count-anomaly',
       metricName: 'RequestCountPerTarget',
       metricNamespace: 'AWS/ApplicationELB',
       defaultCreate: true, // TODO I do not think this should be enabled by default. I also wouldn't enable the static alarm by default either.
@@ -1364,7 +1360,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'tg-response-time',
+      tagKey: 'response-time',
       metricName: 'TargetResponseTime',
       metricNamespace: 'AWS/ApplicationELB',
       defaultCreate: false,
@@ -1381,7 +1377,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'tg-response-time-anomaly',
+      tagKey: 'response-time-anomaly',
       metricName: 'TargetResponseTime',
       metricNamespace: 'AWS/ApplicationELB',
       defaultCreate: false,
@@ -1398,7 +1394,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'tg-unhealthy-host-count',
+      tagKey: 'unhealthy-host-count',
       metricName: 'UnHealthyHostCount',
       metricNamespace: 'AWS/ApplicationELB',
       defaultCreate: false, // TODO I think this should be enabled by default.
@@ -1416,7 +1412,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
     },
     {
       // TODO Not even sure it makes sense to have an anomaly option on this. Discuss with Trent.
-      tagKey: 'tg-unhealthy-host-count-anomaly',
+      tagKey: 'unhealthy-host-count-anomaly',
       metricName: 'UnHealthyHostCount',
       metricNamespace: 'AWS/ApplicationELB',
       defaultCreate: true,
