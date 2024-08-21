@@ -7,10 +7,7 @@ import {
   PutMetricAlarmCommand,
   Statistic,
 } from '@aws-sdk/client-cloudwatch';
-import {
-  MetricAlarmConfig,
-  MetricAlarmOptions,
-} from './alarm-config.mjs';
+import {MetricAlarmConfig, MetricAlarmOptions} from './alarm-config.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import * as logging from '@nr1e/logging';
 import {AlarmClassification} from './enums.mjs';

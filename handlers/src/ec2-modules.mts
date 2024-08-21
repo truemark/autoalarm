@@ -205,6 +205,13 @@ async function getInstanceDetails(
           .msg('No platform details found');
         throw new Error('No platform details found');
       }
+      log
+        .info()
+        .str('function', 'getInstanceDetails')
+        .str('instanceId', instanceId)
+        .str('platform', platform)
+        .str('privateIp', privateIp)
+        .msg('Fetched instance details');
       return {platform, privateIp};
     } else {
       log
@@ -485,7 +492,7 @@ export async function manageActiveEC2Alarms(instanceId: string, tags: Tag) {
 
     if (config.defaultCreate || tagValue !== undefined) {
       const {platform} = await getInstanceDetails(instanceId);
-      const isWindows = platform?.includes('windows') || false;
+      const isWindows = platform?.includes('Windows') || false;
 
       if (config.tagKey.includes('anomaly')) {
         await handleAlarmCreation(
