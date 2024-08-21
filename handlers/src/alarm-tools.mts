@@ -247,13 +247,20 @@ function validatePeriod(period: number) {
       .str('period', period.toString())
       .msg('Period is less than 30 or less than or equal to 45, setting to 30');
     return 30;
-  } else {
+  } else if (period > 45) {
     log
       .info()
       .str('function', 'validatePeriod')
       .str('period', period.toString())
       .msg('Period is greater than 45, setting to nearest multiple of 60');
     return Math.ceil(period / 60) * 60;
+  } else {
+    log
+      .info()
+      .str('function', 'validatePeriod')
+      .str('period', period.toString())
+      .msg('Period is valid');
+    return period;
   }
 }
 
