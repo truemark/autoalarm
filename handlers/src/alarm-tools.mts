@@ -247,7 +247,7 @@ function validatePeriod(period: number) {
       .str('period', period.toString())
       .msg('Period is less than 30 or less than or equal to 45, setting to 30');
     return 30;
-  } else if (period > 45) {
+  } else if (period > 45 && period % 60 !== 0) {
     log
       .info()
       .str('function', 'validatePeriod')
