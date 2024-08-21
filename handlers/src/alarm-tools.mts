@@ -234,10 +234,25 @@ async function handleAnomalyDetectionWorkflow(
 // used as input validation to ensure that the period value is always a valid number for the cloudwatch api
 function validatePeriod(period: number) {
   if (period < 10) {
+    log
+      .info()
+      .str('function', 'validatePeriod')
+      .str('period', period.toString())
+      .msg('Period is less than 10, setting to 10');
     return 10;
   } else if (period < 30 || period <= 45) {
+    log
+      .info()
+      .str('function', 'validatePeriod')
+      .str('period', period.toString())
+      .msg('Period is less than 30, setting to 30');
     return 30;
   } else {
+    log
+      .info()
+      .str('function', 'validatePeriod')
+      .str('period', period.toString())
+      .msg('Period is greater than 45, setting to nearest multiple of 60');
     return Math.ceil(period / 60) * 60;
   }
 }
