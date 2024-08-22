@@ -22,8 +22,7 @@ Ensure that your EC2 instances have an IAM role with the necessary permissions t
 
 ## Step 2: Install the SSM Agent
 
-AWS Systems Manager Agent (SSM Agent) is installed by default on Amazon Linux 2 AMIs and some other supported AMIs. If your instance does not have SSM Agent installed, follow the [official guide](https://docs.aws.amazon.com/systems-manager/latest/userguide/ssm-agent.html) to install it.
-
+AWS Systems Manager Agent (SSM Agent) is installed by default on Amazon Linux 2 AMIs and some other supported AMIs. If your instance does not have SSM Agent installed, you will need to install it.
 ## Step 3: Install the CloudWatch Agent
 
 Use SSM to run commands on your EC2 instances to install the CloudWatch Agent.
