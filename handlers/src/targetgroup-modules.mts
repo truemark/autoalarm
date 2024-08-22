@@ -123,7 +123,7 @@ async function checkAndManageTGStatusAlarms(
         const anomalyAlarms = await handleAnomalyAlarms(
           config,
           'TG',
-          loadBalancerName,
+          targetGroupName,
           [
             {Name: 'TargetGroup', Value: targetGroupName},
             {Name: 'LoadBalancer', Value: loadBalancerName},
@@ -181,8 +181,10 @@ async function checkAndManageTGStatusAlarms(
   log
     .info()
     .str('function', 'checkAndManageTGStatusAlarms')
+    .obj('existing alarms', existingAlarms)
+    .obj('alarms to keep', alarmsToKeep)
     .obj('alarms to delete', alarmsToDelete)
-    .msg('Deleting alarm that is no longer needed');
+    .msg('Deleting alarms that are no longer needed');
   await cloudWatchClient.send(
     new DeleteAlarmsCommand({
       AlarmNames: [...alarmsToDelete],

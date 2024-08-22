@@ -569,12 +569,15 @@ export async function handleStaticAlarms(
 // EKS: ...
 // RDS: ...
 export async function getCWAlarmsForInstance(
+  serviceName: string,
   serviceIdentifier: string,
-  instanceIdentifier: string,
+  nextToken?: string, // Added to pass the token for the next recursive call
+  activeAutoAlarms: string[] = [], // Accumulating results across recursive calls
 ): Promise<string[]> {
-  const activeAutoAlarms: string[] = [];
   try {
-    const describeAlarmsCommand = new DescribeAlarmsCommand({});
+    const describeAlarmsCommand = new DescribeAlarmsCommand({
+      NextToken: nextToken,
+    });
     const describeAlarmsResponse = await cloudWatchClient.send(
       describeAlarmsCommand,
     );
@@ -584,28 +587,19 @@ export async function getCWAlarmsForInstance(
     log
       .info()
       .str('function', 'getCWAlarmsForInstance')
+      .obj('alarms', alarms)
+      .str('serviceName', serviceName)
       .str('serviceIdentifier', serviceIdentifier)
-      .str('instanceIdentifier', instanceIdentifier)
-      .str(
-        'alarm prefix',
-        `AutoAlarm-${serviceIdentifier}-${instanceIdentifier}`,
-      )
+      .str('alarm prefix', `AutoAlarm-${serviceName}-${serviceIdentifier}`)
       .msg('Filtering alarms by name');
+
     const instanceAlarms = alarms.filter(
       (alarm) =>
-        alarm.AlarmName &&
-        (alarm.AlarmName.startsWith(
-          `AutoAlarm-${serviceIdentifier}-${instanceIdentifier}`,
-        ) ||
-          alarm.AlarmName.startsWith(
-            `AutoAlarm-${serviceIdentifier}-${instanceIdentifier}-Anomaly`,
-          ) ||
-          alarm.AlarmName.startsWith(
-            `AutoAlarm-${serviceIdentifier}-${instanceIdentifier}`,
-          )),
+        alarm.AlarmName?.includes(serviceName) &&
+        alarm.AlarmName?.includes(serviceIdentifier),
     );
 
-    // Push the alarm names to activeAutoAlarmAlarms, ensuring AlarmName is defined
+    // Accumulate the alarm names, ensuring AlarmName is defined
     activeAutoAlarms.push(
       ...instanceAlarms
         .map((alarm) => alarm.AlarmName)
@@ -615,18 +609,29 @@ export async function getCWAlarmsForInstance(
     log
       .info()
       .str('function', 'getCWAlarmsForInstance')
-      .str(`${serviceIdentifier}`, instanceIdentifier)
+      .str(`${serviceName}`, serviceIdentifier)
       .str('alarms', JSON.stringify(instanceAlarms))
       .msg('Fetched alarms for instance');
 
+    // If there's a next token, recursively call the function with it
+    if (describeAlarmsResponse.NextToken) {
+      return getCWAlarmsForInstance(
+        serviceName,
+        serviceIdentifier,
+        describeAlarmsResponse.NextToken,
+        activeAutoAlarms,
+      );
+    }
+
+    // Return accumulated results when no more pages are left
     return activeAutoAlarms;
   } catch (error) {
     log
       .error()
       .str('function', 'getCWAlarmsForInstance')
       .err(error)
-      .str(`${serviceIdentifier}`, instanceIdentifier)
+      .str(`${serviceName}`, serviceIdentifier)
       .msg('Failed to fetch alarms for instance');
-    return [];
+    return activeAutoAlarms; // Returning accumulated alarms even in case of an error
   }
 }

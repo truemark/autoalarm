@@ -167,7 +167,7 @@ async function checkAndManageALBStatusAlarms(
     .info()
     .str('function', 'checkAndManageALBStatusAlarms')
     .obj('alarms to delete', alarmsToDelete)
-    .msg('Deleting alarm that is no longer needed');
+    .msg('Deleting alarms that are no longer needed');
   await cloudWatchClient.send(
     new DeleteAlarmsCommand({
       AlarmNames: [...alarmsToDelete],
