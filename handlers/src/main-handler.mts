@@ -111,8 +111,6 @@ async function routeTagEvent(event: any) {
     } else if (resourceType === 'targetgroup') {
       await parseTGEventAndCreateAlarms(event);
     }
-  } else if (service === 'sqs') {
-    await parseSQSEventAndCreateAlarms(event);
   } else if (service === 'es') {
     await parseOSEventAndCreateAlarms(event);
   } else {
