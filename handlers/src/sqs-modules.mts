@@ -271,15 +271,29 @@ export async function parseSQSEventAndCreateAlarms(event: any): Promise<{
           break;
 
         case 'UntagQueue':
-          eventType = 'RemoveTag';
+          eventType = 'TagChange';
           queueUrl = event.detail.requestParameters?.queueUrl;
           log
             .info()
             .str('function', 'parseSQSEventAndCreateAlarms')
             .str('eventType', 'UntagQueue')
             .str('queueUrl', queueUrl)
-            .str('tags', JSON.stringify(event.detail.requestParameters?.tags))
             .msg('Processing UntagQueue event');
+          if (queueUrl) {
+            tags = await fetchSQSTags(queueUrl);
+            log
+              .info()
+              .str('function', 'parseSQSEventAndCreateAlarms')
+              .str('queueUrl', queueUrl)
+              .str('tags', JSON.stringify(tags))
+              .msg('Fetched tags for new SQS queue');
+          } else {
+            log
+              .warn()
+              .str('function', 'parseSQSEventAndCreateAlarms')
+              .str('eventType', 'UnTagQueue')
+              .msg('QueueUrl not found in TagQueue event');
+          }
           break;
 
         default:
@@ -323,7 +337,7 @@ export async function parseSQSEventAndCreateAlarms(event: any): Promise<{
       .str('queueUrl', queueUrl)
       .msg('Starting to manage SQS alarms');
     await manageSQSAlarms(queueName, tags);
-  } else if (eventType === 'Delete' || eventType === 'RemoveTag') {
+  } else if (eventType === 'Delete') {
     log
       .info()
       .str('function', 'parseSQSEventAndCreateAlarms')
