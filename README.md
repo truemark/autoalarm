@@ -30,6 +30,10 @@ This architecture ensures that AutoAlarm can monitor and manage resources out-of
 OpenSearch domains, SQS queues, and Target Groups. The system is fully event-driven, dynamically responding to state and 
 tag changes across these resources.
 
+### Special Considerations: 
+- **Alerting**: If you are not a customer of the Truemark Enterprise Operations Center, you will need to configure Alarm
+notification routing via SNS or other custom integrations.
+
 ## Deployment Process
 ### Prerequisites
 
