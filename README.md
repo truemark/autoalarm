@@ -161,7 +161,7 @@ unless defaults are defined.
 The following schema is used to define tag values for all tags: 
 
 ```plaintext
-warning threshold / critical threshold / period / evaluation periods / statistic / datapoints to alarm / ComparisonOperator / Missing Data Treatment
+Warning Threshold / Critical Threshold / Period / Evaluation Periods / Statistic / Datapoints to Alarm / ComparisonOperator / Missing Data Treatment
 ```
 
 **Example:**
