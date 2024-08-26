@@ -349,11 +349,13 @@ AutoAlarm comes with default alarm configurations for various metrics. These def
 corresponding tags are not present on the resources. The default alarms are designed to provide basic monitoring 
 out-of-the-box. However, it is recommended to customize the alarms based on your specific requirements. 
 
-- To enable AutoAlarm default alarms, ensure that the `autoalarm:enabled` tag is set to `true` on the resource.
+- To enable AutoAlarm default alarms or configure any default on non-default alarm, ensure that the `autoalarm:enabled` 
+tag is set to `true` on the resource.
 - To disable AutoAlarm default alarms and/or delete all existing autoalarm alarms, set the `autoalarm:enabled` tag to 
 `false` on the resource.
 - To customize the default alarms, add the appropriate tags with the desired values to the resource.
 - To enable specific non-default alarms, add the corresponding tags with the desired values to the resource.
+'
 
 
 ## Prometheus Rules (in Progress-Not Yet Implemented)
