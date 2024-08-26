@@ -15,6 +15,6 @@ export class AutoAlarmStack extends ExtendedStack {
       prometheusWorkspaceId: props.prometheusWorkspaceId,
     });
     this.outputParameter('Name', 'AutoAlarm');
-    this.outputParameter('Version', props.version); //TODO: update version in package.json when ready to merge
+    this.outputParameter('Version', props.version);
   }
 }

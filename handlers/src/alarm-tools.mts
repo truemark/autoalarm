@@ -587,7 +587,6 @@ export async function getCWAlarmsForInstance(
     log
       .info()
       .str('function', 'getCWAlarmsForInstance')
-      .obj('alarms', alarms)
       .str('serviceName', serviceName)
       .str('serviceIdentifier', serviceIdentifier)
       .str('alarm prefix', `AutoAlarm-${serviceName}-${serviceIdentifier}`)
