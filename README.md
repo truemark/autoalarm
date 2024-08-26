@@ -16,7 +16,7 @@ The project consists of several key components:
 ## Features
 
 - **Dynamic Alarm Management**: Automatically creates, updates, and deletes CloudWatch alarms and Prometheus rules based on EC2 instance states and tag changes.
-- **Anomaly Detection Integration**: Supports creating both standard CloudWatch alarms and anomaly detection alarms for specified metrics such as `HostCount`. Anomaly detection alarms are created by default while static threshold cloudwatch alarms are created based on tags.
+- **Anomaly Detection Integration**: Supports creating both standard CloudWatch alarms and anomaly detection alarms for specified metrics such as `HostCount`.
 - **Customization Through Tags**: Uses tags to define alarm thresholds and conditions, allowing per-instance customization. Tags can be dynamically updated to configure statistics for anomanly detection alarms, thresholds for warning and critical static threshold alarms, in addition to evaluation period length and number of periods.
 - **Scalable and Extendable**: Designed to handle multiple instances and can be extended to support other AWS resources.
 
@@ -40,10 +40,13 @@ Amazon SQS is used as a dead-letter queue for the Lambda function. If the Lambda
 ### 6. AWS Elastic Load Balancing (ELB) And Target Groups
 ELB is monitored by AutoAlarm for events related to Application Load Balancers (ALBs) and Target Groups. The Lambda function creates, updates, or deletes alarms for ALB metrics and target group metrics based on events and tags.
 
-### 7. AWS Identity and Access Management (IAM)
+### 7. AWS OpenSearch Service (OS)
+OS is monitored by AutoAlarm for events related to OpenSearch Service. The Lambda function creates, updates, or deletes alarms for OS metrics based on events and tags.
+
+### 8. AWS Identity and Access Management (IAM)
 IAM is used to define roles and policies that grant the necessary permissions to the Lambda function. These roles allow the function to interact with other AWS services such as CloudWatch, EC2, AMP, SQS, and EventBridge.
 
-### 8. AWS Lambda
+### 9. AWS Lambda
 AWS Lambda is used to run the main AutoAlarm function, which processes service and tag events in addition to managing alarms. The Lambda function is responsible for handling the logic to create, update, or delete CloudWatch alarms and Prometheus rules based on tags and state changes.
 
 
@@ -51,88 +54,142 @@ AWS Lambda is used to run the main AutoAlarm function, which processes service a
 
 The system is event-driven, responding to EC2 state change notifications and tag modification events. To manage alarms and Prometheus rules, ensure your EC2 instances are tagged according to the supported schema defined below.
 
-## Supported Tags
-Note that tagging format is different for ALBs, Target Groups and SQS which require a '/' delimiter in place of the '|' delimiter used for EC2 instances. This is a limitation on the AWS side.
+## Tag Values and Behaviour
 
-| Tag                                           | Default Value             | Enabled By Default | CloudWatch Only                 |
-|-----------------------------------------------|---------------------------|--------------------|---------------------------------|
-| `autoalarm:enabled`                           | `false`                   | No                 | N/A                             |
-| `autoalarm:alb-4xx-count`                     | "-\/-\/60\/2\/Sum         | No                 | Yes                             |
-| `autoalarm:alb-4xx-count-anomaly`             | "p90/60/2"                | No                 | Yes                             | 
-| `autoalarm:alb-5xx-count`                     | "-\/-\/60\/2\/Sum         | No                 | Yes                             |
-| `autoalarm:alb-5xx-count-anomaly`             | "p90/60/2"                | Yes                | Yes                             |
-| `autoalarm:alb-request-count`                 | "-\/-\/60\/2\\/Sum        | No                 | Yes                             |
-| `autoalarm:alb-request-count-anomaly`         | "p90/60/2"                | No                 | Yes                             |
-| `autoalarm:ec2-cpu`                           | "95\/98\/300\/2\/p90"     | Yes                | No                              |
-| `autoalarm:ec2-cpu-anomaly`                   | "p90\|60\|2"              | No                 | Yes                             |
-| `autoalarm:ec2-memory`                        | "96\/98\/300\/2\/p90"     | Yes                | No                              |
-| `autoalarm:ec2-memory-anomaly` c              | "p90\|60\|2"              | No                 | Yes (Requires CloudWatch Agent) |
-| `autoalarm:ec2-storage`                       | "96\/98\/300\/2\/Maximum" | Yes                | No                              |
-| `autoalarm:ec2-storage-anomaly`               | "p90\|60\|2"              | No                 | Yes (Requires CloudWatch Agent) |
-| `autoalarm:sqs-empty-receives`                | "-\/-\/300\/1\/Sum"       | No                 | Yes                             |
-| `autoalarm:sqs-empty-receives-anomaly`        | "Sum\/300\/1"             | No                 | Yes                             |
-| `autoalarm:sqs-messages-delayed`              | "-\/-\/300\/1\/Maximum"   | No                 | Yes                             |
-| `autoalarm:sqs-messages-delayed-anomaly`      | "Maximum\/300\/1"         | No                 | Yes                             |
-| `autoalarm:sqs-messages-deleted`              | "-\/-\/300\/1\/Sum"       | No                 | Yes                             |
-| `autoalarm:sqs-messages-deleted-anomaly`      | "Sum\/300\/1"             | No                 | Yes                             |
-| `autoalarm:sqs-messages-not-visible`          | "-\/-\/300\/1\/Maximum"   | No                 | Yes                             |
-| `autoalarm:sqs-messages-not-visible-anomaly`  | "Maximum\/300\/1"         | No                 | Yes                             |
-| `autoalarm:sqs-messages-received`             | "-\/-\/300\/1\/Sum"       | No                 | Yes                             |
-| `autoalarm:sqs-messages-received-anomaly`     | "Sum\/300\/1"             | No                 | Yes                             |
-| `autoalarm:sqs-messages-sent`                 | "-\/-\/300\/1\/Sum"       | No                 | Yes                             |
-| `autoalarm:sqs-messages-sent-anomaly`         | "Sum\/300\/1"             | No                 | Yes                             |
-| `autoalarm:sqs-messages-visible`              | "-\/-\/300\/1\/Maximum"   | No                 | Yes                             |
-| `autoalarm:sqs-messages-visible-anomaly`      | "Maximum\/300\/1"         | Yes                | Yes                             |
-| `autoalarm:sqs-sent-messsge-size`             | "-\/-\/300\/1\/Average"   | No                 | Yes                             |
-| `autoalarm:sqs-sent-message-size-anomaly`     | "Average\/300\/1"         | No                 | Yes                             |
-| `autoalarm:sqs-age-of-oldest-message`         | "-\/-\/300\/1\/Maximum"   | No                 | Yes                             |
-| `autoalarm:sqs-age-of-oldest-message-anomaly` | "Maximum\/300\/1"         | Yes                | Yes                             |
-| `autoalarm:tg-4xx-count`                      | "-\/-\/60\/2\/Sum"        | No                 | Yes                             |
-| `autoalarm:tg-4xx-count-anomaly`              | "p90/60/2"                | No                 | Yes                             |
-| `autoalarm:tg-5xx-count`                      | "-\/-\/60\/2\/Sum"        | No                 | Yes                             |
-| `autoalarm:tg-5xx-count-anomaly`              | "p90/60/2"                | Yes                | Yes                             |
-| `autoalarm:tg-request-count`                  | "-\/-\/60\/2\/Sum"        | No                 | Yes                             |
-| `autoalarm:tg-request-count-anomaly`          | "p90/60/2"                | No                 | Yes                             |
-| `autoalarm:tg-response-time`                  | "-\/-\/60\/2\/p90"        | No                 | Yes                             |
-| `autoalarm:tg-response-time-anomaly`          | "p90/60/2"                | Yes                | Yes                             |
-| `autoalarm:tg-unhealthy-host-count`           | "-\/1\/60\/3\/Sum"        | Yes                | Yes                             |
-| `autoalarm:tg-unhealthy-host-count-anomaly`   | "p90/60/2"                | No                 | Yes                             |
+### Overview
+Tags are used to customize CloudWatch alarms for various AWS services managed by AutoAlarm. By applying specific tags to resources such as EC2 instances, ALBs, Target Groups, SQS, and OpenSearch, you can define custom thresholds, evaluation periods, and other parameters for both static threshold and anomaly detection alarms. The following sections outline the default configurations and explain how you can modify them using these tags.
 
+### Default Values
+AutoAlarm comes with predefined default values for various alarms. These defaults are designed to provide general monitoring out-of-the-box. However, it is crucial that any enabled alarms are reviewed to ensure they align with the specific needs of your application and environment.
 
+### Application Load Balancer (ALB)
+
+| Tag                               | Default Value                                          | Enabled By Default | CloudWatch Only |
+|-----------------------------------|--------------------------------------------------------|--------------------|-----------------|
+| `autoalarm:4xx-count`             | "-/-/60/2/Sum/2/GreaterThanThreshold/ignore"           | No                 | Yes             |
+| `autoalarm:4xx-count-anomaly`     | "2/5/300/1/Average/1/GreaterThanUpperThreshold/ignore" | No                 | Yes             | 
+| `autoalarm:5xx-count`             | "-/-/60/2/Sum/2/GreaterThanThreshold/ignore"           | No                 | Yes             |
+| `autoalarm:5xx-count-anomaly`     | "2/5/300/2/Average/2/GreaterThanUpperThreshold/ignore" | Yes                | Yes             |
+| `autoalarm:request-count`         | "-/-/60/2/Sum/2/GreaterThanThreshold/ignore"           | No                 | Yes             |
+| `autoalarm:request-count-anomaly` | "3/5/300/2/Average/2/GreaterThanUpperThreshold/ignore" | No                 | Yes             |
+
+### EC2
+
+| Tag                         | Default Value                                          | Enabled By Default | CloudWatch Only                 |
+|-----------------------------|--------------------------------------------------------|--------------------|---------------------------------|
+| `autoalarm:cpu`             | "95/98/60/5/Maximum/5/GreaterThanThreshold/ignore"     | Yes                | No                              |
+| `autoalarm:cpu-anomaly`     | "2/5/60/5/Average/5/GreaterThanUpperThreshold/ignore"  | No                 | Yes                             |
+| `autoalarm:memory`          | "95/98/60/10/Maximum/10/GreaterThanThreshold/ignore"   | Yes                | No                              |
+| `autoalarm:memory-anomaly`  | "2/5/300/2/Average/2/GreaterThanUpperThreshold/ignore" | No                 | Yes (Requires CloudWatch Agent) |
+| `autoalarm:storage`         | "90/95/60/2/Maximum/1/GreaterThanThreshold/ignore"     | Yes                | No                              |
+| `autoalarm:storage-anomaly` | "2/3/60/2/Average/1/GreaterThanUpperThreshold/ignore"  | No                 | Yes (Requires CloudWatch Agent) |
+
+### SQS
+
+| Tag                                       | Default Value                                          | Enabled By Default | CloudWatch Only |
+|-------------------------------------------|--------------------------------------------------------|--------------------|-----------------|
+| `autoalarm:age-of-oldest-message`         | "-/-/300/1/Maximum/1/GreaterThanThreshold/ignore"      | No                 | Yes             |
+| `autoalarm:age-of-oldest-message-anomaly` | "-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore" | No                 | Yes             |
+| `autoalarm:empty-receives`                | "-/-/300/1/Sum/1/GreaterThanThreshold/ignore"          | No                 | Yes             |
+| `autoalarm:empty-receives-anomaly`        | "-/-/300/1/Sum/1/GreaterThanUpperThreshold/ignore"     | No                 | Yes             |
+| `autoalarm:messages-deleted`              | "-/-/300/1/Sum/1/GreaterThanThreshold/ignore"          | No                 | Yes             |
+| `autoalarm:messages-deleted-anomaly`      | "-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore" | No                 | Yes             |
+| `autoalarm:messages-not-visible`          | "-/-/300/1/Maximum/1/GreaterThanThreshold/ignore"      | No                 | Yes             |
+| `autoalarm:messages-not-visible-anomaly`  | "-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore" | No                 | Yes             |
+| `autoalarm:messages-received`             | "-/-/300/1/Sum/1/GreaterThanThreshold/ignore"          | No                 | Yes             |
+| `autoalarm:messages-received-anomaly`     | "-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore" | No                 | Yes             |
+| `autoalarm:messages-sent`                 | "-/-/300/1/Sum/1/GreaterThanThreshold/ignore"          | No                 | Yes             |
+| `autoalarm:messages-sent-anomaly`         | "1/1/300/1/Average/1/GreaterThanUpperThreshold/ignore" | No                 | Yes             |
+| `autoalarm:messages-visible`              | "-/-/300/1/Maximum/1/GreaterThanThreshold/ignore"      | No                 | Yes             |
+| `autoalarm:messages-visible-anomaly`      | "-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore" | Yes                | Yes             |
+| `autoalarm:sent-message-size`             | "-/-/300/1/Average/1/GreaterThanThreshold/ignore"      | No                 | Yes             |
+| `autoalarm:sent-message-size-anomaly`     | "-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore" | No                 | Yes             |
+
+### Target Groups (TG)
+
+| Tag                               | Default Value                                          | Enabled By Default | CloudWatch Only |
+|-----------------------------------|--------------------------------------------------------|--------------------|-----------------|
+| `autoalarm:4xx-count`             | "-/-/60/2/Sum/1/GreaterThanThreshold/ignore"           | No                 | Yes             |
+| `autoalarm:4xx-count-anomaly`     | "-/-/60/2/Average/1/GreaterThanUpperThreshold/ignore"  | No                 | Yes             |
+| `autoalarm:5xx-count`             | "-/-/60/2/Sum/1/GreaterThanThreshold/ignore"           | No                 | Yes             |
+| `autoalarm:5xx-count-anomaly`     | "3/6/60/2/Average/1/GreaterThanUpperThreshold/ignore"  | Yes                | Yes             |
+| `autoalarm:response-time`         | "3/5/60/2/p90/2/GreaterThanThreshold/ignore"           | No                 | Yes             |
+| `autoalarm:response-time-anomaly` | "2/5/300/2/Average/2/GreaterThanUpperThreshold/ignore" | No                 | Yes             |
+| `autoalarm:unhealthy-host-count`  | "-/1/60/2/Maximum/2/GreaterThanThreshold/ignore"       | Yes                | Yes             |
+
+### OpenSearch
+
+| Tag                                     | Default Value                                          | Enabled By Default | CloudWatch Only |
+|-----------------------------------------|--------------------------------------------------------|--------------------|-----------------|
+| `autoalarm:4xx-errors`                  | "100/300/300/1/Sum/1/GreaterThanThreshold/ignore"      | No                 | Yes             |
+| `autoalarm:4xx-errors-anomaly`          | "-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore" | No                 | Yes             |
+| `autoalarm:5xx-errors`                  | "10/50/300/1/Sum/1/GreaterThanThreshold/ignore"        | Yes                | Yes             |
+| `autoalarm:5xx-errors-anomaly`          | "-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore" | No                 | Yes             |
+| `autoalarm:cpu`                         | "98/98/300/1/Maximum/1/GreaterThanThreshold/ignore"    | Yes                | Yes             |
+| `autoalarm:cpu-anomaly`                 | "2/2/300/1/Average/1/GreaterThanUpperThreshold/ignore" | No                 | Yes             |
+| `autoalarm:iops-throttle`               | "5/10/300/1/Sum/1/GreaterThanThreshold/ignore"         | Yes                | Yes             |
+| `autoalarm:iops-throttle-anomaly`       | "-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore" | No                 | Yes             |
+| `autoalarm:jvm-memory`                  | "85/92/300/1/Maximum/1/GreaterThanThreshold/ignore"    | Yes                | Yes             |
+| `autoalarm:jvm-memory-anomaly`          | "-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore" | No                 | Yes             |
+| `autoalarm:read-latency`                | "0.03/0.08/60/2/Maximum/2/GreaterThanThreshold/ignore" | Yes                | Yes             |
+| `autoalarm:read-latency-anomaly`        | "2/6/300/2/Average/2/GreaterThanUpperThreshold/ignore" | No                 | Yes             |
+| `autoalarm:search-latency`              | "1/2/300/2/Average/2/GreaterThanThreshold/ignore"      | Yes                | Yes             |
+| `autoalarm:search-latency-anomaly`      | "-/-/300/2/Average/2/GreaterThanUpperThreshold/ignore" | Yes                | Yes             |
+| `autoalarm:snapshot-failure`            | "-/1/300/1/Sum/1/GreaterThanOrEqualToThreshold/ignore" | Yes                | Yes             |
+| `autoalarm:storage`                     | "10000/5000/300/2/Average/2/LessThanThreshold/ignore"  | Yes                | Yes             |
+| `autoalarm:storage-anomaly`             | "2/3/300/2/Average/2/GreaterThanUpperThreshold/ignore" | Yes                | Yes             |
+| `autoalarm:throughput-throttle`         | "40/60/60/2/Sum/2/GreaterThanThreshold/ignore"         | No                 | Yes             |
+| `autoalarm:throughput-throttle-anomaly` | "3/5/300/1/Average/1/GreaterThanUpperThreshold/ignore" | No                 | Yes             |
+| `autoalarm:write-latency`               | "84/100/60/2/Maximum/2/GreaterThanThreshold/ignore"    | Yes                | Yes             |
+| `autoalarm:write-latency-anomaly`       | "-/-/60/2/Average/2/GreaterThanUpperThreshold/ignore"  | No                 | Yes             |
+| `autoalarm:yellow-cluster`              | "-/1/300/1/Maximum/1/GreaterThanThreshold/ignore"      | Yes                | Yes             |
+| `autoalarm:red-cluster`                 | "-/1/60/1/Maximum/1/GreaterThanThreshold/ignore"       | Yes                | Yes             |
+
+### Customizing Alarms with Tags
+
+When setting up non-default alarms with tags, you must provide at least the first two values (warning and critical thresholds) for the tag to function correctly. If these thresholds are not supplied, the alarm will not be created unless defaults are defined.
+
+**Example:**
+
+`autoalarm:cpu=80/95/60/5/Maximum/5/GreaterThanThreshold/ignore`
+- *`80`* is the warning threshold
+- *`95`* is the critical threshold
+
+### Static Threshold vs Anomaly Detection Alarms
+
+**Static Threshold Alarms**:
+- Triggered when a metric crosses a fixed value.
+- Suitable for metrics with consistent ranges.
+
+**Anomaly Detection Alarms**:
+- Triggered when a metric deviates from a dynamic range based on historical data.
+- Best for metrics with variable patterns.
+
+### Supported Statistics
+You can use the following statistics for alarms.
+- SampleCount
+- Average
+- Sum
+- Minimum
+- Maximum
+- Percentiles (e.g., `p90`)
+
+### Comparison Operators
+**Static Threshold Alarms**
+- `GreaterThanOrEqualToThreshold`
+- `GreaterThanThreshold`
+- `LessThanThreshold`
+- `LessThanOrEqualToThreshold`
+
+**Anomaly Detection Alarms**
+- `GreaterThanUpperThreshold`
+- `LessThanLowerOrGreaterThanUpperThreshold`
+- `LessThanLowerThreshold`
 
 ### Default Alarm Behavior
 
 Tags are organized alarm types, service and metrics. Anomaly detection alarms are created by default while static threshold cloudwatch alarms are created based on tags. Staic threshold tags have default values in the case that an incorrect value is parsed in the warning or critical fields but are otherwise not set if those fields are empty or the tag does not exist. Additionally, Anomaly alarms are configured to alert on data above the 90th percentile historical data over 2 evaluations periods at 60 seconds each. The default percentile, period duration and number of periods can also be configured with tag values
 
-### Example Tag Configuration For EC2
-
-```json
-{
-    "autoalarm:enabled": "true",
-    "autoalarm:cw-ec2-cpu": "90|95|60|2",
-    "autoalarm:cw-ec2-storage": "90|95|60|2",
-    "autoalarm:cw-ec2-memory": "90|95|60|2",
-    "autoalarm:anomaly-ec2-cpu": "p90|60|2",
-    "autoalarm:anomaly-ec2-storage": "p90|60|2",
-    "autoalarm:anomaly-ec2-memory": "p90|60|2",
-    "autoalarm:target": "Prometheus"
-}
-```
-
-### Example Tag Configuration For ALB
-
-```json
-{
-    "autoalarm:enabled": "true",
-    "autoalarm:cw-alb-request-count": "1500/1750/60/2",
-    "autoalarm:cw-alb-4xx-count": "1500/1750/60/2",
-    "autoalarm:cw-alb-5xx-count": "1500/1750/60/2",
-    "autoalarm:anomaly-alb-request-count": "p90/60/2",
-    "autoalarm:anomaly-alb-4xx-count": "p90/60/2",
-    "autoalarm:anomaly-alb-5xx-count": "p90/60/2",
-    "autoalarm:target": "Prometheus"
-}
-```
 ## EventBridge Rules
 
 The project configures AWS EventBridge to route specific events to the AutoAlarm Lambda function. The following rules are set up to trigger the Lambda function based on state changes and tag modifications:
@@ -145,8 +202,7 @@ The project configures AWS EventBridge to route specific events to the AutoAlarm
 | AlbRule            | aws.elasticloadbalancing | Alb creation or deletion               | eventSource: ['elasticloadbalancing.amazonaws.com']<br>eventName: ['CreateLoadBalancer', 'DeleteLoadBalancer'] | Routes ALB events to AutoAlarm              |
 | TargetGroupTagRule | aws.tag                  | Tag Change on Resource                 | service: ['elasticloadbalancing']<br>resource-type: ['targetgroup']<br>changed-tag-keys: [various keys]        | Routes Target Group tag events to AutoAlarm |
 | TargetGroupRule    | aws.elasticloadbalancing | Target Group Creation or Deletion      | eventSource: ['elasticloadbalancing.amazonaws.com']<br>eventName: ['CreateTargetGroup', 'DeleteTargetGroup']   | Routes Target Group events to AutoAlarm     |
-| SqsTagRule         | aws.tag                  | Tag Change on Resource                 | service: ['sqs']<br>resource-type: ['queue']<br>changed-tag-keys: [various keys]                               | Routes SQS tag events to AutoAlarm          |
-| SqsRule            | aws.sqs                  | Queue Creation or Deletion             | eventSource: ['sqs.amazonaws.com']<br>eventName: ['CreateQueue', 'DeleteQueue', 'TagQueue', 'UntagQueue']      | Routes SQS events to AutoAlarm              |
+| SqsRule            | aws.sqs                  | Queue Creation, Tag Change or Deletion | eventSource: ['sqs.amazonaws.com']<br>eventName: ['CreateQueue', 'DeleteQueue', 'TagQueue', 'UntagQueue']      | Routes SQS events to AutoAlarm              |
 
 ## Prometheus Rules (in Progress-Not Yet Implemented)
 
@@ -180,9 +236,13 @@ The Lambda execution role requires specific permissions to interact with AWS ser
   - Actions: `sqs:GetQueueAttributes`, `sqs:ListQueues`, `sqs:ListQueueTags`, `sqs:TagQueue`
   - Resources: `*`
 
+- **OpenSearch**:
+  - Actions: `es:DescribeElasticsearchDomain`, `es:ListTags`, `es:ListDomainNames`
+  - Resources: `*`
+
 ## Limitations
 
-- Currently supports only EC2 instances, ALBs, Target Groups and SQS. Extension to other services like ECS or RDS would require modifications to the Lambda function and CDK setup.
+- Currently supports only EC2 instances, ALBs, Target Groups, SQS and Opensearch. Extension to other services like ECS or RDS would require modifications to the Lambda function and CDK setup.
 - Tag-based configuration may not be suitable for all use cases. Customization options are limited to the supported tags.
 - Some alarms and rules are created by default even without tags, such as CPU utilization alarms, and can only be modified with the use of tags. Otherwise, they will be created with default values.
 
