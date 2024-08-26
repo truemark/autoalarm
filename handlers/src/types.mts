@@ -1,19 +1,4 @@
 import {Statistic} from '@aws-sdk/client-cloudwatch';
-//export interface AlarmConfig {
-//  metricName: string;
-//  namespace: string;
-//  threshold: number;
-//  comparisonOperator: string;
-//  evaluationPeriods: number;
-//  period: number;
-//  statistic: string;
-//  alarmDescription: string;
-//  dimensions: AWS.CloudWatch.Dimension[];
-//  alarmActions: string[];
-//  okActions?: string[];
-//  insufficientDataActions?: string[];
-//}
-//export type TagMap = {[key: string]: string};
 
 export interface AlarmProps {
   threshold: number;

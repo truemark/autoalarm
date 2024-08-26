@@ -32,8 +32,6 @@
     "@smithy/signature-v4": "^3.1.2",
     "@smithy/util-retry": "^3.0.3",
     "@types/js-yaml": "^4.0.9",
-    "aws-lambda": "^1.0.7",
-    "aws4": "^1.13.0",
     "js-yaml": "^4.1.0"
   },
   "devDependencies": {
@@ -42,7 +40,6 @@
     "@types/aws4": "^1.11.6",
     "@types/node": "20.8.2",
     "aws-sdk-client-mock": "^1.0.0",
-    "jest-runner-groups": "^2.2.0",
     "source-map-support": "^0.5.21",
     "typescript": "~5.5.4",
     "vitest": "^1.6.0",
