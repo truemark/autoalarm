@@ -111,28 +111,23 @@ Amazon EventBridge is used to route events to the Lambda function. Rules are set
 as state changes, tag changes, and other resource events. These events trigger the Lambda function to perform the 
 necessary alarm management actions.
 
-### 4. Amazon Managed Service for Prometheus (AMP)
-AMP is used for querying metrics and managing Prometheus rules. The Lambda function can create, update, or delete 
-Prometheus rules in the specified Prometheus workspace based on the instance's metrics and tags. Prometheus metrics are 
-used as an alternative to CloudWatch for monitoring.
-
-### 5. Amazon Simple Queue Service (SQS)
+### 4. Amazon Simple Queue Service (SQS)
 Amazon SQS is used as a dead-letter queue for the Lambda function. If the Lambda function fails to process an event, 
 the event is sent to an SQS queue for further investigation and retry.
 
-### 6. AWS Elastic Load Balancing (ELB) And Target Groups
+### 5. AWS Elastic Load Balancing (ELB) And Target Groups
 ELB is monitored by AutoAlarm for events related to Application Load Balancers (ALBs) and Target Groups. The Lambda 
 function creates, updates, or deletes alarms for ALB metrics and target group metrics based on events and tags.
 
-### 7. AWS OpenSearch Service (OS)
+### 6. AWS OpenSearch Service (OS)
 OS is monitored by AutoAlarm for events related to OpenSearch Service. The Lambda function creates, updates, or deletes 
 alarms for OS metrics based on events and tags.
 
-### 8. AWS Identity and Access Management (IAM)
+### 7. AWS Identity and Access Management (IAM)
 IAM is used to define roles and policies that grant the necessary permissions to the Lambda function. These roles allow 
 the function to interact with other AWS services such as CloudWatch, EC2, AMP, SQS, and EventBridge.
 
-### 9. AWS Lambda
+### 8. AWS Lambda
 AWS Lambda is used to run the main AutoAlarm function, which processes service and tag events in addition to managing 
 alarms. The Lambda function is responsible for handling the logic to create, update, or delete CloudWatch alarms and 
 Prometheus rules based on tags and state changes.
