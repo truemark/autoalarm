@@ -87,8 +87,7 @@ cd cdk ; cdk deploy AutoAlarm
 
 - **Dynamic Alarm Management**: Automatically creates, updates, and deletes CloudWatch alarms and Prometheus rules based 
 on EC2 instance states and tag changes.
-- **Anomaly Detection Integration**: Supports creating both standard CloudWatch alarms and anomaly detection alarms for 
-specified metrics such as `HostCount`.
+- **CloudWatch Alarm Integration**: Supports creating both static threshold CloudWatch alarms and anomaly detection alarms.
 - **Customization Through Tags**: Uses tags to define alarm thresholds and conditions, allowing per-instance 
 customization. Tags can be dynamically updated to configure statistics for anomanly detection alarms, thresholds for 
 warning and critical static threshold alarms, in addition to evaluation period length and number of periods.
