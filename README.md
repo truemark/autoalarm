@@ -30,6 +30,54 @@ This architecture ensures that AutoAlarm can monitor and manage resources out-of
 OpenSearch domains, SQS queues, and Target Groups. The system is fully event-driven, dynamically responding to state and 
 tag changes across these resources.
 
+## Deployment Process
+### Prerequisites
+
+Before you begin, ensure you have the following:
+
+1. **AWS CLI**: Installed and configured with appropriate access to your AWS account.
+2. **AWS CDK**: Installed globally on your machine.
+3. **Node.js**: Installed on your machine.
+4. **Git**: Installed on your machine.
+5. **pnpm**: Version 9.1.4 or later. Installed on your machine.
+
+To set up and deploy the AutoAlarm project, follow these steps:
+
+1. **Clone the Repository**
+
+   Start by cloning the project repository to your local machine:
+
+```bash
+git clone https://github.com/truemark/autoalarm.git
+cd <repository-directory>
+```
+   
+2. **Install Dependencies**
+```bash
+pnpm install
+```
+3. **Configure Region**
+```bash
+export AWS_REGION=<region>
+```
+4. **Configure Keys and Session Token**
+```bash
+export AWS_ACCESS_KEY_ID="<access-key-id"
+export AWS_SECRET_ACCESS_KEY="<secret-access-key>"
+export AWS_SESSION_TOKEN="<aws-session-token>"
+```
+5. **Bootstrap the CDK**
+```bash
+cdk bootstrap
+```
+6. **Build the Project**
+```bash
+pnpm build
+```  
+7. **Deploy the Stack**
+```bash
+cd cdk ; cdk deploy AutoAlarm
+```
 
 ## Features
 
