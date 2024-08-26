@@ -49,7 +49,7 @@ To set up and deploy the AutoAlarm project, follow these steps:
 
 ```bash
 git clone https://github.com/truemark/autoalarm.git
-cd <repository-directory>
+cd autoalarm
 ```
    
 2. **Install Dependencies**
