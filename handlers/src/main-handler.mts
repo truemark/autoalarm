@@ -2,22 +2,17 @@ import {Handler} from 'aws-lambda';
 import * as logging from '@nr1e/logging';
 import {
   manageInactiveInstanceAlarms,
-  manageActiveInstanceAlarms,
+  manageActiveEC2Alarms,
   getEC2IdAndState,
   fetchInstanceTags,
   liveStates,
   deadStates,
 } from './ec2-modules.mjs';
-import {ValidTargetGroupEvent, ValidOpenSearchState} from './enums.mjs';
+import {ValidTargetGroupEvent} from './enums.mjs';
 import {parseALBEventAndCreateAlarms} from './alb-modules.mjs';
 import {parseTGEventAndCreateAlarms} from './targetgroup-modules.mjs';
 import {parseSQSEventAndCreateAlarms} from './sqs-modules.mjs';
-import {
-  fetchOpenSearchTags,
-  manageOpenSearchAlarms,
-  manageInactiveOpenSearchAlarms,
-  getOpenSearchState,
-} from './opensearch-modules.mjs';
+import {parseOSEventAndCreateAlarms} from './opensearch-modules.mjs';
 
 // Initialize logging
 const level = process.env.LOG_LEVEL || 'trace';
@@ -44,7 +39,7 @@ async function processEC2Event(event: any) {
   ) {
     // checking our liveStates set to see if the instance is in a state that we should be managing alarms for.
     // we are iterating over the AlarmClassification enum to manage alarms for each classification: 'Critical'|'Warning'.
-    await manageActiveInstanceAlarms(instanceId, tags);
+    await manageActiveEC2Alarms(instanceId, tags);
   } else if (
     (deadStates.has(state) && tags['autoalarm:enabled'] === 'false') ||
     (tags['autoalarm:enabled'] === 'true' && deadStates.has(state)) ||
@@ -67,7 +62,7 @@ async function processEC2TagEvent(event: any) {
     instanceId &&
     liveStates.has(state)
   ) {
-    await manageActiveInstanceAlarms(instanceId, tags);
+    await manageActiveEC2Alarms(instanceId, tags);
   } else if (
     !tags['autoalarm:enabled'] ||
     tags['autoalarm:enabled'] === undefined
@@ -103,36 +98,6 @@ export async function processSQSEvent(event: any) {
 
 // TODO Fix the use of any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function processOpenSearchEvent(event: any) {
-  const domainName = event.detail['domain-name'];
-  const state = event.detail.state;
-  const tags = await fetchOpenSearchTags(domainName);
-
-  if (domainName && state === ValidOpenSearchState.Active) {
-    await manageOpenSearchAlarms(domainName, tags);
-  } else if (state === ValidOpenSearchState.Deleted) {
-    await manageInactiveOpenSearchAlarms(domainName);
-  }
-}
-
-// TODO Fix the use of any
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function processOpenSearchTagEvent(event: any) {
-  const {domainArn, state, tags} = await getOpenSearchState(event);
-
-  if (tags['autoalarm:enabled'] === 'false') {
-    await manageInactiveOpenSearchAlarms(domainArn);
-  } else if (
-    tags['autoalarm:enabled'] === 'true' &&
-    domainArn &&
-    state === ValidOpenSearchState.Active
-  ) {
-    await manageOpenSearchAlarms(domainArn, tags);
-  }
-}
-
-// TODO Fix the use of any
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function routeTagEvent(event: any) {
   const detail = event.detail;
   const resourceType = detail['resource-type'];
@@ -146,10 +111,8 @@ async function routeTagEvent(event: any) {
     } else if (resourceType === 'targetgroup') {
       await parseTGEventAndCreateAlarms(event);
     }
-  } else if (service === 'sqs') {
-    await parseSQSEventAndCreateAlarms(event);
   } else if (service === 'es') {
-    await processOpenSearchTagEvent(event);
+    await parseOSEventAndCreateAlarms(event);
   } else {
     log
       .warn()
@@ -190,7 +153,7 @@ export const handler: Handler = async (event: any): Promise<void> => {
         await parseSQSEventAndCreateAlarms(event);
         break;
       case 'aws.opensearch':
-        await processOpenSearchEvent(event);
+        await parseOSEventAndCreateAlarms(event);
         break;
       default:
         log.warn().msg('Unhandled event source');

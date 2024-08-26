@@ -148,12 +148,12 @@ export class AutoAlarmConstruct extends Construct {
           'resource-type': ['instance'],
           'changed-tag-keys': [
             'autoalarm:enabled',
-            'autoalarm:ec2-cpu',
-            'autoalarm:ec2-storage',
-            'autoalarm:ec2-memory',
-            'autoalarm:ec2-cpu-anomaly',
-            'autoalarm:ec2-storage-anomaly',
-            'autoalarm:ec2-memory-anomaly',
+            'autoalarm:cpu',
+            'autoalarm:storage',
+            'autoalarm:memory',
+            'autoalarm:cpu-anomaly',
+            'autoalarm:storage-anomaly',
+            'autoalarm:memory-anomaly',
             'autoalarm:target', // cloudwatch or prometheus
           ],
         },
@@ -193,14 +193,14 @@ export class AutoAlarmConstruct extends Construct {
           'resource-type': ['loadbalancer'],
           'changed-tag-keys': [
             'autoalarm:enabled',
-            'autoalarm:alb-request-count',
-            'autoalarm:alb-4xx-count',
-            'autoalarm:alb-5xx-count',
-            'autoalarm:alb-response-time',
-            'autoalarm:alb-request-count-anomaly',
-            'autoalarm:alb-4xx-count-anomaly',
-            'autoalarm:alb-5xx-count-anomaly',
-            'autoalarm:alb-response-time-anomaly',
+            'autoalarm:request-count',
+            'autoalarm:4xx-count',
+            'autoalarm:5xx-count',
+            'autoalarm:response-time',
+            'autoalarm:request-count-anomaly',
+            'autoalarm:4xx-count-anomaly',
+            'autoalarm:5xx-count-anomaly',
+            'autoalarm:response-time-anomaly',
           ],
         },
       },
@@ -232,16 +232,16 @@ export class AutoAlarmConstruct extends Construct {
           'resource-type': ['targetgroup'],
           'changed-tag-keys': [
             'autoalarm:enabled',
-            'autoalarm:tg-unhealthy-host-count',
-            'autoalarm:tg-response-time',
-            'autoalarm:tg-request-count',
-            'autoalarm:tg-4xx-count',
-            'autoalarm:tg-5xx-count',
-            'autoalarm:tg-unhealthy-host-count-anomaly',
-            'autoalarm:tg-request-count-anomaly',
-            'autoalarm:tg-response-time-anomaly',
-            'autoalarm:tg-4xx-count-anomaly',
-            'autoalarm:tg-5xx-count-anomaly',
+            'autoalarm:unhealthy-host-count',
+            'autoalarm:response-time',
+            'autoalarm:request-count',
+            'autoalarm:4xx-count',
+            'autoalarm:5xx-count',
+            'autoalarm:unhealthy-host-count-anomaly',
+            'autoalarm:request-count-anomaly',
+            'autoalarm:response-time-anomaly',
+            'autoalarm:4xx-count-anomaly',
+            'autoalarm:5xx-count-anomaly',
           ],
         },
       },
@@ -262,67 +262,50 @@ export class AutoAlarmConstruct extends Construct {
     });
     targetGroupRule.addTarget(mainTarget);
 
-    /*/* Rule for SQS tag changes
-    const sqsTagRule = new Rule(this, 'SqsTagRule', {
+    // Rule for OpenSearch tag changes
+    const openSearchTagRule = new Rule(this, 'OpenSearchTagRule', {
       eventPattern: {
         source: ['aws.tag'],
         detailType: ['Tag Change on Resource'],
         detail: {
-          service: ['sqs'],
-          'resource-type': ['queue'],
+          service: ['es'],
+          'resource-type': ['domain'],
           'changed-tag-keys': [
             'autoalarm:enabled',
-            'autoalarm:ApproximateNumberOfMessagesVisible-above-critical',
-            'autoalarm:ApproximateNumberOfMessagesVisible-above-warning',
-            'autoalarm:ApproximateNumberOfMessagesVisible-duration-time',
-            'autoalarm:ApproximateNumberOfMessagesVisible-duration-periods',
-            'autoalarm:ApproximateAgeOfOldestMessage-above-critical',
-            'autoalarm:ApproximateAgeOfOldestMessage-above-warning',
-            'autoalarm:ApproximateAgeOfOldestMessage-duration-time',
-            'autoalarm:ApproximateAgeOfOldestMessage-duration-periods',
+            'autoalarm:4xx-errors',
+            'autoalarm:4xx-errors-anomaly',
+            'autoalarm:5xx-errors',
+            'autoalarm:5xx-errors-anomaly',
+            'autoalarm:cpu',
+            'autoalarm:cpu-anomaly',
+            'autoalarm:iops-throttle',
+            'autoalarm:iops-throttle-anomaly',
+            'autoalarm:jvm-memory',
+            'autoalarm:jvm-memory-anomaly',
+            'autoalarm:read-latency',
+            'autoalarm:read-latency-anomaly',
+            'autoalarm:search-latency',
+            'autoalarm:search-latency-anomaly',
+            'autoalarm:snapshot-failure',
+            'autoalarm:snapshot-failure-anomaly',
+            'autoalarm:storage',
+            'autoalarm:storage-anomaly',
+            'autoalarm:sys-memory-util',
+            'autoalarm:sys-memory-util-anomaly',
+            'autoalarm:throughput-throttle',
+            'autoalarm:throughput-throttle-anomaly',
+            'autoalarm:write-latency',
+            'autoalarm:write-latency-anomaly',
+            'autoalarm:yellow-cluster',
+            'autoalarm:yellow-cluster-anomaly',
+            'autoalarm:red-cluster',
+            'autoalarm:red-cluster-anomaly',
           ],
         },
       },
-      description: 'Routes SQS tag events to AutoAlarm',
+      description: 'Routes OpenSearch tag events to AutoAlarm',
     });
-    sqsTagRule.addTarget(mainTarget);*/
-
-    // Rule for OpenSearch tag changes
-    //const openSearchTagRule = new Rule(this, 'OpenSearchTagRule', {
-    //  eventPattern: {
-    //    source: ['aws.tag'],
-    //    detailType: ['Tag Change on Resource'],
-    //    detail: {
-    //      service: ['es'],
-    //      'resource-type': ['domain'],
-    //      'changed-tag-keys': [
-    //        'autoalarm:disabled',
-    //        'autoalarm:ClusterStatus.yellow-above-critical',
-    //        'autoalarm:ClusterStatus.yellow-above-warning',
-    //        'autoalarm:ClusterStatus.yellow-duration-time',
-    //        'autoalarm:ClusterStatus.yellow-duration-periods',
-    //        'autoalarm:ClusterStatus.red-above-critical',
-    //        'autoalarm:ClusterStatus.red-above-warning',
-    //        'autoalarm:ClusterStatus.red-duration-time',
-    //        'autoalarm:ClusterStatus.red-duration-periods',
-    //        'autoalarm:FreeStorageSpace-above-critical',
-    //        'autoalarm:FreeStorageSpace-above-warning',
-    //        'autoalarm:FreeStorageSpace-duration-time',
-    //        'autoalarm:FreeStorageSpace-duration-periods',
-    //        'autoalarm:JVMMemoryPressure-above-critical',
-    //        'autoalarm:JVMMemoryPressure-above-warning',
-    //        'autoalarm:JVMMemoryPressure-duration-time',
-    //        'autoalarm:JVMMemoryPressure-duration-periods',
-    //        'autoalarm:CPUUtilization-above-critical',
-    //        'autoalarm:CPUUtilization-above-warning',
-    //        'autoalarm:CPUUtilization-duration-time',
-    //        'autoalarm:CPUUtilization-duration-periods',
-    //      ],
-    //    },
-    //  },
-    //  description: 'Routes OpenSearch tag events to AutoAlarm',
-    //});
-    //openSearchTagRule.addTarget(mainTarget);
+    openSearchTagRule.addTarget(mainTarget);
     //Rule for SQS events
     const sqsRule = new Rule(this, 'SqsRule', {
       eventPattern: {
@@ -336,17 +319,17 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes SQS events to AutoAlarm',
     });
     sqsRule.addTarget(mainTarget);
-    // Rule for OpenSearch events
-    // const openSearchRule = new Rule(this, 'OpenSearchRule', {
-    //   eventPattern: {
-    //     source: ['aws.es'],
-    //     detailType: ['Elasticsearch Service Domain Change'],
-    //     detail: {
-    //       state: ['active', 'processing', 'deleted'],
-    //     },
-    //   },
-    //   description: 'Routes OpenSearch events to AutoAlarm',
-    // });
-    //  openSearchRule.addTarget(mainTarget);
+    //Rule for OpenSearch events
+    const openSearchRule = new Rule(this, 'OpenSearchRule', {
+      eventPattern: {
+        source: ['aws.es'],
+        detailType: ['Elasticsearch Service Domain Change'],
+        detail: {
+          state: ['CreateDomain', 'DeleteDomain'],
+        },
+      },
+      description: 'Routes OpenSearch events to AutoAlarm',
+    });
+    openSearchRule.addTarget(mainTarget);
   }
 }
