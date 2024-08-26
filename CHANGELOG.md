@@ -15,6 +15,10 @@ one place.
 - Added a new module that contains functions for interacting with Prometheus. These tools will be used to manage 
 prometheus alarms. These will later be integrated into ec2-modules. Still under development. 
 
+### opensearch-modules.mts
+- Support for OpenSearch has been added.
+- Supported metrics can be found in the README.
+
 ## Major Revisions: 
 
 ### alarm-tools.mts
