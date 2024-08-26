@@ -355,7 +355,7 @@ tag is set to `true` on the resource.
 `false` on the resource.
 - To customize the default alarms, add the appropriate tags with the desired values to the resource.
 - To enable specific non-default alarms, add the corresponding tags with the desired values to the resource.
-'
+
 
 
 ## Prometheus Rules (in Progress-Not Yet Implemented)
