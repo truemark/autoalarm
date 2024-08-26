@@ -149,7 +149,8 @@ default configurations and explain how you can modify them using these tags.
 ### Default Values
 AutoAlarm comes with predefined default values for various alarms. These defaults are designed to provide general 
 monitoring out-of-the-box. However, it is crucial that any enabled alarms are reviewed to ensure they align with the 
-specific needs of your application and environment.
+specific needs of your application and environment. Default alarms can be created by setting the `autoalarm:enabled` tag
+to `true` on the resource.
 
 ### Customizing Alarms with Tags
 
@@ -180,7 +181,7 @@ All Anomaly alarm tags contain 'anomaly' in tag name.
 - Triggered when a metric deviates from a dynamic range based on historical data.
   - Warning and Critical threshold represent the number of standard deviations outside of the band or range of the 
   anomaly model.
-- Best for metrics with variable patterns.
+- For times when you want to detect outliers in your metrics and alarm on them.
 
 ### Supported Tag Values
 
@@ -354,16 +355,6 @@ tag is set to `true` on the resource.
 `false` on the resource.
 - To customize the default alarms, add the appropriate tags with the desired values to the resource.
 - To enable specific non-default alarms, add the corresponding tags with the desired values to the resource.
-
-
-
-## Prometheus Rules (in Progress-Not Yet Implemented)
-
-### Supported Metrics for Prometheus Rules
-
-- **CPU Utilization**
-- **Memory Utilization**
-- **Storage Utilization**
 
 ## IAM Role and Permissions
 
