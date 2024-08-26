@@ -40,10 +40,10 @@ notification routing via SNS or other custom integrations.
 Before you begin, ensure you have the following:
 
 1. **AWS CLI**: Installed and configured with appropriate access to your AWS account.
-2. **AWS CDK**: Installed globally on your machine.
-3. **Node.js**: Installed on your machine.
-4. **Git**: Installed on your machine.
-5. **pnpm**: Version 9.1.4 or later. Installed on your machine.
+2. **AWS CDK** 
+3. **Node.js**
+4. **Git**
+5. **pnpm**: Version 9.1.4 or later. 
 
 To set up and deploy the AutoAlarm project, follow these steps:
 
