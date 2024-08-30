@@ -139,51 +139,21 @@ export class AutoAlarmConstruct extends Construct {
      * example for standard CloudWatch Alarms: "90|95|60|2"
      * example for Anomaly Detection: "90|60|2|ANOMALY_DETECTION"
      */
-    const ec2tagRule = new Rule(this, 'TagRule', {
+    // Rule for ALB events
+    const albRule = new Rule(this, 'AlbRule', {
       eventPattern: {
-        source: ['aws.tag'],
-        detailType: ['Tag Change on Resource'],
+        source: ['aws.elasticloadbalancing'],
+        detailType: ['AWS API Call via CloudTrail'],
         detail: {
-          service: ['ec2', 'ecs', 'rds'],
-          'resource-type': ['instance'],
-          'changed-tag-keys': [
-            'autoalarm:enabled',
-            'autoalarm:cpu',
-            'autoalarm:storage',
-            'autoalarm:memory',
-            'autoalarm:cpu-anomaly',
-            'autoalarm:storage-anomaly',
-            'autoalarm:memory-anomaly',
-            'autoalarm:target', // cloudwatch or prometheus
-          ],
+          eventSource: ['elasticloadbalancing.amazonaws.com'],
+          eventName: ['CreateLoadBalancer', 'DeleteLoadBalancer'],
         },
       },
-      description: 'Routes tag events to AutoAlarm',
+      description: 'Routes ALB events to AutoAlarm',
     });
-    ec2tagRule.addTarget(mainTarget);
+    albRule.addTarget(mainTarget);
 
-    const ec2Rule = new Rule(this, 'Ec2Rule', {
-      eventPattern: {
-        source: ['aws.ec2'],
-        detailType: ['EC2 Instance State-change Notification'],
-        detail: {
-          state: [
-            'running',
-            'terminated',
-            //'stopped', //for testing only
-            //'shutting-down', //to be removed. for testing only
-            //'pending',
-          ],
-        },
-      },
-      description: 'Routes ec2 instance events to AutoAlarm',
-    });
-    ec2Rule.addTarget(mainTarget);
-
-    //Rule for ALB tag changes
-    //Listen to tag changes related to AutoAlarm
-    //WARNING threshold num | CRITICAL threshold num | duration time num | duration periods num
-    //example: "1500|1750|60|2"
+    // Rule for ALB tag changes
     const albTagRule = new Rule(this, 'AlbTagRule', {
       eventPattern: {
         source: ['aws.tag'],
@@ -208,59 +178,61 @@ export class AutoAlarmConstruct extends Construct {
     });
     albTagRule.addTarget(mainTarget);
 
-    //Rule for ALB events
-    const albRule = new Rule(this, 'AlbRule', {
+    // Rule for EC2 instance events
+    const ec2Rule = new Rule(this, 'Ec2Rule', {
       eventPattern: {
-        source: ['aws.elasticloadbalancing'],
-        detailType: ['AWS API Call via CloudTrail'],
+        source: ['aws.ec2'],
+        detailType: ['EC2 Instance State-change Notification'],
         detail: {
-          eventSource: ['elasticloadbalancing.amazonaws.com'],
-          eventName: ['CreateLoadBalancer', 'DeleteLoadBalancer'],
+          state: [
+            'running',
+            'terminated',
+            //'stopped', //for testing only
+            //'shutting-down', //to be removed. for testing only
+            //'pending',
+          ],
         },
       },
-      description: 'Routes ALB events to AutoAlarm',
+      description: 'Routes ec2 instance events to AutoAlarm',
     });
-    albRule.addTarget(mainTarget);
+    ec2Rule.addTarget(mainTarget);
 
-    // Rule for Target Group tag changes
-    const targetGroupTagRule = new Rule(this, 'TargetGroupTagRule', {
+    // Rule for EC2 tag changes
+    const ec2tagRule = new Rule(this, 'TagRule', {
       eventPattern: {
         source: ['aws.tag'],
         detailType: ['Tag Change on Resource'],
         detail: {
-          service: ['elasticloadbalancing'],
-          'resource-type': ['targetgroup'],
+          service: ['ec2', 'ecs', 'rds'],
+          'resource-type': ['instance'],
           'changed-tag-keys': [
             'autoalarm:enabled',
-            'autoalarm:unhealthy-host-count',
-            'autoalarm:response-time',
-            'autoalarm:request-count',
-            'autoalarm:4xx-count',
-            'autoalarm:5xx-count',
-            'autoalarm:unhealthy-host-count-anomaly',
-            'autoalarm:request-count-anomaly',
-            'autoalarm:response-time-anomaly',
-            'autoalarm:4xx-count-anomaly',
-            'autoalarm:5xx-count-anomaly',
+            'autoalarm:cpu',
+            'autoalarm:storage',
+            'autoalarm:memory',
+            'autoalarm:cpu-anomaly',
+            'autoalarm:storage-anomaly',
+            'autoalarm:memory-anomaly',
+            'autoalarm:target', // cloudwatch or prometheus
           ],
         },
       },
-      description: 'Routes Target Group tag events to AutoAlarm',
+      description: 'Routes tag events to AutoAlarm',
     });
-    targetGroupTagRule.addTarget(mainTarget);
+    ec2tagRule.addTarget(mainTarget);
 
-    const targetGroupRule = new Rule(this, 'TargetGroupRule', {
+    // Rule for OpenSearch events
+    const openSearchRule = new Rule(this, 'OpenSearchRule', {
       eventPattern: {
-        source: ['aws.elasticloadbalancing'],
-        detailType: ['AWS API Call via CloudTrail'],
+        source: ['aws.es'],
+        detailType: ['Elasticsearch Service Domain Change'],
         detail: {
-          eventSource: ['elasticloadbalancing.amazonaws.com'],
-          eventName: ['CreateTargetGroup', 'DeleteTargetGroup'],
+          state: ['CreateDomain', 'DeleteDomain'],
         },
       },
-      description: 'Routes Target Group events to AutoAlarm',
+      description: 'Routes OpenSearch events to AutoAlarm',
     });
-    targetGroupRule.addTarget(mainTarget);
+    openSearchRule.addTarget(mainTarget);
 
     // Rule for OpenSearch tag changes
     const openSearchTagRule = new Rule(this, 'OpenSearchTagRule', {
@@ -306,7 +278,29 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes OpenSearch tag events to AutoAlarm',
     });
     openSearchTagRule.addTarget(mainTarget);
-    //Rule for SQS events
+
+    // Rule for Route 53 Resolver Endpoint tag changes
+    const route53ResolverTagRule = new Rule(this, 'Route53ResolverTagRule', {
+      eventPattern: {
+        source: ['aws.tag'],
+        detailType: ['Tag Change on Resource'],
+        detail: {
+          service: ['route53resolver'],
+          'resource-type': ['resolver-endpoint'],
+          'changed-tag-keys': [
+            'autoalarm:enabled',
+            'autoalarm:query-failure',
+            'autoalarm:query-timeout',
+            'autoalarm:query-failure-anomaly',
+            'autoalarm:query-timeout-anomaly',
+          ],
+        },
+      },
+      description: 'Routes Route 53 Resolver Endpoint tag events to AutoAlarm',
+    });
+    route53ResolverTagRule.addTarget(mainTarget);
+
+    // Rule for SQS events
     const sqsRule = new Rule(this, 'SqsRule', {
       eventPattern: {
         source: ['aws.sqs'],
@@ -319,17 +313,67 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes SQS events to AutoAlarm',
     });
     sqsRule.addTarget(mainTarget);
-    //Rule for OpenSearch events
-    const openSearchRule = new Rule(this, 'OpenSearchRule', {
+
+    // Rule for Target Group events
+    const targetGroupRule = new Rule(this, 'TargetGroupRule', {
       eventPattern: {
-        source: ['aws.es'],
-        detailType: ['Elasticsearch Service Domain Change'],
+        source: ['aws.elasticloadbalancing'],
+        detailType: ['AWS API Call via CloudTrail'],
         detail: {
-          state: ['CreateDomain', 'DeleteDomain'],
+          eventSource: ['elasticloadbalancing.amazonaws.com'],
+          eventName: ['CreateTargetGroup', 'DeleteTargetGroup'],
         },
       },
-      description: 'Routes OpenSearch events to AutoAlarm',
+      description: 'Routes Target Group events to AutoAlarm',
     });
-    openSearchRule.addTarget(mainTarget);
+    targetGroupRule.addTarget(mainTarget);
+
+    // Rule for Target Group tag changes
+    const targetGroupTagRule = new Rule(this, 'TargetGroupTagRule', {
+      eventPattern: {
+        source: ['aws.tag'],
+        detailType: ['Tag Change on Resource'],
+        detail: {
+          service: ['elasticloadbalancing'],
+          'resource-type': ['targetgroup'],
+          'changed-tag-keys': [
+            'autoalarm:enabled',
+            'autoalarm:unhealthy-host-count',
+            'autoalarm:response-time',
+            'autoalarm:request-count',
+            'autoalarm:4xx-count',
+            'autoalarm:5xx-count',
+            'autoalarm:unhealthy-host-count-anomaly',
+            'autoalarm:request-count-anomaly',
+            'autoalarm:response-time-anomaly',
+            'autoalarm:4xx-count-anomaly',
+            'autoalarm:5xx-count-anomaly',
+          ],
+        },
+      },
+      description: 'Routes Target Group tag events to AutoAlarm',
+    });
+    targetGroupTagRule.addTarget(mainTarget);
+
+    // Rule for Transit Gateway tag changes
+    const transitGatewayTagRule = new Rule(this, 'TransitGatewayTagRule', {
+      eventPattern: {
+        source: ['aws.tag'],
+        detailType: ['Tag Change on Resource'],
+        detail: {
+          service: ['ec2'],
+          'resource-type': ['transit-gateway'],
+          'changed-tag-keys': [
+            'autoalarm:enabled',
+            'autoalarm:route-changes',
+            'autoalarm:attachment-status',
+            'autoalarm:route-anomaly',
+            'autoalarm:attachment-anomaly',
+          ],
+        },
+      },
+      description: 'Routes Transit Gateway tag events to AutoAlarm',
+    });
+    transitGatewayTagRule.addTarget(mainTarget);
   }
 }
