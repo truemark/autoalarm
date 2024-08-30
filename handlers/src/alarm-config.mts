@@ -870,7 +870,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'inbound-query-volume',
+      tagKey: 'inbound-query-volume-anomaly',
       metricName: 'InboundQueryVolume',
       metricNamespace: 'AWS/Route53Resolver',
       defaultCreate: false,
@@ -904,7 +904,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'outbound-query-volume',
+      tagKey: 'outbound-query-volume-anomaly',
       metricName: 'OutboundQueryAggregateVolume',
       metricNamespace: 'AWS/Route53Resolver',
       defaultCreate: false,
@@ -920,7 +920,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         missingDataTreatment: 'ignore',
       },
     },
-    ],
+  ],
   // Owned by Harmony
   SNS: [
     // TODO Add alarms and get buy off from team lead on PR
@@ -1377,14 +1377,14 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'bytesin',
+      tagKey: 'bytesin-anomaly',
       metricName: 'BytesIn',
       metricNamespace: 'AWS/TransitGateway',
       defaultCreate: false,
       anomaly: true,
       defaults: {
-        warningThreshold: 3,
-        criticalThreshold: 5,
+        warningThreshold: null,
+        criticalThreshold: null,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Average',
@@ -1411,14 +1411,14 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'bytesout',
+      tagKey: 'bytesout-anomaly',
       metricName: 'BytesOut',
       metricNamespace: 'AWS/TransitGateway',
-      defaultCreate: true,
-      anomaly: false,
+      defaultCreate: false,
+      anomaly: true,
       defaults: {
-        warningThreshold: 3,
-        criticalThreshold: 5,
+        warningThreshold: null,
+        criticalThreshold: null,
         period: 300,
         evaluationPeriods: 1,
         statistic: 'Average',
@@ -1427,5 +1427,5 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         missingDataTreatment: 'ignore',
       },
     },
-    ],
+  ],
 };

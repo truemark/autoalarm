@@ -309,6 +309,17 @@ Some Metrics require the CloudWatch Agent to be installed on the host.
 | `autoalarm:yellow-cluster`              | "-/1/300/1/Maximum/1/GreaterThanThreshold/ignore"      | Yes                | Yes                         |
 | `autoalarm:red-cluster`                 | "-/1/60/1/Maximum/1/GreaterThanThreshold/ignore"       | Yes                | Yes                         |
 
+
+#### Route 53 Resolver Endpoint
+
+| Tag                                       | Default Value                                           | Enabled By Default | Standard CloudWatch Metrics |
+|-------------------------------------------|---------------------------------------------------------|--------------------|-----------------------------|
+| `autoalarm:inbound-query-volume`          | "6000/7000/300/1/Maximum/1/GreaterThanThreshold/ignore" | Yes                | Yes                         |
+| `autoalarm:inbound-query-volume-anomaly`  | "-/-/300/1/Maximum/1/GreaterThanUpperThreshold/ignore"  | No                 | Yes                         |
+| `autoalarm:outbound-query-volume`         | "6000/7000/300/1/Maximum/1/GreaterThanThreshold/ignore" | Yes                | Yes                         |
+| `autoalarm:outbound-query-volume-anomaly` | "-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore"  | No                 | Yes                         |
+
+
 #### SQS
 
 | Tag                                       | Default Value                                          | Enabled By Default | Standard CloudWatch Metrics |
@@ -342,6 +353,15 @@ Some Metrics require the CloudWatch Agent to be installed on the host.
 | `autoalarm:response-time`         | "3/5/60/2/p90/2/GreaterThanThreshold/ignore"           | No                 | Yes                         |
 | `autoalarm:response-time-anomaly` | "2/5/300/2/Average/2/GreaterThanUpperThreshold/ignore" | No                 | Yes                         |
 | `autoalarm:unhealthy-host-count`  | "-/1/60/2/Maximum/2/GreaterThanThreshold/ignore"       | Yes                | Yes                         |
+
+
+#### Transit Gateway 
+| Tag                          | Default Value                                                        | Enabled By Default | Standard CloudWatch Metrics |
+|------------------------------|----------------------------------------------------------------------|--------------------|-----------------------------|
+| `autoalarm:bytesin`          | "8000000000/10000000000/300/1/Maximum/1/GreaterThanThreshold/ignore" | Yes                | Yes                         |
+| `autoalarm:bytesin-anomaly`  | "-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore"               | No                 | Yes                         |
+| `autoalarm:bytesout`         | "8000000000/10000000000/300/1/Maximum/1/GreaterThanThreshold/ignore" | Yes                | Yes                         |
+| `autoalarm:bytesout-anomaly` | "-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore"               | No                 | Yes                         |
 
 
 ### Default Alarm Behavior
