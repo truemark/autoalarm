@@ -131,6 +131,18 @@ export class AutoAlarmConstruct extends Construct {
       })
     );
 
+    // Attach policies for Route 53 Resolver
+    lambdaExecutionRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: [
+          'route53resolver:ListResolverEndpoints',
+          'route53resolver:ListTagsForResource',
+        ],
+        resources: ['*'],
+      })
+    );
+
     // Create the MainFunction and explicitly pass the execution role
     const mainFunction = new MainFunction(this, 'MainFunction', {
       role: lambdaExecutionRole, // Pass the role here
@@ -398,5 +410,19 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes Transit Gateway events to AutoAlarm',
     });
     transitGatewayRule.addTarget(mainTarget);
+
+    // Rule for Route 53 Resolver Endpoint events
+    const route53ResolverRule = new Rule(this, 'Route53ResolverRule', {
+      eventPattern: {
+        source: ['aws.route53resolver'],
+        detailType: ['AWS API Call via CloudTrail'],
+        detail: {
+          eventSource: ['route53resolver.amazonaws.com'],
+          eventName: ['CreateResolverEndpoint', 'DeleteResolverEndpoint'],
+        },
+      },
+      description: 'Routes Route 53 Resolver events to AutoAlarm',
+    });
+    route53ResolverRule.addTarget(mainTarget);
   }
 }

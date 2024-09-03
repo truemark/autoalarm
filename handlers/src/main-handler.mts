@@ -14,6 +14,7 @@ import {parseTGEventAndCreateAlarms} from './targetgroup-modules.mjs';
 import {parseSQSEventAndCreateAlarms} from './sqs-modules.mjs';
 import {parseOSEventAndCreateAlarms} from './opensearch-modules.mjs';
 import {parseTransitGatewayEventAndCreateAlarms} from './transit-gateway-modules.mjs';
+import {parseR53ResolverEventAndCreateAlarms} from './route53-resolver-modules.mjs';
 
 // Initialize logging
 const level = process.env.LOG_LEVEL || 'trace';
@@ -116,6 +117,8 @@ async function routeTagEvent(event: any) {
     await parseOSEventAndCreateAlarms(event);
   } else if (resourceType === 'transit-gateway') {
     await parseTransitGatewayEventAndCreateAlarms(event);
+  } else if (service === 'route53resolver') {
+    await parseR53ResolverEventAndCreateAlarms(event);
   } else {
     log
       .warn()
@@ -164,6 +167,9 @@ export const handler: Handler = async (event: any): Promise<void> => {
         break;
       case 'aws.opensearch':
         await parseOSEventAndCreateAlarms(event);
+        break;
+      case 'aws.route53resolver':
+        await parseR53ResolverEventAndCreateAlarms(event);
         break;
       default:
         log.warn().msg('Unhandled event source');
