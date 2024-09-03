@@ -18,6 +18,7 @@
     "@aws-sdk/client-elastic-load-balancing-v2": "^3.623.0",
     "@aws-sdk/client-kms": "^3.623.0",
     "@aws-sdk/client-opensearch": "^3.623.0",
+    "@aws-sdk/client-route53resolver": "^3.637.0",
     "@aws-sdk/client-s3": "^3.623.0",
     "@aws-sdk/client-sesv2": "^3.623.0",
     "@aws-sdk/client-sqs": "^3.623.0",
@@ -38,15 +39,15 @@
     "@types/aws-lambda": "^8.10.142",
     "@types/aws-sdk": "^2.7.0",
     "@types/aws4": "^1.11.6",
+    "@types/eslint__js": "^8.42.3",
     "@types/node": "20.8.2",
+    "@vitest/coverage-v8": "^1.6.0",
     "aws-sdk-client-mock": "^1.0.0",
+    "eslint": "^8.57.0",
+    "prettier": "^3.3.3",
     "source-map-support": "^0.5.21",
     "typescript": "~5.5.4",
-    "vitest": "^1.6.0",
-    "@vitest/coverage-v8": "^1.6.0",
     "typescript-eslint": "^7.16.0",
-    "@types/eslint__js": "^8.42.3",
-    "eslint": "^8.57.0",
-    "prettier": "^3.3.3"
+    "vitest": "^1.6.0"
   }
 }
