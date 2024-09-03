@@ -13,6 +13,7 @@ import {parseALBEventAndCreateAlarms} from './alb-modules.mjs';
 import {parseTGEventAndCreateAlarms} from './targetgroup-modules.mjs';
 import {parseSQSEventAndCreateAlarms} from './sqs-modules.mjs';
 import {parseOSEventAndCreateAlarms} from './opensearch-modules.mjs';
+import {parseTransitGatewayEventAndCreateAlarms} from './transit-gateway-modules.mjs';
 
 // Initialize logging
 const level = process.env.LOG_LEVEL || 'trace';
@@ -113,6 +114,8 @@ async function routeTagEvent(event: any) {
     }
   } else if (service === 'es') {
     await parseOSEventAndCreateAlarms(event);
+  } else if (resourceType === 'transit-gateway') {
+    await parseTransitGatewayEventAndCreateAlarms(event);
   } else {
     log
       .warn()
@@ -129,7 +132,14 @@ export const handler: Handler = async (event: any): Promise<void> => {
   try {
     switch (event.source) {
       case 'aws.ec2':
-        await processEC2Event(event);
+        if (
+          event.detail.eventName === 'CreateTransitGateway' ||
+          event.detail.eventName === 'DeleteTransitGateway'
+        ) {
+          await parseTransitGatewayEventAndCreateAlarms(event);
+        } else {
+          await processEC2Event(event);
+        }
         break;
       case 'aws.tag':
         await routeTagEvent(event);

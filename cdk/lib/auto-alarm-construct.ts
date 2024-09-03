@@ -122,6 +122,15 @@ export class AutoAlarmConstruct extends Construct {
       })
     );
 
+    // Attach policies for Transit Gateway
+    lambdaExecutionRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['ec2:DescribeTransitGateways'],
+        resources: ['*'],
+      })
+    );
+
     // Create the MainFunction and explicitly pass the execution role
     const mainFunction = new MainFunction(this, 'MainFunction', {
       role: lambdaExecutionRole, // Pass the role here
@@ -375,5 +384,19 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes Transit Gateway tag events to AutoAlarm',
     });
     transitGatewayTagRule.addTarget(mainTarget);
+
+    // Rule for Transit Gateway events
+    const transitGatewayRule = new Rule(this, 'TransitGatewayRule', {
+      eventPattern: {
+        source: ['aws.ec2'],
+        detailType: ['AWS API Call via CloudTrail'],
+        detail: {
+          eventSource: ['ec2.amazonaws.com'],
+          eventName: ['CreateTransitGateway', 'DeleteTransitGateway'],
+        },
+      },
+      description: 'Routes Transit Gateway events to AutoAlarm',
+    });
+    transitGatewayRule.addTarget(mainTarget);
   }
 }
