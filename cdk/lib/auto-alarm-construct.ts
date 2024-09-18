@@ -331,5 +331,38 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes OpenSearch events to AutoAlarm',
     });
     openSearchRule.addTarget(mainTarget);
+
+    // Rule for VPN events
+    const vpnRule = new Rule(this, 'VpnRule', {
+      eventPattern: {
+        source: ['aws.ec2'],
+        detailType: ['AWS API Call via CloudTrail'],
+        detail: {
+          eventSource: ['ec2.amazonaws.com'],
+          eventName: ['CreateVpnConnection', 'DeleteVpnConnection'],
+        },
+      },
+      description: 'Routes VPN events to AutoAlarm',
+    });
+    vpnRule.addTarget(mainTarget);
+
+    // Rule for VPN Tag events
+    const vpnTagRule = new Rule(this, 'VpnTagRule', {
+      eventPattern: {
+        source: ['aws.tag'],
+        detailType: ['Tag Change on Resource'],
+        detail: {
+          service: ['ec2'],
+          'resource-type': ['vpn-connection'],
+          'changed-tag-keys': [
+            'autoalarm:enabled',
+            'autoalarm:tunnel-state',
+            'autoalarm:tunnel-state-anomaly',
+          ],
+        },
+      },
+      description: 'Routes VPN tag events to AutoAlarm',
+    });
+    vpnTagRule.addTarget(mainTarget);
   }
 }
