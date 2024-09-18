@@ -1288,4 +1288,41 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
   ],
+  VPN: [
+    // TODO Add alarms and get buy off from team lead on PR
+    {
+      tagKey: 'tunnel-state',
+      metricName: 'TunnelState',
+      metricNamespace: 'AWS/VPN',
+      defaultCreate: true,
+      anomaly: false,
+      defaults: {
+        warningThreshold: 0,
+        criticalThreshold: 0,
+        period: 300,
+        evaluationPeriods: 1,
+        statistic: 'Maximum',
+        dataPointsToAlarm: 1,
+        comparisonOperator: 'LessThanThreshold',
+        missingDataTreatment: 'ignore',
+      },
+    },
+    {
+      tagKey: 'tunnel-state-anomaly',
+      metricName: 'TunnelState',
+      metricNamespace: 'AWS/VPN',
+      defaultCreate: false,
+      anomaly: true,
+      defaults: {
+        warningThreshold: null,
+        criticalThreshold: null,
+        period: 300,
+        evaluationPeriods: 1,
+        statistic: 'Average',
+        dataPointsToAlarm: 1,
+        comparisonOperator: 'LessThanLowerThreshold',
+        missingDataTreatment: 'ignore',
+      },
+    },
+    ]
 };
