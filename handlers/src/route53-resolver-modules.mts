@@ -197,6 +197,12 @@ export async function manageInactiveR53ResolverAlarms(endpointId: string) {
   }
 }
 
+function extractR53ResolverNameFromArn(arn: string): string {
+  const regex = /resolver-endpoint\/([^/]+)$/;
+  const match = arn.match(regex);
+  return match ? match[1] : '';
+}
+
 export async function parseR53ResolverEventAndCreateAlarms(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   event: any,
@@ -282,12 +288,14 @@ export async function parseR53ResolverEventAndCreateAlarms(
         .msg('Unexpected event type');
   }
 
-  if (!endpointId) {
+  // Extract the Resolver name from the ARN
+  const resolverName = extractR53ResolverNameFromArn(endpointId);
+  if (!resolverName) {
     log
       .error()
       .str('function', 'parseR53ResolverEventAndCreateAlarms')
       .str('endpointId', endpointId)
-      .msg('Extracted endpoint ID is empty');
+      .msg('Extracted Route 53 Resolver name is empty');
   }
 
   log
@@ -303,14 +311,14 @@ export async function parseR53ResolverEventAndCreateAlarms(
       .str('function', 'parseR53ResolverEventAndCreateAlarms')
       .str('endpointId', endpointId)
       .msg('Starting to manage Route 53 Resolver alarms');
-    await manageR53ResolverAlarms(endpointId, tags);
+    await manageR53ResolverAlarms(resolverName, tags); // Use resolverName
   } else if (eventType === 'Delete') {
     log
       .info()
       .str('function', 'parseR53ResolverEventAndCreateAlarms')
       .str('endpointId', endpointId)
       .msg('Starting to manage inactive Route 53 Resolver alarms');
-    await manageInactiveR53ResolverAlarms(endpointId);
+    await manageInactiveR53ResolverAlarms(resolverName); // Use resolverName
   }
 
   return {endpointId, eventType, tags};
