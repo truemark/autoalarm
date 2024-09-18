@@ -880,7 +880,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         criticalThreshold: null,
         period: 300,
         evaluationPeriods: 1,
-        statistic: 'Maximum',
+        statistic: 'Average',
         dataPointsToAlarm: 1,
         comparisonOperator: 'GreaterThanUpperThreshold',
         missingDataTreatment: 'ignore',
