@@ -86,7 +86,7 @@ export async function processTargetGroupEvent(event: any) {
   const eventName = event.detail.eventName;
 
   if (eventName === ValidTargetGroupEvent.Active) {
-    parseTGEventAndCreateAlarms(event);
+    await parseTGEventAndCreateAlarms(event);
   }
 }
 
@@ -127,37 +127,50 @@ export const handler: Handler = async (event: any): Promise<void> => {
   log.trace().unknown('event', event).msg('Received event');
 
   try {
-    switch (event.source) {
-      case 'aws.ec2':
-        await processEC2Event(event);
-        break;
-      case 'aws.tag':
-        await routeTagEvent(event);
-        break;
-      case 'aws.elasticloadbalancing':
-        if (
-          event.detail.eventName === 'CreateLoadBalancer' ||
-          event.detail.eventName === 'DeleteLoadBalancer'
-        ) {
-          await parseALBEventAndCreateAlarms(event);
-        } else if (
-          event.detail.eventName === 'CreateTargetGroup' ||
-          event.detail.eventName === 'DeleteTargetGroup'
-        ) {
-          await parseTGEventAndCreateAlarms(event);
-        } else {
-          log.warn().msg('Unhandled event name for aws.elasticloadbalancing');
+    if (event.Records) {
+      for (const record of event.Records) {
+        // Parse the body of the SQS message
+        const body = JSON.parse(record.body);
+
+        log.trace().obj('body', body).msg('Processing message body');
+
+        switch (body.source) {
+          case 'aws.ec2':
+            await processEC2Event(body);
+            break;
+          case 'aws.tag':
+            await routeTagEvent(body);
+            break;
+          case 'aws.elasticloadbalancing':
+            if (
+              body.detail.eventName === 'CreateLoadBalancer' ||
+              body.detail.eventName === 'DeleteLoadBalancer'
+            ) {
+              await parseALBEventAndCreateAlarms(body);
+            } else if (
+              body.detail.eventName === 'CreateTargetGroup' ||
+              body.detail.eventName === 'DeleteTargetGroup'
+            ) {
+              await parseTGEventAndCreateAlarms(body);
+            } else {
+              log
+                .warn()
+                .msg('Unhandled event name for aws.elasticloadbalancing');
+            }
+            break;
+          case 'aws.sqs':
+            await parseSQSEventAndCreateAlarms(body);
+            break;
+          case 'aws.opensearch':
+            await parseOSEventAndCreateAlarms(body);
+            break;
+          default:
+            log.warn().msg(`Unhandled event source: ${body.source}`);
+            break;
         }
-        break;
-      case 'aws.sqs':
-        await parseSQSEventAndCreateAlarms(event);
-        break;
-      case 'aws.opensearch':
-        await parseOSEventAndCreateAlarms(event);
-        break;
-      default:
-        log.warn().msg('Unhandled event source');
-        break;
+      }
+    } else {
+      log.warn().msg('No Records found in event');
     }
   } catch (error) {
     log.error().err(error).msg('Error processing event');

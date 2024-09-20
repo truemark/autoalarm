@@ -1,15 +1,16 @@
 import {Construct} from 'constructs';
 import {MainFunction} from './main-function';
-import {StandardQueue} from 'truemark-cdk-lib/aws-sqs';
+import {ExtendedQueue, ExtendedQueueProps} from 'truemark-cdk-lib/aws-sqs';
 import {Rule} from 'aws-cdk-lib/aws-events';
-import {LambdaFunction} from 'aws-cdk-lib/aws-events-targets';
+import {SqsQueue} from 'aws-cdk-lib/aws-events-targets';
+import {SqsEventSource} from 'aws-cdk-lib/aws-lambda-event-sources';
 import {
   Role,
   ServicePrincipal,
   PolicyStatement,
   Effect,
 } from 'aws-cdk-lib/aws-iam';
-import {Stack} from 'aws-cdk-lib';
+import {Duration, Stack} from 'aws-cdk-lib';
 
 export interface AutoAlarmConstructProps {
   readonly prometheusWorkspaceId?: string;
@@ -48,6 +49,25 @@ export class AutoAlarmConstruct extends Construct {
           prometheusArn,
           `arn:aws:aps:${region}:${accountId}:*/${prometheusWorkspaceId}/*`,
         ],
+      })
+    );
+
+    // Attach policies for autoAlarmQueue.fifo
+    lambdaExecutionRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: [
+          'sqs:ReceiveMessage', // Allows receiving messages from the queue
+          'sqs:DeleteMessage', // Allows deleting messages from the queue
+          'sqs:GetQueueAttributes', // Allows getting queue attributes
+          'sqs:ChangeMessageVisibility', // Allows modifying visibility timeout
+          'sqs:GetQueueUrl', // Allows getting the queue URL
+          'sqs:ListQueues', // Allows listing queues
+          'sqs:ListQueueTags', // Allows listing tags for the queue
+        ],
+        resources: [
+          `arn:aws:sqs:${region}:${accountId}:AutoAlarm-mainFunctionQueue.fifo`,
+        ], // Grant access to the FIFO queue
       })
     );
 
@@ -128,10 +148,38 @@ export class AutoAlarmConstruct extends Construct {
       prometheusWorkspaceId: prometheusWorkspaceId,
     });
 
-    const deadLetterQueue = new StandardQueue(this, 'DeadLetterQueue');
-    const mainTarget = new LambdaFunction(mainFunction, {
-      deadLetterQueue,
+    // Create autoAlarmDLQ
+    const autoAlarmDLQ = new ExtendedQueue(this, 'autoAlarmDLQ', {
+      fifo: true,
+      retentionPeriod: Duration.days(14),
+      queueName: 'AutoAlarm-deadLetterQueue.fifo',
     });
+
+    // Define extended queue props for autoAlarmQueue
+    const queueProps: ExtendedQueueProps = {
+      fifo: true, // Enable FIFO
+      contentBasedDeduplication: true, // Enable idempotency
+      retentionPeriod: Duration.days(14), // Retain messages for 14 days
+      deadLetterQueue: {queue: autoAlarmDLQ, maxReceiveCount: 3},
+      visibilityTimeout: Duration.seconds(900), // Set visibility timeout to 15 minutes to match main function timeout
+      queueName: 'AutoAlarm-mainFunctionQueue.fifo',
+    };
+
+    // Create the autoAlarmQueue
+    const autoAlarmQueue = new ExtendedQueue(
+      this,
+      'AutoAlarm-mainFunctionQueue',
+      queueProps
+    );
+
+    // Add Event Source to the MainFunction
+    mainFunction.addEventSource(
+      new SqsEventSource(autoAlarmQueue, {
+        batchSize: 10,
+        reportBatchItemFailures: true,
+        enabled: true,
+      })
+    );
 
     /* Listen to tag changes related to AutoAlarm. Anomaly Alarms are standard and Cloudwatch Alarms are optional.
      * If cloudwatch Alarm tags are not present, CW alarms are not created.
@@ -160,7 +208,9 @@ export class AutoAlarmConstruct extends Construct {
       },
       description: 'Routes tag events to AutoAlarm',
     });
-    ec2tagRule.addTarget(mainTarget);
+    ec2tagRule.addTarget(
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'TagRule'})
+    );
 
     const ec2Rule = new Rule(this, 'Ec2Rule', {
       eventPattern: {
@@ -178,7 +228,9 @@ export class AutoAlarmConstruct extends Construct {
       },
       description: 'Routes ec2 instance events to AutoAlarm',
     });
-    ec2Rule.addTarget(mainTarget);
+    ec2Rule.addTarget(
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'Ec2Rule'})
+    );
 
     //Rule for ALB tag changes
     //Listen to tag changes related to AutoAlarm
@@ -206,7 +258,9 @@ export class AutoAlarmConstruct extends Construct {
       },
       description: 'Routes ALB tag events to AutoAlarm',
     });
-    albTagRule.addTarget(mainTarget);
+    albTagRule.addTarget(
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AlbTagRule'})
+    );
 
     //Rule for ALB events
     const albRule = new Rule(this, 'AlbRule', {
@@ -220,7 +274,9 @@ export class AutoAlarmConstruct extends Construct {
       },
       description: 'Routes ALB events to AutoAlarm',
     });
-    albRule.addTarget(mainTarget);
+    albRule.addTarget(
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AlbRule'})
+    );
 
     // Rule for Target Group tag changes
     const targetGroupTagRule = new Rule(this, 'TargetGroupTagRule', {
@@ -247,7 +303,9 @@ export class AutoAlarmConstruct extends Construct {
       },
       description: 'Routes Target Group tag events to AutoAlarm',
     });
-    targetGroupTagRule.addTarget(mainTarget);
+    targetGroupTagRule.addTarget(
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'TargetGroupTagRule'})
+    );
 
     const targetGroupRule = new Rule(this, 'TargetGroupRule', {
       eventPattern: {
@@ -260,7 +318,9 @@ export class AutoAlarmConstruct extends Construct {
       },
       description: 'Routes Target Group events to AutoAlarm',
     });
-    targetGroupRule.addTarget(mainTarget);
+    targetGroupRule.addTarget(
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'TargetGroupRule'})
+    );
 
     // Rule for OpenSearch tag changes
     const openSearchTagRule = new Rule(this, 'OpenSearchTagRule', {
@@ -305,7 +365,10 @@ export class AutoAlarmConstruct extends Construct {
       },
       description: 'Routes OpenSearch tag events to AutoAlarm',
     });
-    openSearchTagRule.addTarget(mainTarget);
+    openSearchTagRule.addTarget(
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'OpenSearchTagRule'})
+    );
+
     //Rule for SQS events
     const sqsRule = new Rule(this, 'SqsRule', {
       eventPattern: {
@@ -318,7 +381,10 @@ export class AutoAlarmConstruct extends Construct {
       },
       description: 'Routes SQS events to AutoAlarm',
     });
-    sqsRule.addTarget(mainTarget);
+    sqsRule.addTarget(
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'SqsRule'})
+    );
+
     //Rule for OpenSearch events
     const openSearchRule = new Rule(this, 'OpenSearchRule', {
       eventPattern: {
@@ -330,6 +396,8 @@ export class AutoAlarmConstruct extends Construct {
       },
       description: 'Routes OpenSearch events to AutoAlarm',
     });
-    openSearchRule.addTarget(mainTarget);
+    openSearchRule.addTarget(
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'OpenSearchRule'})
+    );
   }
 }
