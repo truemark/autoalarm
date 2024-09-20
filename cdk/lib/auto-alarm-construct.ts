@@ -122,6 +122,15 @@ export class AutoAlarmConstruct extends Construct {
       })
     );
 
+    // Attach policies for VPN
+    lambdaExecutionRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['ec2:DescribeVpnConnections'],
+        resources: ['*'],
+      })
+    );
+
     // Create the MainFunction and explicitly pass the execution role
     const mainFunction = new MainFunction(this, 'MainFunction', {
       role: lambdaExecutionRole, // Pass the role here
