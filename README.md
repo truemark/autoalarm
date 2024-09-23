@@ -432,7 +432,7 @@ project is deployed.:
   - Actions: `cloudfront:GetDistribution`, `cloudfront:ListDistributions`, `cloudfront:ListTagsForResource`
   - Resources: `*`
 
-_ **TransitGateway**:
+- **TransitGateway**:
   - Actions: `ec2:DescribeTransitGateways`
   - Resources: `*`
 
