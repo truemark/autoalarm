@@ -142,6 +142,49 @@ export class AutoAlarmConstruct extends Construct {
       })
     );
 
+    // Attach policies for Transit Gateway
+    lambdaExecutionRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['ec2:DescribeTransitGateways'],
+        resources: ['*'],
+      })
+    );
+
+    // Attach policies for Route53Resolver
+    lambdaExecutionRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: [
+          'route53resolver:ListResolverEndpoints',
+          'route53resolver:ListTagsForResource',
+        ],
+        resources: ['*'],
+      })
+    );
+
+    // Attach policies for CloudFront
+    lambdaExecutionRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: [
+          'cloudfront:GetDistribution',
+          'cloudfront:ListDistributions',
+          'cloudfront:ListTagsForResource',
+        ],
+        resources: ['*'],
+      })
+    );
+
+    // Attach policies for VPN
+    lambdaExecutionRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['ec2:DescribeVpnConnections'],
+        resources: ['*'],
+      })
+    );
+
     // Create the MainFunction and explicitly pass the execution role
     const mainFunction = new MainFunction(this, 'MainFunction', {
       role: lambdaExecutionRole, // Pass the role here
@@ -398,6 +441,160 @@ export class AutoAlarmConstruct extends Construct {
     });
     openSearchRule.addTarget(
       new SqsQueue(autoAlarmQueue, {messageGroupId: 'OpenSearchRule'})
+    );
+
+    // Rule for Transit Gateway events
+    const transitGatewayRule = new Rule(this, 'TransitGatewayRule', {
+      eventPattern: {
+        source: ['aws.ec2'],
+        detailType: ['AWS API Call via CloudTrail'],
+        detail: {
+          eventSource: ['ec2.amazonaws.com'],
+          eventName: ['CreateTransitGateway', 'DeleteTransitGateway'],
+        },
+      },
+      description: 'Routes Transit Gateway events to AutoAlarm',
+    });
+    transitGatewayRule.addTarget(
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'TransitGatewayRule'})
+    );
+
+    // Rule for Transit Gateway Tag changes
+    const transitGatewayTagRule = new Rule(this, 'TransitGatewayTagRule', {
+      eventPattern: {
+        source: ['aws.tag'],
+        detailType: ['Tag Change on Resource'],
+        detail: {
+          service: ['ec2'],
+          'resource-type': ['transit-gateway'],
+          'changed-tag-keys': [
+            'autoalarm:enabled',
+            'autoalarm:bytes-in',
+            'autoalarm:bytes-in-anomaly',
+            'autoalarm:bytes-out',
+            'autoalarm:bytes-out-anomaly',
+          ],
+        },
+      },
+      description: 'Routes Transit Gateway tag events to AutoAlarm',
+    });
+    transitGatewayTagRule.addTarget(
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'TransitGatewayTagRule'})
+    );
+
+    // Rule for Route53Resolver events
+    const route53ResolverRule = new Rule(this, 'Route53ResolverRule', {
+      eventPattern: {
+        source: ['aws.route53resolver'],
+        detailType: ['AWS API Call via CloudTrail'],
+        detail: {
+          eventSource: ['route53resolver.amazonaws.com'],
+          eventName: ['CreateResolverEndpoint', 'DeleteResolverEndpoint'],
+        },
+      },
+      description: 'Routes Route53Resolver events to AutoAlarm',
+    });
+    route53ResolverRule.addTarget(
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'Route53ResolverRule'})
+    );
+
+    // Rule for Route53Resolver tag changes
+    const route53ResolverTagRule = new Rule(this, 'Route53ResolverTagRule', {
+      eventPattern: {
+        source: ['aws.tag'],
+        detailType: ['Tag Change on Resource'],
+        detail: {
+          service: ['route53resolver'],
+          'resource-type': ['resolver-endpoint'],
+          'changed-tag-keys': [
+            'autoalarm:enabled',
+            'autoalarm:inbound-query-volume',
+            'autoalarm:inbound-query-volume-anomaly',
+            'autoalarm:outbound-query-volume',
+            'autoalarm:outbound-query-volume-anomaly',
+          ],
+        },
+      },
+      description: 'Routes Route53Resolver tag events to AutoAlarm',
+    });
+    route53ResolverTagRule.addTarget(
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'Route53ResolverTagRule'})
+    );
+
+    // Rule for VPN events
+    const vpnRule = new Rule(this, 'VPNRule', {
+      eventPattern: {
+        source: ['aws.ec2'],
+        detailType: ['AWS API Call via CloudTrail'],
+        detail: {
+          eventSource: ['ec2.amazonaws.com'],
+          eventName: ['CreateVpnConnection', 'DeleteVpnConnection'],
+        },
+      },
+      description: 'Routes VPN events to AutoAlarm',
+    });
+    vpnRule.addTarget(
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'VPNRule'})
+    );
+
+    // Rule for VPN tag changes
+    const vpnTagRule = new Rule(this, 'VPNTagRule', {
+      eventPattern: {
+        source: ['aws.tag'],
+        detailType: ['Tag Change on Resource'],
+        detail: {
+          service: ['ec2'],
+          'resource-type': ['vpn-connection'],
+          'changed-tag-keys': [
+            'autoalarm:enabled',
+            'autoalarm:tunnel-state',
+            'autoalarm:tunnel-state-anomaly',
+          ],
+        },
+      },
+      description: 'Routes VPN tag events to AutoAlarm',
+    });
+    vpnTagRule.addTarget(
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'VPNTagRule'})
+    );
+
+    // Rule for CloudFront events
+    const cloudFrontRule = new Rule(this, 'CloudFrontRule', {
+      eventPattern: {
+        source: ['aws.cloudfront'],
+        detailType: ['AWS API Call via CloudTrail'],
+        detail: {
+          eventSource: ['cloudfront.amazonaws.com'],
+          eventName: ['CreateDistribution', 'DeleteDistribution'],
+        },
+      },
+      description: 'Routes CloudFront events to AutoAlarm',
+    });
+    cloudFrontRule.addTarget(
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'CloudFrontRule'})
+    );
+
+    // Rule for CloudFront tag changes
+    const cloudFrontTagRule = new Rule(this, 'CloudFrontTagRule', {
+      eventPattern: {
+        source: ['aws.tag'],
+        detailType: ['Tag Change on Resource'],
+        detail: {
+          service: ['cloudfront'],
+          'resource-type': ['distribution'],
+          'changed-tag-keys': [
+            'autoalarm:enabled',
+            'autoalarm:4xx-errors',
+            'autoalarm:4xx-errors-anomaly',
+            'autoalarm:5xx-errors',
+            'autoalarm:5xx-errors-anomaly',
+          ],
+        },
+      },
+      description: 'Routes CloudFront tag events to AutoAlarm',
+    });
+    cloudFrontTagRule.addTarget(
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'CloudFrontTagRule'})
     );
   }
 }
