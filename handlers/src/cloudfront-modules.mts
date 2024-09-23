@@ -225,7 +225,7 @@ export async function parseCloudFrontEventAndCreateAlarms(
 
   switch (event['detail-type']) {
     case 'Tag Change on Resource':
-      distributionArn = event.detail.resourceArn;
+      distributionArn = event.resources[0];
       eventType = 'TagChange';
       tags = event.detail.tags || {};
       log
@@ -240,7 +240,7 @@ export async function parseCloudFrontEventAndCreateAlarms(
     case 'AWS API Call via CloudTrail':
       switch (event.detail.eventName) {
         case 'CreateDistribution':
-          distributionArn = event.detail.responseElements?.distribution?.arn;
+          distributionArn = event.detail.responseElements?.distribution?.aRN;
           eventType = 'Create';
           log
             .info()
@@ -267,7 +267,7 @@ export async function parseCloudFrontEventAndCreateAlarms(
           break;
 
         case 'DeleteDistribution':
-          distributionArn = event.detail.requestParameters?.distributionId;
+          distributionArn = event.detail.responseElements?.distribution?.aRN;
           eventType = 'Delete';
           log
             .info()
