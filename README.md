@@ -132,6 +132,21 @@ AWS Lambda is used to run the main AutoAlarm function, which processes service a
 alarms. The Lambda function is responsible for handling the logic to create, update, or delete CloudWatch alarms and 
 Prometheus rules based on tags and state changes.
 
+### 9. AWS CloudFront
+CloudFront is monitored by AutoAlarm for events related to CloudFront distributions. The Lambda function creates,
+updates, or deletes alarms for CloudFront metrics based on events and tags.
+
+### 10. AWS Route53Resolver
+Route53Resolver is monitored by AutoAlarm for events related to Route53Resolver endpoints. The Lambda function creates,
+updates, or deletes alarms for Route53Resolver metrics based on events and tags.
+
+### 11. AWS TransitGateway
+TransitGateway is monitored by AutoAlarm for events related to TransitGateway attachments. The Lambda function creates,
+updates, or deletes alarms for TransitGateway metrics based on events and tags.
+
+### 12. AWS VPN
+VPN is monitored by AutoAlarm for events related to VPN connections. The Lambda function creates,
+updates, or deletes alarms for VPN metrics based on events and tags.
 
 ## Usage
 
@@ -269,6 +284,15 @@ threshold values are not provided in the tag value when setting the tag on the r
 | `autoalarm:request-count`         | "-/-/60/2/Sum/2/GreaterThanThreshold/ignore"           | No                 | Yes                         |
 | `autoalarm:request-count-anomaly` | "3/5/300/2/Average/2/GreaterThanUpperThreshold/ignore" | No                 | Yes                         |
 
+#### CloudFront
+| Tag                               | Default Value                                          | Enabled By Default | Standard CloudWatch Metrics |
+|-----------------------------------|--------------------------------------------------------|--------------------|-----------------------------|
+| `autoalarm:4xx-errors`            | "100/300/300/1/Sum/1/GreaterThanThreshold/ignore"      | No                 | Yes                         |
+| `autoalarm:4xx-errors-anomaly`    | "-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore" | No                 | Yes                         |
+| `autoalarm:5xx-errors`            | "10/50/300/1/Sum/1/GreaterThanThreshold/ignore"        | Yes                | Yes                         |
+| `autoalarm:5xx-errors-anomaly`    | "-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore" | No                 | Yes                         |
+
+
 #### EC2
 Some Metrics require the CloudWatch Agent to be installed on the host.
 
@@ -309,6 +333,15 @@ Some Metrics require the CloudWatch Agent to be installed on the host.
 | `autoalarm:yellow-cluster`              | "-/1/300/1/Maximum/1/GreaterThanThreshold/ignore"      | Yes                | Yes                         |
 | `autoalarm:red-cluster`                 | "-/1/60/1/Maximum/1/GreaterThanThreshold/ignore"       | Yes                | Yes                         |
 
+#### Route53Resolver
+| Tag                                       | Default Value                                          | Enabled By Default | Standard CloudWatch Metrics |
+|-------------------------------------------|--------------------------------------------------------|--------------------|-----------------------------|
+| `autoalarm:inbound-query-volume`          | "-/-/300/1/Sum/1/GreaterThanThreshold/ignore"          | No                 | Yes                         |
+| `autoalarm:inbound-query-volume-anomaly`  | "-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore" | No                 | Yes                         |
+| `autoalarm:outbound-query-volume`         | "-/-/300/1/Sum/1/GreaterThanThreshold/ignore"          | No                 | Yes                         |
+| `autoalarm:outbound-query-volume-anomaly` | "-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore" | No                 | Yes                         |
+
+
 #### SQS
 
 | Tag                                       | Default Value                                          | Enabled By Default | Standard CloudWatch Metrics |
@@ -342,6 +375,20 @@ Some Metrics require the CloudWatch Agent to be installed on the host.
 | `autoalarm:response-time`         | "3/5/60/2/p90/2/GreaterThanThreshold/ignore"           | No                 | Yes                         |
 | `autoalarm:response-time-anomaly` | "2/5/300/2/Average/2/GreaterThanUpperThreshold/ignore" | No                 | Yes                         |
 | `autoalarm:unhealthy-host-count`  | "-/1/60/2/Maximum/2/GreaterThanThreshold/ignore"       | Yes                | Yes                         |
+
+#### Transit Gateway (TGW)
+| Tag                               | Default Value                                          | Enabled By Default | Standard CloudWatch Metrics |
+|-----------------------------------|--------------------------------------------------------|--------------------|-----------------------------|
+| `autoalarm:bytes-in`              | "-/-/300/1/Maximum/1/GreaterThanThreshold/ignore"      | No                 | Yes                         |
+| `autoalarm:bytes-in-anomaly`      | "-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore" | No                 | Yes                         |
+| `autoalarm:bytes-out`             | "-/-/300/1/Sum/1/GreaterThanThreshold/ignore"          | No                 | Yes                         |
+| `autoalarm:bytes-out-anomaly`     | "-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore" | Yes                | Yes                         |
+
+#### VPN
+| Tag                              | Default Value                                       | Enabled By Default | Standard CloudWatch Metrics |
+|----------------------------------|-----------------------------------------------------|--------------------|-----------------------------|
+| `autoalarm:tunnel-state`         | "0/0/300/1/Maximum/1/LessThanThreshold/ignore"      | No                 | Yes                         |
+| `autoalarm:tunnel-state-anomaly` | "-/-/300/1/Average/1/LessThanLowerThreshold/ignore" | No                 | Yes                         |
 
 
 ### Default Alarm Behavior
@@ -381,9 +428,26 @@ project is deployed.:
   - Actions: `es:DescribeElasticsearchDomain`, `es:ListTags`, `es:ListDomainNames`
   - Resources: `*`
 
+- **CloundFront**:
+  - Actions: `cloudfront:GetDistribution`, `cloudfront:ListDistributions`, `cloudfront:ListTagsForResource`
+  - Resources: `*`
+
+_ **TransitGateway**:
+  - Actions: `ec2:DescribeTransitGateways`
+  - Resources: `*`
+
+- **Route53Resolver**:
+  - Actions:  `route53resolver:ListResolverEndpoints`, `route53resolver:ListTagsForResource`
+  - Resources: `*`
+
+- **VPN**:
+  - Actions: `ec2:DescribeVpnConnections`
+  - Resources: `*`
+
+
 ## Limitations
 
-- Currently, supports only EC2 instances, ALBs, Target Groups, SQS and Opensearch. Extension to other services like ECS 
+- Currently, supports only EC2 instances, ALBs, Target Groups, SQS, Transit Gateway, VPN, Route53Resolver, CloudFront and OpenSearch . Extension to other services like ECS 
 or RDS would require modifications to the Lambda function and CDK setup.
 - Tag-based configuration may not be suitable for all use cases. Customization options are limited to the supported tags.
 - Some alarms and rules are created by default even without tags, such as CPU utilization alarms, and can only be 
