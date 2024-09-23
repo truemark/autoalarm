@@ -74,9 +74,7 @@ export class AutoAlarmConstruct extends Construct {
     reAlarmLambdaExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
-        resources: [
-          `arn:aws:logs:${region}:${accountId}:log-group:/aws/lambda/ReAlarmStackReAlarm*`,
-        ],
+        resources: ['*'],
         actions: [
           'logs:CreateLogGroup',
           'logs:CreateLogStream',
@@ -95,7 +93,7 @@ export class AutoAlarmConstruct extends Construct {
 
     // Create the AutoAlarmFunction and explicitly pass the execution role
     const reAlarmFunction = new ReAlarmFunction(this, 'ReAlarmFunction', {
-      role: reAlarmLambdaExecutionRole, // Pass the role here
+      role: reAlarmLambdaExecutionRole,
     });
 
     const deadLetterQueue = new StandardQueue(this, 'DeadLetterQueue');
@@ -106,7 +104,7 @@ export class AutoAlarmConstruct extends Construct {
     //Define timed event to trigger the lambda function
     const everyTwoHoursRule = new Rule(this, 'EveryTwoHoursRule', {
       schedule: Schedule.cron({hour: '*/2'}),
-      description: 'Trigger the AutoAlarm Lambda function every two hours',
+      description: 'Trigger the ReAlarm Lambda function every two hours',
     });
 
     everyTwoHoursRule.addTarget(reAlarmTarget);
