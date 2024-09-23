@@ -1,5 +1,5 @@
 import {Construct} from 'constructs';
-import {MainFunction} from './main-function';
+import {AutoAlarmFunction} from './auto-alarm-function';
 import {ReAlarmFunction} from './realarm-function';
 import {
   ExtendedQueue,
@@ -93,7 +93,7 @@ export class AutoAlarmConstruct extends Construct {
       })
     );
 
-    // Create the MainFunction and explicitly pass the execution role
+    // Create the AutoAlarmFunction and explicitly pass the execution role
     const reAlarmFunction = new ReAlarmFunction(this, 'ReAlarmFunction', {
       role: reAlarmLambdaExecutionRole, // Pass the role here
     });
@@ -274,8 +274,8 @@ export class AutoAlarmConstruct extends Construct {
       })
     );
 
-    // Create the MainFunction and explicitly pass the execution role
-    const mainFunction = new MainFunction(this, 'MainFunction', {
+    // Create the AutoAlarmFunction and explicitly pass the execution role
+    const mainFunction = new AutoAlarmFunction(this, 'MainFunction', {
       role: autoAlarmExecutionRole, // Pass the role here
       prometheusWorkspaceId: prometheusWorkspaceId,
     });
@@ -304,7 +304,7 @@ export class AutoAlarmConstruct extends Construct {
       queueProps
     );
 
-    // Add Event Source to the MainFunction
+    // Add Event Source to the AutoAlarmFunction
     mainFunction.addEventSource(
       new SqsEventSource(autoAlarmQueue, {
         batchSize: 10,

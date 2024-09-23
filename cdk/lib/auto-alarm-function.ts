@@ -10,7 +10,7 @@ interface MainFunctionProps {
   prometheusWorkspaceId?: string;
 }
 
-export class MainFunction extends ExtendedNodejsFunction {
+export class AutoAlarmFunction extends ExtendedNodejsFunction {
   constructor(scope: Construct, id: string, props?: MainFunctionProps) {
     super(scope, id, {
       entry: path.join(
