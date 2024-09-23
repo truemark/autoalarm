@@ -175,16 +175,11 @@ async function checkAndManageVpnStatusAlarms(
     .msg('Finished alarm management process');
 }
 
-export async function manageVpnAlarms(
-  vpnId: string,
-  tags: Tag,
-): Promise<void> {
+export async function manageVpnAlarms(vpnId: string, tags: Tag): Promise<void> {
   await checkAndManageVpnStatusAlarms(vpnId, tags);
 }
 
-export async function manageInactiveVpnAlarms(
-  vpnId: string,
-): Promise<void> {
+export async function manageInactiveVpnAlarms(vpnId: string): Promise<void> {
   try {
     await deleteExistingAlarms('VPN', vpnId);
   } catch (e) {
@@ -226,8 +221,7 @@ export async function parseVpnEventAndCreateAlarms(
     case 'AWS API Call via CloudTrail':
       switch (event.detail.eventName) {
         case 'CreateVpnConnection':
-          vpnId =
-            event.detail.responseElements?.vpnConnection?.vpnConnectionId;
+          vpnId = event.detail.responseElements?.vpnConnection?.vpnConnectionId;
           eventType = 'Create';
           log
             .info()
@@ -298,10 +292,7 @@ export async function parseVpnEventAndCreateAlarms(
     .str('eventType', eventType)
     .msg('Finished processing VPN event');
 
-  if (
-    vpnId &&
-    (eventType === 'Create' || eventType === 'TagChange')
-  ) {
+  if (vpnId && (eventType === 'Create' || eventType === 'TagChange')) {
     log
       .info()
       .str('function', 'parseVpnEventAndCreateAlarms')
