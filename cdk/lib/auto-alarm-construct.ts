@@ -1,5 +1,5 @@
 import {Construct} from 'constructs';
-import {AutoAlarmFunction} from './auto-alarm-function';
+import {MainFunction} from './main-function';
 import {ReAlarmFunction} from './realarm-function';
 import {
   ExtendedQueue,
@@ -91,7 +91,7 @@ export class AutoAlarmConstruct extends Construct {
       })
     );
 
-    // Create the AutoAlarmFunction and explicitly pass the execution role
+    // Create the MainFunction and explicitly pass the execution role
     const reAlarmFunction = new ReAlarmFunction(this, 'ReAlarmFunction', {
       role: reAlarmLambdaExecutionRole,
     });
@@ -114,13 +114,17 @@ export class AutoAlarmConstruct extends Construct {
      */
 
     // Define the IAM role with specific permissions for the AutoAlarm Lambda function
-    const autoAlarmExecutionRole = new Role(this, 'AutoAlarmExecutionRole', {
-      assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
-      description: 'Execution role for AutoAlarm Lambda function',
-    });
+    const mainFunctionExecutionRole = new Role(
+      this,
+      'mainFunctionExecutionRole',
+      {
+        assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
+        description: 'Execution role for AutoAlarm Lambda function',
+      }
+    );
 
     // Attach policies for Prometheus
-    autoAlarmExecutionRole.addToPolicy(
+    mainFunctionExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: [
@@ -140,7 +144,7 @@ export class AutoAlarmConstruct extends Construct {
     );
 
     // Attach policies for autoAlarmQueue.fifo
-    autoAlarmExecutionRole.addToPolicy(
+    mainFunctionExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: [
@@ -159,7 +163,7 @@ export class AutoAlarmConstruct extends Construct {
     );
 
     // Attach policies for EC2 and CloudWatch
-    autoAlarmExecutionRole.addToPolicy(
+    mainFunctionExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: [
@@ -176,7 +180,7 @@ export class AutoAlarmConstruct extends Construct {
     );
 
     // Attach policies for CloudWatch Logs
-    autoAlarmExecutionRole.addToPolicy(
+    mainFunctionExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: [
@@ -189,7 +193,7 @@ export class AutoAlarmConstruct extends Construct {
     );
 
     // Attach policies for ALB and Target Groups
-    autoAlarmExecutionRole.addToPolicy(
+    mainFunctionExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: [
@@ -203,7 +207,7 @@ export class AutoAlarmConstruct extends Construct {
     );
 
     // Attach policies for SQS
-    autoAlarmExecutionRole.addToPolicy(
+    mainFunctionExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: [
@@ -217,7 +221,7 @@ export class AutoAlarmConstruct extends Construct {
     );
 
     // Attach policies for OpenSearch
-    autoAlarmExecutionRole.addToPolicy(
+    mainFunctionExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: [
@@ -230,7 +234,7 @@ export class AutoAlarmConstruct extends Construct {
     );
 
     // Attach policies for Transit Gateway
-    autoAlarmExecutionRole.addToPolicy(
+    mainFunctionExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: ['ec2:DescribeTransitGateways'],
@@ -239,7 +243,7 @@ export class AutoAlarmConstruct extends Construct {
     );
 
     // Attach policies for Route53Resolver
-    autoAlarmExecutionRole.addToPolicy(
+    mainFunctionExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: [
@@ -251,7 +255,7 @@ export class AutoAlarmConstruct extends Construct {
     );
 
     // Attach policies for CloudFront
-    autoAlarmExecutionRole.addToPolicy(
+    mainFunctionExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: [
@@ -264,7 +268,7 @@ export class AutoAlarmConstruct extends Construct {
     );
 
     // Attach policies for VPN
-    autoAlarmExecutionRole.addToPolicy(
+    mainFunctionExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: ['ec2:DescribeVpnConnections'],
@@ -272,9 +276,9 @@ export class AutoAlarmConstruct extends Construct {
       })
     );
 
-    // Create the AutoAlarmFunction and explicitly pass the execution role
-    const mainFunction = new AutoAlarmFunction(this, 'MainFunction', {
-      role: autoAlarmExecutionRole, // Pass the role here
+    // Create the MainFunction and explicitly pass the execution role
+    const mainFunction = new MainFunction(this, 'MainFunction', {
+      role: mainFunctionExecutionRole, // Pass the role here
       prometheusWorkspaceId: prometheusWorkspaceId,
     });
 
@@ -302,7 +306,7 @@ export class AutoAlarmConstruct extends Construct {
       queueProps
     );
 
-    // Add Event Source to the AutoAlarmFunction
+    // Add Event Source to the MainFunction
     mainFunction.addEventSource(
       new SqsEventSource(autoAlarmQueue, {
         batchSize: 10,
