@@ -8,11 +8,14 @@ import {
   liveStates,
   deadStates,
 } from './ec2-modules.mjs';
-import {ValidTargetGroupEvent} from './enums.mjs';
 import {parseALBEventAndCreateAlarms} from './alb-modules.mjs';
 import {parseTGEventAndCreateAlarms} from './targetgroup-modules.mjs';
 import {parseSQSEventAndCreateAlarms} from './sqs-modules.mjs';
 import {parseOSEventAndCreateAlarms} from './opensearch-modules.mjs';
+import {parseVpnEventAndCreateAlarms} from './vpn-modules.mjs';
+import {parseR53ResolverEventAndCreateAlarms} from './route53-resolver-modules.mjs';
+import {parseTransitGatewayEventAndCreateAlarms} from './transit-gateway-modules.mjs';
+import {parseCloudFrontEventAndCreateAlarms} from './cloudfront-modules.mjs';
 
 // Initialize logging
 const level = process.env.LOG_LEVEL || 'trace';
@@ -76,47 +79,65 @@ async function processEC2TagEvent(event: any) {
 
 // TODO Fix the use of any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function processALBEvent(event: any) {
-  await parseALBEventAndCreateAlarms(event);
-}
-
-// TODO Fix the use of any
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function processTargetGroupEvent(event: any) {
-  const eventName = event.detail.eventName;
-
-  if (eventName === ValidTargetGroupEvent.Active) {
-    await parseTGEventAndCreateAlarms(event);
-  }
-}
-
-// TODO Fix the use of any
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function processSQSEvent(event: any) {
-  await parseSQSEventAndCreateAlarms(event);
-}
-
-// TODO Fix the use of any
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function routeTagEvent(event: any) {
   const detail = event.detail;
   const resourceType = detail['resource-type'];
   const service = detail.service;
 
-  if (resourceType === 'instance') {
-    await processEC2TagEvent(event);
-  } else if (service === 'elasticloadbalancing') {
-    if (resourceType === 'loadbalancer') {
-      await parseALBEventAndCreateAlarms(event);
-    } else if (resourceType === 'targetgroup') {
-      await parseTGEventAndCreateAlarms(event);
-    }
-  } else if (service === 'es') {
-    await parseOSEventAndCreateAlarms(event);
-  } else {
-    log
-      .warn()
-      .msg(`Unhandled resource type or service: ${resourceType}, ${service}`);
+  log
+    .info()
+    .str('function', 'routeTagEvent')
+    .str('resourceType', resourceType)
+    .str('service', service)
+    .msg('Processing tag event');
+
+  switch (service) {
+    case 'ec2':
+      switch (resourceType) {
+        case 'instance':
+          await processEC2TagEvent(event);
+          break;
+        case 'transit-gateway':
+          await parseTransitGatewayEventAndCreateAlarms(event);
+          break;
+        case 'vpn-connection':
+          await parseVpnEventAndCreateAlarms(event);
+          break;
+        default:
+          log.warn().msg(`Unhandled resource type for EC2: ${resourceType}`);
+          break;
+      }
+      break;
+
+    case 'elasticloadbalancing':
+      switch (resourceType) {
+        case 'loadbalancer':
+          await parseALBEventAndCreateAlarms(event);
+          break;
+        case 'targetgroup':
+          await parseTGEventAndCreateAlarms(event);
+          break;
+        default:
+          log.warn().msg(`Unhandled resource type for ELB: ${resourceType}`);
+          break;
+      }
+      break;
+
+    case 'es':
+      await parseOSEventAndCreateAlarms(event);
+      break;
+
+    case 'route53resolver':
+      await parseR53ResolverEventAndCreateAlarms(event);
+      break;
+
+    case 'cloudfront':
+      await parseCloudFrontEventAndCreateAlarms(event);
+      break;
+
+    default:
+      log.warn().msg(`Unhandled service: ${service}`);
+      break;
   }
 }
 
@@ -136,7 +157,32 @@ export const handler: Handler = async (event: any): Promise<void> => {
 
         switch (body.source) {
           case 'aws.ec2':
-            await processEC2Event(body);
+            switch (body.detail.resourceType) {
+              case 'instance':
+                await processEC2Event(body);
+                break;
+              case 'transit-gateway':
+                if (
+                  body.detail.eventName === 'CreateTransitGateway' ||
+                  body.detail.eventName === 'DeleteTransitGateway'
+                )
+                  await parseTransitGatewayEventAndCreateAlarms(body);
+                break;
+              case 'vpn-connection':
+                if (
+                  body.detail.eventName === 'CreateVpnConnection' ||
+                  body.detail.eventName === 'DeleteVpnConnection'
+                )
+                  await parseVpnEventAndCreateAlarms(body);
+                break;
+              default:
+                log
+                  .warn()
+                  .msg(
+                    `Unhandled resource type for aws.ec2: ${body.detail.resourceType}`,
+                  );
+                break;
+            }
             break;
           case 'aws.tag':
             await routeTagEvent(body);
@@ -163,6 +209,12 @@ export const handler: Handler = async (event: any): Promise<void> => {
             break;
           case 'aws.opensearch':
             await parseOSEventAndCreateAlarms(body);
+            break;
+          case 'aws.route53resolver':
+            await parseR53ResolverEventAndCreateAlarms(body);
+            break;
+          case 'aws.cloudfront':
+            await parseCloudFrontEventAndCreateAlarms(body);
             break;
           default:
             log.warn().msg(`Unhandled event source: ${body.source}`);
