@@ -1,8 +1,13 @@
 import {Construct} from 'constructs';
 import {MainFunction} from './main-function';
-import {ExtendedQueue, ExtendedQueueProps} from 'truemark-cdk-lib/aws-sqs';
-import {Rule} from 'aws-cdk-lib/aws-events';
-import {SqsQueue} from 'aws-cdk-lib/aws-events-targets';
+import {ReAlarmFunction} from './realarm-function';
+import {
+  ExtendedQueue,
+  ExtendedQueueProps,
+  StandardQueue,
+} from 'truemark-cdk-lib/aws-sqs';
+import {Rule, Schedule} from 'aws-cdk-lib/aws-events';
+import {LambdaFunction, SqsQueue} from 'aws-cdk-lib/aws-events-targets';
 import {SqsEventSource} from 'aws-cdk-lib/aws-lambda-event-sources';
 import {
   Role,
@@ -26,14 +31,100 @@ export class AutoAlarmConstruct extends Construct {
     const region = Stack.of(this).region;
     const prometheusArn = `arn:aws:aps:${region}:${accountId}:workspace/${prometheusWorkspaceId}`;
 
-    // Define the IAM role with specific permissions for the Lambda function
-    const lambdaExecutionRole = new Role(this, 'LambdaExecutionRole', {
-      assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
-      description: 'Execution role for AutoAlarm Lambda function',
+    /*
+     * configure the ReAlarm Function and associated queues and eventbridge rules
+     */
+
+    // Define the IAM role with specific permissions for the ReAlarm Lambda function
+    const reAlarmLambdaExecutionRole = new Role(
+      this,
+      'reAlarmLambdaExecutionRole',
+      {
+        assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
+        description: 'Execution role for AutoAlarm Lambda function',
+      }
+    );
+
+    // Attach policies for EC2 and CloudWatch
+    reAlarmLambdaExecutionRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['cloudwatch:DescribeAlarms', 'cloudwatch:SetAlarmState'],
+        resources: ['*'],
+      })
+    );
+
+    // Attach policies for CloudWatch Logs
+    reAlarmLambdaExecutionRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        resources: [
+          `arn:aws:logs:${region}:${accountId}:log-group:/aws/lambda/cwsyn*`,
+          `arn:aws:logs:${region}:${accountId}:log-group:/aws/lambda/cwsyn*:log-stream:*`,
+          `arn:aws:logs:${region}:${accountId}:log-group:/aws/canary/*`,
+        ],
+        actions: [
+          'logs:FilterLogEvents',
+          'logs:DescribeLogStreams',
+          'logs:DescribeLogGroups',
+        ],
+      })
+    );
+
+    reAlarmLambdaExecutionRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        resources: ['*'],
+        actions: [
+          'logs:CreateLogGroup',
+          'logs:CreateLogStream',
+          'logs:PutLogEvents',
+        ],
+      })
+    );
+
+    reAlarmLambdaExecutionRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        resources: ['*'], // This grants permission on all log groups. Adjust if needed.
+        actions: ['logs:DescribeLogGroups'],
+      })
+    );
+
+    // Create the MainFunction and explicitly pass the execution role
+    const reAlarmFunction = new ReAlarmFunction(this, 'ReAlarmFunction', {
+      role: reAlarmLambdaExecutionRole,
     });
 
+    const deadLetterQueue = new StandardQueue(this, 'DeadLetterQueue');
+    const reAlarmTarget = new LambdaFunction(reAlarmFunction, {
+      deadLetterQueue,
+    });
+
+    //Define timed event to trigger the lambda function
+    const everyTwoHoursRule = new Rule(this, 'EveryTwoHoursRule', {
+      schedule: Schedule.cron({hour: '*/2'}),
+      description: 'Trigger the ReAlarm Lambda function every two hours',
+    });
+
+    everyTwoHoursRule.addTarget(reAlarmTarget);
+
+    /*
+     * configure the AutoAlarm Function and associated queues and eventbridge rules
+     */
+
+    // Define the IAM role with specific permissions for the AutoAlarm Lambda function
+    const mainFunctionExecutionRole = new Role(
+      this,
+      'mainFunctionExecutionRole',
+      {
+        assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
+        description: 'Execution role for AutoAlarm Lambda function',
+      }
+    );
+
     // Attach policies for Prometheus
-    lambdaExecutionRole.addToPolicy(
+    mainFunctionExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: [
@@ -53,7 +144,7 @@ export class AutoAlarmConstruct extends Construct {
     );
 
     // Attach policies for autoAlarmQueue.fifo
-    lambdaExecutionRole.addToPolicy(
+    mainFunctionExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: [
@@ -72,7 +163,7 @@ export class AutoAlarmConstruct extends Construct {
     );
 
     // Attach policies for EC2 and CloudWatch
-    lambdaExecutionRole.addToPolicy(
+    mainFunctionExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: [
@@ -89,7 +180,7 @@ export class AutoAlarmConstruct extends Construct {
     );
 
     // Attach policies for CloudWatch Logs
-    lambdaExecutionRole.addToPolicy(
+    mainFunctionExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: [
@@ -102,7 +193,7 @@ export class AutoAlarmConstruct extends Construct {
     );
 
     // Attach policies for ALB and Target Groups
-    lambdaExecutionRole.addToPolicy(
+    mainFunctionExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: [
@@ -116,7 +207,7 @@ export class AutoAlarmConstruct extends Construct {
     );
 
     // Attach policies for SQS
-    lambdaExecutionRole.addToPolicy(
+    mainFunctionExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: [
@@ -130,7 +221,7 @@ export class AutoAlarmConstruct extends Construct {
     );
 
     // Attach policies for OpenSearch
-    lambdaExecutionRole.addToPolicy(
+    mainFunctionExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: [
@@ -143,7 +234,7 @@ export class AutoAlarmConstruct extends Construct {
     );
 
     // Attach policies for Transit Gateway
-    lambdaExecutionRole.addToPolicy(
+    mainFunctionExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: ['ec2:DescribeTransitGateways'],
@@ -152,7 +243,7 @@ export class AutoAlarmConstruct extends Construct {
     );
 
     // Attach policies for Route53Resolver
-    lambdaExecutionRole.addToPolicy(
+    mainFunctionExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: [
@@ -164,7 +255,7 @@ export class AutoAlarmConstruct extends Construct {
     );
 
     // Attach policies for CloudFront
-    lambdaExecutionRole.addToPolicy(
+    mainFunctionExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: [
@@ -177,7 +268,7 @@ export class AutoAlarmConstruct extends Construct {
     );
 
     // Attach policies for VPN
-    lambdaExecutionRole.addToPolicy(
+    mainFunctionExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: ['ec2:DescribeVpnConnections'],
@@ -187,7 +278,7 @@ export class AutoAlarmConstruct extends Construct {
 
     // Create the MainFunction and explicitly pass the execution role
     const mainFunction = new MainFunction(this, 'MainFunction', {
-      role: lambdaExecutionRole, // Pass the role here
+      role: mainFunctionExecutionRole, // Pass the role here
       prometheusWorkspaceId: prometheusWorkspaceId,
     });
 
@@ -204,7 +295,7 @@ export class AutoAlarmConstruct extends Construct {
       contentBasedDeduplication: true, // Enable idempotency
       retentionPeriod: Duration.days(14), // Retain messages for 14 days
       deadLetterQueue: {queue: autoAlarmDLQ, maxReceiveCount: 3},
-      visibilityTimeout: Duration.seconds(900), // Set visibility timeout to 15 minutes to match main function timeout
+      visibilityTimeout: Duration.seconds(900), // Set visibility timeout to 15 minutes to match the AutoAlarm function timeout
       queueName: 'AutoAlarm-mainFunctionQueue.fifo',
     };
 
