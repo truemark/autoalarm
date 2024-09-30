@@ -305,6 +305,7 @@ export class AutoAlarmConstruct extends Construct {
       'AutoAlarm-mainFunctionQueue',
       queueProps
     );
+    autoAlarmQueue.grantConsumeMessages(mainFunction);
 
     // Add Event Source to the MainFunction
     mainFunction.addEventSource(
