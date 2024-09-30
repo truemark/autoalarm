@@ -156,37 +156,14 @@ export const handler: Handler = async (event: any): Promise<void> => {
         log.trace().obj('body', body).msg('Processing message body');
 
         switch (body.source) {
+          case 'aws.cloudfront':
+            await parseCloudFrontEventAndCreateAlarms(body);
+            break;
+
           case 'aws.ec2':
-            switch (body.detail.resourceType) {
-              case 'instance':
-                await processEC2Event(body);
-                break;
-              case 'transit-gateway':
-                if (
-                  body.detail.eventName === 'CreateTransitGateway' ||
-                  body.detail.eventName === 'DeleteTransitGateway'
-                )
-                  await parseTransitGatewayEventAndCreateAlarms(body);
-                break;
-              case 'vpn-connection':
-                if (
-                  body.detail.eventName === 'CreateVpnConnection' ||
-                  body.detail.eventName === 'DeleteVpnConnection'
-                )
-                  await parseVpnEventAndCreateAlarms(body);
-                break;
-              default:
-                log
-                  .warn()
-                  .msg(
-                    `Unhandled resource type for aws.ec2: ${body.detail.resourceType}`,
-                  );
-                break;
-            }
+            await processEC2Event(body);
             break;
-          case 'aws.tag':
-            await routeTagEvent(body);
-            break;
+
           case 'aws.elasticloadbalancing':
             if (
               body.detail.eventName === 'CreateLoadBalancer' ||
@@ -204,18 +181,41 @@ export const handler: Handler = async (event: any): Promise<void> => {
                 .msg('Unhandled event name for aws.elasticloadbalancing');
             }
             break;
-          case 'aws.sqs':
-            await parseSQSEventAndCreateAlarms(body);
-            break;
+
           case 'aws.opensearch':
             await parseOSEventAndCreateAlarms(body);
             break;
+
           case 'aws.route53resolver':
             await parseR53ResolverEventAndCreateAlarms(body);
             break;
-          case 'aws.cloudfront':
-            await parseCloudFrontEventAndCreateAlarms(body);
+
+          case 'aws.sqs':
+            await parseSQSEventAndCreateAlarms(body);
             break;
+
+          case 'aws.tag':
+            await routeTagEvent(body);
+            break;
+
+          case 'transit-gateway':
+            if (
+              body.detail.eventName === 'CreateTransitGateway' ||
+              body.detail.eventName === 'DeleteTransitGateway'
+            ) {
+              await parseTransitGatewayEventAndCreateAlarms(body);
+            }
+            break;
+
+          case 'vpn-connection':
+            if (
+              body.detail.eventName === 'CreateVpnConnection' ||
+              body.detail.eventName === 'DeleteVpnConnection'
+            ) {
+              await parseVpnEventAndCreateAlarms(body);
+            }
+            break;
+
           default:
             log.warn().msg(`Unhandled event source: ${body.source}`);
             break;

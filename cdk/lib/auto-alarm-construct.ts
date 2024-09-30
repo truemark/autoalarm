@@ -96,7 +96,7 @@ export class AutoAlarmConstruct extends Construct {
       role: reAlarmLambdaExecutionRole,
     });
 
-    const deadLetterQueue = new StandardQueue(this, 'DeadLetterQueue');
+    const deadLetterQueue = new StandardQueue(this, 'ReAlarm');
     const reAlarmTarget = new LambdaFunction(reAlarmFunction, {
       deadLetterQueue,
     });
@@ -140,25 +140,6 @@ export class AutoAlarmConstruct extends Construct {
           prometheusArn,
           `arn:aws:aps:${region}:${accountId}:*/${prometheusWorkspaceId}/*`,
         ],
-      })
-    );
-
-    // Attach policies for autoAlarmQueue.fifo
-    mainFunctionExecutionRole.addToPolicy(
-      new PolicyStatement({
-        effect: Effect.ALLOW,
-        actions: [
-          'sqs:ReceiveMessage', // Allows receiving messages from the queue
-          'sqs:DeleteMessage', // Allows deleting messages from the queue
-          'sqs:GetQueueAttributes', // Allows getting queue attributes
-          'sqs:ChangeMessageVisibility', // Allows modifying visibility timeout
-          'sqs:GetQueueUrl', // Allows getting the queue URL
-          'sqs:ListQueues', // Allows listing queues
-          'sqs:ListQueueTags', // Allows listing tags for the queue
-        ],
-        resources: [
-          `arn:aws:sqs:${region}:${accountId}:AutoAlarm-mainFunctionQueue.fifo`,
-        ], // Grant access to the FIFO queue
       })
     );
 
@@ -283,10 +264,9 @@ export class AutoAlarmConstruct extends Construct {
     });
 
     // Create autoAlarmDLQ
-    const autoAlarmDLQ = new ExtendedQueue(this, 'autoAlarmDLQ', {
+    const autoAlarmDLQ = new ExtendedQueue(this, 'MainFunctionDLQ', {
       fifo: true,
       retentionPeriod: Duration.days(14),
-      queueName: 'AutoAlarm-deadLetterQueue.fifo',
     });
 
     // Define extended queue props for autoAlarmQueue
@@ -294,15 +274,14 @@ export class AutoAlarmConstruct extends Construct {
       fifo: true, // Enable FIFO
       contentBasedDeduplication: true, // Enable idempotency
       retentionPeriod: Duration.days(14), // Retain messages for 14 days
-      deadLetterQueue: {queue: autoAlarmDLQ, maxReceiveCount: 3},
       visibilityTimeout: Duration.seconds(900), // Set visibility timeout to 15 minutes to match the AutoAlarm function timeout
-      queueName: 'AutoAlarm-mainFunctionQueue.fifo',
+      deadLetterQueue: {queue: autoAlarmDLQ, maxReceiveCount: 3}, // Set the dead letter queue
     };
 
     // Create the autoAlarmQueue
     const autoAlarmQueue = new ExtendedQueue(
       this,
-      'AutoAlarm-mainFunctionQueue',
+      'MainFunctionQueue',
       queueProps
     );
     autoAlarmQueue.grantConsumeMessages(mainFunction);
@@ -344,7 +323,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes tag events to AutoAlarm',
     });
     ec2tagRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'TagRule'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
     );
 
     const ec2Rule = new Rule(this, 'Ec2Rule', {
@@ -364,7 +343,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes ec2 instance events to AutoAlarm',
     });
     ec2Rule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'Ec2Rule'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
     );
 
     //Rule for ALB tag changes
@@ -394,7 +373,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes ALB tag events to AutoAlarm',
     });
     albTagRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AlbTagRule'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
     );
 
     //Rule for ALB events
@@ -410,7 +389,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes ALB events to AutoAlarm',
     });
     albRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AlbRule'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
     );
 
     // Rule for Target Group tag changes
@@ -439,7 +418,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes Target Group tag events to AutoAlarm',
     });
     targetGroupTagRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'TargetGroupTagRule'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
     );
 
     const targetGroupRule = new Rule(this, 'TargetGroupRule', {
@@ -454,7 +433,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes Target Group events to AutoAlarm',
     });
     targetGroupRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'TargetGroupRule'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
     );
 
     // Rule for OpenSearch tag changes
@@ -501,7 +480,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes OpenSearch tag events to AutoAlarm',
     });
     openSearchTagRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'OpenSearchTagRule'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
     );
 
     //Rule for SQS events
@@ -517,7 +496,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes SQS events to AutoAlarm',
     });
     sqsRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'SqsRule'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
     );
 
     //Rule for OpenSearch events
@@ -532,7 +511,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes OpenSearch events to AutoAlarm',
     });
     openSearchRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'OpenSearchRule'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
     );
 
     // Rule for Transit Gateway events
@@ -548,7 +527,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes Transit Gateway events to AutoAlarm',
     });
     transitGatewayRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'TransitGatewayRule'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
     );
 
     // Rule for Transit Gateway Tag changes
@@ -571,7 +550,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes Transit Gateway tag events to AutoAlarm',
     });
     transitGatewayTagRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'TransitGatewayTagRule'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
     );
 
     // Rule for Route53Resolver events
@@ -587,7 +566,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes Route53Resolver events to AutoAlarm',
     });
     route53ResolverRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'Route53ResolverRule'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
     );
 
     // Rule for Route53Resolver tag changes
@@ -610,7 +589,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes Route53Resolver tag events to AutoAlarm',
     });
     route53ResolverTagRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'Route53ResolverTagRule'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
     );
 
     // Rule for VPN events
@@ -626,7 +605,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes VPN events to AutoAlarm',
     });
     vpnRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'VPNRule'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
     );
 
     // Rule for VPN tag changes
@@ -647,7 +626,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes VPN tag events to AutoAlarm',
     });
     vpnTagRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'VPNTagRule'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
     );
 
     // Rule for CloudFront events
@@ -663,7 +642,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes CloudFront events to AutoAlarm',
     });
     cloudFrontRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'CloudFrontRule'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
     );
 
     // Rule for CloudFront tag changes
@@ -686,7 +665,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes CloudFront tag events to AutoAlarm',
     });
     cloudFrontTagRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'CloudFrontTagRule'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
     );
   }
 }
