@@ -40,11 +40,11 @@ export class AutoAlarmConstruct extends Construct {
 
     //the following four consts are used to pass the correct ARN for whichever prometheus ID is being used as well as to the lambda.
     const prometheusWorkspaceId = props.prometheusWorkspaceId || '';
-    const useReAlarm = props.useReAlarm ?? true;
-    const reAlarmSchedule = props.reAlarmSchedule || {hour: '*/2'};
     const accountId = Stack.of(this).account;
     const region = Stack.of(this).region;
     const prometheusArn = `arn:aws:aps:${region}:${accountId}:workspace/${prometheusWorkspaceId}`;
+
+    const useReAlarm = props.useReAlarm ?? true;
 
     /*
      * configure the ReAlarm Function and associated queues and eventbridge rules if ReAlarm is enabled
@@ -117,12 +117,13 @@ export class AutoAlarmConstruct extends Construct {
       });
 
       //Define timed event to trigger the lambda function
-      const everyTwoHoursRule = new Rule(this, 'EveryTwoHoursRule', {
-        schedule: Schedule.cron(reAlarmSchedule),
-        description: 'Trigger the ReAlarm Lambda function every two hours',
+      const reAlarmScheduleRule = new Rule(this, 'ReAlarmScheduleRule', {
+        schedule: Schedule.cron(props.reAlarmSchedule as CronOptions),
+        description:
+          'Trigger the ReAlarm Lambda function according to defined or default schedule',
       });
 
-      everyTwoHoursRule.addTarget(reAlarmTarget);
+      reAlarmScheduleRule.addTarget(reAlarmTarget);
     }
 
     /*
