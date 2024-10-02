@@ -64,7 +64,11 @@ export class AutoAlarmConstruct extends Construct {
       reAlarmLambdaExecutionRole.addToPolicy(
         new PolicyStatement({
           effect: Effect.ALLOW,
-          actions: ['cloudwatch:DescribeAlarms', 'cloudwatch:SetAlarmState'],
+          actions: [
+            'cloudwatch:DescribeAlarms',
+            'cloudwatch:SetAlarmState',
+            'cloudwatch:ListTagsForResource',
+          ],
           resources: ['*'],
         })
       );

@@ -4,6 +4,7 @@ import {
   paginateDescribeAlarms,
   SetAlarmStateCommand,
   MetricAlarm,
+  ListTagsForResourceCommand,
 } from '@aws-sdk/client-cloudwatch';
 import * as logging from '@nr1e/logging';
 
@@ -55,7 +56,6 @@ async function getAllAlarms() {
 
 async function resetAlarmState(alarmName: string): Promise<void> {
   try {
-    log.info().str('alarmName', alarmName).msg(`Resetting alarm: ${alarmName}`);
     await cloudwatch.send(
       new SetAlarmStateCommand({
         AlarmName: alarmName,
@@ -63,10 +63,6 @@ async function resetAlarmState(alarmName: string): Promise<void> {
         StateReason: 'Resetting state from reAlarm Lambda function',
       }),
     );
-    log
-      .info()
-      .str('alarmName', alarmName)
-      .msg(`Successfully reset alarm: ${alarmName}`);
   } catch (error) {
     log
       .fatal()
@@ -81,24 +77,39 @@ async function checkAndResetAlarms(): Promise<void> {
 
   for (const alarm of alarms) {
     const actions: string[] = alarm.AlarmActions || [];
-    log
-      .info()
-      .str('alarmName', alarm.AlarmName as string)
-      .str('stateValue', alarm.StateValue as string)
-      .str('actions', actions.join(', '))
-      .msg(
-        `Alarm: ${alarm.AlarmName} is in a ${alarm.StateValue} state and has the following actions: ${actions}`,
-      );
+    const alarmARN = alarm.AlarmArn as string;
+    const tags = await cloudwatch.send(
+      new ListTagsForResourceCommand({ResourceARN: alarmARN}),
+    );
+
+    const reAlarmDisabled = tags.Tags?.some(
+      (tag) => tag.Key === 'realarm:disabled' && tag.Value === 'true',
+    );
 
     const hasAutoScalingAction = actions.some((action: string) =>
       action.includes('autoscaling'),
     );
 
-    if (!hasAutoScalingAction && alarm.StateValue === 'ALARM') {
+    log
+      .info()
+      .str('alarmName', alarm.AlarmName as string)
+      .str('stateValue', alarm.StateValue as string)
+      .str('tags', JSON.stringify(tags.Tags))
+      .str('reAlarmDisabled', reAlarmDisabled ? 'true' : 'false')
+      .str('actions', actions.join(', '))
+      .str('hasAutoScalingAction', hasAutoScalingAction ? 'true' : 'false')
+      .msg(`Alarm: ${alarm.AlarmName} is in a ${alarm.StateValue} state.`);
+
+    if (
+      !hasAutoScalingAction &&
+      !reAlarmDisabled &&
+      alarm.StateValue === 'ALARM'
+    ) {
       log
         .info()
-        .str('alarmName', alarm.AlarmName as string)
-        .msg(`${alarm.AlarmName} is in ALARM state. Resetting...`);
+        .msg(
+          `${alarm.AlarmName} is in ALARM state. Alarm does not have autoscaling action and realarm is not disabled. Resetting...`,
+        );
       try {
         await resetAlarmState(alarm.AlarmName!);
         log
@@ -112,11 +123,16 @@ async function checkAndResetAlarms(): Promise<void> {
           .msg(`Failed to reset alarm: ${alarm.AlarmName}. Error: ${error}`);
         throw error;
       }
-    } else if (hasAutoScalingAction && alarm.StateValue === 'ALARM') {
+    } else if (
+      (hasAutoScalingAction || reAlarmDisabled) &&
+      alarm.StateValue === 'ALARM'
+    ) {
       log
         .info()
         .str('alarmName', alarm.AlarmName as string)
-        .msg('Skipped resetting alarm due to Auto Scaling action.');
+        .msg(
+          'Skipped resetting alarm due to Auto Scaling action and/or realarm:disabled tag set to "true."',
+        );
     }
   }
 }
