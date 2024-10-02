@@ -6,7 +6,7 @@ import {
   ExtendedQueueProps,
   StandardQueue,
 } from 'truemark-cdk-lib/aws-sqs';
-import {Rule, Schedule} from 'aws-cdk-lib/aws-events';
+import {Rule, Schedule, CronOptions} from 'aws-cdk-lib/aws-events';
 import {LambdaFunction, SqsQueue} from 'aws-cdk-lib/aws-events-targets';
 import {SqsEventSource} from 'aws-cdk-lib/aws-lambda-event-sources';
 import {
@@ -19,6 +19,19 @@ import {Duration, Stack} from 'aws-cdk-lib';
 
 export interface AutoAlarmConstructProps {
   readonly prometheusWorkspaceId?: string;
+  readonly useReAlarm?: boolean;
+  /*
+   * The cron expression to trigger the ReAlarm function
+   *readonly minute?: string
+   *readonly hour?: string
+   *readonly day?: string
+   *readonly month?: string
+   *readonly year?: string
+   *readonly weekDay?: string
+   */
+  // Example: {hour: '*/2'} will trigger the function every two hours
+  // cdk deploy --context reAlarmSchedule='{"hour": "*/2"}' AutoAlarm
+  readonly reAlarmSchedule?: CronOptions;
 }
 
 export class AutoAlarmConstruct extends Construct {
@@ -27,87 +40,90 @@ export class AutoAlarmConstruct extends Construct {
 
     //the following four consts are used to pass the correct ARN for whichever prometheus ID is being used as well as to the lambda.
     const prometheusWorkspaceId = props.prometheusWorkspaceId || '';
+    const useReAlarm = props.useReAlarm ?? true;
+    const reAlarmSchedule = props.reAlarmSchedule || {hour: '*/2'};
     const accountId = Stack.of(this).account;
     const region = Stack.of(this).region;
     const prometheusArn = `arn:aws:aps:${region}:${accountId}:workspace/${prometheusWorkspaceId}`;
 
     /*
-     * configure the ReAlarm Function and associated queues and eventbridge rules
+     * configure the ReAlarm Function and associated queues and eventbridge rules if ReAlarm is enabled
      */
+    if (useReAlarm) {
+      // Define the IAM role with specific permissions for the ReAlarm Lambda function
+      const reAlarmLambdaExecutionRole = new Role(
+        this,
+        'reAlarmLambdaExecutionRole',
+        {
+          assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
+          description: 'Execution role for AutoAlarm Lambda function',
+        }
+      );
 
-    // Define the IAM role with specific permissions for the ReAlarm Lambda function
-    const reAlarmLambdaExecutionRole = new Role(
-      this,
-      'reAlarmLambdaExecutionRole',
-      {
-        assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
-        description: 'Execution role for AutoAlarm Lambda function',
-      }
-    );
+      // Attach policies for EC2 and CloudWatch
+      reAlarmLambdaExecutionRole.addToPolicy(
+        new PolicyStatement({
+          effect: Effect.ALLOW,
+          actions: ['cloudwatch:DescribeAlarms', 'cloudwatch:SetAlarmState'],
+          resources: ['*'],
+        })
+      );
 
-    // Attach policies for EC2 and CloudWatch
-    reAlarmLambdaExecutionRole.addToPolicy(
-      new PolicyStatement({
-        effect: Effect.ALLOW,
-        actions: ['cloudwatch:DescribeAlarms', 'cloudwatch:SetAlarmState'],
-        resources: ['*'],
-      })
-    );
+      // Attach policies for CloudWatch Logs
+      reAlarmLambdaExecutionRole.addToPolicy(
+        new PolicyStatement({
+          effect: Effect.ALLOW,
+          resources: [
+            `arn:aws:logs:${region}:${accountId}:log-group:/aws/lambda/cwsyn*`,
+            `arn:aws:logs:${region}:${accountId}:log-group:/aws/lambda/cwsyn*:log-stream:*`,
+            `arn:aws:logs:${region}:${accountId}:log-group:/aws/canary/*`,
+          ],
+          actions: [
+            'logs:FilterLogEvents',
+            'logs:DescribeLogStreams',
+            'logs:DescribeLogGroups',
+          ],
+        })
+      );
 
-    // Attach policies for CloudWatch Logs
-    reAlarmLambdaExecutionRole.addToPolicy(
-      new PolicyStatement({
-        effect: Effect.ALLOW,
-        resources: [
-          `arn:aws:logs:${region}:${accountId}:log-group:/aws/lambda/cwsyn*`,
-          `arn:aws:logs:${region}:${accountId}:log-group:/aws/lambda/cwsyn*:log-stream:*`,
-          `arn:aws:logs:${region}:${accountId}:log-group:/aws/canary/*`,
-        ],
-        actions: [
-          'logs:FilterLogEvents',
-          'logs:DescribeLogStreams',
-          'logs:DescribeLogGroups',
-        ],
-      })
-    );
+      reAlarmLambdaExecutionRole.addToPolicy(
+        new PolicyStatement({
+          effect: Effect.ALLOW,
+          resources: ['*'],
+          actions: [
+            'logs:CreateLogGroup',
+            'logs:CreateLogStream',
+            'logs:PutLogEvents',
+          ],
+        })
+      );
 
-    reAlarmLambdaExecutionRole.addToPolicy(
-      new PolicyStatement({
-        effect: Effect.ALLOW,
-        resources: ['*'],
-        actions: [
-          'logs:CreateLogGroup',
-          'logs:CreateLogStream',
-          'logs:PutLogEvents',
-        ],
-      })
-    );
+      reAlarmLambdaExecutionRole.addToPolicy(
+        new PolicyStatement({
+          effect: Effect.ALLOW,
+          resources: ['*'], // This grants permission on all log groups. Adjust if needed.
+          actions: ['logs:DescribeLogGroups'],
+        })
+      );
 
-    reAlarmLambdaExecutionRole.addToPolicy(
-      new PolicyStatement({
-        effect: Effect.ALLOW,
-        resources: ['*'], // This grants permission on all log groups. Adjust if needed.
-        actions: ['logs:DescribeLogGroups'],
-      })
-    );
+      // Create the MainFunction and explicitly pass the execution role
+      const reAlarmFunction = new ReAlarmFunction(this, 'ReAlarmFunction', {
+        role: reAlarmLambdaExecutionRole,
+      });
 
-    // Create the MainFunction and explicitly pass the execution role
-    const reAlarmFunction = new ReAlarmFunction(this, 'ReAlarmFunction', {
-      role: reAlarmLambdaExecutionRole,
-    });
+      const deadLetterQueue = new StandardQueue(this, 'ReAlarm');
+      const reAlarmTarget = new LambdaFunction(reAlarmFunction, {
+        deadLetterQueue,
+      });
 
-    const deadLetterQueue = new StandardQueue(this, 'ReAlarm');
-    const reAlarmTarget = new LambdaFunction(reAlarmFunction, {
-      deadLetterQueue,
-    });
+      //Define timed event to trigger the lambda function
+      const everyTwoHoursRule = new Rule(this, 'EveryTwoHoursRule', {
+        schedule: Schedule.cron(reAlarmSchedule),
+        description: 'Trigger the ReAlarm Lambda function every two hours',
+      });
 
-    //Define timed event to trigger the lambda function
-    const everyTwoHoursRule = new Rule(this, 'EveryTwoHoursRule', {
-      schedule: Schedule.cron({hour: '*/2'}),
-      description: 'Trigger the ReAlarm Lambda function every two hours',
-    });
-
-    everyTwoHoursRule.addTarget(reAlarmTarget);
+      everyTwoHoursRule.addTarget(reAlarmTarget);
+    }
 
     /*
      * configure the AutoAlarm Function and associated queues and eventbridge rules

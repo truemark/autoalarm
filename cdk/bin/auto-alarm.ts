@@ -20,8 +20,10 @@ const app = new ExtendedApp({
 // The prometheusWorkspaceId const is configured to take in an environment variable for the Prometheus Workspace ID which
 // is then passed to our lambda to use dynamically across all environments.
 const prometheusWorkspaceId = app.node.tryGetContext('prometheusWorkspaceId');
+const useReAlarm = app.node.tryGetContext('useReAlarm');
 
 new AutoAlarmStack(app, 'AutoAlarm', {
   version: version.toString(),
   prometheusWorkspaceId: prometheusWorkspaceId,
+  useReAlarm: useReAlarm,
 });
