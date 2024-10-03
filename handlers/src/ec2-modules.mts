@@ -12,15 +12,15 @@ import {
 import * as logging from '@nr1e/logging';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {AlarmClassification, ValidInstanceState} from './enums.mjs';
-import {Tag, PathMetrics} from './types.mjs'; //need to investigate what we were doing with Dimension.
+import {PathMetrics, Tag, EC2AlarmManagerArray} from './types.mjs'; //need to investigate what we were doing with Dimension.
 import {
-  doesAlarmExist,
+  buildAlarmName,
   deleteAlarm,
-  getCWAlarmsForInstance,
   deleteExistingAlarms,
+  doesAlarmExist,
+  getCWAlarmsForInstance,
   handleAnomalyAlarms,
   handleStaticAlarms,
-  buildAlarmName,
 } from './alarm-tools.mjs';
 import {
   MetricAlarmConfig,
@@ -45,7 +45,7 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
 //temp remove for refactoring until we design new prometheus logic
 //const shouldUpdatePromRules = false;
 //const shouldDeletePromAlarm = false;
-const isCloudWatch = true;
+//const isCloudWatch = true;
 
 // This function is used to confirm that memory metrics are being reported for an instance
 async function getMemoryMetricsFromCloudWatch(
@@ -160,13 +160,11 @@ async function getStoragePathsFromCloudWatch(
       !path.startsWith('/boot')
     ) {
       // Build an array of dimensions
-      const dimensionsArray = requiredDimensions.map((name) => ({
+      // Adds this array to the path object using the path as the key
+      paths[path] = requiredDimensions.map((name) => ({
         Name: name,
         Value: dimensionMap[name],
       }));
-
-      // Add this array to the paths object using the path as the key
-      paths[path] = dimensionsArray;
     }
   }
 
@@ -449,125 +447,135 @@ async function handleAlarmCreation(
   }
 }
 
-export async function manageActiveEC2Alarms(instanceId: string, tags: Tag) {
+export async function manageActiveEC2Alarms(
+  instanceIDsAndTags: EC2AlarmManagerArray,
+) {
   // Reset flags so prior lambda runs don't carry over old values once we start pulling in prometheus alarms
   //shouldUpdatePromRules = false;
   //shouldDeletePromAlarm = false;
   //isCloudWatch = true;
-  log
-    .info()
-    .str('function', 'manageActiveEC2Alarms')
-    .str('EC2 instance ID', instanceId)
-    .msg('Starting alarm management process');
-
-  const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
-  if (!isAlarmEnabled) {
+  for (const {instanceID, tags} of instanceIDsAndTags) {
     log
       .info()
       .str('function', 'manageActiveEC2Alarms')
-      .str('EC2 instance ID', instanceId)
-      .msg('Alarm creation disabled by tag settings');
-    await deleteExistingAlarms('EC2', instanceId);
-    return;
-  }
+      .str('EC2 instance ID', instanceID)
+      .msg('Starting alarm management process');
 
-  const alarmsToKeep = new Set<string>();
-  // create status check alarm by default if autoalarm:enabled tag is not set to false
-  await checkAndManageStatusAlarm(instanceId, tags);
-  alarmsToKeep.add(`AutoAlarm-EC2-${instanceId}-StatusCheckFailed`);
-
-  for (const config of metricConfigs) {
-    log
-      .info()
-      .str('function', 'manageActiveEC2Alarms')
-      .obj('config', config)
-      .str('EC2 instance ID', instanceId)
-      .msg('Processing metric configuration');
-
-    const tagValue = tags[`autoalarm:${config.tagKey}`];
-    const updatedDefaults = parseMetricAlarmOptions(
-      tagValue || '',
-      config.defaults,
-    );
-
-    if (config.defaultCreate || tagValue !== undefined) {
-      const {platform} = await getInstanceDetails(instanceId);
-      const isWindows = platform?.includes('Windows') || false;
-
-      if (config.tagKey.includes('anomaly')) {
-        await handleAlarmCreation(
-          config,
-          instanceId,
-          isWindows,
-          updatedDefaults,
-          'anomaly',
-          alarmsToKeep,
-        );
-      } else {
-        await handleAlarmCreation(
-          config,
-          instanceId,
-          isWindows,
-          updatedDefaults,
-          'static',
-          alarmsToKeep,
-        );
-      }
-    } else {
+    const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
+    if (!isAlarmEnabled) {
       log
         .info()
         .str('function', 'manageActiveEC2Alarms')
-        .str('EC2 instance ID', instanceId)
-        .str(
-          'alarm prefix: ',
-          buildAlarmName(
-            config,
-            'EC2',
-            instanceId,
-            AlarmClassification.Warning,
-            'static',
-          ).replace('Warning', ''),
-        )
-        .msg(
-          'No default or overridden alarm values. Marking alarms for deletion.',
-        );
+        .str('EC2 instance ID', instanceID)
+        .msg('Alarm creation disabled by tag settings');
+      await deleteExistingAlarms('EC2', instanceID);
+      return;
     }
-  }
 
-  // Delete alarms that are not in the alarmsToKeep set
-  const existingAlarms = await getCWAlarmsForInstance('EC2', instanceId);
-  const alarmsToDelete = existingAlarms.filter(
-    (alarm) => !alarmsToKeep.has(alarm),
-  );
+    const alarmsToKeep = new Set<string>();
+    // create status check alarm by default if autoalarm:enabled tag is not set to false
+    await checkAndManageStatusAlarm(instanceID, tags);
+    alarmsToKeep.add(`AutoAlarm-EC2-${instanceID}-StatusCheckFailed`);
 
-  log
-    .info()
-    .str('function', 'manageActiveEC2Alarms')
-    .obj('alarms to delete', alarmsToDelete)
-    .msg('Deleting alarm that is no longer needed');
+    for (const config of metricConfigs) {
+      log
+        .info()
+        .str('function', 'manageActiveEC2Alarms')
+        .obj('config', config)
+        .str('EC2 instance ID', instanceID)
+        .msg('Processing metric configuration');
 
-  await cloudWatchClient.send(
-    new DeleteAlarmsCommand({
-      AlarmNames: [...alarmsToDelete],
-    }),
-  );
+      const tagValue = tags[`autoalarm:${config.tagKey}`];
+      const updatedDefaults = parseMetricAlarmOptions(
+        tagValue || '',
+        config.defaults,
+      );
 
-  log
-    .info()
-    .str('function', 'manageActiveEC2Alarms')
-    .str('EC2 instance ID', instanceId)
-    .msg('Finished alarm management process');
-}
+      if (config.defaultCreate || tagValue !== undefined) {
+        const {platform} = await getInstanceDetails(instanceID);
+        const isWindows = platform?.includes('Windows') || false;
 
-export async function manageInactiveInstanceAlarms(instanceId: string) {
-  try {
-    await deleteExistingAlarms('EC2', instanceId);
+        if (config.tagKey.includes('anomaly')) {
+          await handleAlarmCreation(
+            config,
+            instanceID,
+            isWindows,
+            updatedDefaults,
+            'anomaly',
+            alarmsToKeep,
+          );
+        } else {
+          await handleAlarmCreation(
+            config,
+            instanceID,
+            isWindows,
+            updatedDefaults,
+            'static',
+            alarmsToKeep,
+          );
+        }
+      } else {
+        log
+          .info()
+          .str('function', 'manageActiveEC2Alarms')
+          .str('EC2 instance ID', instanceID)
+          .str(
+            'alarm prefix: ',
+            buildAlarmName(
+              config,
+              'EC2',
+              instanceID,
+              AlarmClassification.Warning,
+              'static',
+            ).replace('Warning', ''),
+          )
+          .msg(
+            'No default or overridden alarm values. Marking alarms for deletion.',
+          );
+      }
+    }
+
+    // Delete alarms that are not in the alarmsToKeep set
+    const existingAlarms = await getCWAlarmsForInstance('EC2', instanceID);
+    const alarmsToDelete = existingAlarms.filter(
+      (alarm) => !alarmsToKeep.has(alarm),
+    );
+
     log
       .info()
-      .str('function', 'manageInactiveInstanceAlarms')
-      .str('instanceId', instanceId)
-      .str('isCloudWatch', isCloudWatch.toString())
-      .msg('Successfully finished managing inactive instance alarms');
+      .str('function', 'manageActiveEC2Alarms')
+      .obj('alarms to delete', alarmsToDelete)
+      .msg('Deleting alarm that is no longer needed');
+
+    await cloudWatchClient.send(
+      new DeleteAlarmsCommand({
+        AlarmNames: [...alarmsToDelete],
+      }),
+    );
+
+    log
+      .info()
+      .str('function', 'manageActiveEC2Alarms')
+      .str('EC2 instance ID', instanceID)
+      .msg('Finished alarm management process');
+  }
+}
+
+export async function manageInactiveInstanceAlarms(instanceIds: string[]) {
+  const alarmsToDelete: string[] = [];
+  for (const instanceId of instanceIds) {
+    const existingAlarms: string[] = await getCWAlarmsForInstance(
+      'EC2',
+      instanceId,
+    );
+    alarmsToDelete.push(...existingAlarms);
+  }
+  try {
+    await cloudWatchClient.send(
+      new DeleteAlarmsCommand({
+        AlarmNames: alarmsToDelete,
+      }),
+    );
   } catch (e) {
     log
       .error()

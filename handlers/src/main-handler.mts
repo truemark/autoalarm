@@ -16,6 +16,7 @@ import {parseVpnEventAndCreateAlarms} from './vpn-modules.mjs';
 import {parseR53ResolverEventAndCreateAlarms} from './route53-resolver-modules.mjs';
 import {parseTransitGatewayEventAndCreateAlarms} from './transit-gateway-modules.mjs';
 import {parseCloudFrontEventAndCreateAlarms} from './cloudfront-modules.mjs';
+import {EC2AlarmManagerArray} from './types.mjs';
 
 // Initialize logging
 const level = process.env.LOG_LEVEL || 'trace';
@@ -30,50 +31,76 @@ const log = logging.initialize({
 
 // TODO Fix the use of any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function processEC2Event(event: any) {
-  const instanceId = event.detail['instance-id'];
-  const state = event.detail.state;
-  const tags = await fetchInstanceTags(instanceId);
+async function processEC2Event(events: any[]): Promise<void> {
+  const filteredInstanceIdsAndTags: EC2AlarmManagerArray = [];
 
-  if (
-    instanceId &&
-    liveStates.has(state) &&
-    tags['autoalarm:enabled'] === 'true'
-  ) {
+  for (const event of events) {
+    const instanceId = event.detail['instance-id'];
+    const state = event.detail.state;
+    const tags = await fetchInstanceTags(instanceId);
+
+    if (
+      instanceId &&
+      liveStates.has(state) &&
+      tags['autoalarm:enabled'] === 'true'
+    ) {
+      filteredInstanceIdsAndTags.push({instanceID: instanceId, tags: tags});
+    } else if (
+      (deadStates.has(state) && tags['autoalarm:enabled'] === 'false') ||
+      (tags['autoalarm:enabled'] === 'true' && deadStates.has(state)) ||
+      !tags['autoalarm:enabled']
+    ) {
+      await manageInactiveInstanceAlarms(instanceId);
+    }
     // checking our liveStates set to see if the instance is in a state that we should be managing alarms for.
     // we are iterating over the AlarmClassification enum to manage alarms for each classification: 'Critical'|'Warning'.
-    await manageActiveEC2Alarms(instanceId, tags);
-  } else if (
-    (deadStates.has(state) && tags['autoalarm:enabled'] === 'false') ||
-    (tags['autoalarm:enabled'] === 'true' && deadStates.has(state)) ||
-    !tags['autoalarm:enabled']
-  ) {
-    // TODO Do not delete alarms just because the instance is shutdown. You do delete them on terminate.
-    await manageInactiveInstanceAlarms(instanceId);
+    if (filteredInstanceIdsAndTags.length > 0) {
+      await manageActiveEC2Alarms(filteredInstanceIdsAndTags);
+    }
   }
 }
 
 // TODO Fix the use of any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function processEC2TagEvent(event: any) {
-  const {instanceId, state} = await getEC2IdAndState(event);
-  const tags = await fetchInstanceTags(instanceId);
-  if (tags['autoalarm:enabled'] === 'false') {
-    await manageInactiveInstanceAlarms(instanceId);
-  } else if (
-    tags['autoalarm:enabled'] === 'true' &&
-    instanceId &&
-    liveStates.has(state)
-  ) {
-    await manageActiveEC2Alarms(instanceId, tags);
-  } else if (
-    !tags['autoalarm:enabled'] ||
-    tags['autoalarm:enabled'] === undefined
-  ) {
-    log
-      .info()
-      .str('function', 'processEC2TagEvent')
-      .msg('autoalarm:enabled tag not found. Skipping autoalarm processing');
+async function processEC2TagEvent(events: any[]) {
+  const activeInstanceIDsAndTags: EC2AlarmManagerArray = [];
+  const inactiveInstanceIDs: string[] = [];
+  for (const event of events) {
+    const {instanceId, state} = await getEC2IdAndState(event);
+    const tags = await fetchInstanceTags(instanceId);
+    if (tags['autoalarm:enabled'] === 'false') {
+      inactiveInstanceIDs.push(instanceId);
+      log
+        .info()
+        .str('function', 'processEC2TagEvent')
+        .str('instanceId', instanceId)
+        .str('autoalarm:enabled', tags['autoalarm:enabled'])
+        .msg('autoalarm:enabled tag set to false. Adding to inactiveInstanceIDs for alarm deletion');
+    } else if (
+      tags['autoalarm:enabled'] === 'true' &&
+      instanceId &&
+      liveStates.has(state)
+    ) {
+      activeInstanceIDsAndTags.push({instanceID: instanceId, tags: tags});
+    } else if (
+      !tags['autoalarm:enabled'] ||
+      tags['autoalarm:enabled'] === undefined
+    ) {
+      inactiveInstanceIDs.push(instanceId);
+      log
+        .info()
+        .str('function', 'processEC2TagEvent')
+        .str('instanceId', instanceId)
+        .msg('autoalarm:enabled tag not found. Adding to inactiveInstanceIDs for alarm deletion');
+    }
+  }
+
+  if (activeInstanceIDsAndTags.length > 0) {
+    await manageActiveEC2Alarms(activeInstanceIDsAndTags);
+  }
+
+  if (inactiveInstanceIDs.length > 0) {
+      await manageInactiveInstanceAlarms(inactiveInstanceIDs);
   }
 }
 
@@ -92,21 +119,12 @@ async function routeTagEvent(event: any) {
     .msg('Processing tag event');
 
   switch (service) {
-    case 'ec2':
-      switch (resourceType) {
-        case 'instance':
-          await processEC2TagEvent(event);
-          break;
-        case 'transit-gateway':
-          await parseTransitGatewayEventAndCreateAlarms(event);
-          break;
-        case 'vpn-connection':
-          await parseVpnEventAndCreateAlarms(event);
-          break;
-        default:
-          log.warn().msg(`Unhandled resource type for EC2: ${resourceType}`);
-          break;
-      }
+    case 'transit-gateway':
+      await parseTransitGatewayEventAndCreateAlarms(event);
+      break;
+
+    case 'vpn-connection':
+      await parseVpnEventAndCreateAlarms(event);
       break;
 
     case 'elasticloadbalancing':
@@ -114,9 +132,11 @@ async function routeTagEvent(event: any) {
         case 'loadbalancer':
           await parseALBEventAndCreateAlarms(event);
           break;
+
         case 'targetgroup':
           await parseTGEventAndCreateAlarms(event);
           break;
+
         default:
           log.warn().msg(`Unhandled resource type for ELB: ${resourceType}`);
           break;
@@ -141,40 +161,45 @@ async function routeTagEvent(event: any) {
   }
 }
 
-// Handler function
 // TODO Fix the use of any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const handler: Handler = async (event: any): Promise<void> => {
   log.trace().unknown('event', event).msg('Received event');
+  // Create an array for all the EC2 events to be stored in and passed to the processEC2Event function imported form ec2-modules.mts
+  // Still need to figure out type for event objects as they can vary from event to event
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ec2Events: any[] = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ec2TagEvents: any[] = [];
 
   try {
     if (event.Records) {
       for (const record of event.Records) {
         // Parse the body of the SQS message
-        const body = JSON.parse(record.body);
+        const event = JSON.parse(record.body);
 
-        log.trace().obj('body', body).msg('Processing message body');
+        if (event.source === 'aws.ec2') {
+          ec2Events.push(event);
+        }
 
-        switch (body.source) {
+        log.trace().obj('body', event).msg('Processing message body');
+
+        switch (event.source) {
           case 'aws.cloudfront':
-            await parseCloudFrontEventAndCreateAlarms(body);
-            break;
-
-          case 'aws.ec2':
-            await processEC2Event(body);
+            await parseCloudFrontEventAndCreateAlarms(event);
             break;
 
           case 'aws.elasticloadbalancing':
             if (
-              body.detail.eventName === 'CreateLoadBalancer' ||
-              body.detail.eventName === 'DeleteLoadBalancer'
+              event.detail.eventName === 'CreateLoadBalancer' ||
+              event.detail.eventName === 'DeleteLoadBalancer'
             ) {
-              await parseALBEventAndCreateAlarms(body);
+              await parseALBEventAndCreateAlarms(event);
             } else if (
-              body.detail.eventName === 'CreateTargetGroup' ||
-              body.detail.eventName === 'DeleteTargetGroup'
+              event.detail.eventName === 'CreateTargetGroup' ||
+              event.detail.eventName === 'DeleteTargetGroup'
             ) {
-              await parseTGEventAndCreateAlarms(body);
+              await parseTGEventAndCreateAlarms(event);
             } else {
               log
                 .warn()
@@ -183,44 +208,60 @@ export const handler: Handler = async (event: any): Promise<void> => {
             break;
 
           case 'aws.opensearch':
-            await parseOSEventAndCreateAlarms(body);
+            await parseOSEventAndCreateAlarms(event);
             break;
 
           case 'aws.route53resolver':
-            await parseR53ResolverEventAndCreateAlarms(body);
+            await parseR53ResolverEventAndCreateAlarms(event);
             break;
 
           case 'aws.sqs':
-            await parseSQSEventAndCreateAlarms(body);
+            await parseSQSEventAndCreateAlarms(event);
             break;
 
           case 'aws.tag':
-            await routeTagEvent(body);
+            // add ec2 tag events to another array for processing.
+            if (event.service === 'ec2' && event.resourceType === 'instance') {
+              ec2TagEvents.push(event);
+            }
+            await routeTagEvent(event);
             break;
 
           case 'transit-gateway':
             if (
-              body.detail.eventName === 'CreateTransitGateway' ||
-              body.detail.eventName === 'DeleteTransitGateway'
+              event.detail.eventName === 'CreateTransitGateway' ||
+              event.detail.eventName === 'DeleteTransitGateway'
             ) {
-              await parseTransitGatewayEventAndCreateAlarms(body);
+              await parseTransitGatewayEventAndCreateAlarms(event);
             }
             break;
 
           case 'vpn-connection':
             if (
-              body.detail.eventName === 'CreateVpnConnection' ||
-              body.detail.eventName === 'DeleteVpnConnection'
+              event.detail.eventName === 'CreateVpnConnection' ||
+              event.detail.eventName === 'DeleteVpnConnection'
             ) {
-              await parseVpnEventAndCreateAlarms(body);
+              await parseVpnEventAndCreateAlarms(event);
             }
             break;
 
           default:
-            log.warn().msg(`Unhandled event source: ${body.source}`);
+            log.warn().msg(`Unhandled event source: ${event.source}`);
             break;
         }
       }
+
+      // If there were EC2 events after all iterations of the event records from the for loop, process them
+      if (ec2Events.length > 0) {
+        await processEC2Event(ec2Events);
+      }
+
+      // If there were EC2 tag events after all iterations of the event records from the for loop, process them
+      if (ec2TagEvents.length > 0) {
+        await processEC2TagEvent(ec2TagEvents);
+      }
+
+      // Else statement from initial if statement at the beginning of function.
     } else {
       log.warn().msg('No Records found in event');
     }

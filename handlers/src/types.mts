@@ -1,19 +1,15 @@
-import {Statistic} from '@aws-sdk/client-cloudwatch';
+// Type definitions for autoalarm
 
-export interface AlarmProps {
-  threshold: number;
-  period: number;
-  evaluationPeriods: number;
-  metricName: string;
-  namespace: string;
-  dimensions: {Name: string; Value: string}[];
-  statistic?: Statistic; // Optional property for standard statistics
-  extendedStatistic?: string; // Optional property for extended statistics
+export interface EC2AlarmManagerObject {
+  instanceID: string;
+  tags: Tag;
 }
 
 export interface Tag {
   [key: string]: string;
 }
+
+export type EC2AlarmManagerArray = EC2AlarmManagerObject[];
 
 export interface Dimension {
   Name: string;
