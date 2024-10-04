@@ -75,7 +75,9 @@ async function processEC2TagEvent(events: any[]) {
         .str('function', 'processEC2TagEvent')
         .str('instanceId', instanceId)
         .str('autoalarm:enabled', tags['autoalarm:enabled'])
-        .msg('autoalarm:enabled tag set to false. Adding to inactiveInstanceIDs for alarm deletion');
+        .msg(
+          'autoalarm:enabled tag set to false. Adding to inactiveInstanceIDs for alarm deletion',
+        );
     } else if (
       tags['autoalarm:enabled'] === 'true' &&
       instanceId &&
@@ -91,7 +93,9 @@ async function processEC2TagEvent(events: any[]) {
         .info()
         .str('function', 'processEC2TagEvent')
         .str('instanceId', instanceId)
-        .msg('autoalarm:enabled tag not found. Adding to inactiveInstanceIDs for alarm deletion');
+        .msg(
+          'autoalarm:enabled tag not found. Adding to inactiveInstanceIDs for alarm deletion',
+        );
     }
   }
 
@@ -100,7 +104,7 @@ async function processEC2TagEvent(events: any[]) {
   }
 
   if (inactiveInstanceIDs.length > 0) {
-      await manageInactiveInstanceAlarms(inactiveInstanceIDs);
+    await manageInactiveInstanceAlarms(inactiveInstanceIDs);
   }
 }
 
