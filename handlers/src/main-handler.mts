@@ -142,7 +142,10 @@ async function routeTagEvent(event: any) {
           break;
 
         default:
-          log.warn().msg(`Unhandled resource type for ELB: ${resourceType}`);
+          log
+            .warn()
+            .str('function', 'routeTagEvent')
+            .msg(`Unhandled resource type for ELB: ${resourceType}`);
           break;
       }
       break;
@@ -160,7 +163,10 @@ async function routeTagEvent(event: any) {
       break;
 
     default:
-      log.warn().msg(`Unhandled service: ${service}`);
+      log
+        .warn()
+        .str('function', 'routeTagEvent')
+        .msg(`Unhandled service: ${service}`);
       break;
   }
 }
@@ -225,10 +231,15 @@ export const handler: Handler = async (event: any): Promise<void> => {
 
           case 'aws.tag':
             // add ec2 tag events to another array for processing.
-            if (event.service === 'ec2' && event.resourceType === 'instance') {
+            if (
+              (event.detail.service === 'ec2' ||
+                event.detail.service === 'aws.ec2') &&
+              event.detail['resource-type'] === 'instance'
+            ) {
               ec2TagEvents.push(event);
+            } else {
+              await routeTagEvent(event);
             }
-            await routeTagEvent(event);
             break;
 
           case 'transit-gateway':
