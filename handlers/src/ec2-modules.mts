@@ -448,13 +448,13 @@ async function handleAlarmCreation(
 }
 
 export async function manageActiveEC2Alarms(
-  instanceIDsAndTags: EC2AlarmManagerArray,
+  activeInstancesInfoArray: EC2AlarmManagerArray,
 ) {
   // Reset flags so prior lambda runs don't carry over old values once we start pulling in prometheus alarms
   //shouldUpdatePromRules = false;
   //shouldDeletePromAlarm = false;
   //isCloudWatch = true;
-  for (const {instanceID, tags} of instanceIDsAndTags) {
+  for (const {instanceID, tags} of activeInstancesInfoArray) {
     log
       .info()
       .str('function', 'manageActiveEC2Alarms')
@@ -561,12 +561,14 @@ export async function manageActiveEC2Alarms(
   }
 }
 
-export async function manageInactiveInstanceAlarms(instanceIds: string[]) {
+export async function manageInactiveInstanceAlarms(
+  inactiveInstancesInfoArray: EC2AlarmManagerArray,
+) {
   const alarmsToDelete: string[] = [];
-  for (const instanceId of instanceIds) {
+  for (const instanceInfo of inactiveInstancesInfoArray) {
     const existingAlarms: string[] = await getCWAlarmsForInstance(
       'EC2',
-      instanceId,
+      instanceInfo.instanceID,
     );
     alarmsToDelete.push(...existingAlarms);
   }

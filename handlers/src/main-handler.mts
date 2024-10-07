@@ -32,7 +32,8 @@ const log = logging.initialize({
 // TODO Fix the use of any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function processEC2Event(events: any[]): Promise<void> {
-  const filteredInstanceIdsAndTags: EC2AlarmManagerArray = [];
+  const activeInstancesInfoArray: EC2AlarmManagerArray = [];
+  const inactiveInstancesInfoArray: EC2AlarmManagerArray = [];
 
   for (const event of events) {
     const instanceId = event.detail['instance-id'];
@@ -44,18 +45,31 @@ async function processEC2Event(events: any[]): Promise<void> {
       liveStates.has(state) &&
       tags['autoalarm:enabled'] === 'true'
     ) {
-      filteredInstanceIdsAndTags.push({instanceID: instanceId, tags: tags});
+      activeInstancesInfoArray.push({
+        instanceID: instanceId,
+        tags: tags,
+        state: state,
+      });
     } else if (
       (deadStates.has(state) && tags['autoalarm:enabled'] === 'false') ||
       (tags['autoalarm:enabled'] === 'true' && deadStates.has(state)) ||
       !tags['autoalarm:enabled']
     ) {
-      await manageInactiveInstanceAlarms(instanceId);
+      inactiveInstancesInfoArray.push({
+        instanceID: instanceId,
+        tags: tags,
+        state: state,
+      });
     }
     // checking our liveStates set to see if the instance is in a state that we should be managing alarms for.
     // we are iterating over the AlarmClassification enum to manage alarms for each classification: 'Critical'|'Warning'.
-    if (filteredInstanceIdsAndTags.length > 0) {
-      await manageActiveEC2Alarms(filteredInstanceIdsAndTags);
+    if (activeInstancesInfoArray.length > 0) {
+      await manageActiveEC2Alarms(activeInstancesInfoArray);
+    }
+
+    // If the instance is in a state that we should not be managing alarms for, we will remove the alarms.
+    if (inactiveInstancesInfoArray.length > 0) {
+      await manageInactiveInstanceAlarms(inactiveInstancesInfoArray);
     }
   }
 }
@@ -63,48 +77,60 @@ async function processEC2Event(events: any[]): Promise<void> {
 // TODO Fix the use of any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function processEC2TagEvent(events: any[]) {
-  const activeInstanceIDsAndTags: EC2AlarmManagerArray = [];
-  const inactiveInstanceIDs: string[] = [];
+  const activeInstancesInfoArray: EC2AlarmManagerArray = [];
+  const inactiveInstancesInfoArray: EC2AlarmManagerArray = [];
   for (const event of events) {
     const {instanceId, state} = await getEC2IdAndState(event);
     const tags = await fetchInstanceTags(instanceId);
     if (tags['autoalarm:enabled'] === 'false') {
-      inactiveInstanceIDs.push(instanceId);
+      inactiveInstancesInfoArray.push({
+        instanceID: instanceId,
+        tags: tags,
+        state: state,
+      });
       log
         .info()
         .str('function', 'processEC2TagEvent')
         .str('instanceId', instanceId)
         .str('autoalarm:enabled', tags['autoalarm:enabled'])
         .msg(
-          'autoalarm:enabled tag set to false. Adding to inactiveInstanceIDs for alarm deletion',
+          'autoalarm:enabled tag set to false. Adding to inactiveInstancesInfoArray for alarm deletion',
         );
     } else if (
       tags['autoalarm:enabled'] === 'true' &&
       instanceId &&
       liveStates.has(state)
     ) {
-      activeInstanceIDsAndTags.push({instanceID: instanceId, tags: tags});
+      activeInstancesInfoArray.push({
+        instanceID: instanceId,
+        tags: tags,
+        state: state,
+      });
     } else if (
       !tags['autoalarm:enabled'] ||
       tags['autoalarm:enabled'] === undefined
     ) {
-      inactiveInstanceIDs.push(instanceId);
+      inactiveInstancesInfoArray.push({
+        instanceID: instanceId,
+        tags: tags,
+        state: state,
+      });
       log
         .info()
         .str('function', 'processEC2TagEvent')
         .str('instanceId', instanceId)
         .msg(
-          'autoalarm:enabled tag not found. Adding to inactiveInstanceIDs for alarm deletion',
+          'autoalarm:enabled tag not found. Adding to inactiveInstancesInfoArray for alarm deletion',
         );
     }
   }
 
-  if (activeInstanceIDsAndTags.length > 0) {
-    await manageActiveEC2Alarms(activeInstanceIDsAndTags);
+  if (activeInstancesInfoArray.length > 0) {
+    await manageActiveEC2Alarms(activeInstancesInfoArray);
   }
 
-  if (inactiveInstanceIDs.length > 0) {
-    await manageInactiveInstanceAlarms(inactiveInstanceIDs);
+  if (inactiveInstancesInfoArray.length > 0) {
+    await manageInactiveInstanceAlarms(inactiveInstancesInfoArray);
   }
 }
 

@@ -3,6 +3,7 @@
 export interface EC2AlarmManagerObject {
   instanceID: string;
   tags: Tag;
+  state: string;
 }
 
 export interface Tag {
