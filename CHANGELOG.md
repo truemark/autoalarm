@@ -1,5 +1,30 @@
 # AutoAlarm Changelog
 
+## v1.6.0
+
+## Additions:
+
+### alarm-config.mts
+- Added metrics for CloudFront, Route53Resolver, TransitGateway, and VPN services.
+
+### Fifo Queue
+- Added a fifo queue to the alarm-tools module to ensure that alarms are created in the correct order.
+- This will prevent alarms from being created before the necessary resources are available.
+
+### New Modules:
+- cloudfront-modules.mts - Contains functions for creating CloudFront alarms.
+- route53resolver-modules.mts - Contains functions for creating Route53Resolver alarms.
+- transit-gateway-modules.mts - Contains functions for creating TransitGateway alarms.
+- vpn-modules.mts - Contains functions for creating VPN alarms.
+
+## Major Revisions:
+
+### main-handler.ts
+- Refactored the main handler to use the new fifo queue to ensure alarms are created in the correct order.
+- Updated the handler to use the new modules for CloudFront, Route53Resolver, TransitGateway, and VPN alarms.
+- Refactored the routeTagEvent function to use switch statements for each service and resource type.
+
+
 ## v1.5.0
 
 ## Additions: 
