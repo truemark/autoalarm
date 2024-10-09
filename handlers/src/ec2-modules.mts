@@ -28,6 +28,7 @@ import {
   MetricAlarmOptions,
   parseMetricAlarmOptions,
 } from './alarm-config.mjs';
+import {queryPrometheusForService} from './prometheus-tools.mjs';
 
 const log: logging.Logger = logging.getLogger('ec2-modules');
 export const prometheusWorkspaceId: string =
@@ -171,7 +172,7 @@ async function getStoragePathsFromCloudWatch(
 // address for promQL queries
 async function getInstanceDetails(
   instanceId: string,
-): Promise<{platform: string | null; privateIp: string}> {
+): Promise<{platform: string | null; privateIP: string | null}> {
   try {
     const describeInstancesCommand = new DescribeInstancesCommand({
       InstanceIds: [instanceId],
@@ -188,7 +189,7 @@ async function getInstanceDetails(
     ) {
       const instance = describeInstancesResponse.Reservations[0].Instances[0];
       const platform = instance.PlatformDetails ?? null;
-      const privateIp = instance.PrivateIpAddress ?? '';
+      const privateIP = instance.PrivateIpAddress ?? '';
 
       if (!platform) {
         log
@@ -204,16 +205,16 @@ async function getInstanceDetails(
         .str('function', 'getInstanceDetails')
         .str('instanceId', instanceId)
         .str('platform', platform)
-        .str('privateIp', privateIp)
+        .str('privateIP', privateIP)
         .msg('Fetched instance details');
-      return {platform, privateIp};
+      return {platform, privateIP};
     } else {
       log
         .info()
         .str('function', 'getInstanceDetails')
         .str('instanceId', instanceId)
         .msg('No reservations found or no instances in reservation');
-      return {platform: null, privateIp: ''};
+      return {platform: null, privateIP: ''};
     }
   } catch (error) {
     log
@@ -222,7 +223,7 @@ async function getInstanceDetails(
       .err(error)
       .str('instanceId', instanceId)
       .msg('Failed to fetch instance details');
-    return {platform: null, privateIp: ''};
+    return {platform: null, privateIP: ''};
   }
 }
 
@@ -447,14 +448,21 @@ export async function manageActiveEC2Alarms(
   activeInstancesInfoArray: EC2AlarmManagerArray,
 ) {
   /*
-  * TODO: implement prometheus logic for EC2 instances by doing the following:
-  *  - get the prometheus workspace id from the environment variable
-  *  - Create two separate arrays, one for instances that are reporting to prometheus and one for instances that are not (Cloudwatch)
-  *    - For this we want to query Prometheus for the private ips using a try{does instance private IP report to prom, add to prom array} catch {if not, add  to cloudwatch array}
-  *  - create two conditional statements for prom and cloudwatch array that are executed if either array is > 0
-  *    - if prom array > 0, create prometheus alarms only if prometheus workspace id is set and tag autoalarm:target != 'cloudwatch'
-  *    - move on and create cloudwatch alarms if cloudwatchArray.length > 0
+   * TODO: implement prometheus logic for EC2 instances by doing the following:
+   *  - get the prometheus workspace id from the environment variable
+   *  - Create two separate arrays, one for instances that are reporting to prometheus and one for instances that are not (Cloudwatch)
+   *    - For this we want to query Prometheus for the private ips using a try{does instance private IP report to prom, add to prom array} catch {if not, add  to cloudwatch array}
+   *  - create two conditional statements for prom and cloudwatch array that are executed if either array is > 0
+   *    - if prom array > 0, create prometheus alarms only if prometheus workspace id is set and tag autoalarm:target != 'cloudwatch'
+   *    - move on and create cloudwatch alarms if cloudwatchArray.length > 0
    */
+  const prometheusArray: EC2AlarmManagerArray = [];
+  // get a list of all IPs reporting to prometheus so we can extract those instances out of the rest of the logic and create prometheus alarms
+  const instanceIPsReportingToPrometheus: string[] = prometheusWorkspaceId
+    ? await queryPrometheusForService('ec2', prometheusWorkspaceId, region)
+    : [];
+  const deleteInstnaceAlarmsArray: string[] = [];
+
   for (const {instanceID, tags} of activeInstancesInfoArray) {
     log
       .info()
@@ -462,15 +470,34 @@ export async function manageActiveEC2Alarms(
       .str('EC2 instance ID', instanceID)
       .msg('Starting alarm management process');
 
+    const ec2Metadata: {platform: string | null; privateIP: string | null} =
+      await getInstanceDetails(instanceID);
+    const isWindows = ec2Metadata.platform?.includes('Windows') || false;
+    const privateIP = ec2Metadata.privateIP || '';
     const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
+
     if (!isAlarmEnabled) {
       log
         .info()
         .str('function', 'manageActiveEC2Alarms')
         .str('EC2 instance ID', instanceID)
         .msg('Alarm creation disabled by tag settings');
-      await deleteExistingAlarms('EC2', instanceID);
+      deleteInstnaceAlarmsArray.push(instanceID);
+      await deleteExistingAlarms('EC2', instanceID); //remove this and delete all alarms from deleteInstnaceAlarmsArray in batch at the end of logic
       return;
+    }
+
+    if (
+      prometheusWorkspaceId &&
+      tags['autoalarm:target'] !== 'cloudwatch' &&
+      instanceIPsReportingToPrometheus.includes(privateIP)
+    ) {
+      prometheusArray.push({
+        instanceID: instanceID,
+        tags: tags,
+        state: 'running',
+        ec2Metadata: ec2Metadata,
+      });
     }
 
     const alarmsToKeep = new Set<string>();
@@ -493,9 +520,6 @@ export async function manageActiveEC2Alarms(
       );
 
       if (config.defaultCreate || tagValue !== undefined) {
-        const {platform} = await getInstanceDetails(instanceID);
-        const isWindows = platform?.includes('Windows') || false;
-
         if (config.tagKey.includes('anomaly')) {
           await handleAlarmCreation(
             config,

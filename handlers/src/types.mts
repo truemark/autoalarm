@@ -4,6 +4,7 @@ export interface EC2AlarmManagerObject {
   instanceID: string;
   tags: Tag;
   state: string;
+  ec2Metadata?: {platform: string | null, privateIP: string | null} ;
 }
 
 export interface Tag {
@@ -42,6 +43,8 @@ export interface Rule {
     [key: string]: string;
   };
 }
+
+export type PrometheusAlarmConfigArray = Rule[];
 
 //for prometheus namespace details when populating the rule groups
 export interface NamespaceDetails {

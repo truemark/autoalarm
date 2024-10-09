@@ -15,7 +15,7 @@ import {
   NamespaceDetails,
   Rule,
   Tag,
-  EC2AlarmManagerArray,
+  EC2AlarmManagerArray, PrometheusAlarmConfigArray,
 } from './types.mjs';
 import {AlarmClassification} from './enums.mjs';
 import * as yaml from 'js-yaml';
@@ -115,20 +115,22 @@ export async function batchPromRulesDeletion(
  *
  */
 async function getPromAlarmConfigs(
-  instanceId: string,
-  classification: AlarmClassification,
-  tags: Tag,
+  ec2AlarmManagerArray: EC2AlarmManagerArray,
   // TODO Fix the use of any
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<any[]> {
   const configs = [];
-  const {
-    staticThresholdAlarmName: cpuAlarmName,
-    threshold: cpuThreshold,
-    durationStaticTime: cpuDurationTime,
-    ec2Metadata: {platform, privateIp}, //this comes from getInstanceDetails in ec2-modules
-    //@ts-expect-error temp for refactor
-  } = await getAlarmConfig(instanceId, classification, 'cpu', tags);
+  /*
+   * TODO: for the refactor we are going to need to pull this information out of alarm config meteric config objects and
+   *  ec2-metadata. We are going to need to loop through the configs and tags to get the alarm theshold values or create alarms.
+   */
+  //const {
+  //  staticThresholdAlarmName: cpuAlarmName,
+  //  threshold: cpuThreshold,
+  //  durationStaticTime: cpuDurationTime,
+  //  ec2Metadata: {platform, privateIP}, //this comes from getInstanceDetails in ec2-modules
+  //  //@ts-expect-error temp for refactor
+  //} = await getAlarmConfig(instanceId, classification, 'cpu', tags);
   let escapedPrivateIp = '';
 
   log
@@ -236,7 +238,6 @@ async function getPromAlarmConfigs(
 
 /**
  * Batch update Prometheus rules for all EC2 instances with the necessary tags and metrics reporting.
- * @param shouldUpdatePromRules - Boolean flag to indicate if Prometheus rules should be updated.
  * @param prometheusWorkspaceId - The Prometheus workspace ID.
  * @param service - The service name.
  * @param region - The AWS region passed by an environment variable.
@@ -246,7 +247,6 @@ export async function batchUpdatePromRules(
   prometheusWorkspaceId: string,
   service: string,
   ec2AlarmManagerArray: EC2AlarmManagerArray,
-  region: string,
 ) {
   log
     .info()
@@ -254,77 +254,9 @@ export async function batchUpdatePromRules(
     .msg('Fetching instance details and tags');
 
   try {
-    log
-      .info()
-      .str('function', 'batchUpdatePromRules')
-      .msg('Filtering instances based on tags');
-
-    // Filter instances based on the 'autoalarm:enabled' tag in EC2AlarmManagerArray
-    const instancesToCheck = ec2AlarmManagerArray.filter(
-      (details) =>
-        details.tags['autoalarm:enabled'] &&
-        details.tags['autoalarm:enabled'] !== 'false',
-    );
-
-    if (instancesToCheck.length === 0) {
-      log
-        .error()
-        .str('function', 'batchUpdatePromRules')
-        .str('instancesToCheck', JSON.stringify(instancesToCheck))
-        .msg(
-          'No instances found with autoalarm:enabled tag set to true. Verify BatchUpdatePromRules logic and manageActiveEC2Alarms function.',
-        );
-      throw new Error(
-        'No instances found with autoalarm:enabled tag set to true. Verify BatchUpdatePromRules logic and manageActiveEC2Alarms function.',
-      );
-    }
-
-    log
-      .info()
-      .str('function', 'batchUpdatePromRules')
-      .str('instancesToCheck', JSON.stringify(instancesToCheck))
-      .msg('Instances to check for Prometheus rules');
-
-    // Query Prometheus to get a list of instance label values (private IPs or Instance IDs)
-    const reportingInstances = await queryPrometheusForService(
-      'ec2',
-      prometheusWorkspaceId,
-      region,
-    );
-
-    const instancesToUpdate = instancesToCheck.filter((details) =>
-      reportingInstances.includes(details.instanceID),
-    );
-
-    if (instancesToUpdate.length === 0) {
-      log
-        .error()
-        .str('function', 'batchUpdatePromRules')
-        .str('instancesToUpdate', JSON.stringify(instancesToUpdate))
-        .msg('No instances found to update Prometheus rules for');
-      return;
-    }
-
-    log
-      .info()
-      .str('function', 'batchUpdatePromRules')
-      .str('instancesToUpdate', JSON.stringify(instancesToUpdate))
-      .msg('Instances to update Prometheus rules for');
-
-    // TODO Fix the use of any
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const alarmConfigs: any[] = [];
-    for (const {instanceID} of instancesToUpdate) {
-      for (const classification of Object.values(AlarmClassification)) {
-        const configs = await getPromAlarmConfigs(
-          instanceID,
-          classification,
-          ec2AlarmManagerArray.find((i) => i.instanceID === instanceID)?.tags ||
-            {},
-        );
-        alarmConfigs.push(...configs);
-      }
-    }
+    const alarmConfigs: PrometheusAlarmConfigArray = [];
+    const configs: PrometheusAlarmConfigArray = await getPromAlarmConfigs(ec2AlarmManagerArray);
+    alarmConfigs.push(...configs);
 
     log
       .info()
