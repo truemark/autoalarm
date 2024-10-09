@@ -584,6 +584,7 @@ export async function manageActiveEC2InstanceAlarms(
   }
 }
 
+// TODO: add prom logic for this function as well.
 export async function manageInactiveInstanceAlarms(
   inactiveInstancesInfoArray: EC2AlarmManagerArray,
 ) {
