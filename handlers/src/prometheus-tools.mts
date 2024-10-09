@@ -45,32 +45,13 @@ const client = new AmpClient({
  */
 
 export async function batchPromRulesDeletion(
-  shouldDeletePromAlarm: boolean,
   prometheusWorkspaceId: string,
   ec2AlarmManagerArray: EC2AlarmManagerArray,
   service: string,
 ) {
-  if (!prometheusWorkspaceId) {
-    log
-      .info()
-      .str('function', 'batchPromRulesDeletion')
-      .msg(
-        'Prometheus workspace ID not found. Skipping Prometheus rules deletion)',
-      );
-    return;
-  } else if (!shouldDeletePromAlarm) {
-    log
-      .info()
-      .str('function', 'batchPromRulesDeletion')
-      .str('shouldDeletePromAlarm', 'false')
-      .msg('Prometheus rules have not been marked for deletion');
-    return;
-  }
-
   log
     .info()
     .str('function', 'batchPromRulesDeletion')
-    .str('shouldDeletePromAlarm', 'true')
     .msg('Prometheus rules have been marked for deletion. Fetching instances.');
 
   try {
@@ -127,6 +108,11 @@ export async function batchPromRulesDeletion(
  * @param instanceId - The EC2 instance ID.
  * @param classification - The alarm classification (e.g., CRITICAL, WARNING).
  * @returns Array of alarm configurations.
+ * TODO: We are going to need to adjust this function to have a simlar flow  as the manageActiveEC2Alarms function to
+ *  loop through configs and tags to get alarm theshold values or create alarms.
+ *  - We are going to need to create a alarms to keep set and use that do delete the other alrms for these instances.
+ *    an example can be found in the manageActiveEC2Alarms and handleAlarmCreation functions.
+ *
  */
 async function getPromAlarmConfigs(
   instanceId: string,
@@ -257,23 +243,11 @@ async function getPromAlarmConfigs(
  * @param ec2AlarmManagerArray - Array of EC2 instances with state and tags.
  */
 export async function batchUpdatePromRules(
-  shouldUpdatePromRules: boolean,
   prometheusWorkspaceId: string,
   service: string,
   ec2AlarmManagerArray: EC2AlarmManagerArray,
   region: string,
 ) {
-  if (!shouldUpdatePromRules) {
-    log
-      .info()
-      .str('function', 'batchUpdatePromRules')
-      .str('shouldUpdatePromRules', 'false')
-      .msg(
-        'Prometheus rules have not been marked for update or creation. Skipping batch update.',
-      );
-    return;
-  }
-
   log
     .info()
     .str('function', 'batchUpdatePromRules')
@@ -552,7 +526,7 @@ export async function queryPrometheusForService(
           return [];
         }
 
-        const instances = new Set<string>();
+        const instances: string[] = [];
 
         // Regex for matching IP address:port
         const ipPortRegex = /(\d{1,3}\.){3}\d{1,3}:\d+$/;
@@ -574,7 +548,7 @@ export async function queryPrometheusForService(
 
           if (ipPortRegex.test(instance)) {
             const ip = instance.split(':')[0];
-            instances.add(ip);
+            instances.push(ip);
             // Log the matched IP address
             log
               .info()
@@ -582,7 +556,7 @@ export async function queryPrometheusForService(
               .str('ip', ip)
               .msg('Matched IP address');
           } else if (ec2InstanceIdRegex.test(instance)) {
-            instances.add(instance);
+            instances.push(instance);
             // Log the matched EC2 instance ID
             log
               .info()
@@ -607,7 +581,7 @@ export async function queryPrometheusForService(
           .str('Prometheus Workspace ID', promWorkspaceID)
           .msg('Unique instances extracted from Prometheus response');
 
-        return Array.from(instances);
+        return instances;
       }
       default: {
         // Log a warning if an unsupported service type is provided

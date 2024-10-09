@@ -30,6 +30,8 @@ import {
 } from './alarm-config.mjs';
 
 const log: logging.Logger = logging.getLogger('ec2-modules');
+export const prometheusWorkspaceId: string =
+  process.env.PROMETHEUS_WORKSPACE_ID || '';
 const region: string = process.env.AWS_REGION || '';
 const retryStrategy = new ConfiguredRetryStrategy(20);
 const ec2Client: EC2Client = new EC2Client({
@@ -40,12 +42,6 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   region: region,
   retryStrategy: retryStrategy,
 });
-
-//these vars are used in the prometheus alarm logic.
-//temp remove for refactoring until we design new prometheus logic
-//const shouldUpdatePromRules = false;
-//const shouldDeletePromAlarm = false;
-//const isCloudWatch = true;
 
 // This function is used to confirm that memory metrics are being reported for an instance
 async function getMemoryMetricsFromCloudWatch(
@@ -450,10 +446,15 @@ async function handleAlarmCreation(
 export async function manageActiveEC2Alarms(
   activeInstancesInfoArray: EC2AlarmManagerArray,
 ) {
-  // Reset flags so prior lambda runs don't carry over old values once we start pulling in prometheus alarms
-  //shouldUpdatePromRules = false;
-  //shouldDeletePromAlarm = false;
-  //isCloudWatch = true;
+  /*
+  * TODO: implement prometheus logic for EC2 instances by doing the following:
+  *  - get the prometheus workspace id from the environment variable
+  *  - Create two separate arrays, one for instances that are reporting to prometheus and one for instances that are not (Cloudwatch)
+  *    - For this we want to query Prometheus for the private ips using a try{does instance private IP report to prom, add to prom array} catch {if not, add  to cloudwatch array}
+  *  - create two conditional statements for prom and cloudwatch array that are executed if either array is > 0
+  *    - if prom array > 0, create prometheus alarms only if prometheus workspace id is set and tag autoalarm:target != 'cloudwatch'
+  *    - move on and create cloudwatch alarms if cloudwatchArray.length > 0
+   */
   for (const {instanceID, tags} of activeInstancesInfoArray) {
     log
       .info()
