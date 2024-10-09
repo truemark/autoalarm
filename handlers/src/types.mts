@@ -4,7 +4,7 @@ export interface EC2AlarmManagerObject {
   instanceID: string;
   tags: Tag;
   state: string;
-  ec2Metadata?: {platform: string | null, privateIP: string | null} ;
+  ec2Metadata?: {platform: string | null; privateIP: string | null};
 }
 
 export interface Tag {
@@ -47,12 +47,12 @@ export interface Rule {
 //Prometheus Alarm Config
 
 export interface PrometheusAlarmConfig {
-  instanceId: string;        // ID of the instance
-  type: string;              // The type or classification of the alarm
-  alarmName: string;         // The name of the alarm
-  alarmQuery: string;        // The query used for the alarm
-  duration: string;          // The duration of the alarm, in "Xm" format
-  severityType: string;    // The severity of the alarm
+  instanceId: string; // ID of the instance
+  type: string; // The type or classification of the alarm
+  alarmName: string; // The name of the alarm
+  alarmQuery: string; // The query used for the alarm
+  duration: string; // The duration of the alarm, in "Xm" format
+  severityType: string; // The severity of the alarm
 }
 
 export type PrometheusAlarmConfigArray = PrometheusAlarmConfig[];
