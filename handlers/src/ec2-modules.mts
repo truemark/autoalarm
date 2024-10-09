@@ -538,7 +538,7 @@ export async function manageActiveEC2InstanceAlarms(
         .str('EC2 instance ID', instanceID)
         .msg('Alarm creation disabled by tag settings');
       deleteInstanceAlarmsArray.push({instanceID, tags, state});
-      continue; // Skip further processing
+      continue; // Skip further processing for this instance
     }
 
     // Check if instance reports to Prometheus and process Prometheus alarms
@@ -548,7 +548,7 @@ export async function manageActiveEC2InstanceAlarms(
       instanceIPsReportingToPrometheus.includes(privateIP)
     ) {
       prometheusArray.push({instanceID, tags, state, ec2Metadata});
-      continue; // Skip CW alarms
+      continue; // Skip CW alarms for this instance.
     }
 
     // Handle CloudWatch alarms

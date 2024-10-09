@@ -10,25 +10,25 @@ import {
   DescribeWorkspaceCommand,
   DescribeWorkspaceCommandInput,
 } from '@aws-sdk/client-amp';
+import {MetricAlarmConfigs, parseMetricAlarmOptions} from './alarm-config.mjs';
 import {
   RuleGroup,
   NamespaceDetails,
   Rule,
-  Tag,
-  EC2AlarmManagerArray, PrometheusAlarmConfigArray,
+  EC2AlarmManagerArray,
+  PrometheusAlarmConfigArray,
 } from './types.mjs';
-import {AlarmClassification} from './enums.mjs';
 import * as yaml from 'js-yaml';
 import * as aws4 from 'aws4';
 import * as https from 'https';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {defaultProvider} from '@aws-sdk/credential-provider-node';
+import {buildAlarmName} from './alarm-tools.mjs';
+import {AlarmClassification} from './enums.mjs';
 
 const log: logging.Logger = logging.getLogger('ec2-modules');
 const retryStrategy = new ConfiguredRetryStrategy(20);
 //the following environment variables are used to get the prometheus workspace id and the region
-export const prometheusWorkspaceId: string =
-  process.env.PROMETHEUS_WORKSPACE_ID || '';
 const region: string = process.env.AWS_REGION || '';
 const client = new AmpClient({
   region,
@@ -103,137 +103,167 @@ export async function batchPromRulesDeletion(
 }
 
 /**
- * Get alarm configurations for prometheus alarms. Specifically, for an instance based on its tags and classification.
- * @param instanceId - The EC2 instance ID.
- * @param classification - The alarm classification (e.g., CRITICAL, WARNING).
- * @returns Array of alarm configurations.
- * TODO: We are going to need to adjust this function to have a simlar flow  as the manageActiveEC2InstanceAlarms function to
- *  loop through configs and tags to get alarm theshold values or create alarms.
- *  - We are going to need to create a alarms to keep set and use that do delete the other alrms for these instances.
- *    an example can be found in the manageActiveEC2InstanceAlarms and handleAlarmCreation functions.
- *
+ * Get alarm configurations for Prometheus alarms for EC2 instances based on their tags and metric configurations.
+ * @param ec2AlarmManagerArray - Array of EC2 instances with state and tags.
+ * @param service - The service name: 'EC2', 'ECS', 'EKS', 'RDS', etc. These correspond with service names in the MetricAlarmConfigs object from alarm-config.mts.
+ * @returns Array of Prometheus alarm configurations.
  */
 async function getPromAlarmConfigs(
   ec2AlarmManagerArray: EC2AlarmManagerArray,
-  // TODO Fix the use of any
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): Promise<any[]> {
-  const configs = [];
-  /*
-   * TODO: for the refactor we are going to need to pull this information out of alarm config meteric config objects and
-   *  ec2-metadata. We are going to need to loop through the configs and tags to get the alarm theshold values or create alarms.
-   */
-  //const {
-  //  staticThresholdAlarmName: cpuAlarmName,
-  //  threshold: cpuThreshold,
-  //  durationStaticTime: cpuDurationTime,
-  //  ec2Metadata: {platform, privateIP}, //this comes from getInstanceDetails in ec2-modules
-  //  //@ts-expect-error temp for refactor
-  //} = await getAlarmConfig(instanceId, classification, 'cpu', tags);
-  let escapedPrivateIp = '';
+  service: string,
+): Promise<PrometheusAlarmConfigArray> {
+  const configs: PrometheusAlarmConfigArray = [];
+  const metricConfigs = MetricAlarmConfigs[service];
 
-  log
-    .info()
-    .str('function', 'getPromAlarmConfigs')
-    .str('instanceId', instanceId)
-    .str('classification', classification)
-    .str('alarmName', cpuAlarmName)
-    .num('threshold', cpuThreshold)
-    .num('durationTime', cpuDurationTime)
-    .str('platform', platform as string)
-    .str('privateIp', privateIp as string)
-    .msg('Fetched alarm configuration');
+  // Loop through each instance in the ec2AlarmManagerArray
+  for (const {instanceID, tags, ec2Metadata} of ec2AlarmManagerArray) {
+    const platform = ec2Metadata?.platform ?? '';
+    const privateIP = ec2Metadata?.privateIP ?? '';
 
-  if (privateIp === '' || privateIp === null) {
-    log
-      .error()
-      .str('function', 'getPromAlarmConfigs')
-      .str('instanceId', instanceId)
-      .msg('Private IP address not found for instance');
-    throw new Error('Private IP address not found for instance');
-  } else {
-    escapedPrivateIp = privateIp.replace(/\./g, '\\\\.');
+    if (!privateIP) {
+      log
+        .error()
+        .str('function', 'getPromAlarmConfigs')
+        .str('instanceId', instanceID)
+        .msg('Private IP address not found for instance');
+      continue; // Skip this instance if no private IP
+    }
+
+    const escapedPrivateIp = privateIP.replace(/\./g, '\\\\.');
+
+    // Loop through each metric configuration
+    for (const config of metricConfigs) {
+      const tagValue = tags[`autoalarm:${config.tagKey}`];
+      const updatedDefaults = parseMetricAlarmOptions(
+        tagValue || '',
+        config.defaults,
+      );
+
+      // Determine if the alarm should be created based on defaultCreate or tag presence
+      if (config.defaultCreate || tagValue !== undefined) {
+        const classifications = ['Warning', 'Critical'];
+        for (const classification of classifications) {
+          const threshold =
+            classification === 'Warning'
+              ? updatedDefaults.warningThreshold
+              : updatedDefaults.criticalThreshold;
+
+          if (threshold === null || threshold === undefined) {
+            // Skip if threshold is not set
+            continue;
+          }
+
+          // Determine the duration
+          const durationTime =
+            updatedDefaults.period * updatedDefaults.evaluationPeriods;
+
+          // Build the Prometheus query
+          let alarmQuery = '';
+
+          switch (config.metricName) {
+            case 'CPUUtilization':
+              alarmQuery = getCpuQuery(
+                platform,
+                escapedPrivateIp,
+                instanceID,
+                threshold,
+              );
+              break;
+            case '':
+              // For Memory and Storage, metricName is set dynamically
+              if (config.tagKey.includes('memory')) {
+                alarmQuery = getMemoryQuery(
+                  platform,
+                  escapedPrivateIp,
+                  instanceID,
+                  threshold,
+                );
+              } else if (config.tagKey.includes('storage')) {
+                alarmQuery = getStorageQuery(
+                  platform,
+                  escapedPrivateIp,
+                  instanceID,
+                  threshold,
+                );
+              }
+              break;
+            // TODO: Add more cases for additional metrics
+            default:
+              break;
+          }
+
+          if (!alarmQuery) {
+            // Skip if alarmQuery couldn't be constructed
+            continue;
+          }
+
+          // Build the alarm name based on the convention
+          const alarmName = buildAlarmName(
+            config,
+            service,
+            instanceID,
+            classification as AlarmClassification,
+            'static',
+          );
+
+          // Push the alarm configuration into the array
+          configs.push({
+            instanceId: instanceID,
+            type: classification,
+            alarmName, // Include the alarm name
+            alarmQuery,
+            duration: `${Math.floor(durationTime / 60)}m`, // Convert duration to minutes
+            severityType: classification.toLowerCase(),
+          });
+        }
+      }
+    }
   }
-
-  const cpuQuery = platform?.toLowerCase().includes('windows')
-    ? `100 - (rate(windows_cpu_time_total{instance=~"(${escapedPrivateIp}.*|${instanceId})", mode="idle"}[30s]) * 100) > ${cpuThreshold}`
-    : `100 - (rate(node_cpu_seconds_total{mode="idle", instance=~"(${escapedPrivateIp}.*|${instanceId})"}[30s]) * 100) > ${cpuThreshold}`;
-
-  configs.push({
-    instanceId,
-    type: classification,
-    alarmName: cpuAlarmName,
-    alarmQuery: cpuQuery,
-    duration: `${Math.floor(cpuDurationTime / 60)}m`, // Ensuring whole numbers for duration
-    severityType: classification.toLowerCase(),
-  });
-
-  const {
-    staticThresholdAlarmName: memAlarmName,
-    threshold: memThreshold,
-    durationStaticTime: memDurationTime,
-    //@ts-expect-error temp for refactor
-  } = await getAlarmConfig(instanceId, classification, 'memory', tags);
-
-  log
-    .info()
-    .str('function', 'getPromAlarmConfigs')
-    .str('instanceId', instanceId)
-    .str('classification', classification)
-    .str('alarmName', memAlarmName)
-    .num('threshold', memThreshold)
-    .num('durationTime', memDurationTime)
-    .str('platform', platform as string)
-    .str('privateIp', privateIp as string)
-    .msg('Fetched alarm configuration');
-
-  const memQuery = platform?.toLowerCase().includes('windows')
-    ? `100 - ((windows_os_virtual_memory_free_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})",job="ec2"} / windows_os_virtual_memory_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})",job="ec2"}) * 100) > ${memThreshold}`
-    : `100 - ((node_memory_MemAvailable_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"} / node_memory_MemTotal_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"}) * 100) > ${memThreshold}`;
-
-  configs.push({
-    instanceId,
-    type: classification,
-    alarmName: memAlarmName,
-    alarmQuery: memQuery,
-    duration: `${Math.floor(memDurationTime / 60)}m`, // Ensuring whole numbers for duration
-    severityType: classification.toLowerCase(),
-  });
-
-  const {
-    staticThresholdAlarmName: storageAlarmName,
-    threshold: storageThreshold,
-    durationStaticTime: storageDurationTime,
-    //@ts-expect-error temp for refactor
-  } = await getAlarmConfig(instanceId, classification, 'storage', tags);
-
-  log
-    .info()
-    .str('function', 'getPromAlarmConfigs')
-    .str('instanceId', instanceId)
-    .str('classification', classification)
-    .str('alarmName', storageAlarmName)
-    .num('threshold', storageThreshold)
-    .num('durationTime', storageDurationTime)
-    .str('platform', platform as string)
-    .str('privateIp', privateIp as string)
-    .msg('Fetched alarm configuration');
-
-  const storageQuery = platform?.toLowerCase().includes('windows')
-    ? `100 - ((windows_logical_disk_free_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"} / windows_logical_disk_size_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"}) * 100) > ${storageThreshold}`
-    : `100 - ((node_filesystem_free_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"} / node_filesystem_size_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"}) * 100) > ${storageThreshold}`;
-
-  configs.push({
-    instanceId,
-    type: classification,
-    alarmName: storageAlarmName,
-    alarmQuery: storageQuery,
-    duration: `${Math.floor(storageDurationTime / 60)}m`, // Ensuring whole numbers for duration
-    severityType: classification.toLowerCase(),
-  });
 
   return configs;
 }
+
+// Helper functions to construct Prometheus queries
+function getCpuQuery(
+  platform: string | null,
+  escapedPrivateIp: string,
+  instanceId: string,
+  threshold: number,
+): string {
+  if (platform?.toLowerCase().includes('windows')) {
+    return `100 - (rate(windows_cpu_time_total{instance=~"(${escapedPrivateIp}.*|${instanceId})", mode="idle"}[30s]) * 100) > ${threshold}`;
+  } else {
+    return `100 - (rate(node_cpu_seconds_total{mode="idle", instance=~"(${escapedPrivateIp}.*|${instanceId})"}[30s]) * 100) > ${threshold}`;
+  }
+}
+
+function getMemoryQuery(
+  platform: string | null,
+  escapedPrivateIp: string,
+  instanceId: string,
+  threshold: number,
+): string {
+  if (platform?.toLowerCase().includes('windows')) {
+    return `100 - ((windows_os_virtual_memory_free_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"} / windows_os_virtual_memory_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"}) * 100) > ${threshold}`;
+  } else {
+    return `100 - ((node_memory_MemAvailable_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"} / node_memory_MemTotal_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"}) * 100) > ${threshold}`;
+  }
+}
+
+function getStorageQuery(
+  platform: string | null,
+  escapedPrivateIp: string,
+  instanceId: string,
+  threshold: number,
+): string {
+  if (platform?.toLowerCase().includes('windows')) {
+    return `100 - ((windows_logical_disk_free_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"} / windows_logical_disk_size_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"}) * 100) > ${threshold}`;
+  } else {
+    return `100 - ((node_filesystem_free_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"} / node_filesystem_size_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"}) * 100) > ${threshold}`;
+  }
+}
+
+// TODO: Create additional helper functions for other metrics to define prometheus queries.
 
 /**
  * Batch update Prometheus rules for all EC2 instances with the necessary tags and metrics reporting.
@@ -254,7 +284,10 @@ export async function batchUpdatePromRules(
 
   try {
     const alarmConfigs: PrometheusAlarmConfigArray = [];
-    const configs: PrometheusAlarmConfigArray = await getPromAlarmConfigs(ec2AlarmManagerArray);
+    const configs: PrometheusAlarmConfigArray = await getPromAlarmConfigs(
+      ec2AlarmManagerArray,
+      service,
+    );
     alarmConfigs.push(...configs);
 
     log
