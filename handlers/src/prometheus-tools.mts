@@ -38,7 +38,6 @@ const client = new AmpClient({
 
 /**
  * This function is used to delete all prom rules in batch for instances that have been marked for Prom rule deletion.
- * @param shouldDeletePromAlarm - boolean flag to indicate if prometheus rules should be deleted.
  * @param prometheusWorkspaceId - The prometheus workspace id.
  * @param ec2AlarmManagerArray - Array of EC2 instances with state and tags.
  * @param service - The service name.
@@ -108,10 +107,10 @@ export async function batchPromRulesDeletion(
  * @param instanceId - The EC2 instance ID.
  * @param classification - The alarm classification (e.g., CRITICAL, WARNING).
  * @returns Array of alarm configurations.
- * TODO: We are going to need to adjust this function to have a simlar flow  as the manageActiveEC2Alarms function to
+ * TODO: We are going to need to adjust this function to have a simlar flow  as the manageActiveEC2InstanceAlarms function to
  *  loop through configs and tags to get alarm theshold values or create alarms.
  *  - We are going to need to create a alarms to keep set and use that do delete the other alrms for these instances.
- *    an example can be found in the manageActiveEC2Alarms and handleAlarmCreation functions.
+ *    an example can be found in the manageActiveEC2InstanceAlarms and handleAlarmCreation functions.
  *
  */
 async function getPromAlarmConfigs(

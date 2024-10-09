@@ -2,7 +2,7 @@ import {Handler} from 'aws-lambda';
 import * as logging from '@nr1e/logging';
 import {
   manageInactiveInstanceAlarms,
-  manageActiveEC2Alarms,
+  manageActiveEC2InstanceAlarms,
   getEC2IdAndState,
   fetchInstanceTags,
   liveStates,
@@ -64,7 +64,7 @@ async function processEC2Event(events: any[]): Promise<void> {
     // checking our liveStates set to see if the instance is in a state that we should be managing alarms for.
     // we are iterating over the AlarmClassification enum to manage alarms for each classification: 'Critical'|'Warning'.
     if (activeInstancesInfoArray.length > 0) {
-      await manageActiveEC2Alarms(activeInstancesInfoArray);
+      await manageActiveEC2InstanceAlarms(activeInstancesInfoArray);
     }
 
     // If the instance is in a state that we should not be managing alarms for, we will remove the alarms.
@@ -126,7 +126,7 @@ async function processEC2TagEvent(events: any[]) {
   }
 
   if (activeInstancesInfoArray.length > 0) {
-    await manageActiveEC2Alarms(activeInstancesInfoArray);
+    await manageActiveEC2InstanceAlarms(activeInstancesInfoArray);
   }
 
   if (inactiveInstancesInfoArray.length > 0) {
