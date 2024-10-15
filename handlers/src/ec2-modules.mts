@@ -616,8 +616,13 @@ export async function manageInactiveInstanceAlarms(
     const privateIP = ec2MetaData.privateIP || '';
 
     // Check if instance reports to Prometheus and process Prometheus alarm deletion
-    if ( instanceIPsReportingToPrometheus.includes(privateIP) ) {
-      prometheusAlarmsToDelete.push({instanceID: instanceInfo.instanceID , tags: instanceInfo.tags, state: instanceInfo.state, ec2Metadata: ec2MetaData});
+    if (instanceIPsReportingToPrometheus.includes(privateIP)) {
+      prometheusAlarmsToDelete.push({
+        instanceID: instanceInfo.instanceID,
+        tags: instanceInfo.tags,
+        state: instanceInfo.state,
+        ec2Metadata: ec2MetaData,
+      });
     }
 
     const existingAlarms: string[] = await getCWAlarmsForInstance(
@@ -641,14 +646,15 @@ export async function manageInactiveInstanceAlarms(
         .str('function', 'manageInactiveInstanceAlarms')
         .str('prometheusWorkspaceId', prometheusWorkspaceId)
         .obj('prometheusAlarmsToDelete', prometheusAlarmsToDelete)
-        .msg('Deleting Prometheus alarms for inactive instances that are reporting to prometheus if those alarm rules exist.');
+        .msg(
+          'Deleting Prometheus alarms for inactive instances that are reporting to prometheus if those alarm rules exist.',
+        );
       await batchPromRulesDeletion(
         prometheusWorkspaceId,
         prometheusAlarmsToDelete,
         'ec2',
       );
     }
-
   } catch (e) {
     log
       .error()
