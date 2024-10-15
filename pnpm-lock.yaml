@@ -17,6 +17,9 @@ importers:
       '@aws-sdk/signature-v4':
         specifier: ^3.374.0
         version: 3.374.0
+      aws4:
+        specifier: ^1.13.2
+        version: 1.13.2
       axios:
         specifier: ^1.7.7
         version: 1.7.7
@@ -469,6 +472,9 @@ packages:
 
   asynckit@0.4.0:
     resolution: {integrity: sha512-Oei9OH4tRh0YqU3GxhX79dM/mwVgvbZJaSNaRk+bshkj0S5cfHcgYakreBjrHwatXKbz+IoIdYLxrKim2MjW0Q==}
+
+  aws4@1.13.2:
+    resolution: {integrity: sha512-lHe62zvbTB5eEABUVi/AwVh0ZKY9rMMDhmm+eeyuuUQbQ3+J+fONVQOZyj+DdrvD4BY33uYniyRJ4UJIaSKAfw==}
 
   axios@1.7.7:
     resolution: {integrity: sha512-S4kL7XrjgBmvdGut0sN3yJxqYzrDOnivkBiN0OFs6hLiUam3UPvswUo0kqGyhqUZGEOytHyumEdXsAkgCOUf3Q==}
@@ -1544,6 +1550,8 @@ snapshots:
       color-convert: 2.0.1
 
   asynckit@0.4.0: {}
+
+  aws4@1.13.2: {}
 
   axios@1.7.7:
     dependencies:

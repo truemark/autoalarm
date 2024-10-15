@@ -31,7 +31,6 @@ import {buildAlarmName} from './alarm-tools.mjs';
 import {AlarmClassification} from './enums.mjs';
 import {MetricAlarmConfigs, parseMetricAlarmOptions} from './alarm-config.mjs';
 
-
 const log: logging.Logger = logging.getLogger('ec2-modules');
 const retryStrategy = new ConfiguredRetryStrategy(20);
 //the following environment variables are used to get the prometheus workspace id and the region
@@ -235,7 +234,6 @@ async function getPromAlarmConfigs(
  * Batch update Prometheus rules for all EC2 instances with the necessary tags and metrics reporting.
  * @param prometheusWorkspaceId - The Prometheus workspace ID.
  * @param service - The service name.
- * @param region - The AWS region passed by an environment variable.
  * @param ec2AlarmManagerArray - Array of EC2 instances with state and tags.
  */
 export async function batchUpdatePromRules(
@@ -337,7 +335,6 @@ export const makeSignedRequest = async (
 
   // Add signed headers to the request options
   Object.assign(options.headers, signer.headers);
-
   return new Promise((resolve, reject) => {
     const req = https.request(options, (res) => {
       let data = '';
