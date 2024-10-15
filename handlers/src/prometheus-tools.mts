@@ -10,7 +10,6 @@ import {
   DescribeWorkspaceCommand,
   DescribeWorkspaceCommandInput,
 } from '@aws-sdk/client-amp';
-import {MetricAlarmConfigs, parseMetricAlarmOptions} from './alarm-config.mjs';
 import {
   RuleGroup,
   NamespaceDetails,
@@ -18,6 +17,11 @@ import {
   EC2AlarmManagerArray,
   PrometheusAlarmConfigArray,
 } from './types.mjs';
+import {
+  getCpuQuery,
+  getMemoryQuery,
+  getStorageQuery,
+} from './prometheus-queries.mjs';
 import * as yaml from 'js-yaml';
 import * as aws4 from 'aws4';
 import * as https from 'https';
@@ -25,6 +29,8 @@ import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {defaultProvider} from '@aws-sdk/credential-provider-node';
 import {buildAlarmName} from './alarm-tools.mjs';
 import {AlarmClassification} from './enums.mjs';
+import {MetricAlarmConfigs, parseMetricAlarmOptions} from './alarm-config.mjs';
+
 
 const log: logging.Logger = logging.getLogger('ec2-modules');
 const retryStrategy = new ConfiguredRetryStrategy(20);
@@ -221,46 +227,6 @@ async function getPromAlarmConfigs(
   }
 
   return configs;
-}
-
-// Helper functions to construct Prometheus queries
-function getCpuQuery(
-  platform: string | null,
-  escapedPrivateIp: string,
-  instanceId: string,
-  threshold: number,
-): string {
-  if (platform?.toLowerCase().includes('windows')) {
-    return `100 - (rate(windows_cpu_time_total{instance=~"(${escapedPrivateIp}.*|${instanceId})", mode="idle"}[30s]) * 100) > ${threshold}`;
-  } else {
-    return `100 - (rate(node_cpu_seconds_total{mode="idle", instance=~"(${escapedPrivateIp}.*|${instanceId})"}[30s]) * 100) > ${threshold}`;
-  }
-}
-
-function getMemoryQuery(
-  platform: string | null,
-  escapedPrivateIp: string,
-  instanceId: string,
-  threshold: number,
-): string {
-  if (platform?.toLowerCase().includes('windows')) {
-    return `100 - ((windows_os_virtual_memory_free_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"} / windows_os_virtual_memory_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"}) * 100) > ${threshold}`;
-  } else {
-    return `100 - ((node_memory_MemAvailable_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"} / node_memory_MemTotal_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"}) * 100) > ${threshold}`;
-  }
-}
-
-function getStorageQuery(
-  platform: string | null,
-  escapedPrivateIp: string,
-  instanceId: string,
-  threshold: number,
-): string {
-  if (platform?.toLowerCase().includes('windows')) {
-    return `100 - ((windows_logical_disk_free_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"} / windows_logical_disk_size_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"}) * 100) > ${threshold}`;
-  } else {
-    return `100 - ((node_filesystem_free_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"} / node_filesystem_size_bytes{instance=~"(${escapedPrivateIp}.*|${instanceId})"}) * 100) > ${threshold}`;
-  }
 }
 
 // TODO: Create additional helper functions for other metrics to define prometheus queries.
