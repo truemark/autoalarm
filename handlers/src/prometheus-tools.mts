@@ -911,19 +911,27 @@ export async function managePromNamespaceAlarms(
 
     if (existingRuleIndex !== -1) {
       // If the rule exists, update its expression if it has changed
-      if (ruleGroup.rules[existingRuleIndex].expr !== config.alarmQuery) {
+      const existingRule = ruleGroup.rules[existingRuleIndex];
+      if (
+        existingRule.expr !== config.alarmQuery ||
+        existingRule.for !== config.duration
+      ) {
         log
           .info()
           .str('function', 'managePromNamespaceAlarms')
           .str('namespace', namespace)
           .str('ruleGroupName', ruleGroupName)
           .str('alarmName', config.alarmName)
-          .str('existingRuleIndex', ruleGroup.rules[existingRuleIndex].expr)
-          .str('updated rule', config.alarmQuery)
           .msg(
-            'Rule exists but expression has changed. Updating the rule expression.',
+            'Rule exists but expression or duration has changed. Updating the rule.',
           );
-        ruleGroup.rules[existingRuleIndex].expr = config.alarmQuery;
+
+        // Update existing rule's expression and duration
+        ruleGroup.rules[existingRuleIndex] = {
+          ...existingRule,
+          expr: config.alarmQuery,
+          for: config.duration,
+        };
       } else {
         log
           .info()
@@ -931,7 +939,7 @@ export async function managePromNamespaceAlarms(
           .str('namespace', namespace)
           .str('ruleGroupName', ruleGroupName)
           .str('alarmName', config.alarmName)
-          .msg('Rule exists and expression is unchanged. No update needed.');
+          .msg('Rule exists and is identical. No update needed.');
       }
     } else {
       // If the rule does not exist, add a new rule to the rule group
