@@ -29,7 +29,11 @@ import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {defaultProvider} from '@aws-sdk/credential-provider-node';
 import {buildAlarmName} from './alarm-tools.mjs';
 import {AlarmClassification} from './enums.mjs';
-import {MetricAlarmConfigs, parseMetricAlarmOptions} from './alarm-config.mjs';
+import {
+  MetricAlarmConfig,
+  MetricAlarmConfigs,
+  parseMetricAlarmOptions,
+} from './alarm-config.mjs';
 
 const log: logging.Logger = logging.getLogger('ec2-modules');
 const retryStrategy = new ConfiguredRetryStrategy(20);
@@ -118,7 +122,8 @@ async function getPromAlarmConfigs(
   service: string,
 ): Promise<PrometheusAlarmConfigArray> {
   const configs: PrometheusAlarmConfigArray = [];
-  const metricConfigs = MetricAlarmConfigs[service];
+  const metricConfigs: MetricAlarmConfig[] =
+    MetricAlarmConfigs[service.toUpperCase()];
 
   // Loop through each instance in the ec2AlarmManagerArray
   for (const {instanceID, tags, ec2Metadata} of ec2AlarmManagerArray) {
@@ -138,11 +143,23 @@ async function getPromAlarmConfigs(
 
     // Loop through each metric configuration
     for (const config of metricConfigs) {
+      log
+        .info()
+        .str('function', 'getPromAlarmConfigs')
+        .str('service', service)
+        .str('config', JSON.stringify(config))
+        .msg('Processing metric configuration');
       const tagValue = tags[`autoalarm:${config.tagKey}`];
       const updatedDefaults = parseMetricAlarmOptions(
         tagValue || '',
         config.defaults,
       );
+      log
+        .info()
+        .str('function', 'getPromAlarmConfigs')
+        .str('service', service)
+        .str('updatedDefaults', JSON.stringify(updatedDefaults))
+        .msg('Updated defaults for metric configuration');
 
       // Determine if the alarm should be created based on defaultCreate or tag presence
       if (config.defaultCreate || tagValue !== undefined) {
@@ -165,8 +182,8 @@ async function getPromAlarmConfigs(
           // Build the Prometheus query
           let alarmQuery = '';
 
-          switch (config.metricName) {
-            case 'CPUUtilization':
+          switch (config.tagKey) {
+            case 'cpu':
               alarmQuery = getCpuQuery(
                 platform,
                 escapedPrivateIp,
@@ -174,23 +191,21 @@ async function getPromAlarmConfigs(
                 threshold,
               );
               break;
-            case '':
-              // For Memory and Storage, metricName is set dynamically
-              if (config.tagKey.includes('memory')) {
-                alarmQuery = getMemoryQuery(
-                  platform,
-                  escapedPrivateIp,
-                  instanceID,
-                  threshold,
-                );
-              } else if (config.tagKey.includes('storage')) {
-                alarmQuery = getStorageQuery(
-                  platform,
-                  escapedPrivateIp,
-                  instanceID,
-                  threshold,
-                );
-              }
+            case 'memory':
+              alarmQuery = getMemoryQuery(
+                platform,
+                escapedPrivateIp,
+                instanceID,
+                threshold,
+              );
+              break;
+            case 'storage':
+              alarmQuery = getStorageQuery(
+                platform,
+                escapedPrivateIp,
+                instanceID,
+                threshold,
+              );
               break;
             // TODO: Add more cases for additional metrics
             default:
@@ -224,11 +239,16 @@ async function getPromAlarmConfigs(
       }
     }
   }
-
+  log
+    .info()
+    .str('function', 'getPromAlarmConfigs')
+    .str('service', service)
+    .str('configs', JSON.stringify(configs))
+    .msg('Prometheus alarm configurations generated');
   return configs;
 }
 
-// TODO: Create additional helper functions for other metrics to define prometheus queries.
+// TODO: Need to add back retry logic to batchUpdatePromRules wait 30 seconds for 5 tries.
 
 /**
  * Batch update Prometheus rules for all EC2 instances with the necessary tags and metrics reporting.
@@ -455,7 +475,11 @@ export async function queryPrometheusForService(
 
         const instances: string[] = [];
 
-        // Regex for matching IP address:port
+        /*
+         * Regex for matching IP address:port
+         * this may be unnecessary as the instance ID is also returned in the query and a single query can have multiple IPs
+         * we may need to rework the logic here to deliver an object that has the instanceID associated with the private IP: {instanceID: privateIP}
+         */
         const ipPortRegex = /(\d{1,3}\.){3}\d{1,3}:\d+$/;
         // Regex for matching AWS EC2 instance ID
         const ec2InstanceIdRegex = /^i-[a-zA-Z0-9]+$/;
@@ -464,17 +488,17 @@ export async function queryPrometheusForService(
         // TODO Fix the use of any
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         response.data.result.forEach((item: any) => {
-          const instance = item.metric.instance;
+          const instanceID = item.metric.instance;
 
           // Log the instance being processed
           log
             .info()
             .str('function', 'queryPrometheusForService')
-            .str('instance', instance)
+            .str('instance', instanceID)
             .msg('Processing instance from Prometheus response');
 
-          if (ipPortRegex.test(instance)) {
-            const ip = instance.split(':')[0];
+          if (ipPortRegex.test(instanceID)) {
+            const ip = instanceID.split(':')[0];
             instances.push(ip);
             // Log the matched IP address
             log
@@ -482,20 +506,22 @@ export async function queryPrometheusForService(
               .str('function', 'queryPrometheusForService')
               .str('ip', ip)
               .msg('Matched IP address');
-          } else if (ec2InstanceIdRegex.test(instance)) {
-            instances.push(instance);
+          } else if (ec2InstanceIdRegex.test(instanceID)) {
+            instances.push(instanceID);
             // Log the matched EC2 instance ID
             log
               .info()
               .str('function', 'queryPrometheusForService')
-              .str('instanceId', instance)
+              .str('instanceId', instanceID)
+              .str('Prometheus Workspace ID', promWorkspaceID)
+              .obj('response', response)
               .msg('Matched EC2 instance ID');
           } else {
             // Log a warning if the instance did not match any regex patterns
             log
               .warn()
               .str('function', 'queryPrometheusForService')
-              .str('instance', instance)
+              .str('instance', instanceID)
               .msg('Instance did not match any regex patterns');
           }
         });
@@ -506,6 +532,7 @@ export async function queryPrometheusForService(
           .str('function', 'queryPrometheusForService')
           .str('serviceType', serviceType)
           .str('Prometheus Workspace ID', promWorkspaceID)
+          .obj('instances', instances)
           .msg('Unique instances extracted from Prometheus response');
 
         return instances;

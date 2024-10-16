@@ -516,9 +516,30 @@ export async function manageActiveEC2InstanceAlarms(
   const prometheusArray: EC2AlarmManagerArray = [];
   const deleteInstanceAlarmsArray: EC2AlarmManagerArray = [];
 
-  const instanceIPsReportingToPrometheus: string[] = prometheusWorkspaceId
+  const instanceIDsReportingToPrometheus: string[] = prometheusWorkspaceId
     ? await queryPrometheusForService('ec2', prometheusWorkspaceId, region)
     : [];
+
+  // For testing purposes
+  if (prometheusWorkspaceId) {
+    log
+      .info()
+      .str('function', 'manageActiveEC2InstanceAlarms')
+      .str('prometheusWorkspaceId', prometheusWorkspaceId)
+      .msg('Prometheus workspace ID found');
+  }
+
+  if (instanceIDsReportingToPrometheus.length > 0) {
+    log
+      .info()
+      .str('function', 'manageActiveEC2InstanceAlarms')
+      .obj(
+        'instances reporting to Prometheus',
+        instanceIDsReportingToPrometheus,
+      )
+      .msg('Instances reporting to Prometheus');
+  }
+  // end testing logging
 
   for (const {instanceID, tags, state} of activeInstancesInfoArray) {
     log
@@ -529,7 +550,6 @@ export async function manageActiveEC2InstanceAlarms(
 
     const ec2Metadata = await getInstanceDetails(instanceID);
     const isWindows = ec2Metadata.platform?.includes('Windows') || false;
-    const privateIP = ec2Metadata.privateIP || '';
     const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
 
     if (!isAlarmEnabled) {
@@ -547,7 +567,7 @@ export async function manageActiveEC2InstanceAlarms(
       prometheusWorkspaceId &&
       (tags['autoalarm:target'] !== 'cloudwatch' ||
         !tags['autoalarm:target']) &&
-      instanceIPsReportingToPrometheus.includes(privateIP)
+      instanceIDsReportingToPrometheus.includes(instanceID)
     ) {
       log
         .info()
@@ -571,7 +591,7 @@ export async function manageActiveEC2InstanceAlarms(
       .str('function', 'manageActiveEC2InstanceAlarms')
       .obj(
         'instances reporting to Prometheus',
-        instanceIPsReportingToPrometheus,
+        instanceIDsReportingToPrometheus,
       )
       .msg('Processing Prometheus alarms');
     await batchUpdatePromRules(prometheusWorkspaceId, 'ec2', prometheusArray);
@@ -613,10 +633,10 @@ export async function manageInactiveInstanceAlarms(
   const prometheusAlarmsToDelete: EC2AlarmManagerArray = [];
   for (const instanceInfo of inactiveInstancesInfoArray) {
     const ec2MetaData = await getInstanceDetails(instanceInfo.instanceID);
-    const privateIP = ec2MetaData.privateIP || '';
+    //const privateIP = ec2MetaData.privateIP || '';
 
     // Check if instance reports to Prometheus and process Prometheus alarm deletion
-    if (instanceIPsReportingToPrometheus.includes(privateIP)) {
+    if (instanceIPsReportingToPrometheus.includes(instanceInfo.instanceID)) {
       prometheusAlarmsToDelete.push({
         instanceID: instanceInfo.instanceID,
         tags: instanceInfo.tags,
