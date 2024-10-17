@@ -1,5 +1,5 @@
 // EC2 Prometheus queries for prometheus rules
-export function getCpuQuery(
+export function EC2getCpuQuery(
   platform: string | null,
   escapedPrivateIp: string,
   instanceId: string,
@@ -12,7 +12,7 @@ export function getCpuQuery(
   }
 }
 
-export function getMemoryQuery(
+export function EC2getMemoryQuery(
   platform: string | null,
   escapedPrivateIp: string,
   instanceId: string,
@@ -25,7 +25,7 @@ export function getMemoryQuery(
   }
 }
 
-export function getStorageQuery(
+export function EC2getStorageQuery(
   platform: string | null,
   escapedPrivateIp: string,
   instanceId: string,

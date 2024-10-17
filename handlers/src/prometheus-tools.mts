@@ -18,9 +18,9 @@ import {
   PrometheusAlarmConfigArray,
 } from './types.mjs';
 import {
-  getCpuQuery,
-  getMemoryQuery,
-  getStorageQuery,
+  EC2getCpuQuery,
+  EC2getMemoryQuery,
+  EC2getStorageQuery,
 } from './prometheus-queries.mjs';
 import * as yaml from 'js-yaml';
 import * as aws4 from 'aws4';
@@ -184,7 +184,7 @@ async function getPromAlarmConfigs(
 
           switch (config.tagKey) {
             case 'cpu':
-              alarmQuery = getCpuQuery(
+              alarmQuery = EC2getCpuQuery(
                 platform,
                 escapedPrivateIp,
                 instanceID,
@@ -192,7 +192,7 @@ async function getPromAlarmConfigs(
               );
               break;
             case 'memory':
-              alarmQuery = getMemoryQuery(
+              alarmQuery = EC2getMemoryQuery(
                 platform,
                 escapedPrivateIp,
                 instanceID,
@@ -200,7 +200,7 @@ async function getPromAlarmConfigs(
               );
               break;
             case 'storage':
-              alarmQuery = getStorageQuery(
+              alarmQuery = EC2getStorageQuery(
                 platform,
                 escapedPrivateIp,
                 instanceID,
