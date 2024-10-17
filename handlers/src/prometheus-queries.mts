@@ -1,3 +1,4 @@
+// EC2 Prometheus queries for prometheus rules
 export function getCpuQuery(
   platform: string | null,
   escapedPrivateIp: string,
