@@ -31,7 +31,6 @@ import {
   batchPromRulesDeletion,
   batchUpdatePromRules,
   queryPrometheusForService,
-  retryWithExponentialBackoff,
 } from './prometheus-tools.mjs';
 
 const log: logging.Logger = logging.getLogger('ec2-modules');
@@ -595,9 +594,7 @@ export async function manageActiveEC2InstanceAlarms(
         instanceIDsReportingToPrometheus,
       )
       .msg('Processing Prometheus alarms');
-    await retryWithExponentialBackoff(() =>
-      batchUpdatePromRules(prometheusWorkspaceId, 'ec2', prometheusArray),
-    );
+    await batchUpdatePromRules(prometheusWorkspaceId, 'ec2', prometheusArray);
   }
 
   // Delete CloudWatch alarms for instances that have autoalarm:enabled set to false if they exist.
@@ -616,12 +613,10 @@ export async function manageActiveEC2InstanceAlarms(
       'Deleting Prometheus alarms for instances with autoalarm:enabled set to false if they exist.',
     );
   if (prometheusWorkspaceId && deleteInstanceAlarmsArray.length > 0) {
-    await retryWithExponentialBackoff(() =>
-      batchPromRulesDeletion(
-        prometheusWorkspaceId,
-        deleteInstanceAlarmsArray,
-        'ec2',
-      ),
+    await batchPromRulesDeletion(
+      prometheusWorkspaceId,
+      deleteInstanceAlarmsArray,
+      'ec2',
     );
   }
 }
@@ -674,12 +669,10 @@ export async function manageInactiveInstanceAlarms(
         .msg(
           'Deleting Prometheus alarms for inactive instances that are reporting to prometheus if those alarm rules exist.',
         );
-      await retryWithExponentialBackoff(() =>
-        batchPromRulesDeletion(
-          prometheusWorkspaceId,
-          prometheusAlarmsToDelete,
-          'ec2',
-        ),
+      await batchPromRulesDeletion(
+        prometheusWorkspaceId,
+        prometheusAlarmsToDelete,
+        'ec2',
       );
     }
   } catch (e) {

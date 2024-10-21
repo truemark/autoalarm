@@ -45,11 +45,12 @@ const client = new AmpClient({
   retryStrategy: retryStrategy,
 });
 
-/* Exponential backoff retry helper function. This is used because the built-in aws retry strategy doesn't work in this
+/*
+ * Exponential backoff retry helper function. This is used because the built-in aws retry strategy doesn't work in this
  * context as failed calls during update.
  * first delay starts at 30 seconds and then increments by 15 seconds for each iteration.
  */
-export async function retryWithExponentialBackoff(
+async function retryWithExponentialBackoff(
   fn: () => Promise<void>,
   maxRetries = 5,
   initialDelay = 30000, // Initial delay in milliseconds (30 seconds)
@@ -126,10 +127,12 @@ export async function batchPromRulesDeletion(
 
     if (instancesToDelete.length > 0) {
       // Delete Prometheus rules for all relevant instances at once
-      await deletePromRulesForService(
-        prometheusWorkspaceId,
-        service,
-        instancesToDelete,
+      await retryWithExponentialBackoff(async () =>
+        deletePromRulesForService(
+          prometheusWorkspaceId,
+          service,
+          instancesToDelete,
+        ),
       );
       log
         .info()
@@ -248,7 +251,7 @@ async function getPromAlarmConfigs(
                 threshold,
               );
               break;
-            // TODO: Add more cases for additional metrics
+            // Add more cases for additional metrics as needed
             default:
               break;
           }
@@ -331,11 +334,13 @@ export async function batchUpdatePromRules(
         `Updating Prometheus rules for all instances in batch under namespace: ${namespace}`,
       );
 
-    await managePromNamespaceAlarms(
-      prometheusWorkspaceId,
-      namespace,
-      ruleGroupName,
-      alarmConfigs,
+    await retryWithExponentialBackoff(async () =>
+      managePromNamespaceAlarms(
+        prometheusWorkspaceId,
+        namespace,
+        ruleGroupName,
+        alarmConfigs,
+      ),
     );
 
     log
