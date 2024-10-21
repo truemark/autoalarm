@@ -45,6 +45,47 @@ const client = new AmpClient({
   retryStrategy: retryStrategy,
 });
 
+/* Exponential backoff retry helper function. This is used because the built-in aws retry strategy doesn't work in this
+ * context as failed calls during update.
+ * first delay starts at 30 seconds and then increments by 15 seconds for each iteration.
+ */
+export async function retryWithExponentialBackoff(
+  fn: () => Promise<void>,
+  maxRetries = 5,
+  initialDelay = 30000, // Initial delay in milliseconds (30 seconds)
+  delayIncrement = 15000, // Incremental delay in milliseconds (15 seconds)
+) {
+  let attempt = 0;
+
+  while (attempt <= maxRetries) {
+    try {
+      await fn();
+      return; // Exit if the function succeeds
+    } catch (error) {
+      attempt++;
+      if (attempt > maxRetries) {
+        log
+          .error()
+          .str('function', 'retryWithExponentialBackoff')
+          .err(error)
+          .msg('Exceeded maximum retries');
+        throw error; // Rethrow after exceeding retries
+      }
+
+      const delay = initialDelay + delayIncrement * (attempt - 1);
+      log
+        .warn()
+        .str('function', 'retryWithExponentialBackoff')
+        .num('attempt', attempt)
+        .num('delay', delay)
+        .err(error)
+        .msg('Retrying after error.');
+
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
 /**
  * This function is used to delete all prom rules in batch for instances that have been marked for Prom rule deletion.
  * @param prometheusWorkspaceId - The prometheus workspace id.
