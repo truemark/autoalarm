@@ -515,31 +515,11 @@ export async function manageActiveEC2InstanceAlarms(
 ) {
   const prometheusArray: EC2AlarmManagerArray = [];
   const deleteInstanceAlarmsArray: EC2AlarmManagerArray = [];
+  const deletePrometheusAlarmsArray: EC2AlarmManagerArray = [];
 
   const instanceIDsReportingToPrometheus: string[] = prometheusWorkspaceId
     ? await queryPrometheusForService('ec2', prometheusWorkspaceId, region)
     : [];
-
-  // For testing purposes
-  if (prometheusWorkspaceId) {
-    log
-      .info()
-      .str('function', 'manageActiveEC2InstanceAlarms')
-      .str('prometheusWorkspaceId', prometheusWorkspaceId)
-      .msg('Prometheus workspace ID found');
-  }
-
-  if (instanceIDsReportingToPrometheus.length > 0) {
-    log
-      .info()
-      .str('function', 'manageActiveEC2InstanceAlarms')
-      .obj(
-        'instances reporting to Prometheus',
-        instanceIDsReportingToPrometheus,
-      )
-      .msg('Instances reporting to Prometheus');
-  }
-  // end testing logging
 
   for (const {instanceID, tags, state} of activeInstancesInfoArray) {
     log
@@ -558,16 +538,16 @@ export async function manageActiveEC2InstanceAlarms(
         .str('function', 'manageActiveEC2InstanceAlarms')
         .str('EC2 instance ID', instanceID)
         .msg('Alarm creation disabled by tag settings');
-      deleteInstanceAlarmsArray.push({instanceID, tags, state});
+      deleteInstanceAlarmsArray.push({instanceID, tags, state, ec2Metadata});
       continue; // Skip further processing for this instance
     }
 
     // Check if instance reports to Prometheus and process Prometheus alarms
     if (
       prometheusWorkspaceId &&
-      (tags['autoalarm:target'] !== 'cloudwatch' ||
-        !tags['autoalarm:target']) &&
-      instanceIDsReportingToPrometheus.includes(instanceID)
+      (tags['autoalarm:target'] === 'prometheus' ||
+        (!tags['autoalarm:target'] &&
+          instanceIDsReportingToPrometheus.includes(instanceID)))
     ) {
       log
         .info()
@@ -576,12 +556,44 @@ export async function manageActiveEC2InstanceAlarms(
         .str('privateIP', ec2Metadata.privateIP as string)
         .msg('Instance reports to Prometheus. Processing Prometheus alarms');
 
+      const CWAlarmsToDelete = await getCWAlarmsForInstance('EC2', instanceID);
+      if (CWAlarmsToDelete.length > 0) {
+        log
+          .info()
+          .str('function', 'manageActiveEC2InstanceAlarms')
+          .str('EC2 instance ID', instanceID)
+          .obj('CWAlarmsToDelete', CWAlarmsToDelete)
+          .msg('Deleting CloudWatch alarms for instances with auto');
+        await cloudWatchClient.send(
+          new DeleteAlarmsCommand({
+            AlarmNames: CWAlarmsToDelete,
+          }),
+        );
+      }
       prometheusArray.push({instanceID, tags, state, ec2Metadata});
-      //Continue; // Skip CW alarms for this instance. Commented out for testing. Uncomment for production.
+    } else if (
+      tags['autoalarm:target'] === 'cloudwatch' ||
+      (!tags['autoalarm:target'] &&
+        !instanceIDsReportingToPrometheus.includes(instanceID))
+    ) {
+      log
+        .info()
+        .str('function', 'manageActiveEC2InstanceAlarms')
+        .str('EC2 instance ID', instanceID)
+        .str('tags', JSON.stringify(tags))
+        .msg(
+          'autoalarm target set to cloudwatch. Creating cloudwatch alarms in place of prometheus alarms',
+        );
+      if (instanceIDsReportingToPrometheus.includes(instanceID)) {
+        deletePrometheusAlarmsArray.push({
+          instanceID,
+          tags,
+          state,
+          ec2Metadata,
+        });
+      }
+      await handleCloudWatchAlarms(instanceID, tags, isWindows);
     }
-
-    // Handle CloudWatch alarms
-    await handleCloudWatchAlarms(instanceID, tags, isWindows);
   }
 
   // Process Prometheus alarms
@@ -597,6 +609,23 @@ export async function manageActiveEC2InstanceAlarms(
     await batchUpdatePromRules(prometheusWorkspaceId, 'ec2', prometheusArray);
   }
 
+  //delete prometheus alarms if autoalarm:target is set to cloudwatch
+  if (deletePrometheusAlarmsArray.length > 0) {
+    log
+      .info()
+      .str('function', 'manageActiveEC2InstanceAlarms')
+      .str('prometheusWorkspaceId', prometheusWorkspaceId)
+      .obj('deletePrometheusAlarmsArray', deletePrometheusAlarmsArray)
+      .msg(
+        'Deleting Prometheus alarms for instances with autoalarm:target set to cloudwatch',
+      );
+    await batchPromRulesDeletion(
+      prometheusWorkspaceId,
+      deletePrometheusAlarmsArray,
+      'ec2',
+    );
+  }
+
   // Delete CloudWatch alarms for instances that have autoalarm:enabled set to false if they exist.
   log
     .info()
@@ -606,7 +635,7 @@ export async function manageActiveEC2InstanceAlarms(
   const disabledAlarms = await getDisabledAlarms(deleteInstanceAlarmsArray);
   await massDeleteAlarms(disabledAlarms);
 
-  // Delete Prometheus alarms for instances that have autoalarm:enabled set to false if they exist.
+  // Delete Prometheus alarms for instances that have autoalarm:enabled set to false if they exist
   log
     .info()
     .msg(
