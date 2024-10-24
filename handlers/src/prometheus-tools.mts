@@ -21,7 +21,7 @@ import {EC2Client, DescribeInstancesCommand} from '@aws-sdk/client-ec2';
 
 const log: logging.Logger = logging.getLogger('ec2-modules');
 const retryStrategy = new ConfiguredRetryStrategy(20);
-//the follwing environment variables are used to get the prometheus workspace id and the region
+//the following environment variables are used to get the prometheus workspace id and the region
 export const prometheusWorkspaceId: string =
   process.env.PROMETHEUS_WORKSPACE_ID || '';
 const region: string = process.env.AWS_REGION || '';
@@ -36,7 +36,7 @@ const ec2Client: EC2Client = new EC2Client({
 });
 
 /**
- * This funciton is used to delete all prom rules in batch for instances that have been marked for Prom rule deletion.
+ * This function is used to delete all prom rules in batch for instances that have been marked for Prom rule deletion.
  * @param shouldDeletePromAlarm - boolean flag to indicate if prometheus rules should be deleted.
  * @param prometheusWorkspaceId - The prometheus workspace id.
  * @param service - The service name.
