@@ -220,10 +220,6 @@ export const handler: Handler = async (event: any): Promise<void> => {
         // Parse the body of the SQS message
         const event = JSON.parse(record.body);
 
-        /*if (event.source === 'aws.ec2') {
-          ec2Events.push(event);
-        }*/
-
         log.trace().obj('body', event).msg('Processing message body');
 
         switch (event.source) {
