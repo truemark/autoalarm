@@ -214,17 +214,40 @@ export const handler: Handler = async (event: any): Promise<void> => {
         // Parse the body of the SQS message
         const event = JSON.parse(record.body);
 
-        if (event.source === 'aws.ec2') {
-          ec2Events.push(event);
-        }
-
         log.trace().obj('body', event).msg('Processing message body');
 
         switch (event.source) {
           case 'aws.cloudfront':
             await parseCloudFrontEventAndCreateAlarms(event);
             break;
-
+          case 'aws.ec2':
+            switch (event.detail.resourceType) {
+              case 'instance':
+                ec2Events.push(event);
+                break;
+              case 'transit-gateway':
+                if (
+                  event.detail.eventName === 'CreateTransitGateway' ||
+                  event.detail.eventName === 'DeleteTransitGateway'
+                )
+                  await parseTransitGatewayEventAndCreateAlarms(event);
+                break;
+              case 'vpn-connection':
+                if (
+                  event.detail.eventName === 'CreateVpnConnection' ||
+                  event.detail.eventName === 'DeleteVpnConnection'
+                )
+                  await parseVpnEventAndCreateAlarms(event);
+                break;
+              default:
+                log
+                  .warn()
+                  .msg(
+                    `Unhandled resource type for aws.ec2: ${event.detail.resourceType}`,
+                  );
+                break;
+            }
+            break;
           case 'aws.elasticloadbalancing':
             if (
               event.detail.eventName === 'CreateLoadBalancer' ||
@@ -265,24 +288,6 @@ export const handler: Handler = async (event: any): Promise<void> => {
               ec2TagEvents.push(event);
             } else {
               await routeTagEvent(event);
-            }
-            break;
-
-          case 'transit-gateway':
-            if (
-              event.detail.eventName === 'CreateTransitGateway' ||
-              event.detail.eventName === 'DeleteTransitGateway'
-            ) {
-              await parseTransitGatewayEventAndCreateAlarms(event);
-            }
-            break;
-
-          case 'vpn-connection':
-            if (
-              event.detail.eventName === 'CreateVpnConnection' ||
-              event.detail.eventName === 'DeleteVpnConnection'
-            ) {
-              await parseVpnEventAndCreateAlarms(event);
             }
             break;
 
