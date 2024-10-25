@@ -574,6 +574,8 @@ export async function manageActiveEC2InstanceAlarms(
     } else if (
       tags['autoalarm:target'] === 'cloudwatch' ||
       (!tags['autoalarm:target'] &&
+        !instanceIDsReportingToPrometheus.includes(instanceID)) ||
+      (tags['autoalarm:target'] === 'prometheus' &&
         !instanceIDsReportingToPrometheus.includes(instanceID))
     ) {
       log

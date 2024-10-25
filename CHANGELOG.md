@@ -1,71 +1,65 @@
 # AutoAlarm Changelog
 
+## v1.7.0
+
+## Added: 
+
+- Added support for Amazon Managed Prometheus Service (AMP) and EC2 Prometheus Alarms for CPU, Memory and Disk Utilization.
+
+## Changed:
+
+- Tagging schema now allows for the autoalarm:target tag to be used to specify whether an EC2 instance creates Alarms in 
+Cloudwatch or Amazon Managed Prometheus.
+
+## Fixed:
+
+
+
+
 ## v1.6.0
 
-## Additions:
+## Added:
 
-### alarm-config.mts
-- Added metrics for CloudFront, Route53Resolver, TransitGateway, and VPN services.
+-   Added a fifo queue to the alarm-tools module to ensure that alarms are created in the correct order.
+-   Support added for CloudFront, Route53Resolver, TransitGateway, and VPN services.
+-   Added ReAlarm Lambda which retriggers alarms in an alarm state for increased observability. This can be configured with tagging.
 
-### Fifo Queue
-- Added a fifo queue to the alarm-tools module to ensure that alarms are created in the correct order.
-- This will prevent alarms from being created before the necessary resources are available.
+### Changed:
 
-### New Modules:
-- cloudfront-modules.mts - Contains functions for creating CloudFront alarms.
-- route53resolver-modules.mts - Contains functions for creating Route53Resolver alarms.
-- transit-gateway-modules.mts - Contains functions for creating TransitGateway alarms.
-- vpn-modules.mts - Contains functions for creating VPN alarms.
+-   Updated the alarm-config.mts file to include the new services.
+-   Updated the README to include the new services.
+-   Updated the auto-alarm-construct.ts file to include the new services.
+-   AutoAlarm Queue Alarms now treat missing data as missing, rather than breaching.
 
-## Major Revisions:
+### Fixed:
 
-### main-handler.ts
-- Refactored the main handler to use the new fifo queue to ensure alarms are created in the correct order.
-- Updated the handler to use the new modules for CloudFront, Route53Resolver, TransitGateway, and VPN alarms.
-- Refactored the routeTagEvent function to use switch statements for each service and resource type.
-
+-   Fixed an issue where the alarm-tools module would not create alarms in the correct order when creating multiple alarms.
+-   Fixed and issue where Tag change and state change events were not being processed correctly by the lambda function.
 
 ## v1.5.0
 
-## Additions: 
+## Added
 
-### alarm-config.mts
-- Added a new configuration file that centralizes all default alarm configurations for currently supported services in 
-one place. 
-- This file contains tag parsing logic that is utilized across all services modules used to create alarms. 
-- This file also introduces a more robust tagging schema that simplifies tagging patterns across all services and alarm types. 
-- This file allows alarms to be defined in a single location without the need to adjust code in each service module.
+-   Added a new configuration file that centralizes all default alarm configurations for currently supported services in
+    one place.
+-   This file contains tag parsing logic used across all services modules used to create alarms.
+-   This file also introduces a more robust tagging schema that simplifies tagging patterns across all services and alarm types.
+-   This file allows alarms to be defined in a single location without the need to adjust code in each service module.
+-   Support for OpenSearch has been added.
 
-### prometheus-tools.mts
-- Added a new module that contains functions for interacting with Prometheus. These tools will be used to manage 
-prometheus alarms. These will later be integrated into ec2-modules. Still under development. 
+## Changed:
 
-### opensearch-modules.mts
-- Support for OpenSearch has been added.
-- Supported metrics can be found in the README.
+-   All services will now use the same tagging schema to enable non-default alarms and configure default and non-default
+    alarms according to application and environment specific needs.
+-   tags monitored by eventbridge rule listeners now no longer contain the service name. All tags now follow a convention
+    of 'autoalarm:' followed by a short description of the metric. These are defined in the project README.
 
-## Major Revisions: 
+## Fixed:
 
-### alarm-tools.mts
-- Refactored functions to create static threshold and anomaly alarms which now allow for multiple dimensions. 
-- Created helper functions for both anomaly and static alarms to offload alarm objects sent to cloudwatch api.
-- Several other helper functions were added to delete alarms, validate period durations for compatability with the 
-cloudwatch api, build alarm names. 
-- Old alarm creation logic has been removed. 
-- Period duration validation has been consolidated into a helper function to reduce code duplication.
+## Removed:
 
-### alb-modules.mts, ec2-modules.mts, opensearch-modules.mts, sqs-modules.mts, and targetgroup-modules.mts
-- All modules have been rebuilt to use the parsing logic from the alarm-config.mts file and the new alarm tools. 
-
-### auto-alarm-construct.ts
-- tags monitored by eventbridge rule listeners now no longer contain the service name. All tags now follow a convention
-of 'autoalarm:' followed by a short description of the metric. These are defined in the project README.
-
-## Changes in implementation:
-- While the autoalarm:enabled tag is still used to enable default alarms, the new tagging schema allows for more 
-consistent use across all services and alarm types. All services will now use the same tagging schema to enable 
-non-default alarms and configure default and non-default alarms according to application and environment specific needs.
-- Definitions and instructions can be found in the project README.
+-   Removed the old tagging schema.
+-   Removed Various logging statements that were used for testing and no longer needed.
 
 
 
