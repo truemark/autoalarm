@@ -29,9 +29,9 @@ const useReAlarmContext = app.node.tryGetContext('useReAlarm');
 // cdk deploy --context reAlarmSchedule='{"hour":"*/2","minute":"0"}' AutoAlarm
 const reAlarmScheduleContext = app.node.tryGetContext('reAlarmSchedule');
 
-// Ensure useReAlarm is set to a boolean, default to `true` only if it's undefined (not when false is passed)
+// Ensure useReAlarm is set to a boolean, default to `false` only if it's undefined (not when false is passed)
 const useReAlarm =
-  useReAlarmContext !== undefined ? useReAlarmContext === 'true' : true;
+  useReAlarmContext !== undefined ? useReAlarmContext === 'true' : false;
 
 // Safely parse the reAlarmSchedule context variable if it exists. If not, default to every two hours.
 const reAlarmSchedule = reAlarmScheduleContext
