@@ -93,7 +93,7 @@ cd cdk ; cdk deploy AutoAlarm
 on EC2 instance states and tag changes.
 - **CloudWatch Alarm Integration**: Supports creating both static threshold CloudWatch alarms and anomaly detection alarms.
 - **Customization Through Tags**: Uses tags to define alarm thresholds and conditions, allowing per-instance 
-customization. Tags can be dynamically updated to configure statistics for anomanly detection alarms, thresholds for 
+customization. Tags can be dynamically updated to configure statistics for anomaly detection alarms, thresholds for 
 warning and critical static threshold alarms, in addition to evaluation period length and number of periods.
 - **Scalable and Extendable**: Designed to handle multiple instances and can be extended to support other AWS resources.
 
@@ -159,7 +159,7 @@ updates, or deletes alarms for VPN metrics based on events and tags.
 The system is event-driven, responding to EC2 state change notifications and tag modification events. To manage alarms 
 , ensure your supported resources are tagged according to the schema defined below.
 
-## Tag Values and Behaviour
+## AutoAlarm Tag Values and Behaviour
 
 ### Overview
 Tags are used to customize CloudWatch alarms for various AWS services managed by AutoAlarm. By applying specific tags to 
@@ -179,7 +179,7 @@ When setting up non-default alarms with tags, you must provide at least the firs
 thresholds) for the tag to function correctly. If these thresholds are not supplied, the alarm will not be created 
 unless defaults are defined.
 
-The following schema is used to define tag values for all tags: 
+The following schema is used to define tag values for all Alarm Management tags: 
 
 ```plaintext
 Warning Threshold / Critical Threshold / Period / Evaluation Periods / Statistic / Datapoints to Alarm / ComparisonOperator / Missing Data Treatment
@@ -275,7 +275,7 @@ including any data points with values in the lowest 80% of the range of values.
 - `LessThanLowerThreshold`
 
 
-### Tag Configuration for Supported Resources
+### AutoAlarm Tag Configuration for Supported Resources
 Threshold values that contain '-' are undefined and will default to not creating the alarm if the warning and critical 
 threshold values are not provided in the tag value when setting the tag on the resource.
 
@@ -397,7 +397,7 @@ Some Metrics require the CloudWatch Agent to be installed on the host.
 | `autoalarm:tunnel-state-anomaly` | "-/-/300/1/Average/1/LessThanLowerThreshold/ignore" | No                 | Yes                         |
 
 
-### Default Alarm Behavior
+### Default AutoAlarm Alarm Behavior
 AutoAlarm comes with default alarm configurations for various metrics. These default alarms are created when the 
 corresponding tags are not present on the resources. The default alarms are designed to provide basic monitoring 
 out-of-the-box. However, it is recommended to customize the alarms based on your specific requirements. 
@@ -408,6 +408,77 @@ tag is set to `true` on the resource.
 `false` on the resource.
 - To customize the default alarms, add the appropriate tags with the desired values to the resource.
 - To enable specific non-default alarms, add the corresponding tags with the desired values to the resource.
+
+## ReAlarm Tag Configuration and Behavior: 
+
+### Overview
+The ReAlarm function is an AWS Lambda-based handler designed to monitor and reset CloudWatch alarms that are in an 
+"ALARM" state. It is an optional part of the AutoAlarm system, aimed at ensuring alarms are not missed or ignored. This 
+functionality is built with complex maintenance and infrastructure in mind and is a stop gap to prevent critical alarms
+from being missed or ignored by casuing said alarms to re-alert on a schedule. ReAlarm can be enabled or disabled globally. 
+Additionally, Alarms can individually be tagged to be excluded from the ReAlarm function.
+
+### Special Note: 
+ReAlarm is hardcoded to NOT reset alarms associated with AutoScaling actions. This is to prevent the function from 
+interfering with scaling operations.
+
+### Default Values
+By default, the ReAlarm function is disabled. When ReAlarm is enabled, it runs on a default schedule of every two hours.
+The ReAlarm Schedule can also be customized by configuring a context variable. 
+
+### Global ReAlarm Enabled/Disabled and Schedule Configuration Via Context Variables in CDK Deployment
+ReAlarm's global behavior can be managed using context variables during CDK deployment:
+
+- **Enable/Disable ReAlarm Globally**: 
+  - Use the context variable `useReAlarm` to control whether ReAlarm is active. 
+  - Example command to enable ReAlarm:
+    ```bash
+    cdk deploy --context useReAlarm='true' AutoAlarm
+    ```
+  - By default, if `useReAlarm` is not specified, the function is disabled implicitly. Set it to `'true'` to enable or 
+  `'false'` to disable explicitly.
+
+
+- **Customize ReAlarm Schedule**: 
+  - The ReAlarm schedule is controlled via the `reAlarmSchedule` context variable. 
+  - It accepts a cron expression to define the schedule.
+  - Example command to set ReAlarm to run every 3 hours:
+    ```bash
+    cdk deploy --context reAlarmSchedule='{"hour":"*/3","minute":"0"}' --context useReAlarm='true' AutoAlarm
+    ```
+  - Example command to set ReAlarm to run every 30 minutes:
+    ```bash
+    cdk deploy --context reAlarmSchedule='{"minute":"*/30"}' --context useReAlarm='true' AutoAlarm
+    ```
+  - You can adjust the frequency by modifying the cron settings to match your requirements.
+
+### Customizing ReAlarm with Tags
+In addition to global controls, individual alarms can be excluded from being reset by ReAlarm. This is done using a specific tag:
+
+- **Tag to Exclude Alarms from ReAlarm**:
+  - Alarms can be tagged with `realarm:disabled=true` to exclude them from the ReAlarm process.
+  - When this tag is present on an alarm, ReAlarm will skip resetting it, regardless of its state.
+  - This is useful for alarms that should be managed manually or have specific conditions that should not trigger ReAlarm.
+
+#### Example:
+1. To prevent ReAlarm from resetting a particular alarm, add the following tag:
+    - **Key**: `realarm:disabled`
+    - **Value**: `true`
+  
+2. **Tagging via AWS Console**:
+    - Navigate to the CloudWatch alarm.
+    - Under the "Tags" section, add a new tag:
+      - **Key**: `realarm:disabled`
+      - **Value**: `true`
+
+3. **Tagging via AWS CLI**:
+    ```bash
+    aws cloudwatch tag-resource --resource-arn arn:aws:cloudwatch:region:account-id:alarm/alarm-name --tags Key=realarm:disabled,Value=true
+    ```
+
+By configuring ReAlarm both globally and on a per-alarm basis, users have the flexibility to manage alarm behavior according to their needs, ensuring critical alerts are revisited without excessive manual intervention.
+
+
 
 ## IAM Role and Permissions
 
