@@ -508,6 +508,9 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         missingDataTreatment: 'ignore',
       },
     },
+    // TODO: network in and out still need to be passed off by devops
+    //  and are disabled by default and not referenced in README.
+    //  construct does not currently listen for tags on these.
     {
       tagKey: 'network-in',
       metricName: 'NetworkIn',
@@ -529,7 +532,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       tagKey: 'network-in-anomaly',
       metricName: 'NetworkIn',
       metricNamespace: 'AWS/EC2',
-      defaultCreate: true,
+      defaultCreate: false,
       anomaly: true,
       defaults: {
         warningThreshold: 2,
@@ -563,7 +566,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       tagKey: 'network-out-anomaly',
       metricName: 'NetworkOut',
       metricNamespace: 'AWS/EC2',
-      defaultCreate: true,
+      defaultCreate: false,
       anomaly: true,
       defaults: {
         warningThreshold: 2,
