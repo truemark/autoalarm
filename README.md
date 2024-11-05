@@ -210,7 +210,8 @@ By default, anytime a an EC2 instance triggers AutoAlarm, if a prometheus worksp
 to Prometheus, AutoAlarm prefers prometheus and will create prometheus alarms for CPU, Memory, and Storage utilization.
 
 If you explicitly want to use CloudWatch alarms for EC2 instances, you can set the `autoalarm:target` tag to `cloudwatch`
-on the instance. Inversely, you can explicitly define `promehteus` as the target.
+on the instance. Inversely, you can explicitly define `promehteus` as the target however, this is unnecessary as AutoAlarm 
+prefers and defaults to prometheus is a workspace ID is provided and the instance is reporting to prometheus.
 
 Anytime Prometheus alarms are created, any existing cloudwatch alarms for that instance are deleted.
 
