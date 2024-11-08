@@ -1,19 +1,17 @@
-import {Statistic} from '@aws-sdk/client-cloudwatch';
+// Type definitions for autoalarm
 
-export interface AlarmProps {
-  threshold: number;
-  period: number;
-  evaluationPeriods: number;
-  metricName: string;
-  namespace: string;
-  dimensions: {Name: string; Value: string}[];
-  statistic?: Statistic; // Optional property for standard statistics
-  extendedStatistic?: string; // Optional property for extended statistics
+export interface EC2AlarmManagerObject {
+  instanceID: string;
+  tags: Tag;
+  state: string;
+  ec2Metadata?: {platform: string | null; privateIP: string | null};
 }
 
 export interface Tag {
   [key: string]: string;
 }
+
+export type EC2AlarmManagerArray = EC2AlarmManagerObject[];
 
 export interface Dimension {
   Name: string;
@@ -45,6 +43,19 @@ export interface Rule {
     [key: string]: string;
   };
 }
+
+//Prometheus Alarm Config
+
+export interface PrometheusAlarmConfig {
+  instanceId: string; // ID of the instance
+  type: string; // The type or classification of the alarm
+  alarmName: string; // The name of the alarm
+  alarmQuery: string; // The query used for the alarm
+  duration: string; // The duration of the alarm, in "Xm" format
+  severityType: string; // The severity of the alarm
+}
+
+export type PrometheusAlarmConfigArray = PrometheusAlarmConfig[];
 
 //for prometheus namespace details when populating the rule groups
 export interface NamespaceDetails {

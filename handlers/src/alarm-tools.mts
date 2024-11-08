@@ -102,6 +102,31 @@ export async function deleteAlarm(alarmName: string) {
   }
 }
 
+export async function massDeleteAlarms(alarmNames: string[]) {
+  log
+    .info()
+    .str('function', 'massDeleteAlarms')
+    .str('AlarmNames', JSON.stringify(alarmNames))
+    .msg('Attempting to delete alarms');
+  try {
+    await cloudWatchClient.send(
+      new DeleteAlarmsCommand({AlarmNames: alarmNames}),
+    );
+    log
+      .info()
+      .str('function', 'massDeleteAlarms')
+      .str('AlarmNames', JSON.stringify(alarmNames))
+      .msg('Successfully deleted alarms');
+  } catch (e) {
+    log
+      .error()
+      .str('function', 'massDeleteAlarms')
+      .str('AlarmNames', JSON.stringify(alarmNames))
+      .err(e)
+      .msg('Error deleting alarms');
+  }
+}
+
 export function buildAlarmName(
   config: MetricAlarmConfig,
   service: string,
