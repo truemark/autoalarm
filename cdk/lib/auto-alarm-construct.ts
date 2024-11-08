@@ -57,7 +57,7 @@ export class AutoAlarmConstruct extends Construct {
         {
           assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
           description: 'Execution role for AutoAlarm Lambda function',
-        }
+        },
       );
 
       // Attach policies for EC2 and CloudWatch
@@ -70,7 +70,7 @@ export class AutoAlarmConstruct extends Construct {
             'cloudwatch:ListTagsForResource',
           ],
           resources: ['*'],
-        })
+        }),
       );
 
       // Attach policies for CloudWatch Logs
@@ -87,7 +87,7 @@ export class AutoAlarmConstruct extends Construct {
             'logs:DescribeLogStreams',
             'logs:DescribeLogGroups',
           ],
-        })
+        }),
       );
 
       reAlarmLambdaExecutionRole.addToPolicy(
@@ -99,7 +99,7 @@ export class AutoAlarmConstruct extends Construct {
             'logs:CreateLogStream',
             'logs:PutLogEvents',
           ],
-        })
+        }),
       );
 
       reAlarmLambdaExecutionRole.addToPolicy(
@@ -107,7 +107,7 @@ export class AutoAlarmConstruct extends Construct {
           effect: Effect.ALLOW,
           resources: ['*'], // This grants permission on all log groups. Adjust if needed.
           actions: ['logs:DescribeLogGroups'],
-        })
+        }),
       );
 
       // Create the MainFunction and explicitly pass the execution role
@@ -141,7 +141,7 @@ export class AutoAlarmConstruct extends Construct {
       {
         assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
         description: 'Execution role for AutoAlarm Lambda function',
-      }
+      },
     );
 
     // Attach policies for Prometheus
@@ -161,7 +161,7 @@ export class AutoAlarmConstruct extends Construct {
           prometheusArn,
           `arn:aws:aps:${region}:${accountId}:*/${prometheusWorkspaceId}/*`,
         ],
-      })
+      }),
     );
 
     // Attach policies for EC2 and CloudWatch
@@ -178,7 +178,7 @@ export class AutoAlarmConstruct extends Construct {
           'cloudwatch:PutAnomalyDetector',
         ],
         resources: ['*'],
-      })
+      }),
     );
 
     // Attach policies for CloudWatch Logs
@@ -191,7 +191,7 @@ export class AutoAlarmConstruct extends Construct {
           'logs:PutLogEvents',
         ],
         resources: ['*'],
-      })
+      }),
     );
 
     // Attach policies for ALB and Target Groups
@@ -205,7 +205,7 @@ export class AutoAlarmConstruct extends Construct {
           'elasticloadbalancing:DescribeTargetHealth',
         ],
         resources: ['*'],
-      })
+      }),
     );
 
     // Attach policies for SQS
@@ -219,7 +219,7 @@ export class AutoAlarmConstruct extends Construct {
           'sqs:ListQueueTags',
         ],
         resources: ['*'],
-      })
+      }),
     );
 
     // Attach policies for OpenSearch
@@ -232,7 +232,7 @@ export class AutoAlarmConstruct extends Construct {
           'es:ListTags',
         ],
         resources: ['*'],
-      })
+      }),
     );
 
     // Attach policies for Transit Gateway
@@ -241,7 +241,7 @@ export class AutoAlarmConstruct extends Construct {
         effect: Effect.ALLOW,
         actions: ['ec2:DescribeTransitGateways'],
         resources: ['*'],
-      })
+      }),
     );
 
     // Attach policies for Route53Resolver
@@ -253,7 +253,7 @@ export class AutoAlarmConstruct extends Construct {
           'route53resolver:ListTagsForResource',
         ],
         resources: ['*'],
-      })
+      }),
     );
 
     // Attach policies for CloudFront
@@ -266,7 +266,7 @@ export class AutoAlarmConstruct extends Construct {
           'cloudfront:ListTagsForResource',
         ],
         resources: ['*'],
-      })
+      }),
     );
 
     // Attach policies for VPN
@@ -275,7 +275,7 @@ export class AutoAlarmConstruct extends Construct {
         effect: Effect.ALLOW,
         actions: ['ec2:DescribeVpnConnections'],
         resources: ['*'],
-      })
+      }),
     );
 
     // Create the MainFunction and explicitly pass the execution role
@@ -303,7 +303,7 @@ export class AutoAlarmConstruct extends Construct {
     const autoAlarmQueue = new ExtendedQueue(
       this,
       'MainFunctionQueue',
-      queueProps
+      queueProps,
     );
     autoAlarmQueue.grantConsumeMessages(mainFunction);
 
@@ -313,7 +313,7 @@ export class AutoAlarmConstruct extends Construct {
         batchSize: 10,
         reportBatchItemFailures: true,
         enabled: true,
-      })
+      }),
     );
 
     /* Listen to tag changes related to AutoAlarm. Anomaly Alarms are standard and Cloudwatch Alarms are optional.
@@ -327,7 +327,7 @@ export class AutoAlarmConstruct extends Construct {
         source: ['aws.tag'],
         detailType: ['Tag Change on Resource'],
         detail: {
-          service: ['ec2', 'ecs', 'rds'],
+          'service': ['ec2', 'ecs', 'rds'],
           'resource-type': ['instance'],
           'changed-tag-keys': [
             'autoalarm:enabled',
@@ -344,7 +344,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes tag events to AutoAlarm',
     });
     ec2tagRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
     );
 
     const ec2Rule = new Rule(this, 'Ec2Rule', {
@@ -364,7 +364,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes ec2 instance events to AutoAlarm',
     });
     ec2Rule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
     );
 
     //Rule for ALB tag changes
@@ -376,7 +376,7 @@ export class AutoAlarmConstruct extends Construct {
         source: ['aws.tag'],
         detailType: ['Tag Change on Resource'],
         detail: {
-          service: ['elasticloadbalancing'],
+          'service': ['elasticloadbalancing'],
           'resource-type': ['loadbalancer'],
           'changed-tag-keys': [
             'autoalarm:enabled',
@@ -394,7 +394,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes ALB tag events to AutoAlarm',
     });
     albTagRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
     );
 
     //Rule for ALB events
@@ -410,7 +410,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes ALB events to AutoAlarm',
     });
     albRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
     );
 
     // Rule for Target Group tag changes
@@ -419,7 +419,7 @@ export class AutoAlarmConstruct extends Construct {
         source: ['aws.tag'],
         detailType: ['Tag Change on Resource'],
         detail: {
-          service: ['elasticloadbalancing'],
+          'service': ['elasticloadbalancing'],
           'resource-type': ['targetgroup'],
           'changed-tag-keys': [
             'autoalarm:enabled',
@@ -439,7 +439,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes Target Group tag events to AutoAlarm',
     });
     targetGroupTagRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
     );
 
     const targetGroupRule = new Rule(this, 'TargetGroupRule', {
@@ -454,7 +454,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes Target Group events to AutoAlarm',
     });
     targetGroupRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
     );
 
     // Rule for OpenSearch tag changes
@@ -463,7 +463,7 @@ export class AutoAlarmConstruct extends Construct {
         source: ['aws.tag'],
         detailType: ['Tag Change on Resource'],
         detail: {
-          service: ['es'],
+          'service': ['es'],
           'resource-type': ['domain'],
           'changed-tag-keys': [
             'autoalarm:enabled',
@@ -501,7 +501,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes OpenSearch tag events to AutoAlarm',
     });
     openSearchTagRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
     );
 
     //Rule for SQS events
@@ -517,7 +517,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes SQS events to AutoAlarm',
     });
     sqsRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
     );
 
     //Rule for OpenSearch events
@@ -532,7 +532,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes OpenSearch events to AutoAlarm',
     });
     openSearchRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
     );
 
     // Rule for Transit Gateway events
@@ -548,7 +548,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes Transit Gateway events to AutoAlarm',
     });
     transitGatewayRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
     );
 
     // Rule for Transit Gateway Tag changes
@@ -557,7 +557,7 @@ export class AutoAlarmConstruct extends Construct {
         source: ['aws.tag'],
         detailType: ['Tag Change on Resource'],
         detail: {
-          service: ['ec2'],
+          'service': ['ec2'],
           'resource-type': ['transit-gateway'],
           'changed-tag-keys': [
             'autoalarm:enabled',
@@ -571,7 +571,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes Transit Gateway tag events to AutoAlarm',
     });
     transitGatewayTagRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
     );
 
     // Rule for Route53Resolver events
@@ -587,7 +587,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes Route53Resolver events to AutoAlarm',
     });
     route53ResolverRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
     );
 
     // Rule for Route53Resolver tag changes
@@ -596,7 +596,7 @@ export class AutoAlarmConstruct extends Construct {
         source: ['aws.tag'],
         detailType: ['Tag Change on Resource'],
         detail: {
-          service: ['route53resolver'],
+          'service': ['route53resolver'],
           'resource-type': ['resolver-endpoint'],
           'changed-tag-keys': [
             'autoalarm:enabled',
@@ -610,7 +610,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes Route53Resolver tag events to AutoAlarm',
     });
     route53ResolverTagRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
     );
 
     // Rule for VPN events
@@ -626,7 +626,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes VPN events to AutoAlarm',
     });
     vpnRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
     );
 
     // Rule for VPN tag changes
@@ -635,7 +635,7 @@ export class AutoAlarmConstruct extends Construct {
         source: ['aws.tag'],
         detailType: ['Tag Change on Resource'],
         detail: {
-          service: ['ec2'],
+          'service': ['ec2'],
           'resource-type': ['vpn-connection'],
           'changed-tag-keys': [
             'autoalarm:enabled',
@@ -647,7 +647,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes VPN tag events to AutoAlarm',
     });
     vpnTagRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
     );
 
     // Rule for CloudFront events
@@ -663,7 +663,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes CloudFront events to AutoAlarm',
     });
     cloudFrontRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
     );
 
     // Rule for CloudFront tag changes
@@ -672,7 +672,7 @@ export class AutoAlarmConstruct extends Construct {
         source: ['aws.tag'],
         detailType: ['Tag Change on Resource'],
         detail: {
-          service: ['cloudfront'],
+          'service': ['cloudfront'],
           'resource-type': ['distribution'],
           'changed-tag-keys': [
             'autoalarm:enabled',
@@ -686,7 +686,7 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes CloudFront tag events to AutoAlarm',
     });
     cloudFrontTagRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'})
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
     );
   }
 }

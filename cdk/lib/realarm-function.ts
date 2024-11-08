@@ -18,7 +18,7 @@ export class ReAlarmFunction extends ExtendedNodejsFunction {
         '..',
         'handlers',
         'src',
-        'realarm-handler.mts'
+        'realarm-handler.mts',
       ),
       architecture: Architecture.ARM_64,
       handler: 'handler',

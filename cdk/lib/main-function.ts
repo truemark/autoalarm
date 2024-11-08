@@ -19,7 +19,7 @@ export class MainFunction extends ExtendedNodejsFunction {
         '..',
         'handlers',
         'src',
-        'main-handler.mts'
+        'main-handler.mts',
       ),
       architecture: Architecture.ARM_64,
       handler: 'handler',
