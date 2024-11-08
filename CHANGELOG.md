@@ -1,21 +1,5 @@
 # AutoAlarm Changelog
 
-## v1.7.0
-
-## Added: 
-
-- Added support for Amazon Managed Prometheus Service (AMP) and EC2 Prometheus Alarms for CPU, Memory and Disk Utilization.
-
-## Changed:
-
-- Tagging schema now allows for the autoalarm:target tag to be used to specify whether an EC2 instance creates Alarms in 
-Cloudwatch or Amazon Managed Prometheus.
-
-## Fixed:
-
-
-
-
 ## v1.6.0
 
 ## Added:
@@ -30,6 +14,8 @@ Cloudwatch or Amazon Managed Prometheus.
 -   Updated the README to include the new services.
 -   Updated the auto-alarm-construct.ts file to include the new services.
 -   AutoAlarm Queue Alarms now treat missing data as missing, rather than breaching.
+-   Tagging schema now allows for the autoalarm:target tag to be used to specify whether an EC2 instance creates Alarms in Cloudwatch or Amazon Managed Prometheus.
+-   Added support for Amazon Managed Prometheus Service (AMP) and EC2 Prometheus Alarms for CPU, Memory and Disk Utilization.
 
 ### Fixed:
 
