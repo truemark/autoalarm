@@ -1,10 +1,13 @@
 import {Construct} from 'constructs';
 import {AutoAlarmConstruct} from './auto-alarm-construct';
 import {ExtendedStack, ExtendedStackProps} from 'truemark-cdk-lib/aws-cdk';
+import {CronOptions} from 'aws-cdk-lib/aws-events';
+import {version} from '../../package.json';
 
 export interface ExtendedAutoAlarmProps extends ExtendedStackProps {
-  version: string;
-  prometheusWorkspaceId?: string;
+  readonly prometheusWorkspaceId?: string;
+  readonly useReAlarm?: boolean;
+  readonly reAlarmSchedule?: CronOptions;
 }
 
 export class AutoAlarmStack extends ExtendedStack {
@@ -13,8 +16,25 @@ export class AutoAlarmStack extends ExtendedStack {
     super(scope, id, props);
     new AutoAlarmConstruct(this, 'AutoAlarm', {
       prometheusWorkspaceId: props.prometheusWorkspaceId,
+      useReAlarm: props.useReAlarm,
+      reAlarmSchedule: props.reAlarmSchedule,
     });
     this.outputParameter('Name', 'AutoAlarm');
-    this.outputParameter('Version', props.version);
+    this.outputParameter('Version', version);
+    if (props.prometheusWorkspaceId) {
+      this.outputParameter(
+        'prometheusWorkspaceId',
+        props.prometheusWorkspaceId,
+      );
+    }
+    if (props.useReAlarm) {
+      this.outputParameter('useReAlarm', props.useReAlarm ? 'true' : 'false');
+    }
+    if (props.reAlarmSchedule) {
+      this.outputParameter(
+        'reAlarmSchedule',
+        JSON.stringify(props.reAlarmSchedule),
+      );
+    }
   }
 }

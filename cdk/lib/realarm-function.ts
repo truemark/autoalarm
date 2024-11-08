@@ -5,13 +5,12 @@ import * as path from 'path';
 import {Duration} from 'aws-cdk-lib';
 import {Architecture} from 'aws-cdk-lib/aws-lambda';
 
-interface MainFunctionProps {
+interface ReAlarmFunctionProps {
   role?: IRole; // Define other props as needed
-  prometheusWorkspaceId?: string;
 }
 
-export class MainFunction extends ExtendedNodejsFunction {
-  constructor(scope: Construct, id: string, props?: MainFunctionProps) {
+export class ReAlarmFunction extends ExtendedNodejsFunction {
+  constructor(scope: Construct, id: string, props?: ReAlarmFunctionProps) {
     super(scope, id, {
       entry: path.join(
         __dirname,
@@ -19,16 +18,13 @@ export class MainFunction extends ExtendedNodejsFunction {
         '..',
         'handlers',
         'src',
-        'main-handler.mts',
+        'realarm-handler.mts',
       ),
       architecture: Architecture.ARM_64,
       handler: 'handler',
-      timeout: Duration.minutes(15),
+      timeout: Duration.minutes(5),
       memorySize: 768,
       role: props?.role,
-      environment: {
-        PROMETHEUS_WORKSPACE_ID: props?.prometheusWorkspaceId || '',
-      },
       deploymentOptions: {
         createDeployment: false,
       },
