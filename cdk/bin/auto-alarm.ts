@@ -2,14 +2,13 @@
 import 'source-map-support/register';
 import {AutoAlarmStack} from '../lib/auto-alarm-stack';
 import {ExtendedApp} from 'truemark-cdk-lib/aws-cdk';
-import {version} from '../../package.json';
 
 const app = new ExtendedApp({
   standardTags: {
     automationTags: {
       id: 'autoalarm',
       url: 'https://github.com/truemark/autoalarm',
-    }
+    },
   },
 });
 
@@ -35,7 +34,6 @@ const reAlarmSchedule = reAlarmScheduleContext
   : {hour: '*/2', minute: '0'}; // Fallback to default schedule
 
 new AutoAlarmStack(app, 'AutoAlarm', {
-  version: version.toString(),
   prometheusWorkspaceId: prometheusWorkspaceId,
   useReAlarm: useReAlarm,
   reAlarmSchedule: reAlarmSchedule,
