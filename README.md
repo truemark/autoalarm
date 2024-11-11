@@ -522,8 +522,7 @@ interfering with scaling operations.
 
 ### Default Values
 
-By default, the ReAlarm function is disabled. When ReAlarm is enabled, it runs on a default schedule of every two hours.
-The ReAlarm Schedule can also be customized by configuring a context variable.
+By default, the ReAlarm function is enabled. When ReAlarm is enabled, it runs on a default schedule of every 120 minutes.
 
 ### Global ReAlarm Enabled/Disabled and Schedule Configuration Via Context Variables in CDK Deployment
 
@@ -540,17 +539,10 @@ ReAlarm's global behavior can be managed using context variables during CDK depl
         `'false'` to disable explicitly.
 
 -   **Customize ReAlarm Schedule**:
-    -   The ReAlarm schedule is controlled via the `reAlarmSchedule` context variable.
-    -   It accepts a cron expression to define the schedule.
-    -   Example command to set ReAlarm to run every 3 hours:
-        ```bash
-        cdk deploy --context reAlarmSchedule='{"hour":"*/3","minute":"0"}' --context useReAlarm='true' AutoAlarm
-        ```
-    -   Example command to set ReAlarm to run every 30 minutes:
-        ```bash
-        cdk deploy --context reAlarmSchedule='{"minute":"*/30"}' --context useReAlarm='true' AutoAlarm
-        ```
-    -   You can adjust the frequency by modifying the cron settings to match your requirements.
+    -   The ReAlarm schedule by default runs every 120 minutes.
+    -   ReAlarm can be customized to run at different intervals on a per alarm basis by setting the `autoalarm:re-alarm-minutes`
+        tag to a whole number value.
+
 
 ### Customizing ReAlarm with Tags
 
@@ -565,19 +557,19 @@ In addition to global controls, individual alarms can be excluded from being res
 
 1. To prevent ReAlarm from resetting a particular alarm, add the following tag:
 
-    - **Key**: `realarm:disabled`
+    - **Key**: `autoalarm:re-alarm-disabled`
     - **Value**: `true`
 
 2. **Tagging via AWS Console**:
 
     - Navigate to the CloudWatch alarm.
     - Under the "Tags" section, add a new tag:
-        - **Key**: `realarm:disabled`
+        - **Key**: `autoalarm:re-alarm-disabled`
         - **Value**: `true`
 
 3. **Tagging via AWS CLI**:
     ```bash
-    aws cloudwatch tag-resource --resource-arn arn:aws:cloudwatch:region:account-id:alarm/alarm-name --tags Key=realarm:disabled,Value=true
+    aws cloudwatch tag-resource --resource-arn arn:aws:cloudwatch:region:account-id:alarm/alarm-name --tags Key=autoalarm:re-alarm-disabled,Value=true
     ```
 
 By configuring ReAlarm both globally and on a per-alarm basis, users have the flexibility to manage alarm behavior according to their needs, ensuring critical alerts are revisited without excessive manual intervention.

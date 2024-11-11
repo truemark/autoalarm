@@ -316,12 +316,7 @@ export class AutoAlarmConstruct extends Construct {
       }),
     );
 
-    /* Listen to tag changes related to AutoAlarm. Anomaly Alarms are standard and Cloudwatch Alarms are optional.
-     * If cloudwatch Alarm tags are not present, CW alarms are not created.
-     * WARNING threshold num | CRITICAL threshold num | duration time num | duration periods num
-     * example for standard CloudWatch Alarms: "90|95|60|2"
-     * example for Anomaly Detection: "90|60|2|ANOMALY_DETECTION"
-     */
+    // TODO: Add all event rules in alphabetical order
     const ec2tagRule = new Rule(this, 'TagRule', {
       eventPattern: {
         source: ['aws.tag'],
