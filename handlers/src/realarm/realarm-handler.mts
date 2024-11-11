@@ -5,6 +5,7 @@ import {
   SetAlarmStateCommand,
   MetricAlarm,
   ListTagsForResourceCommand,
+  DescribeAlarmsCommand,
 } from '@aws-sdk/client-cloudwatch';
 import * as logging from '@nr1e/logging';
 
@@ -20,6 +21,19 @@ const log = logging.initialize({
   name: 'realarm-handler',
   level,
 });
+
+async function getOverriddenAlarm(alarmName: string): Promise<MetricAlarm[]> {
+  try {
+    const response = await cloudwatch.send(
+      new DescribeAlarmsCommand({AlarmNames: [alarmName]}),
+    );
+    // Return the MetricAlarms array from the response
+    return response.MetricAlarms || [];
+  } catch (error) {
+    console.error(`Failed to get alarm: ${alarmName}`, error);
+    throw error; // Rethrow the error so it can be handled upstream
+  }
+}
 
 async function getAllAlarms() {
   log.info().msg('Getting all alarms');
@@ -72,8 +86,13 @@ async function resetAlarmState(alarmName: string): Promise<void> {
   }
 }
 
-async function checkAndResetAlarms(): Promise<void> {
-  const alarms = await getAllAlarms();
+async function checkAndResetAlarms(
+  reAlarmOverride: boolean,
+  overrideAlarmName?: string,
+): Promise<void> {
+  const alarms: MetricAlarm[] = reAlarmOverride
+    ? await getOverriddenAlarm(overrideAlarmName!)
+    : await getAllAlarms();
 
   for (const alarm of alarms) {
     const actions: string[] = alarm.AlarmActions || [];
@@ -83,12 +102,17 @@ async function checkAndResetAlarms(): Promise<void> {
     );
 
     const reAlarmDisabled = tags.Tags?.some(
-      (tag) => tag.Key === 'realarm:disabled' && tag.Value === 'true',
+      (tag) => tag.Key === 'autoalarm:re-alarm-enabled' && tag.Value === 'false',
+    );
+
+    const isReAlarmOverride = tags.Tags?.some(
+      (tag) => tag.Key === 'autoalarm:re-alarm-minutes' && !isNaN(Number(tag.Value)),
     );
 
     const hasAutoScalingAction = actions.some((action: string) =>
       action.includes('autoscaling'),
     );
+
 
     log
       .info()
@@ -96,6 +120,7 @@ async function checkAndResetAlarms(): Promise<void> {
       .str('stateValue', alarm.StateValue as string)
       .str('tags', JSON.stringify(tags.Tags))
       .str('reAlarmDisabled', reAlarmDisabled ? 'true' : 'false')
+      .str('isReAlarmOverride', isReAlarmOverride ? `ReAlarm Default Schedule is Overriden` : 'false')
       .str('actions', actions.join(', '))
       .str('hasAutoScalingAction', hasAutoScalingAction ? 'true' : 'false')
       .msg(`Alarm: ${alarm.AlarmName} is in a ${alarm.StateValue} state.`);
@@ -141,5 +166,6 @@ async function checkAndResetAlarms(): Promise<void> {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const handler: Handler = async (event: any): Promise<void> => {
   log.trace().unknown('event', event).msg('Received event');
-  await checkAndResetAlarms();
+  if
+  await checkAndResetAlarms(false);
 };
