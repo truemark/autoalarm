@@ -5,12 +5,12 @@ import * as path from 'path';
 import {Duration} from 'aws-cdk-lib';
 import {Architecture} from 'aws-cdk-lib/aws-lambda';
 
-interface ReAlarmFunctionProps {
+interface ReAlarmEventRuleFunctionProps {
   role?: IRole; // Define other props as needed
 }
 
-export class ReAlarmFunction extends ExtendedNodejsFunction {
-  constructor(scope: Construct, id: string, props?: ReAlarmFunctionProps) {
+export class RealarmEventRuleFunction extends ExtendedNodejsFunction {
+  constructor(scope: Construct, id: string, props?: ReAlarmEventRuleFunctionProps) {
     super(scope, id, {
       entry: path.join(
         __dirname,
@@ -19,7 +19,7 @@ export class ReAlarmFunction extends ExtendedNodejsFunction {
         'handlers',
         'src',
         'realarm',
-        'realarm-handler.mts',
+        'realarm-event-rule-handler.mts',
       ),
       architecture: Architecture.ARM_64,
       handler: 'handler',

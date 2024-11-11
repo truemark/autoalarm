@@ -540,7 +540,7 @@ ReAlarm's global behavior can be managed using context variables during CDK depl
 
 -   **Customize ReAlarm Schedule**:
     -   The ReAlarm schedule by default runs every 120 minutes.
-    -   ReAlarm can be customized to run at different intervals on a per alarm basis by setting the `autoalarm:re-alarm-minutes`
+    -   ReAlarm can be customized to run at different intervals on a per-alarm basis by setting the `autoalarm:re-alarm-minutes`
         tag to a whole number value.
 
 
