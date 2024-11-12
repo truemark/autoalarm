@@ -22,6 +22,7 @@ const log = logging.initialize({
   level,
 });
 
+// TODO: filter out alarm if it has the tag autoalarm:re-alarm-enabled set to false
 async function getOverriddenAlarm(alarmName: string): Promise<MetricAlarm[]> {
   try {
     const response = await cloudwatch.send(
