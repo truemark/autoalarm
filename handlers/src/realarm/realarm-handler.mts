@@ -35,6 +35,7 @@ async function getOverriddenAlarm(alarmName: string): Promise<MetricAlarm[]> {
   }
 }
 
+//TODO: filter out alarms with the tag autoalarm:re-alarm-enabled set to false and alarms with the tag autoalarm:re-alarm-minutes set to a number
 async function getAllAlarms() {
   log.info().msg('Getting all alarms');
   // Array to hold all alarms
@@ -86,86 +87,109 @@ async function resetAlarmState(alarmName: string): Promise<void> {
   }
 }
 
+// TODO: moving a lot of the filter logic for the reAlarmOverride conditions into getAllAlarms function so we can just define the alarms array and loop through that and check base conditions
 async function checkAndResetAlarms(
   reAlarmOverride: boolean,
   overrideAlarmName?: string,
 ): Promise<void> {
+  // If reAlarmOverride is true, get the alarm with the specified name in the payload else get all alarms
   const alarms: MetricAlarm[] = reAlarmOverride
     ? await getOverriddenAlarm(overrideAlarmName!)
     : await getAllAlarms();
 
-  for (const alarm of alarms) {
-    const actions: string[] = alarm.AlarmActions || [];
-    const alarmARN = alarm.AlarmArn as string;
-    const tags = await cloudwatch.send(
-      new ListTagsForResourceCommand({ResourceARN: alarmARN}),
-    );
+  await Promise.all(
+    alarms.map(async (alarm) => {
+      const alarmName = alarm.AlarmName as string;
+      const alarmState = alarm.StateValue as string;
+      const actions = alarm.AlarmActions || [];
+      const tags = await cloudwatch.send(
+        new ListTagsForResourceCommand({ResourceARN: alarm.AlarmArn as string}),
+      );
 
-    const reAlarmDisabled = tags.Tags?.some(
-      (tag) => tag.Key === 'autoalarm:re-alarm-enabled' && tag.Value === 'false',
-    );
+      const reAlarmConditions = {
+        reAlarmDisabled: tags.Tags?.some(
+          (tag) =>
+            tag.Key === 'autoalarm:re-alarm-enabled' && tag.Value === 'false',
+        ) ?? false,
+        reAlarmOverrideTag: tags.Tags?.some(
+          (tag) =>
+            tag.Key === 'autoalarm:re-alarm-minutes' &&
+            !isNaN(Number(tag.Value)),
+        ) ?? false,
+        hasAutoScalingAction: actions.some((action) =>
+          action.includes('autoscaling'),
+        ),
+      };
 
-    const isReAlarmOverride = tags.Tags?.some(
-      (tag) => tag.Key === 'autoalarm:re-alarm-minutes' && !isNaN(Number(tag.Value)),
-    );
-
-    const hasAutoScalingAction = actions.some((action: string) =>
-      action.includes('autoscaling'),
-    );
-
-
-    log
-      .info()
-      .str('alarmName', alarm.AlarmName as string)
-      .str('stateValue', alarm.StateValue as string)
-      .str('tags', JSON.stringify(tags.Tags))
-      .str('reAlarmDisabled', reAlarmDisabled ? 'true' : 'false')
-      .str('isReAlarmOverride', isReAlarmOverride ? `ReAlarm Default Schedule is Overriden` : 'false')
-      .str('actions', actions.join(', '))
-      .str('hasAutoScalingAction', hasAutoScalingAction ? 'true' : 'false')
-      .msg(`Alarm: ${alarm.AlarmName} is in a ${alarm.StateValue} state.`);
-
-    if (
-      !hasAutoScalingAction &&
-      !reAlarmDisabled &&
-      alarm.StateValue === 'ALARM'
-    ) {
       log
         .info()
-        .msg(
-          `${alarm.AlarmName} is in ALARM state. Alarm does not have autoscaling action and realarm is not disabled. Resetting...`,
-        );
-      try {
-        await resetAlarmState(alarm.AlarmName!);
+        .str('alarmName', alarmName)
+        .str('stateValue', alarmState)
+        .str('tags', JSON.stringify(tags.Tags))
+        .str('reAlarmDisabled', String(reAlarmConditions.reAlarmDisabled))
+        .str(
+          'isReAlarmOverride',
+          reAlarmConditions.reAlarmOverrideTag
+            ? 'ReAlarm Default Schedule is Overriden'
+            : 'false',
+        )
+        .str('actions', actions.join(', '))
+        .str('hasAutoScalingAction', String(reAlarmConditions.hasAutoScalingAction))
+        .msg(`Alarm: ${alarmName} is in a ${alarmState} state.`);
+
+      const baseConditions =
+        alarmState === 'ALARM' &&
+        !reAlarmConditions.hasAutoScalingAction &&
+        !reAlarmConditions.reAlarmDisabled;
+
+      const shouldReset: boolean = reAlarmOverride
+        ? baseConditions && reAlarmConditions.reAlarmOverrideTag
+        : baseConditions && !reAlarmConditions.reAlarmOverrideTag;
+
+      if (shouldReset) {
         log
           .info()
-          .str('alarmName', alarm.AlarmName as string)
-          .msg(`Successfully reset alarm: ${alarm.AlarmName}`);
-      } catch (error) {
+          .msg(
+            `${alarmName} is in ALARM state. Alarm does not have autoscaling action and realarm is not disabled. Resetting...`,
+          );
+
+        try {
+          await resetAlarmState(alarmName);
+          log
+            .info()
+            .str('alarmName', alarmName)
+            .msg(`Successfully reset alarm: ${alarmName}`);
+        } catch (error) {
+          log
+            .error()
+            .str('alarmName', alarmName)
+            .msg(`Failed to reset alarm: ${alarmName}. Error: ${error}`);
+          throw error;
+        }
+      } else if (
+        (reAlarmConditions.hasAutoScalingAction || reAlarmConditions.reAlarmDisabled) &&
+        alarmState === 'ALARM'
+      ) {
         log
-          .error()
-          .str('alarmName', alarm.AlarmName as string)
-          .msg(`Failed to reset alarm: ${alarm.AlarmName}. Error: ${error}`);
-        throw error;
+          .info()
+          .str('alarmName', alarmName)
+          .msg(
+            'Skipped resetting alarm due to Auto Scaling action and/or realarm:disabled tag set to "true."',
+          );
       }
-    } else if (
-      (hasAutoScalingAction || reAlarmDisabled) &&
-      alarm.StateValue === 'ALARM'
-    ) {
-      log
-        .info()
-        .str('alarmName', alarm.AlarmName as string)
-        .msg(
-          'Skipped resetting alarm due to Auto Scaling action and/or realarm:disabled tag set to "true."',
-        );
-    }
-  }
+    }),
+  );
 }
 
 // TODO Fix the use of any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const handler: Handler = async (event: any): Promise<void> => {
   log.trace().unknown('event', event).msg('Received event');
-  if
-  await checkAndResetAlarms(false);
+  // if a reAlarm override event rule is triggered, only reset the alarm with the specified name in the payload.
+  if (event['reAlarmOverride-AlarmName']) {
+    await checkAndResetAlarms(true, event['reAlarmOverride-AlarmName']);
+    return;
+  } else {
+    await checkAndResetAlarms(false);
+  }
 };
