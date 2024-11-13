@@ -27,7 +27,10 @@ export class AutoAlarmStack extends ExtendedStack {
       );
     }
     if (props.enableReAlarm) {
-      this.outputParameter('useReAlarm', props.enableReAlarm ? 'true' : 'false');
+      this.outputParameter(
+        'useReAlarm',
+        props.enableReAlarm ? 'true' : 'false',
+      );
     }
     if (props.reAlarmSchedule) {
       this.outputParameter(

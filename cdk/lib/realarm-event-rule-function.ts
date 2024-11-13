@@ -11,7 +11,11 @@ interface ReAlarmEventRuleFunctionProps {
 }
 
 export class ReAlarmEventRuleFunction extends ExtendedNodejsFunction {
-  constructor(scope: Construct, id: string, props?: ReAlarmEventRuleFunctionProps) {
+  constructor(
+    scope: Construct,
+    id: string,
+    props?: ReAlarmEventRuleFunctionProps,
+  ) {
     super(scope, id, {
       entry: path.join(
         __dirname,

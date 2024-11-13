@@ -197,7 +197,7 @@ export class AutoAlarmConstruct extends Construct {
       },
     );
 
-    //Define event rule to trigger the lambda function based on tag changes on cloudwatch alarms.
+    //Define event rule to trigger the realarm event rule lambda function based on tag changes on cloudwatch alarms.
     const reAlarmEventRuleScheduleRule = new Rule(
       this,
       'ReAlarmEventRuleScheduleRule',
@@ -208,7 +208,7 @@ export class AutoAlarmConstruct extends Construct {
           detail: {
             'service': ['cloudwatch'],
             'resource-type': ['alarm'],
-            'changed-tag-keys': ['reAlarm:disabled'],
+            'changed-tag-keys': ['autoalarm:re-alarm-minutes'],
           },
         },
         description:
