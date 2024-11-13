@@ -10,6 +10,7 @@ interface ReAlarmFunctionProps {
 }
 
 export class ReAlarmFunction extends ExtendedNodejsFunction {
+  public readonly reAlarmFunctionArn: string;
   constructor(scope: Construct, id: string, props?: ReAlarmFunctionProps) {
     super(scope, id, {
       entry: path.join(
@@ -30,5 +31,7 @@ export class ReAlarmFunction extends ExtendedNodejsFunction {
         createDeployment: false,
       },
     });
+    // Expose the function ARN
+    this.reAlarmFunctionArn = this.functionArn;
   }
 }

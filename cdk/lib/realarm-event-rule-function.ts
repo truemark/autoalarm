@@ -7,9 +7,10 @@ import {Architecture} from 'aws-cdk-lib/aws-lambda';
 
 interface ReAlarmEventRuleFunctionProps {
   role?: IRole; // Define other props as needed
+  reAlarmFunctionArn?: string;
 }
 
-export class RealarmEventRuleFunction extends ExtendedNodejsFunction {
+export class ReAlarmEventRuleFunction extends ExtendedNodejsFunction {
   constructor(scope: Construct, id: string, props?: ReAlarmEventRuleFunctionProps) {
     super(scope, id, {
       entry: path.join(
@@ -26,6 +27,9 @@ export class RealarmEventRuleFunction extends ExtendedNodejsFunction {
       timeout: Duration.minutes(5),
       memorySize: 768,
       role: props?.role,
+      environment: {
+        RE_ALARM_FUNCTION_ARN: props?.reAlarmFunctionArn || '',
+      },
       deploymentOptions: {
         createDeployment: false,
       },

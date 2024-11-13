@@ -15,14 +15,14 @@ const app = new ExtendedApp({
 // The prometheusWorkspaceId const is configured to take in an environment variable for the Prometheus Workspace ID which
 // is then passed to our lambda to use dynamically across all environments.
 const prometheusWorkspaceId = app.node.tryGetContext('prometheusWorkspaceId');
-// The useReAlarm const is configured to take in an environment variable for the useReAlarm boolean which is then passed
+// The enableReAlarm const is configured to take in an environment variable for the enableReAlarm boolean which is then passed
 // to the constructs to determine if reAlarm should be configured or not.
 const useReAlarmContext = app.node.tryGetContext('EnableReAlarm');
-// Ensure useReAlarm is set to a boolean, default to `true` if not set.
+// Ensure enableReAlarm is set to a boolean, default to `true` if not set.
 const useReAlarm =
   useReAlarmContext !== undefined ? useReAlarmContext === 'true' : true;
 
 new AutoAlarmStack(app, 'AutoAlarm', {
   prometheusWorkspaceId: prometheusWorkspaceId,
-  useReAlarm: useReAlarm,
+  enableReAlarm: useReAlarm,
 });

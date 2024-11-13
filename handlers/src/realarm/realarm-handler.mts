@@ -32,8 +32,8 @@ const log = logging.initialize({
  * Interface defining the conditions that determine how an alarm should be handled
  */
 interface ReAlarmConditions {
-  reAlarmDisabled: boolean;      // Indicates if re-alarming is disabled via tags
-  reAlarmOverrideTag: boolean;   // Indicates if custom re-alarm schedule is set
+  reAlarmDisabled: boolean; // Indicates if re-alarming is disabled via tags
+  reAlarmOverrideTag: boolean; // Indicates if custom re-alarm schedule is set
   hasAutoScalingAction: boolean; // Indicates if alarm triggers auto-scaling
 }
 
@@ -244,7 +244,6 @@ async function checkAndResetAlarms(
     alarms.map((alarm) => resetAlarmState(alarm.AlarmName as string)),
   );
 }
-
 
 export const handler: Handler = async (event: {
   'reAlarmOverride-AlarmName'?: string;

@@ -530,12 +530,12 @@ ReAlarm's global behavior can be managed using context variables during CDK depl
 
 -   **Enable/Disable ReAlarm Globally**:
 
-    -   Use the context variable `useReAlarm` to control whether ReAlarm is active.
+    -   Use the context variable `enableReAlarm` to control whether ReAlarm is active.
     -   Example command to enable ReAlarm:
         ```bash
-        cdk deploy --context useReAlarm='true' AutoAlarm
+        cdk deploy --context enableReAlarm='true' AutoAlarm
         ```
-    -   By default, if `useReAlarm` is not specified, the function is disabled implicitly. Set it to `'true'` to enable or
+    -   By default, if `enableReAlarm` is not specified, the function is disabled implicitly. Set it to `'true'` to enable or
         `'false'` to disable explicitly.
 
 -   **Customize ReAlarm Schedule**:
