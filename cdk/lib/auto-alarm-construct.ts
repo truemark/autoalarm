@@ -120,102 +120,102 @@ export class AutoAlarmConstruct extends Construct {
       });
 
       reAlarmScheduleRule.addTarget(reAlarmTarget);
-    }
 
-    /*
-     * Define the IAM role with specific permissions for the realarm Event Rule Lambda function and create the realarm Event Rule Lambda function
-     */
-    const reAlarmEventRuleLambdaExecutionRole = new Role(
-      this,
-      'reAlarmEventRuleLambdaExecutionRole',
-      {
-        assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
-        description: 'Execution role for realarm Event Rule Lambda function',
-      },
-    );
-
-    // Attach policies for eventbridge
-    reAlarmEventRuleLambdaExecutionRole.addToPolicy(
-      new PolicyStatement({
-        effect: Effect.ALLOW,
-        actions: [
-          'events:PutRule',
-          'events:PutTargets',
-          'events:DeleteRule',
-          'events:RemoveTargets',
-        ],
-        resources: [
-          `arn:aws:events:${region}:${accountId}:rule/AutoAlarm-ReAlarm-*`,
-        ],
-      }),
-    );
-
-    // Attach policies for CloudWatch
-    reAlarmEventRuleLambdaExecutionRole.addToPolicy(
-      new PolicyStatement({
-        effect: Effect.ALLOW,
-        actions: [
-          'cloudwatch:DescribeAlarms',
-          'cloudwatch:ListTagsForResource',
-        ],
-        resources: ['*'],
-      }),
-    );
-
-    //attach policies for CloudWatch Logs
-    reAlarmEventRuleLambdaExecutionRole.addToPolicy(
-      new PolicyStatement({
-        effect: Effect.ALLOW,
-        resources: ['*'],
-        actions: [
-          'logs:CreateLogGroup',
-          'logs:CreateLogStream',
-          'logs:PutLogEvents',
-        ],
-      }),
-    );
-
-    //Create the realarm Event Rule Lambda function
-    const reAlarmEventRuleFunction = new ReAlarmEventRuleFunction(
-      this,
-      'ReAlarmEventRuleFunction',
-      {
-        role: reAlarmEventRuleLambdaExecutionRole,
-        // Pass the realarm function ARN as an environment variable so we can use it to define the realarm Lambda above as a target for event bridge rules we create with this lambda
-        reAlarmFunctionArn: this.reAlarmFunctionArn,
-      },
-    );
-
-    const reAlarmEventRuleDLQ = new StandardQueue(
-      this,
-      'reAlarmEventRuleFunction',
-    );
-    const reAlarmEventRuleTarget = new LambdaFunction(
-      reAlarmEventRuleFunction,
-      {
-        deadLetterQueue: reAlarmEventRuleDLQ,
-      },
-    );
-
-    //Define event rule to trigger the realarm event rule lambda function based on tag changes on cloudwatch alarms.
-    const reAlarmEventRuleScheduleRule = new Rule(
-      this,
-      'ReAlarmEventRuleScheduleRule',
-      {
-        eventPattern: {
-          source: ['aws.tag'],
-          detailType: ['Tag Change on Resource'],
-          detail: {
-            'service': ['cloudwatch'],
-            'resource-type': ['alarm'],
-            'changed-tag-keys': ['autoalarm:re-alarm-minutes'],
-          },
+      /*
+       * Define the IAM role with specific permissions for the realarm Event Rule Lambda function and create the realarm Event Rule Lambda function
+       */
+      const reAlarmEventRuleLambdaExecutionRole = new Role(
+        this,
+        'reAlarmEventRuleLambdaExecutionRole',
+        {
+          assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
+          description: 'Execution role for realarm Event Rule Lambda function',
         },
-        description:
-          'Trigger the realarm Event Rule Lambda function according to defined or default schedule',
-      },
-    );
-    reAlarmEventRuleScheduleRule.addTarget(reAlarmEventRuleTarget);
+      );
+
+      // Attach policies for eventbridge
+      reAlarmEventRuleLambdaExecutionRole.addToPolicy(
+        new PolicyStatement({
+          effect: Effect.ALLOW,
+          actions: [
+            'events:PutRule',
+            'events:PutTargets',
+            'events:DeleteRule',
+            'events:RemoveTargets',
+          ],
+          resources: [
+            `arn:aws:events:${region}:${accountId}:rule/AutoAlarm-ReAlarm-*`,
+          ],
+        }),
+      );
+
+      // Attach policies for CloudWatch
+      reAlarmEventRuleLambdaExecutionRole.addToPolicy(
+        new PolicyStatement({
+          effect: Effect.ALLOW,
+          actions: [
+            'cloudwatch:DescribeAlarms',
+            'cloudwatch:ListTagsForResource',
+          ],
+          resources: ['*'],
+        }),
+      );
+
+      //attach policies for CloudWatch Logs
+      reAlarmEventRuleLambdaExecutionRole.addToPolicy(
+        new PolicyStatement({
+          effect: Effect.ALLOW,
+          resources: ['*'],
+          actions: [
+            'logs:CreateLogGroup',
+            'logs:CreateLogStream',
+            'logs:PutLogEvents',
+          ],
+        }),
+      );
+
+      //Create the realarm Event Rule Lambda function
+      const reAlarmEventRuleFunction = new ReAlarmEventRuleFunction(
+        this,
+        'ReAlarmEventRuleFunction',
+        {
+          role: reAlarmEventRuleLambdaExecutionRole,
+          // Pass the realarm function ARN as an environment variable so we can use it to define the realarm Lambda above as a target for event bridge rules we create with this lambda
+          reAlarmFunctionArn: this.reAlarmFunctionArn,
+        },
+      );
+
+      const reAlarmEventRuleDLQ = new StandardQueue(
+        this,
+        'reAlarmEventRuleFunction',
+      );
+      const reAlarmEventRuleTarget = new LambdaFunction(
+        reAlarmEventRuleFunction,
+        {
+          deadLetterQueue: reAlarmEventRuleDLQ,
+        },
+      );
+
+      //Define event rule to trigger the realarm event rule lambda function based on tag changes on cloudwatch alarms.
+      const reAlarmEventRuleScheduleRule = new Rule(
+        this,
+        'ReAlarmEventRuleScheduleRule',
+        {
+          eventPattern: {
+            source: ['aws.tag'],
+            detailType: ['Tag Change on Resource'],
+            detail: {
+              'service': ['cloudwatch'],
+              'resource-type': ['alarm'],
+              'changed-tag-keys': ['autoalarm:re-alarm-minutes'],
+            },
+          },
+          description:
+            'Trigger the realarm Event Rule Lambda function according to defined or default schedule',
+        },
+      );
+      reAlarmEventRuleScheduleRule.addTarget(reAlarmEventRuleTarget);
+    }
 
     /*
      * configure the AutoAlarm Function and associated queues and eventbridge rules
