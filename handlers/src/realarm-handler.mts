@@ -8,7 +8,7 @@ import {
   SetAlarmStateCommand,
 } from '@aws-sdk/client-cloudwatch';
 import * as logging from '@nr1e/logging';
-import {ConfiguredRetryStrategy} from "@smithy/util-retry";
+import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 
 /**
  * AWS Lambda function that manages CloudWatch alarms by resetting their states based on specific conditions.
@@ -26,7 +26,6 @@ const cloudwatch = new CloudWatchClient({
 const level = process.env.LOG_LEVEL || 'trace';
 if (!logging.isLevel(level)) {
   throw new Error(`Invalid log level: ${level}`);
-
 }
 const log = logging.initialize({
   svc: 'AutoAlarm',
