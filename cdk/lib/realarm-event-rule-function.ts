@@ -23,7 +23,6 @@ export class ReAlarmEventRuleFunction extends ExtendedNodejsFunction {
         '..',
         'handlers',
         'src',
-        'realarm',
         'realarm-event-rule-handler.mts',
       ),
       architecture: Architecture.ARM_64,

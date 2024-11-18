@@ -145,7 +145,7 @@ export class AutoAlarmConstruct extends Construct {
           'events:RemoveTargets',
         ],
         resources: [
-          `arn:aws:events:${region}:${accountId}:rule/ReAlarmOverrideRule-*`,
+          `arn:aws:events:${region}:${accountId}:rule/AutoAlarm-ReAlarm-*`,
         ],
       }),
     );

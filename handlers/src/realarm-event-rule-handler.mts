@@ -65,14 +65,19 @@ async function getAlarmFromArn(alarmArn: string): Promise<MetricAlarm | null> {
  * @param alarmName - The name of the CloudWatch Alarm
  */
 async function deleteEventBridgeRule(alarmName: string): Promise<void> {
-  const ruleName = `AutoAlarm-ReAlarm-${alarmName}`;
+  const sanitizedName = alarmName
+    .replace(/[^a-zA-Z0-9\-_]/g, '-')
+    .substring(0, 40);
+
+  const ruleName = `AutoAlarm-ReAlarm-${sanitizedName}`;
+  const targetId = `Target-${sanitizedName}`;
 
   try {
     // Remove targets before deleting the rule
     await eventbridge.send(
       new RemoveTargetsCommand({
         Rule: ruleName,
-        Ids: [`Target-${alarmName}`],
+        Ids: [targetId],
       }),
     );
 
@@ -108,38 +113,46 @@ async function createEventBridgeRule(
   minutes: number,
   lambdaArn: string,
 ): Promise<void> {
-  const ruleName = `AutoAlarm-ReAlarm-${alarmName}`;
+  // Sanitize the alarm name for use in rule name and target ID
+  const sanitizedName = alarmName
+    .replace(/[^a-zA-Z0-9\-_]/g, '-')
+    .substring(0, 40);
+
+  const ruleName = `AutoAlarm-ReAlarm-${sanitizedName}`;
+  const targetId = `Target-${sanitizedName}`;
+  const rateUnit = minutes === 1 ? 'minute' : 'minutes';
 
   try {
-    await Promise.all([
-      eventbridge.send(
-        new PutRuleCommand({
-          Name: ruleName,
-          Description: `Re-alarm rule for ${alarmName} every ${minutes} minutes`,
-          ScheduleExpression: `rate(${minutes} minutes)`,
-          State: 'ENABLED',
-        }),
-      ),
-      eventbridge.send(
-        new PutTargetsCommand({
-          Rule: ruleName,
-          Targets: [
-            {
-              Id: `Target-${alarmName}`,
-              Arn: lambdaArn,
-              Input: JSON.stringify({
-                event: {'reAlarmOverride-AlarmName': alarmName},
-              }),
-            },
-          ],
-        }),
-      ),
-    ]);
+    // Create the rule first
+    await eventbridge.send(
+      new PutRuleCommand({
+        Name: ruleName,
+        Description: `Re-alarm rule for ${alarmName} every ${minutes} minutes`,
+        ScheduleExpression: `rate(${minutes} ${rateUnit})`,
+        State: 'ENABLED',
+      }),
+    );
+
+    // Then add the target
+    await eventbridge.send(
+      new PutTargetsCommand({
+        Rule: ruleName,
+        Targets: [
+          {
+            Id: targetId,
+            Arn: lambdaArn,
+            Input: JSON.stringify({
+              event: {'reAlarmOverride-AlarmName': alarmName},
+            }),
+          },
+        ],
+      }),
+    );
 
     log
       .info()
       .str('function', 'createEventBridgeRule')
-      .str('ruleArn', lambdaArn)
+      .str('ruleName', ruleName)
       .msg(`Created rule: ${ruleName}`);
   } catch (error) {
     log
@@ -151,6 +164,30 @@ async function createEventBridgeRule(
   }
 }
 
+function validateEvent(event: {
+  resources: string[];
+  detail: {tags: {[s: string]: unknown} | ArrayLike<unknown>};
+}): {resourceARN: string; tags: Tag[]} {
+  if (!event?.resources?.[0]) {
+    throw new Error('Invalid event structure: Missing resource ARN');
+  }
+
+  if (!event?.detail?.tags) {
+    throw new Error('Invalid event structure: Missing tags object');
+  }
+
+  // Convert the tags object to the Tag array format
+  const tags: Tag[] = Object.entries(event.detail.tags).map(([Key, Value]) => ({
+    Key,
+    Value: String(Value),
+  }));
+
+  return {
+    resourceARN: event.resources[0],
+    tags,
+  };
+}
+
 /**
  * Lambda handler that processes CloudWatch Alarm tag changes.
  * When a tag with key 'autoalarm:re-alarm-minutes' is added/modified:
@@ -159,40 +196,50 @@ async function createEventBridgeRule(
  * 3. Create an EventBridge rule to trigger the re-alarm function on the specified schedule
  *
  * When the tag is removed or invalid:
- * 1. Deletes any existing EventBridge rule for the alarm
+ * 1. Delete any existing EventBridge rule for the alarm
  */
 export const handler: Handler = async (event) => {
   log.trace().unknown('event', event).msg('Received event');
-  const {resourceARN, tags} = event.detail.requestParameters as {
-    resourceARN: string;
-    tags: Tag[];
-  };
 
-  // Get alarm details first to ensure we have a valid alarm
-  const alarm = await getAlarmFromArn(resourceARN);
-  if (!alarm?.AlarmName) {
+  try {
+    // Validate event structure and convert tags format
+    const {resourceARN, tags} = validateEvent(event);
+
+    // Get alarm details first to ensure we have a valid alarm
+    const alarm = await getAlarmFromArn(resourceARN);
+    if (!alarm?.AlarmName) {
+      log
+        .error()
+        .str('function', 'handler')
+        .str('resourceARN', resourceARN)
+        .msg('Alarm not found');
+      return;
+    }
+
+    // Extract and validate the minutes value from the tag
+    const reAlarmTag = tags.find((t) => t.Key === TAG_KEY);
+    const minutes = reAlarmTag ? Number(reAlarmTag.Value) : null;
+
+    if (!minutes || minutes <= 0 || !Number.isInteger(minutes)) {
+      log
+        .info()
+        .str('function', 'handler')
+        .str('resourceARN', resourceARN)
+        .msg('Invalid or missing tag value - deleting existing rule');
+
+      // Delete the rule if tag is invalid or missing
+      await deleteEventBridgeRule(alarm.AlarmName);
+      return;
+    }
+
+    // Create/update the EventBridge rule with the specified schedule
+    await createEventBridgeRule(alarm.AlarmName, minutes, reAlarmARN);
+  } catch (error) {
     log
       .error()
       .str('function', 'handler')
-      .str('resourceARN', resourceARN)
-      .msg('Alarm not found');
-    return;
+      .unknown('error', error)
+      .msg('Error processing event');
+    throw error;
   }
-
-  // Extract and validate the minutes value from the tag
-  const minutes = Number(tags.find((t) => t.Key === TAG_KEY)?.Value);
-  if (!minutes || minutes <= 0 || !Number.isInteger(minutes)) {
-    log
-      .info()
-      .str('function', 'handler')
-      .str('resourceARN', resourceARN)
-      .msg('Invalid or missing tag value - deleting existing rule');
-
-    // Delete the rule if tag is invalid or missing
-    await deleteEventBridgeRule(alarm.AlarmName);
-    return;
-  }
-
-  // Create/update the EventBridge rule with the specified schedule
-  await createEventBridgeRule(alarm.AlarmName, minutes, reAlarmARN);
 };

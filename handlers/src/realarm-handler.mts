@@ -8,19 +8,25 @@ import {
   SetAlarmStateCommand,
 } from '@aws-sdk/client-cloudwatch';
 import * as logging from '@nr1e/logging';
+import {ConfiguredRetryStrategy} from "@smithy/util-retry";
 
 /**
  * AWS Lambda function that manages CloudWatch alarms by resetting their states based on specific conditions.
  * The function can handle both standard scheduled resets and override-specific alarm resets.
  */
 
-// Initialize CloudWatch client
-const cloudwatch = new CloudWatchClient({});
+const retryStrategy = new ConfiguredRetryStrategy(20);
+
+const cloudwatch = new CloudWatchClient({
+  region: process.env.AWS_REGION,
+  retryStrategy: retryStrategy,
+});
 
 // Set up logging configuration with fallback to 'trace' level
 const level = process.env.LOG_LEVEL || 'trace';
 if (!logging.isLevel(level)) {
   throw new Error(`Invalid log level: ${level}`);
+
 }
 const log = logging.initialize({
   svc: 'AutoAlarm',
@@ -197,15 +203,27 @@ async function getStandardReAlarmScheduledAlarms(): Promise<MetricAlarm[]> {
  * @param alarmName - Name of the alarm to reset
  * @throws Error if the reset operation fails
  */
-async function resetAlarmState(alarmName: string): Promise<void> {
+async function resetAlarmState(
+  alarmName: string,
+  override: boolean,
+): Promise<void> {
+  const stateReason = override
+    ? 'Resetting state from reAlarm override Lambda function'
+    : 'Resetting state from reAlarm Lambda function';
   try {
     await cloudwatch.send(
       new SetAlarmStateCommand({
         AlarmName: alarmName,
         StateValue: 'OK',
-        StateReason: 'Resetting state from reAlarm Lambda function',
+        StateReason: stateReason,
       }),
     );
+    log
+      .info()
+      .str('function', 'resetAlarmState')
+      .str('alarmName', alarmName)
+      .str('Is Standard ReAlarm Override Schedule Alarm:', String(override))
+      .msg(`Successfully reset alarm: ${alarmName}`);
   } catch (error) {
     log
       .fatal()
@@ -240,8 +258,17 @@ async function checkAndResetAlarms(
     return;
   }
 
+  log
+    .info()
+    .str('function', 'checkAndResetAlarms')
+    .str('reAlarmOverride', reAlarmOverride ? 'true' : 'false')
+    .obj('alarms', alarms)
+    .msg(`Resetting ${alarms.length} alarms`);
+
   await Promise.all(
-    alarms.map((alarm) => resetAlarmState(alarm.AlarmName as string)),
+    alarms.map((alarm) =>
+      resetAlarmState(alarm.AlarmName as string, reAlarmOverride),
+    ),
   );
 }
 
