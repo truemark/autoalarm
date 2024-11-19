@@ -29,6 +29,9 @@ export class ReAlarmFunction extends ExtendedNodejsFunction {
       deploymentOptions: {
         createDeployment: false,
       },
+      bundling: {
+        nodeModules: ['@smithy/util-retry'],
+      },
     });
     // Expose the function ARN
     this.reAlarmFunctionArn = this.functionArn;

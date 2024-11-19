@@ -197,9 +197,10 @@ export class AutoAlarmConstruct extends Construct {
       );
 
       //Define event rule to trigger the realarm event rule lambda function based on tag changes on cloudwatch alarms.
-      const reAlarmEventRuleScheduleRule = new Rule(
+      // EventBridge rule for tag changes
+      const reAlarmEventRuleTagRule = new Rule(
         this,
-        'ReAlarmEventRuleScheduleRule',
+        'ReAlarmEventRuleTagRule',
         {
           eventPattern: {
             source: ['aws.tag'],
@@ -211,12 +212,31 @@ export class AutoAlarmConstruct extends Construct {
             },
           },
           description:
-            'Trigger the realarm Event Rule Lambda function according to defined or default schedule',
+            'Trigger the realarm Event Rule Lambda function for tag changes on CloudWatch alarms',
         },
       );
-      reAlarmEventRuleScheduleRule.addTarget(reAlarmEventRuleTarget);
-    }
+      reAlarmEventRuleTagRule.addTarget(reAlarmEventRuleTarget);
 
+      // EventBridge rule for alarm deletions
+      const reAlarmEventAlarmDeleteRule = new Rule(
+        this,
+        'ReAlarmEventAlarmDeleteRule',
+        {
+          eventPattern: {
+            source: ['aws.cloudwatch'],
+            detailType: ['CloudWatch Alarm State Change'],
+            detail: {
+              'service': ['cloudwatch'],
+              'resource-type': ['alarm'],
+              'tag:autoalarm:re-alarm-minutes': ['*'],
+            },
+          },
+          description:
+            'Trigger the realarm Event Rule Lambda function when an alarm with the autoalarm:re-alarm-minutes tag is deleted',
+        },
+      );
+      reAlarmEventAlarmDeleteRule.addTarget(reAlarmEventRuleTarget);
+    }
     /*
      * configure the AutoAlarm Function and associated queues and eventbridge rules
      */
