@@ -217,26 +217,6 @@ export class AutoAlarmConstruct extends Construct {
       );
       reAlarmEventRuleTagRule.addTarget(reAlarmEventRuleTarget);
 
-      // EventBridge rule for alarm deletions
-      const reAlarmEventAlarmDeleteRule = new Rule(
-        this,
-        'ReAlarmEventAlarmDeleteRule',
-        {
-          eventPattern: {
-            source: ['aws.cloudwatch'],
-            detailType: ['CloudWatch Alarm State Change'],
-            detail: {
-              'service': ['cloudwatch'],
-              'resource-type': ['alarm'],
-              'tag:autoalarm:re-alarm-minutes': ['*'],
-            },
-          },
-          description:
-            'Trigger the realarm Event Rule Lambda function when an alarm with the autoalarm:re-alarm-minutes tag is deleted',
-        },
-      );
-      reAlarmEventAlarmDeleteRule.addTarget(reAlarmEventRuleTarget);
-    }
     /*
      * configure the AutoAlarm Function and associated queues and eventbridge rules
      */
