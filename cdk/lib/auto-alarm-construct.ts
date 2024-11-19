@@ -216,6 +216,7 @@ export class AutoAlarmConstruct extends Construct {
         },
       );
       reAlarmEventRuleTagRule.addTarget(reAlarmEventRuleTarget);
+    }
 
     /*
      * configure the AutoAlarm Function and associated queues and eventbridge rules
