@@ -279,20 +279,22 @@ async function checkAndResetAlarms(
 }
 
 export const handler: Handler = async (event: {
-  'reAlarmOverride-AlarmName'?: string;
+  event: {
+    'reAlarmOverride-AlarmName'?: string;
+  };
 }): Promise<void> => {
   log
     .trace()
     .unknown('event', event)
     .str(
       'isOverriden Alarm',
-      event['reAlarmOverride-AlarmName'] ? 'true' : 'false',
+      event.event['reAlarmOverride-AlarmName'] ? 'true' : 'false',
     )
-    .str('overrideAlarmName', event['reAlarmOverride-AlarmName'] ?? '')
+    .str('overrideAlarmName', event.event['reAlarmOverride-AlarmName'] ?? '')
     .msg('Received event');
   // Check if the event contains an override alarm name. If not, return false and undefined to checkAndResetAlarms. Otherwise, true and the alarm name.
   await checkAndResetAlarms(
-    !!event['reAlarmOverride-AlarmName'],
-    event['reAlarmOverride-AlarmName'],
+    !!event.event['reAlarmOverride-AlarmName'],
+    event.event['reAlarmOverride-AlarmName'],
   );
 };
