@@ -99,9 +99,15 @@ export class AutoAlarmConstruct extends Construct {
         }),
       );
 
-      // Create the MainFunction and explicitly pass the execution role
+      // Create the reAlarm and explicitly pass the execution role
       const reAlarmFunction = new ReAlarmFunction(this, 'ReAlarmFunction', {
         role: reAlarmLambdaExecutionRole,
+      });
+
+      // Allow our realarm eventbridge rules to trigger the realarm function
+      reAlarmFunction.addPermission('EventBridgePermission', {
+        principal: new ServicePrincipal('events.amazonaws.com'),
+        sourceArn: `arn:aws:events:${region}:${accountId}:rule/AutoAlarm-ReAlarm-*`,
       });
 
       // Expose the function ARN for use in the realarm event rule handler

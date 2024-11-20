@@ -88,13 +88,18 @@ async function createEventBridgeRule(
   minutes: number,
   lambdaArn: string,
 ): Promise<void> {
+  // Generate a random 6-character suffix
+  const randomSuffix = Math.random().toString(36).substring(2, 8);
+
   // Sanitize the alarm name for use in rule name and target ID
+  // Limit to 32 characters to accommodate suffix to avoid eventbridge rule name collision
   const sanitizedName = alarmName
     .replace(/[^a-zA-Z0-9\-_]/g, '-')
-    .substring(0, 40);
+    .replace(/AutoAlarm-/, '')
+    .substring(0, 32); // Reduced to 32 to accommodate suffix
 
-  const ruleName = `AutoAlarm-ReAlarm-${sanitizedName}`;
-  const targetId = `Target-${sanitizedName}`;
+  const ruleName = `AutoAlarm-ReAlarm-${sanitizedName}-${randomSuffix}`;
+  const targetId = `Target-${sanitizedName}-${randomSuffix}`;
   const rateUnit = minutes === 1 ? 'minute' : 'minutes';
 
   try {
