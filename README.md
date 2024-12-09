@@ -206,7 +206,7 @@ cdk deploy -c prometheusWorkspaceId='ws-11111111-7e2c-ffff-8009-c9fb233c73bd' Au
 
 #### Default Values and Behaviors:
 
-By default, anytime a an EC2 instance triggers AutoAlarm, if a prometheus workspaceID is set and instance is reporting
+By default, anytime an EC2 instance triggers AutoAlarm, if a prometheus workspaceID is set and instance is reporting
 to Prometheus, AutoAlarm prefers prometheus and will create prometheus alarms for CPU, Memory, and Storage utilization.
 
 If you explicitly want to use CloudWatch alarms for EC2 instances, you can set the `autoalarm:target` tag to `cloudwatch`
@@ -524,19 +524,9 @@ interfering with scaling operations.
 
 By default, the ReAlarm function is enabled. When ReAlarm is enabled, it runs on a default schedule of every 120 minutes.
 
-### Global ReAlarm Enabled/Disabled and Schedule Configuration Via Context Variables in CDK Deployment
+### Configure ReAlarm Behavior with Tags
 
-ReAlarm's global behavior can be managed using context variables during CDK deployment:
-
--   **Enable/Disable ReAlarm Globally**:
-
-    -   Use the context variable `enableReAlarm` to control whether ReAlarm is active.
-    -   Example command to enable ReAlarm:
-        ```bash
-        cdk deploy --context enableReAlarm='true' AutoAlarm
-        ```
-    -   By default, if `enableReAlarm` is not specified, the function is disabled implicitly. Set it to `'true'` to enable or
-        `'false'` to disable explicitly.
+ReAlarm's behavior can be configured on a per alarm basis using tags.
 
 -   **Customize ReAlarm Schedule**:
     -   The ReAlarm schedule by default runs every 120 minutes.
