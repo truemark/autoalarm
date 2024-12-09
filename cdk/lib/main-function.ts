@@ -29,6 +29,9 @@ export class MainFunction extends ExtendedNodejsFunction {
       environment: {
         PROMETHEUS_WORKSPACE_ID: props?.prometheusWorkspaceId || '',
       },
+      bundling: {
+        nodeModules: ['@smithy/util-retry'],
+      },
       deploymentOptions: {
         createDeployment: false,
       },

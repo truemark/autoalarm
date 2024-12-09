@@ -15,26 +15,14 @@ const app = new ExtendedApp({
 // The prometheusWorkspaceId const is configured to take in an environment variable for the Prometheus Workspace ID which
 // is then passed to our lambda to use dynamically across all environments.
 const prometheusWorkspaceId = app.node.tryGetContext('prometheusWorkspaceId');
-// The useReAlarm const is configured to take in an environment variable for the useReAlarm boolean which is then passed
+// The enableReAlarm const is configured to take in an environment variable for the enableReAlarm boolean which is then passed
 // to the constructs to determine if reAlarm should be configured or not.
-const useReAlarmContext = app.node.tryGetContext('useReAlarm');
-// The reAlarmSchedule const is configured to take in an environment variable for the reAlarmSchedule cron expression
-// which is used to define the schedule for each trigger of ReAlarm.
-// Example: {hour: '*/2'} will trigger the function every two hours
-// cdk deploy --context reAlarmSchedule='{"hour":"*/2","minute":"0"}' AutoAlarm
-const reAlarmScheduleContext = app.node.tryGetContext('reAlarmSchedule');
-
-// Ensure useReAlarm is set to a boolean, default to `false` only if it's undefined (not when false is passed)
+const useReAlarmContext = app.node.tryGetContext('EnableReAlarm');
+// Ensure enableReAlarm is set to a boolean, default to `true` if not set.
 const useReAlarm =
-  useReAlarmContext !== undefined ? useReAlarmContext === 'true' : false;
-
-// Safely parse the reAlarmSchedule context variable if it exists. If not, default to every two hours.
-const reAlarmSchedule = reAlarmScheduleContext
-  ? JSON.parse(reAlarmScheduleContext)
-  : {hour: '*/2', minute: '0'}; // Fallback to default schedule
+  useReAlarmContext !== undefined ? useReAlarmContext === 'true' : true;
 
 new AutoAlarmStack(app, 'AutoAlarm', {
   prometheusWorkspaceId: prometheusWorkspaceId,
-  useReAlarm: useReAlarm,
-  reAlarmSchedule: reAlarmSchedule,
+  enableReAlarm: useReAlarm,
 });

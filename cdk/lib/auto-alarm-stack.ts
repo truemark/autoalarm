@@ -6,7 +6,7 @@ import {version} from '../../package.json';
 
 export interface ExtendedAutoAlarmProps extends ExtendedStackProps {
   readonly prometheusWorkspaceId?: string;
-  readonly useReAlarm?: boolean;
+  readonly enableReAlarm?: boolean;
   readonly reAlarmSchedule?: CronOptions;
 }
 
@@ -16,8 +16,7 @@ export class AutoAlarmStack extends ExtendedStack {
     super(scope, id, props);
     new AutoAlarmConstruct(this, 'AutoAlarm', {
       prometheusWorkspaceId: props.prometheusWorkspaceId,
-      useReAlarm: props.useReAlarm,
-      reAlarmSchedule: props.reAlarmSchedule,
+      enableReAlarm: props.enableReAlarm,
     });
     this.outputParameter('Name', 'AutoAlarm');
     this.outputParameter('Version', version);
@@ -27,8 +26,11 @@ export class AutoAlarmStack extends ExtendedStack {
         props.prometheusWorkspaceId,
       );
     }
-    if (props.useReAlarm) {
-      this.outputParameter('useReAlarm', props.useReAlarm ? 'true' : 'false');
+    if (props.enableReAlarm) {
+      this.outputParameter(
+        'useReAlarm',
+        props.enableReAlarm ? 'true' : 'false',
+      );
     }
     if (props.reAlarmSchedule) {
       this.outputParameter(
