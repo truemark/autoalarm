@@ -22,11 +22,11 @@
     "watch": "concurrently \"pnpm:watch-handlers\" \"pnpm:watch-cdk\" -c blue,green"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2",
+    "concurrently": "^9.1.0",
     "prettier": "^3.3.3"
   },
   "dependencies": {
-    "@aws-sdk/credential-provider-node": "^3.677.0",
+    "@aws-sdk/credential-provider-node": "^3.687.0",
     "@aws-sdk/protocol-http": "^3.374.0",
     "@aws-sdk/signature-v4": "^3.374.0",
     "aws4": "^1.13.2",
