@@ -42,11 +42,19 @@ const eventbridge = new EventBridgeClient({});
  * @returns A 6-character hash string
  */
 function createAlarmHash(alarmName: string): string {
+  const baseAlarmName = alarmName.replace(/^AutoAlarm-/, '');
   return crypto
     .createHash('md5')
-    .update(alarmName)
+    .update(baseAlarmName)
     .digest('hex')
     .substring(0, 6);
+}
+
+function sanitizeForEventBridge(alarmName: string): string {
+  return alarmName
+    .replace(/^AutoAlarm-/, '') // Remove AutoAlarm- prefix first
+    .replace(/[^a-zA-Z0-9\-_]/g, '-') // Replace invalid characters
+    .substring(0, 32); // Truncate to 32 chars
 }
 
 /**
@@ -54,9 +62,7 @@ function createAlarmHash(alarmName: string): string {
  * @param alarmName - The name of the CloudWatch Alarm
  */
 async function deleteEventBridgeRule(alarmName: string): Promise<void> {
-  const sanitizedName = alarmName
-    .replace(/[^a-zA-Z0-9\-_]/g, '-')
-    .substring(0, 32);
+  const sanitizedName = sanitizeForEventBridge(alarmName);
 
   const hashSuffix = createAlarmHash(alarmName);
 
@@ -109,10 +115,7 @@ async function createEventBridgeRule(
 
   // Sanitize the alarm name for use in rule name and target ID
   // Limit to 32 characters to accommodate suffix to avoid eventbridge rule name collision
-  const sanitizedName = alarmName
-    .replace(/[^a-zA-Z0-9\-_]/g, '-')
-    .replace(/AutoAlarm-/, '')
-    .substring(0, 32); // Reduced to 32 to accommodate suffix
+  const sanitizedName = sanitizeForEventBridge(alarmName);
 
   const ruleName = `AutoAlarm-ReAlarm-${sanitizedName}-${hashSuffix}`;
   const targetId = `Target-${sanitizedName}-${hashSuffix}`;
@@ -234,10 +237,28 @@ export const handler: Handler = async (event) => {
         .msg('Error fetching alarm details');
     }
 
-    // Extract and validate the minutes value from the tag
+    // Extract and validate the tags
     const reAlarmTag = tags.find((t) => t.Key === TAG_KEY);
+    const enabledTag = tags.find((t) => t.Key === 'autoalarm:re-alarm-enabled');
     const minutes = reAlarmTag ? Number(reAlarmTag.Value) : null;
 
+    // Check if explicitly disabled
+    if (
+      enabledTag &&
+      enabledTag.Value &&
+      enabledTag.Value.toLowerCase() === 'false'
+    ) {
+      log
+        .info()
+        .str('function', 'handler')
+        .str('resourceARN', resourceARN)
+        .msg('Re-alarm explicitly disabled - deleting existing rule');
+
+      await deleteEventBridgeRule(alarmName);
+      return;
+    }
+
+    // Validate minutes value
     if (!minutes || minutes <= 0 || !Number.isInteger(minutes)) {
       log
         .info()

@@ -214,7 +214,10 @@ export class AutoAlarmConstruct extends Construct {
             detail: {
               'service': ['cloudwatch'],
               'resource-type': ['alarm'],
-              'changed-tag-keys': ['autoalarm:re-alarm-minutes'],
+              'changed-tag-keys': [
+                'autoalarm:re-alarm-minutes',
+                'autoalarm:re-alarm-enabled',
+              ],
             },
           },
           description:
