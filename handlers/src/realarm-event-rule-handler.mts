@@ -12,6 +12,7 @@ import {
   RemoveTargetsCommand,
 } from '@aws-sdk/client-eventbridge';
 import * as logging from '@nr1e/logging';
+import * as crypto from 'crypto';
 
 // Initialize logging
 const level = process.env.LOG_LEVEL || 'trace';
@@ -36,16 +37,31 @@ const reAlarmARN =
 const eventbridge = new EventBridgeClient({});
 
 /**
+ * Creates a consistent hash from alarm name
+ * @param alarmName - The full alarm name to hash
+ * @returns A 6-character hash string
+ */
+function createAlarmHash(alarmName: string): string {
+  return crypto
+    .createHash('md5')
+    .update(alarmName)
+    .digest('hex')
+    .substring(0, 6);
+}
+
+/**
  * Deletes an EventBridge rule and its targets
  * @param alarmName - The name of the CloudWatch Alarm
  */
 async function deleteEventBridgeRule(alarmName: string): Promise<void> {
   const sanitizedName = alarmName
     .replace(/[^a-zA-Z0-9\-_]/g, '-')
-    .substring(0, 40);
+    .substring(0, 32);
 
-  const ruleName = `AutoAlarm-ReAlarm-${sanitizedName}`;
-  const targetId = `Target-${sanitizedName}`;
+  const hashSuffix = createAlarmHash(alarmName);
+
+  const ruleName = `AutoAlarm-ReAlarm-${sanitizedName}-${hashSuffix}`;
+  const targetId = `Target-${sanitizedName}-${hashSuffix}`;
 
   try {
     // Remove targets before deleting the rule
@@ -88,8 +104,8 @@ async function createEventBridgeRule(
   minutes: number,
   lambdaArn: string,
 ): Promise<void> {
-  // Generate a random 6-character suffix
-  const randomSuffix = Math.random().toString(36).substring(2, 8);
+  // Generate a hashed 6-character suffix
+  const hashSuffix = createAlarmHash(alarmName);
 
   // Sanitize the alarm name for use in rule name and target ID
   // Limit to 32 characters to accommodate suffix to avoid eventbridge rule name collision
@@ -98,8 +114,8 @@ async function createEventBridgeRule(
     .replace(/AutoAlarm-/, '')
     .substring(0, 32); // Reduced to 32 to accommodate suffix
 
-  const ruleName = `AutoAlarm-ReAlarm-${sanitizedName}-${randomSuffix}`;
-  const targetId = `Target-${sanitizedName}-${randomSuffix}`;
+  const ruleName = `AutoAlarm-ReAlarm-${sanitizedName}-${hashSuffix}`;
+  const targetId = `Target-${sanitizedName}-${hashSuffix}`;
   const rateUnit = minutes === 1 ? 'minute' : 'minutes';
 
   try {
