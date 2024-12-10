@@ -1,5 +1,33 @@
 # AutoAlarm Changelog
 
+## v1.7.0
+
+### Added:
+- Enhanced ReAlarm functionality with per-alarm configuration using tags
+- New tag-based ReAlarm scheduling system allowing customization of re-alarm intervals per alarm
+- New EventBridge rule handler for managing ReAlarm schedules
+- Support for dynamic ReAlarm schedule updates based on tag changes
+- Tag-based configuration with `autoalarm:re-alarm-minutes` for custom schedules
+- Tag-based configuration with `autoalarm:re-alarm-disabled` to disable ReAlarm for specific alarms
+
+### Changed:
+- ReAlarm is now enabled by default with a 120-minute schedule
+- Improved ReAlarm error handling and retry logic
+- Enhanced logging for better observability of ReAlarm operations
+- Restructured ReAlarm configuration to be more flexible and maintainable
+- Updated ReAlarm Lambda to support both scheduled and override-based executions
+- Moved from global ReAlarm configuration to granular, tag-based configuration
+
+### Removed:
+- Removed global ReAlarm schedule configuration via CDK context
+- Removed `useReAlarm` context variable (ReAlarm is now enabled by default)
+- Removed `reAlarmSchedule` context variable (replaced with tag-based configuration)
+- Removed `realarm:disabled` tag in favor of `autoalarm:re-alarm-disabled`
+
+### Fixed:
+- Fixed a bug that prevented retry logic from working correctly in ReAlarm due to improper package import. 
+
+
 ## v1.6.0
 
 ## Added:

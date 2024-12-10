@@ -12,7 +12,7 @@ import {
 import * as logging from '@nr1e/logging';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {ValidInstanceState} from './enums.mjs';
-import {PathMetrics, Tag, EC2AlarmManagerArray} from './types.mjs'; //need to investigate what we were doing with Dimension.
+import {PathMetrics, Tag, EC2AlarmManagerArray} from './types.mjs';
 import {
   deleteAlarm,
   doesAlarmExist,

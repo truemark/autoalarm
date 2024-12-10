@@ -6,7 +6,7 @@ import {
   ExtendedQueueProps,
   StandardQueue,
 } from 'truemark-cdk-lib/aws-sqs';
-import {Rule, Schedule, CronOptions} from 'aws-cdk-lib/aws-events';
+import {Rule, Schedule} from 'aws-cdk-lib/aws-events';
 import {LambdaFunction, SqsQueue} from 'aws-cdk-lib/aws-events-targets';
 import {SqsEventSource} from 'aws-cdk-lib/aws-lambda-event-sources';
 import {
@@ -16,25 +16,15 @@ import {
   Effect,
 } from 'aws-cdk-lib/aws-iam';
 import {Duration, Stack} from 'aws-cdk-lib';
+import {ReAlarmEventRuleFunction} from './realarm-event-rule-function';
 
 export interface AutoAlarmConstructProps {
   readonly prometheusWorkspaceId?: string;
-  readonly useReAlarm?: boolean;
-  /*
-   * The cron expression to trigger the ReAlarm function
-   *readonly minute?: string
-   *readonly hour?: string
-   *readonly day?: string
-   *readonly month?: string
-   *readonly year?: string
-   *readonly weekDay?: string
-   */
-  // Example: {hour: '*/2'} will trigger the function every two hours
-  // cdk deploy --context reAlarmSchedule='{"hour": "*/2"}' AutoAlarm
-  readonly reAlarmSchedule?: CronOptions;
+  readonly enableReAlarm?: boolean;
 }
 
 export class AutoAlarmConstruct extends Construct {
+  public readonly reAlarmFunctionArn: string;
   constructor(scope: Construct, id: string, props: AutoAlarmConstructProps) {
     super(scope, id);
 
@@ -44,13 +34,12 @@ export class AutoAlarmConstruct extends Construct {
     const region = Stack.of(this).region;
     const prometheusArn = `arn:aws:aps:${region}:${accountId}:workspace/${prometheusWorkspaceId}`;
 
-    const useReAlarm = props.useReAlarm ?? true;
+    const enableReAlarm = props.enableReAlarm ?? true;
 
-    /*
-     * configure the ReAlarm Function and associated queues and eventbridge rules if ReAlarm is enabled
-     */
-    if (useReAlarm) {
-      // Define the IAM role with specific permissions for the ReAlarm Lambda function
+    if (enableReAlarm) {
+      /*
+       * Define the IAM role with specific permissions for the realarm Lambda function and create the realarm Lambda function
+       */
       const reAlarmLambdaExecutionRole = new Role(
         this,
         'reAlarmLambdaExecutionRole',
@@ -110,24 +99,132 @@ export class AutoAlarmConstruct extends Construct {
         }),
       );
 
-      // Create the MainFunction and explicitly pass the execution role
+      // Create the reAlarm and explicitly pass the execution role
       const reAlarmFunction = new ReAlarmFunction(this, 'ReAlarmFunction', {
         role: reAlarmLambdaExecutionRole,
       });
 
-      const deadLetterQueue = new StandardQueue(this, 'ReAlarm');
+      // Allow our realarm eventbridge rules to trigger the realarm function
+      reAlarmFunction.addPermission('EventBridgePermission', {
+        principal: new ServicePrincipal('events.amazonaws.com'),
+        sourceArn: `arn:aws:events:${region}:${accountId}:rule/AutoAlarm-ReAlarm-*`,
+      });
+
+      // Expose the function ARN for use in the realarm event rule handler
+      this.reAlarmFunctionArn = reAlarmFunction.functionArn;
+
+      const deadLetterQueue = new StandardQueue(this, 'realarm');
       const reAlarmTarget = new LambdaFunction(reAlarmFunction, {
         deadLetterQueue,
       });
 
       //Define timed event to trigger the lambda function
       const reAlarmScheduleRule = new Rule(this, 'ReAlarmScheduleRule', {
-        schedule: Schedule.cron(props.reAlarmSchedule as CronOptions),
+        schedule: Schedule.rate(Duration.minutes(120)),
         description:
-          'Trigger the ReAlarm Lambda function according to defined or default schedule',
+          'Trigger the realarm Lambda function according to defined or default schedule',
       });
 
       reAlarmScheduleRule.addTarget(reAlarmTarget);
+
+      /*
+       * Define the IAM role with specific permissions for the realarm Event Rule Lambda function and create the realarm Event Rule Lambda function
+       */
+      const reAlarmEventRuleLambdaExecutionRole = new Role(
+        this,
+        'reAlarmEventRuleLambdaExecutionRole',
+        {
+          assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
+          description: 'Execution role for realarm Event Rule Lambda function',
+        },
+      );
+
+      // Attach policies for eventbridge
+      reAlarmEventRuleLambdaExecutionRole.addToPolicy(
+        new PolicyStatement({
+          effect: Effect.ALLOW,
+          actions: [
+            'events:PutRule',
+            'events:PutTargets',
+            'events:DeleteRule',
+            'events:RemoveTargets',
+          ],
+          resources: [
+            `arn:aws:events:${region}:${accountId}:rule/AutoAlarm-ReAlarm-*`,
+          ],
+        }),
+      );
+
+      // Attach policies for CloudWatch
+      reAlarmEventRuleLambdaExecutionRole.addToPolicy(
+        new PolicyStatement({
+          effect: Effect.ALLOW,
+          actions: [
+            'cloudwatch:DescribeAlarms',
+            'cloudwatch:ListTagsForResource',
+          ],
+          resources: ['*'],
+        }),
+      );
+
+      //attach policies for CloudWatch Logs
+      reAlarmEventRuleLambdaExecutionRole.addToPolicy(
+        new PolicyStatement({
+          effect: Effect.ALLOW,
+          resources: ['*'],
+          actions: [
+            'logs:CreateLogGroup',
+            'logs:CreateLogStream',
+            'logs:PutLogEvents',
+          ],
+        }),
+      );
+
+      //Create the realarm Event Rule Lambda function
+      const reAlarmEventRuleFunction = new ReAlarmEventRuleFunction(
+        this,
+        'ReAlarmEventRuleFunction',
+        {
+          role: reAlarmEventRuleLambdaExecutionRole,
+          // Pass the realarm function ARN as an environment variable so we can use it to define the realarm Lambda above as a target for event bridge rules we create with this lambda
+          reAlarmFunctionArn: this.reAlarmFunctionArn,
+        },
+      );
+
+      const reAlarmEventRuleDLQ = new StandardQueue(
+        this,
+        'reAlarmEventRuleFunction',
+      );
+      const reAlarmEventRuleTarget = new LambdaFunction(
+        reAlarmEventRuleFunction,
+        {
+          deadLetterQueue: reAlarmEventRuleDLQ,
+        },
+      );
+
+      //Define event rule to trigger the realarm event rule lambda function based on tag changes on cloudwatch alarms.
+      // EventBridge rule for tag changes
+      const reAlarmEventRuleTagRule = new Rule(
+        this,
+        'ReAlarmEventRuleTagRule',
+        {
+          eventPattern: {
+            source: ['aws.tag'],
+            detailType: ['Tag Change on Resource'],
+            detail: {
+              'service': ['cloudwatch'],
+              'resource-type': ['alarm'],
+              'changed-tag-keys': [
+                'autoalarm:re-alarm-minutes',
+                'autoalarm:re-alarm-enabled',
+              ],
+            },
+          },
+          description:
+            'Trigger the realarm Event Rule Lambda function for tag changes on CloudWatch alarms',
+        },
+      );
+      reAlarmEventRuleTagRule.addTarget(reAlarmEventRuleTarget);
     }
 
     /*
@@ -316,12 +413,7 @@ export class AutoAlarmConstruct extends Construct {
       }),
     );
 
-    /* Listen to tag changes related to AutoAlarm. Anomaly Alarms are standard and Cloudwatch Alarms are optional.
-     * If cloudwatch Alarm tags are not present, CW alarms are not created.
-     * WARNING threshold num | CRITICAL threshold num | duration time num | duration periods num
-     * example for standard CloudWatch Alarms: "90|95|60|2"
-     * example for Anomaly Detection: "90|60|2|ANOMALY_DETECTION"
-     */
+    // TODO: Add all event rules in alphabetical order
     const ec2tagRule = new Rule(this, 'TagRule', {
       eventPattern: {
         source: ['aws.tag'],

@@ -5,13 +5,17 @@ import * as path from 'path';
 import {Duration} from 'aws-cdk-lib';
 import {Architecture} from 'aws-cdk-lib/aws-lambda';
 
-interface ReAlarmFunctionProps {
+interface ReAlarmEventRuleFunctionProps {
   role?: IRole; // Define other props as needed
+  reAlarmFunctionArn?: string;
 }
 
-export class ReAlarmFunction extends ExtendedNodejsFunction {
-  public readonly reAlarmFunctionArn: string;
-  constructor(scope: Construct, id: string, props?: ReAlarmFunctionProps) {
+export class ReAlarmEventRuleFunction extends ExtendedNodejsFunction {
+  constructor(
+    scope: Construct,
+    id: string,
+    props?: ReAlarmEventRuleFunctionProps,
+  ) {
     super(scope, id, {
       entry: path.join(
         __dirname,
@@ -19,21 +23,19 @@ export class ReAlarmFunction extends ExtendedNodejsFunction {
         '..',
         'handlers',
         'src',
-        'realarm-handler.mts',
+        'realarm-event-rule-handler.mts',
       ),
       architecture: Architecture.ARM_64,
       handler: 'handler',
       timeout: Duration.minutes(5),
       memorySize: 768,
       role: props?.role,
+      environment: {
+        RE_ALARM_FUNCTION_ARN: props?.reAlarmFunctionArn || '',
+      },
       deploymentOptions: {
         createDeployment: false,
       },
-      bundling: {
-        nodeModules: ['@smithy/util-retry'],
-      },
     });
-    // Expose the function ARN
-    this.reAlarmFunctionArn = this.functionArn;
   }
 }
