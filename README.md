@@ -206,7 +206,7 @@ cdk deploy -c prometheusWorkspaceId='ws-11111111-7e2c-ffff-8009-c9fb233c73bd' Au
 
 #### Default Values and Behaviors:
 
-By default, anytime a an EC2 instance triggers AutoAlarm, if a prometheus workspaceID is set and instance is reporting
+By default, anytime an EC2 instance triggers AutoAlarm, if a prometheus workspaceID is set and instance is reporting
 to Prometheus, AutoAlarm prefers prometheus and will create prometheus alarms for CPU, Memory, and Storage utilization.
 
 If you explicitly want to use CloudWatch alarms for EC2 instances, you can set the `autoalarm:target` tag to `cloudwatch`
@@ -522,35 +522,17 @@ interfering with scaling operations.
 
 ### Default Values
 
-By default, the ReAlarm function is disabled. When ReAlarm is enabled, it runs on a default schedule of every two hours.
-The ReAlarm Schedule can also be customized by configuring a context variable.
+By default, the ReAlarm function is enabled. When ReAlarm is enabled, it runs on a default schedule of every 120 minutes.
 
-### Global ReAlarm Enabled/Disabled and Schedule Configuration Via Context Variables in CDK Deployment
+### Configure ReAlarm Behavior with Tags
 
-ReAlarm's global behavior can be managed using context variables during CDK deployment:
-
--   **Enable/Disable ReAlarm Globally**:
-
-    -   Use the context variable `useReAlarm` to control whether ReAlarm is active.
-    -   Example command to enable ReAlarm:
-        ```bash
-        cdk deploy --context useReAlarm='true' AutoAlarm
-        ```
-    -   By default, if `useReAlarm` is not specified, the function is disabled implicitly. Set it to `'true'` to enable or
-        `'false'` to disable explicitly.
+ReAlarm's behavior can be configured on a per alarm basis using tags.
 
 -   **Customize ReAlarm Schedule**:
-    -   The ReAlarm schedule is controlled via the `reAlarmSchedule` context variable.
-    -   It accepts a cron expression to define the schedule.
-    -   Example command to set ReAlarm to run every 3 hours:
-        ```bash
-        cdk deploy --context reAlarmSchedule='{"hour":"*/3","minute":"0"}' --context useReAlarm='true' AutoAlarm
-        ```
-    -   Example command to set ReAlarm to run every 30 minutes:
-        ```bash
-        cdk deploy --context reAlarmSchedule='{"minute":"*/30"}' --context useReAlarm='true' AutoAlarm
-        ```
-    -   You can adjust the frequency by modifying the cron settings to match your requirements.
+    -   The ReAlarm schedule by default runs every 120 minutes.
+    -   ReAlarm can be customized to run at different intervals on a per-alarm basis by setting the `autoalarm:re-alarm-minutes`
+        tag to a whole number value.
+
 
 ### Customizing ReAlarm with Tags
 
@@ -565,19 +547,19 @@ In addition to global controls, individual alarms can be excluded from being res
 
 1. To prevent ReAlarm from resetting a particular alarm, add the following tag:
 
-    - **Key**: `realarm:disabled`
+    - **Key**: `autoalarm:re-alarm-disabled`
     - **Value**: `true`
 
 2. **Tagging via AWS Console**:
 
     - Navigate to the CloudWatch alarm.
     - Under the "Tags" section, add a new tag:
-        - **Key**: `realarm:disabled`
+        - **Key**: `autoalarm:re-alarm-disabled`
         - **Value**: `true`
 
 3. **Tagging via AWS CLI**:
     ```bash
-    aws cloudwatch tag-resource --resource-arn arn:aws:cloudwatch:region:account-id:alarm/alarm-name --tags Key=realarm:disabled,Value=true
+    aws cloudwatch tag-resource --resource-arn arn:aws:cloudwatch:region:account-id:alarm/alarm-name --tags Key=autoalarm:re-alarm-disabled,Value=true
     ```
 
 By configuring ReAlarm both globally and on a per-alarm basis, users have the flexibility to manage alarm behavior according to their needs, ensuring critical alerts are revisited without excessive manual intervention.
