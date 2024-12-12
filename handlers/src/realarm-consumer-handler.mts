@@ -27,13 +27,15 @@ const log = logging.initialize({
 
 // Constants for rate limiting and retries
 const TAG_RETRY_ATTEMPTS = 3;
-const DELAY_BETWEEN_OPERATIONS = 100;
+const DELAY_BETWEEN_OPERATIONS = 200;
 const THROTTLING_ERROR_CODES = [
   'ThrottlingException',
   'RequestLimitExceeded',
   'TooManyRequestsException',
 ];
 const BACKOFF_MULTIPLIER = 1.5;
+const MAX_CONCURRENT_TAG_REQUESTS = 5;
+const TAG_REQUEST_DELAY = 200; // 200ms between requests
 
 interface AlarmMessage {
   alarmName: string;
@@ -128,6 +130,46 @@ async function fetchTagsWithRetry(
     }
   }
   throw new Error('Unexpected end of fetchTagsWithRetry');
+}
+
+function chunk<T>(array: T[], size: number): T[][] {
+  return Array.from({length: Math.ceil(array.length / size)}, (_, index) =>
+    array.slice(index * size, index * size + size),
+  );
+}
+
+// Create a rate limiter utility
+async function rateLimitedTagFetch(
+  alarms: AlarmMessage[],
+): Promise<Map<string, Tag[]>> {
+  const tagResults = new Map<string, Tag[]>();
+
+  // Process alarms in smaller chunks
+  const chunks = chunk(alarms, MAX_CONCURRENT_TAG_REQUESTS);
+
+  for (const chunk of chunks) {
+    // Process each chunk concurrently but with controlled parallelism
+    const chunkPromises = chunk.map(async (alarm) => {
+      try {
+        const tags = await fetchTagsWithRetry(alarm);
+        tagResults.set(alarm.alarmArn, tags);
+      } catch (error) {
+        log
+          .error()
+          .str('function', 'rateLimitedTagFetch')
+          .str('alarmArn', alarm.alarmArn)
+          .str('error', String(error))
+          .msg('Failed to fetch tags for alarm');
+      }
+      // Add delay between requests within chunk
+      await delay(TAG_REQUEST_DELAY);
+    });
+
+    // Wait for current chunk to complete before moving to next
+    await Promise.all(chunkPromises);
+  }
+
+  return tagResults;
 }
 
 function validateAlarm(alarm: AlarmMessage, tags: Tag[]): boolean {
@@ -233,17 +275,12 @@ async function resetAlarmState(
 
 let currentDelay = DELAY_BETWEEN_OPERATIONS;
 
-async function processAlarm(message: AlarmMessage): Promise<void> {
+async function processAlarm(message: AlarmMessage, tags: Tag[]): Promise<void> {
   try {
     const startTime = Date.now();
     let throttleCount = 0;
 
     try {
-      // Track throttling from tag fetching
-      const tags = await fetchTagsWithRetry(message);
-      // Add the throttling errors we've seen so far
-      throttleCount += metrics.throttlingErrors;
-
       if (validateAlarm(message, tags)) {
         // Reset the throttling error count before the next API call
         const previousThrottleErrors = metrics.throttlingErrors;
@@ -330,12 +367,19 @@ export const handler: SQSHandler = async (event: SQSEvent): Promise<void> => {
 
   resetMetrics();
 
+  const messages = event.Records.map(
+    (record) => JSON.parse(record.body) as AlarmMessage,
+  );
+
+  // Fetch all tags upfront
+  const tagCache = await rateLimitedTagFetch(messages);
+
   try {
+    // Process messages using cached tags
     const processingResults = await Promise.allSettled(
-      event.Records.map((record) => {
-        const message: AlarmMessage = JSON.parse(record.body);
-        return processAlarm(message);
-      }),
+      messages.map((message) =>
+        processAlarm(message, tagCache.get(message.alarmArn) || []),
+      ),
     );
 
     const failures = processingResults.filter(
