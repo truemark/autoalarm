@@ -88,6 +88,7 @@ function chunk<T>(array: T[], size: number): T[][] {
 
 async function getOverriddenAlarm(alarmName: string): Promise<MetricAlarm[]> {
   try {
+    // Fetch the specific alarm by name
     const response = await cloudwatch.send(
       new DescribeAlarmsCommand({AlarmNames: [alarmName]}),
     );
@@ -101,7 +102,26 @@ async function getOverriddenAlarm(alarmName: string): Promise<MetricAlarm[]> {
       return [];
     }
 
-    // For override alarms, we'll send them directly to SQS with override flag
+    // Check if the alarm needs processing by verifying it's not already in OK state
+    const alarm = response.MetricAlarms[0];
+    if (alarm.StateValue === 'OK') {
+      log
+        .info()
+        .str('function', 'getOverriddenAlarm')
+        .str('alarmName', alarmName)
+        .str('currentState', alarm.StateValue || 'UNKNOWN')
+        .msg('Override alarm already in OK state, skipping');
+      return [];
+    }
+
+    // If we get here, the alarm needs processing
+    log
+      .info()
+      .str('function', 'getOverriddenAlarm')
+      .str('alarmName', alarmName)
+      .str('currentState', alarm.StateValue || 'UNKNOWN')
+      .msg('Found override alarm requiring processing');
+
     return response.MetricAlarms;
   } catch (error) {
     log
@@ -119,22 +139,49 @@ async function sendAlarmsToSQS(
   queueUrl: string,
   isOverride: boolean,
 ): Promise<void> {
-  const batches = chunk(alarms, SQS_BATCH_SIZE);
+  // Filter out alarms that are already in OK state
+  const alarmsToProcess = alarms.filter((alarm) => {
+    const isNotOk = alarm.StateValue !== 'OK';
+    if (!isNotOk) {
+      log
+        .debug()
+        .str('function', 'sendAlarmsToSQS')
+        .str('alarmName', alarm.AlarmName || '')
+        .str('state', alarm.StateValue || '')
+        .msg('Skipping alarm already in OK state');
+    }
+    return isNotOk;
+  });
+
+  // Early return if no alarms need processing
+  if (alarmsToProcess.length === 0) {
+    log
+      .info()
+      .num('skippedAlarms', alarms.length)
+      .msg('No alarms need processing - all in OK state');
+    return;
+  }
+
+  // Process alarms in batches for efficiency
+  const batches = chunk(alarmsToProcess, SQS_BATCH_SIZE);
   let currentDelay = DELAY_BETWEEN_BATCHES;
 
   log
     .info()
     .str('function', 'sendAlarmsToSQS')
-    .num('totalAlarms', alarms.length)
+    .num('totalAlarms', alarmsToProcess.length)
+    .num('skippedAlarms', alarms.length - alarmsToProcess.length)
     .num('totalBatches', batches.length)
     .str('isOverride', String(isOverride))
     .msg('Starting to send alarms to SQS');
 
+  // Process each batch of alarms
   for (const [batchIndex, batch] of batches.entries()) {
     const startTime = Date.now();
     let batchThrottleCount = 0;
 
     try {
+      // Prepare messages for the batch
       const entries: SendMessageBatchRequestEntry[] = batch.map((alarm, i) => ({
         Id: `${batchIndex}-${i}`,
         MessageBody: JSON.stringify({
@@ -145,6 +192,7 @@ async function sendAlarmsToSQS(
         }),
       }));
 
+      // Send the batch to SQS
       const command = new SendMessageBatchCommand({
         QueueUrl: queueUrl,
         Entries: entries,
@@ -155,7 +203,7 @@ async function sendAlarmsToSQS(
 
       const processingTime = Date.now() - startTime;
 
-      // Adjust delay based on throttling (maintaining original logic)
+      // Adjust delay based on throttling and processing time
       if (batchThrottleCount > 0) {
         currentDelay = Math.min(currentDelay * BACKOFF_MULTIPLIER, 2000);
         log
@@ -179,6 +227,7 @@ async function sendAlarmsToSQS(
           .msg('Decreasing delay due to good performance');
       }
 
+      // Wait before processing next batch
       await delay(currentDelay);
     } catch (error) {
       metrics.totalErrors++;
@@ -197,17 +246,21 @@ async function sendAlarmsToSQS(
     }
   }
 }
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const handler: Handler = async (event: any): Promise<void> => {
+  // Extract the actual event data from the nested structure
+  const eventData = event.event || event; // Fallback to the original event if not nested
+
   log
     .trace()
     .str('function', 'handler')
     .unknown('event', event)
     .str(
       'isOverrideAlarm',
-      event['reAlarmOverride-AlarmName'] ? 'true' : 'false',
+      eventData['reAlarmOverride-AlarmName'] ? 'true' : 'false',
     )
-    .str('overrideAlarmName', event['reAlarmOverride-AlarmName'] ?? '')
+    .str('overrideAlarmName', eventData['reAlarmOverride-AlarmName'] ?? '')
     .msg('Received event');
 
   if (!process.env.QUEUE_URL) {
@@ -218,10 +271,10 @@ export const handler: Handler = async (event: any): Promise<void> => {
   let totalAlarms = 0;
 
   try {
-    if (event['reAlarmOverride-AlarmName']) {
+    if (eventData['reAlarmOverride-AlarmName']) {
       // Handle override alarm case
       const overrideAlarms = await getOverriddenAlarm(
-        event['reAlarmOverride-AlarmName'],
+        eventData['reAlarmOverride-AlarmName'],
       );
       if (overrideAlarms.length > 0) {
         await sendAlarmsToSQS(overrideAlarms, process.env.QUEUE_URL, true);

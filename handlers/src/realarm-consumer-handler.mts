@@ -170,7 +170,7 @@ function validateAlarm(alarm: AlarmMessage, tags: Tag[]): boolean {
     .info()
     .str('function', 'validateAlarm')
     .str('alarmName', alarm.alarmName)
-    .str('reAlarmDisabled', String(reAlarmDisabled))
+    .str('autoalarm:re-alarm-enabled', reAlarmDisabled ? 'false' : 'true')
     .str('reAlarmOverrideTag', String(reAlarmOverrideTag))
     .str('hasAutoScalingAction', String(hasAutoScalingAction))
     .str('isOverride', String(alarm.isOverride))
