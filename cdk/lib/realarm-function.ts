@@ -23,7 +23,7 @@ export class ReAlarmFunction extends ExtendedNodejsFunction {
       ),
       architecture: Architecture.ARM_64,
       handler: 'handler',
-      timeout: Duration.minutes(5),
+      timeout: Duration.minutes(15),
       memorySize: 768,
       role: props?.role,
       deploymentOptions: {
