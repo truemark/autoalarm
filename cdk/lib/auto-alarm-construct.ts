@@ -1,6 +1,6 @@
 import {Construct} from 'constructs';
 import {MainFunction} from './main-function';
-import {ReAlarmFunction} from './realarm-function';
+import {RealarmProducerFunction} from './realarm-producer-function';
 import {
   ExtendedQueue,
   ExtendedQueueProps,
@@ -100,9 +100,13 @@ export class AutoAlarmConstruct extends Construct {
       );
 
       // Create the reAlarm and explicitly pass the execution role
-      const reAlarmFunction = new ReAlarmFunction(this, 'ReAlarmFunction', {
-        role: reAlarmLambdaExecutionRole,
-      });
+      const reAlarmFunction = new RealarmProducerFunction(
+        this,
+        'ReAlarmFunction',
+        {
+          role: reAlarmLambdaExecutionRole,
+        },
+      );
 
       // Allow our realarm eventbridge rules to trigger the realarm function
       reAlarmFunction.addPermission('EventBridgePermission', {
