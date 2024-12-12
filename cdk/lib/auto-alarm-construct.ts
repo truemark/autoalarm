@@ -1,6 +1,7 @@
 import {Construct} from 'constructs';
 import {MainFunction} from './main-function';
-import {RealarmProducerFunction} from './realarm-producer-function';
+import {ReAlarmProducerFunction} from './realarm-producer-function';
+import {ReAlarmConsumerFunction} from './realarm-consumer-function';
 import {
   ExtendedQueue,
   ExtendedQueueProps,
@@ -37,49 +38,48 @@ export class AutoAlarmConstruct extends Construct {
     const enableReAlarm = props.enableReAlarm ?? true;
 
     if (enableReAlarm) {
-      /*
-       * Define the IAM role with specific permissions for the realarm Lambda function and create the realarm Lambda function
-       */
-      const reAlarmLambdaExecutionRole = new Role(
-        this,
-        'reAlarmLambdaExecutionRole',
-        {
-          assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
-          description: 'Execution role for AutoAlarm Lambda function',
-        },
-      );
+      // Create the main processing queue with dead-letter queue for failed messages
+      const reAlarmQueue = new StandardQueue(this, 'ReAlarmProcessingQueue', {
+        retentionPeriod: Duration.days(14),
+        visibilityTimeout: Duration.seconds(900),
+        maxReceiveCount: 3,
+      });
 
-      // Attach policies for EC2 and CloudWatch
-      reAlarmLambdaExecutionRole.addToPolicy(
+      /*
+       * Producer Lambda Setup
+       */
+      const reAlarmProducerRole = new Role(this, 'reAlarmProducerRole', {
+        assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
+        description: 'Execution role for ReAlarm Producer Lambda function',
+      });
+
+      // Add CloudWatch permissions for producer
+      reAlarmProducerRole.addToPolicy(
         new PolicyStatement({
           effect: Effect.ALLOW,
           actions: [
             'cloudwatch:DescribeAlarms',
-            'cloudwatch:SetAlarmState',
             'cloudwatch:ListTagsForResource',
           ],
           resources: ['*'],
         }),
       );
 
-      // Attach policies for CloudWatch Logs
-      reAlarmLambdaExecutionRole.addToPolicy(
+      // Add SQS permissions for producer
+      reAlarmProducerRole.addToPolicy(
         new PolicyStatement({
           effect: Effect.ALLOW,
-          resources: [
-            `arn:aws:logs:${region}:${accountId}:log-group:/aws/lambda/cwsyn*`,
-            `arn:aws:logs:${region}:${accountId}:log-group:/aws/lambda/cwsyn*:log-stream:*`,
-            `arn:aws:logs:${region}:${accountId}:log-group:/aws/canary/*`,
-          ],
           actions: [
-            'logs:FilterLogEvents',
-            'logs:DescribeLogStreams',
-            'logs:DescribeLogGroups',
+            'sqs:SendMessage',
+            'sqs:SendMessageBatch',
+            'sqs:GetQueueUrl',
           ],
+          resources: [reAlarmQueue.queueArn],
         }),
       );
 
-      reAlarmLambdaExecutionRole.addToPolicy(
+      // Add CloudWatch Logs permissions for producer
+      reAlarmProducerRole.addToPolicy(
         new PolicyStatement({
           effect: Effect.ALLOW,
           resources: ['*'],
@@ -91,59 +91,89 @@ export class AutoAlarmConstruct extends Construct {
         }),
       );
 
-      reAlarmLambdaExecutionRole.addToPolicy(
+      /*
+       * Consumer Lambda Setup
+       */
+      const reAlarmConsumerRole = new Role(this, 'reAlarmConsumerRole', {
+        assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
+        description: 'Execution role for ReAlarm Consumer Lambda function',
+      });
+
+      // Add CloudWatch permissions for consumer
+      reAlarmConsumerRole.addToPolicy(
         new PolicyStatement({
           effect: Effect.ALLOW,
-          resources: ['*'], // This grants permission on all log groups. Adjust if needed.
-          actions: ['logs:DescribeLogGroups'],
+          actions: [
+            'cloudwatch:DescribeAlarms',
+            'cloudwatch:SetAlarmState',
+            'cloudwatch:ListTagsForResource',
+          ],
+          resources: ['*'],
         }),
       );
 
-      // Create the reAlarm and explicitly pass the execution role
-      const reAlarmFunction = new RealarmProducerFunction(
+      // Add CloudWatch Logs permissions for consumer
+      reAlarmConsumerRole.addToPolicy(
+        new PolicyStatement({
+          effect: Effect.ALLOW,
+          resources: ['*'],
+          actions: [
+            'logs:CreateLogGroup',
+            'logs:CreateLogStream',
+            'logs:PutLogEvents',
+          ],
+        }),
+      );
+
+      // Create the producer Lambda function
+      const reAlarmProducerFunction = new ReAlarmProducerFunction(
         this,
-        'ReAlarmFunction',
+        'ReAlarmProducerFunction',
         {
-          role: reAlarmLambdaExecutionRole,
+          role: reAlarmProducerRole,
+          environment: {
+            QUEUE_URL: reAlarmQueue.queueUrl,
+          },
         },
       );
 
-      // Allow our realarm eventbridge rules to trigger the realarm function
-      reAlarmFunction.addPermission('EventBridgePermission', {
-        principal: new ServicePrincipal('events.amazonaws.com'),
-        sourceArn: `arn:aws:events:${region}:${accountId}:rule/AutoAlarm-ReAlarm-*`,
-      });
+      // Create the consumer Lambda function
+      const reAlarmConsumerFunction = new ReAlarmConsumerFunction(
+        this,
+        'ReAlarmConsumerFunction',
+        {
+          role: reAlarmConsumerRole,
+        },
+      );
 
-      // Expose the function ARN for use in the realarm event rule handler
-      this.reAlarmFunctionArn = reAlarmFunction.functionArn;
+      // Grant SQS permissions
+      reAlarmQueue.grantSendMessages(reAlarmProducerFunction);
+      reAlarmQueue.grantConsumeMessages(reAlarmConsumerFunction);
 
-      const deadLetterQueue = new StandardQueue(this, 'realarm');
-      const reAlarmTarget = new LambdaFunction(reAlarmFunction, {
-        deadLetterQueue,
-      });
+      // Add SQS event source to consumer
+      reAlarmConsumerFunction.addEventSource(
+        new SqsEventSource(reAlarmQueue, {
+          batchSize: 10,
+          maxBatchingWindow: Duration.seconds(30),
+        }),
+      );
 
-      //Define timed event to trigger the lambda function
-      const reAlarmScheduleRule = new Rule(this, 'ReAlarmScheduleRule', {
-        schedule: Schedule.rate(Duration.minutes(120)),
-        description:
-          'Trigger the realarm Lambda function according to defined or default schedule',
-      });
-
-      reAlarmScheduleRule.addTarget(reAlarmTarget);
+      // Store producer function ARN
+      this.reAlarmFunctionArn = reAlarmProducerFunction.functionArn;
 
       /*
-       * Define the IAM role with specific permissions for the realarm Event Rule Lambda function and create the realarm Event Rule Lambda function
+       * EventRule Lambda Setup
        */
       const reAlarmEventRuleLambdaExecutionRole = new Role(
         this,
         'reAlarmEventRuleLambdaExecutionRole',
         {
           assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
-          description: 'Execution role for realarm Event Rule Lambda function',
+          description: 'Execution role for ReAlarm Event Rule Lambda function',
         },
       );
 
-      // Attach policies for eventbridge
+      // Attach policies for EventBridge
       reAlarmEventRuleLambdaExecutionRole.addToPolicy(
         new PolicyStatement({
           effect: Effect.ALLOW,
@@ -171,7 +201,7 @@ export class AutoAlarmConstruct extends Construct {
         }),
       );
 
-      //attach policies for CloudWatch Logs
+      // Attach policies for CloudWatch Logs
       reAlarmEventRuleLambdaExecutionRole.addToPolicy(
         new PolicyStatement({
           effect: Effect.ALLOW,
@@ -184,30 +214,55 @@ export class AutoAlarmConstruct extends Construct {
         }),
       );
 
-      //Create the realarm Event Rule Lambda function
+      // Create the EventRule Lambda function
       const reAlarmEventRuleFunction = new ReAlarmEventRuleFunction(
         this,
         'ReAlarmEventRuleFunction',
         {
           role: reAlarmEventRuleLambdaExecutionRole,
-          // Pass the realarm function ARN as an environment variable so we can use it to define the realarm Lambda above as a target for event bridge rules we create with this lambda
           reAlarmFunctionArn: this.reAlarmFunctionArn,
         },
       );
 
+      // Create EventRule DLQ
       const reAlarmEventRuleDLQ = new StandardQueue(
         this,
-        'reAlarmEventRuleFunction',
+        'ReAlarmEventRuleFunctionDLQ',
+        {
+          retentionPeriod: Duration.days(14),
+        },
       );
+
+      // Create EventRule target
       const reAlarmEventRuleTarget = new LambdaFunction(
         reAlarmEventRuleFunction,
         {
           deadLetterQueue: reAlarmEventRuleDLQ,
+          retryAttempts: 2,
         },
       );
 
-      //Define event rule to trigger the realarm event rule lambda function based on tag changes on cloudwatch alarms.
-      // EventBridge rule for tag changes
+      /*
+       * Event Rules Setup
+       */
+      // Allow EventBridge to invoke the producer
+      reAlarmProducerFunction.addPermission('EventBridgePermission', {
+        principal: new ServicePrincipal('events.amazonaws.com'),
+        sourceArn: `arn:aws:events:${region}:${accountId}:rule/AutoAlarm-ReAlarm-*`,
+      });
+
+      // Schedule rule for producer
+      const reAlarmScheduleRule = new Rule(this, 'ReAlarmScheduleRule', {
+        schedule: Schedule.rate(Duration.minutes(120)),
+        description:
+          'Trigger the ReAlarm Producer Lambda function according to schedule',
+      });
+
+      reAlarmScheduleRule.addTarget(
+        new LambdaFunction(reAlarmProducerFunction),
+      );
+
+      // Tag change rule for EventRule function
       const reAlarmEventRuleTagRule = new Rule(
         this,
         'ReAlarmEventRuleTagRule',
@@ -225,9 +280,10 @@ export class AutoAlarmConstruct extends Construct {
             },
           },
           description:
-            'Trigger the realarm Event Rule Lambda function for tag changes on CloudWatch alarms',
+            'Trigger the ReAlarm Event Rule Lambda function for tag changes',
         },
       );
+
       reAlarmEventRuleTagRule.addTarget(reAlarmEventRuleTarget);
     }
 

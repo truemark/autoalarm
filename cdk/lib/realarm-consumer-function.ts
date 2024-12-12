@@ -5,19 +5,16 @@ import * as path from 'path';
 import {Duration} from 'aws-cdk-lib';
 import {Architecture} from 'aws-cdk-lib/aws-lambda';
 
-interface ReAlarmProducerFunctionProps {
+interface ReAlarmConsumerFunctionProps {
   role?: IRole; // Define other props as needed
-  environment?: {
-    [key: string]: string;
-  };
 }
 
-export class ReAlarmProducerFunction extends ExtendedNodejsFunction {
-  public readonly reAlarmProducerFunctionArn: string;
+export class ReAlarmConsumerFunction extends ExtendedNodejsFunction {
+  public readonly reAlarmConsumerFunctionArn: string;
   constructor(
     scope: Construct,
     id: string,
-    props?: ReAlarmProducerFunctionProps,
+    props?: ReAlarmConsumerFunctionProps,
   ) {
     super(scope, id, {
       entry: path.join(
@@ -26,14 +23,13 @@ export class ReAlarmProducerFunction extends ExtendedNodejsFunction {
         '..',
         'handlers',
         'src',
-        'realarm-producer-handler.mts',
+        'realarm-consumer-handler.mts',
       ),
       architecture: Architecture.ARM_64,
       handler: 'handler',
       timeout: Duration.minutes(15),
       memorySize: 768,
       role: props?.role,
-      environment: props?.environment,
       deploymentOptions: {
         createDeployment: false,
       },
@@ -42,6 +38,6 @@ export class ReAlarmProducerFunction extends ExtendedNodejsFunction {
       },
     });
     // Expose the function ARN
-    this.reAlarmProducerFunctionArn = this.functionArn;
+    this.reAlarmConsumerFunctionArn = this.functionArn;
   }
 }

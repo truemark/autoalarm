@@ -138,11 +138,11 @@ async function sendAlarmsToSQS(
       const entries: SendMessageBatchRequestEntry[] = batch.map((alarm, i) => ({
         Id: `${batchIndex}-${i}`,
         MessageBody: JSON.stringify({
-          alarm,
+          alarmName: alarm.AlarmName,
+          alarmArn: alarm.AlarmArn,
+          alarmActions: alarm.AlarmActions || [],
           isOverride,
         }),
-        MessageGroupId: 'ReAlarm',
-        MessageDeduplicationId: `${alarm.AlarmArn}-${Date.now()}`,
       }));
 
       const command = new SendMessageBatchCommand({
