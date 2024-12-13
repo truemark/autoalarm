@@ -1,5 +1,17 @@
 # AutoAlarm Changelog
 
+## v1.7.2
+
+## Changes
+- Implemented producer-consumer pattern with SQS queue for realarm processing using SQS
+- Implemented rate limiting and backoff for API calls to cloudwatch in ReAlarm processing
+- Significantly reduced number of API calls to cloudwatch in ReAlarm processing
+- Added proper throttling and error handling for ReAlarm processing. 
+
+### Fixed: 
+- Fixed bug that prevented ReAlarm from processing alarms in certain cases where total alarm volume resulted in AWS API throttling.
+
+
 ## v1.7.0
 
 ### Added:
