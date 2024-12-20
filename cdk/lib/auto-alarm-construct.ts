@@ -41,7 +41,7 @@ export class AutoAlarmConstruct extends Construct {
       // Create the main processing queue with dead-letter queue for failed messages
       const reAlarmQueue = new StandardQueue(this, 'ReAlarmProcessingQueue', {
         retentionPeriod: Duration.days(14),
-        visibilityTimeout: Duration.seconds(900),
+        visibilityTimeout: Duration.seconds(300),
         maxReceiveCount: 3,
       });
 
