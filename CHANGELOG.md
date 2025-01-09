@@ -1,6 +1,6 @@
 # AutoAlarm Changelog
 
-## v1.7.2
+## v1.7.3
 ### Changes: 
 - Implemented logic to throw warning instead of error in case of missing load balancer for target groups target group alarm creation module
 - Updated README with note that Target Group alarms require a load balancer.
