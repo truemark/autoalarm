@@ -154,7 +154,8 @@ the event is sent to an SQS queue for further investigation and retry.
 ### 7. AWS Elastic Load Balancing (ELB) And Target Groups
 
 ELB is monitored by AutoAlarm for events related to Application Load Balancers (ALBs) and Target Groups. The Lambda
-function creates, updates, or deletes alarms for ALB metrics and target group metrics based on events and tags.
+function creates, updates, or deletes alarms for ALB metrics and target group metrics based on events and tags. Note that
+the supported metrics for Target Groups require that the target group is associated with an ALB.
 
 ### 8. AWS Identity and Access Management (IAM)
 

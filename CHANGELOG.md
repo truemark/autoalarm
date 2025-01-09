@@ -1,5 +1,24 @@
 # AutoAlarm Changelog
 
+## v1.7.2
+### Changes: 
+- Implemented logic to throw warning instead of error in case of missing load balancer for target groups target group alarm creation module
+- Updated README with note that Target Group alarms require a load balancer.
+- 
+### Fixed: 
+- Fixed a bug that resulted in AutoAlarm throwing an error when load balancer is not associated with a target group leading to excessive delays through FIFO queue retries. 
+
+## v1.7.2
+
+## Changes
+- Implemented producer-consumer pattern with SQS queue for realarm processing using SQS
+- Implemented rate limiting and backoff for API calls to cloudwatch in ReAlarm processing
+- Significantly reduced number of API calls to cloudwatch in ReAlarm processing
+- Added proper throttling and error handling for ReAlarm processing. 
+
+### Fixed: 
+- Fixed bug that prevented ReAlarm from processing alarms in certain cases where total alarm volume resulted in AWS API throttling.
+
 ## v1.7.0
 
 ### Added:
