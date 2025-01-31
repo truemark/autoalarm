@@ -7,11 +7,19 @@ export interface EC2AlarmManagerObject {
   ec2Metadata?: {platform: string | null; privateIP: string | null};
 }
 
+export interface DBAlarmManagerObject {
+  dbInstanceId: string;
+  tags: Tag;
+  state: string;
+}
+
 export interface Tag {
   [key: string]: string;
 }
 
 export type EC2AlarmManagerArray = EC2AlarmManagerObject[];
+
+export type DBAlarmManagerArray = DBAlarmManagerObject[];
 
 export interface Dimension {
   Name: string;

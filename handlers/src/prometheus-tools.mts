@@ -16,6 +16,9 @@ import {
   Rule,
   EC2AlarmManagerArray,
   PrometheusAlarmConfigArray,
+  DBAlarmManagerArray,
+  EC2AlarmManagerObject,
+  DBAlarmManagerObject,
 } from './types.mjs';
 import {
   EC2getCpuQuery,
@@ -87,46 +90,65 @@ async function retryWithExponentialBackoff(
   }
 }
 
+function isEC2AlarmManagerObject(
+  obj: EC2AlarmManagerObject | DBAlarmManagerObject,
+): obj is EC2AlarmManagerObject {
+  return (obj as EC2AlarmManagerObject).instanceID !== undefined;
+}
+
+function isDBAlarmManagerObject(
+  obj: EC2AlarmManagerObject | DBAlarmManagerObject,
+): obj is DBAlarmManagerObject {
+  return (obj as DBAlarmManagerObject).dbInstanceId !== undefined;
+}
+
 /**
  * This function is used to delete all prom rules in batch for instances that have been marked for Prom rule deletion.
  * @param prometheusWorkspaceId - The prometheus workspace id.
- * @param ec2AlarmManagerArray - Array of EC2 instances with state and tags.
+ * @param alarmManagerArray - An array of alarm manager objects. Consisting of EC2 or RDS instances.
  * @param service - The service name.
  */
 
 export async function batchPromRulesDeletion(
   prometheusWorkspaceId: string,
-  ec2AlarmManagerArray: EC2AlarmManagerArray,
-  service: string,
+  alarmManagerArray: EC2AlarmManagerArray | DBAlarmManagerArray,
+  service: 'ec2' | 'rds',
 ) {
   log
     .info()
     .str('function', 'batchPromRulesDeletion')
-    .msg('Prometheus rules have been marked for deletion. Fetching instances.');
+    .msg('Fetching instances to delete Prometheus rules for.');
 
   try {
-    // Using the passed EC2AlarmManagerArray instead of fetching instances
-    const instancesToDelete = ec2AlarmManagerArray
+    const instancesToDelete = alarmManagerArray
       .filter((details) => {
         const baseCondition =
-          details.tags['autoalarm:target'] === 'cloudwatch' ||
-          details.tags['autoalarm:enabled'] === 'false';
-        const isTerminating = ['terminated'].includes(details.state);
+          details.tags?.['autoalarm:target'] === 'cloudwatch' ||
+          details.tags?.['autoalarm:enabled'] === 'false';
+        const isTerminating = details.state === 'terminated';
 
         return (
-          baseCondition || (details.tags['autoalarm:enabled'] && isTerminating)
+          baseCondition ||
+          (details.tags?.['autoalarm:enabled'] && isTerminating)
         );
       })
-      .map((details) => details.instanceID);
+      .map((details) =>
+        isEC2AlarmManagerObject(details)
+          ? details.instanceID
+          : isDBAlarmManagerObject(details)
+            ? details.dbInstanceId
+            : '',
+      )
+      .filter((id) => id !== ''); // Remove empty strings
 
     log
       .info()
       .str('function', 'batchPromRulesDeletion')
+      .str('service', service)
       .str('instancesToDelete', JSON.stringify(instancesToDelete))
       .msg('Instances to delete Prometheus rules for');
 
     if (instancesToDelete.length > 0) {
-      // Delete Prometheus rules for all relevant instances at once
       await retryWithExponentialBackoff(async () =>
         deletePromRulesForService(
           prometheusWorkspaceId,
@@ -137,14 +159,12 @@ export async function batchPromRulesDeletion(
       log
         .info()
         .str('function', 'batchPromRulesDeletion')
-        .msg(
-          'Prometheus rules deleted successfully in batch or no rules to delete',
-        );
+        .msg('Prometheus rules deleted successfully.');
     } else {
       log
         .info()
         .str('function', 'batchPromRulesDeletion')
-        .msg('No instances found to delete Prometheus rules for');
+        .msg('No instances found to delete Prometheus rules for.');
     }
   } catch (error) {
     log
@@ -157,57 +177,43 @@ export async function batchPromRulesDeletion(
 
 /**
  * Get alarm configurations for Prometheus alarms for EC2 instances based on their tags and metric configurations.
- * @param ec2AlarmManagerArray - Array of EC2 instances with state and tags.
+ * @param alarmManagerArray - Array of EC2 and RDS instances with state and tags.
  * @param service - The service name: 'EC2', 'ECS', 'EKS', 'RDS', etc. These correspond with service names in the MetricAlarmConfigs object from alarm-config.mts.
  * @returns Array of Prometheus alarm configurations.
  */
 async function getPromAlarmConfigs(
-  ec2AlarmManagerArray: EC2AlarmManagerArray,
-  service: string,
+  alarmManagerArray: EC2AlarmManagerArray | DBAlarmManagerArray,
+  service: 'ec2' | 'rds',
 ): Promise<PrometheusAlarmConfigArray> {
   const configs: PrometheusAlarmConfigArray = [];
   const metricConfigs: MetricAlarmConfig[] =
     MetricAlarmConfigs[service.toUpperCase()];
 
-  // Loop through each instance in the ec2AlarmManagerArray
-  for (const {instanceID, tags, ec2Metadata} of ec2AlarmManagerArray) {
-    const platform = ec2Metadata?.platform ?? '';
-    const privateIP = ec2Metadata?.privateIP ?? '';
+  for (const details of alarmManagerArray) {
+    const instanceId = isEC2AlarmManagerObject(details)
+      ? details.instanceID
+      : isDBAlarmManagerObject(details)
+        ? details.dbInstanceId
+        : '';
 
-    if (!privateIP) {
+    if (!instanceId) {
       log
         .error()
         .str('function', 'getPromAlarmConfigs')
-        .str('instanceId', instanceID)
-        .msg('Private IP address not found for instance');
-      continue; // Skip this instance if no private IP
+        .msg('Instance ID missing.');
+      continue;
     }
 
-    const escapedPrivateIp = privateIP.replace(/\./g, '\\\\.');
-
-    // Loop through each metric configuration
     for (const config of metricConfigs) {
-      log
-        .info()
-        .str('function', 'getPromAlarmConfigs')
-        .str('service', service)
-        .str('config', JSON.stringify(config))
-        .msg('Processing metric configuration');
-      const tagValue = tags[`autoalarm:${config.tagKey}`];
+      const tagValue = details.tags?.[`autoalarm:${config.tagKey}`];
       const updatedDefaults = parseMetricAlarmOptions(
         tagValue || '',
         config.defaults,
       );
-      log
-        .info()
-        .str('function', 'getPromAlarmConfigs')
-        .str('service', service)
-        .str('updatedDefaults', JSON.stringify(updatedDefaults))
-        .msg('Updated defaults for metric configuration');
 
-      // Determine if the alarm should be created based on defaultCreate or tag presence
       if (config.defaultCreate || tagValue !== undefined) {
         const classifications = ['Warning', 'Critical'];
+
         for (const classification of classifications) {
           const threshold =
             classification === 'Warning'
@@ -215,74 +221,48 @@ async function getPromAlarmConfigs(
               : updatedDefaults.criticalThreshold;
 
           if (threshold === null || threshold === undefined) {
-            // Skip if threshold is not set
             continue;
           }
 
-          // Determine the duration
-          const durationTime =
-            updatedDefaults.period * updatedDefaults.evaluationPeriods;
-
-          // Build the Prometheus query
           let alarmQuery = '';
 
-          switch (config.tagKey) {
-            case 'cpu':
-              alarmQuery = EC2getCpuQuery(
-                platform,
-                escapedPrivateIp,
-                instanceID,
-                threshold,
-              );
-              break;
-            case 'memory':
-              alarmQuery = EC2getMemoryQuery(
-                platform,
-                escapedPrivateIp,
-                instanceID,
-                threshold,
-              );
-              break;
-            case 'storage':
-              alarmQuery = EC2getStorageQuery(
-                platform,
-                escapedPrivateIp,
-                instanceID,
-                threshold,
-              );
-              break;
-            // Add more cases for additional metrics as needed
-            default:
-              break;
+          if (service === 'ec2') {
+            if (config.tagKey === 'cpu') {
+              alarmQuery = EC2getCpuQuery('', '', instanceId, threshold);
+            } else if (config.tagKey === 'memory') {
+              alarmQuery = EC2getMemoryQuery('', '', instanceId, threshold);
+            } else if (config.tagKey === 'storage') {
+              alarmQuery = EC2getStorageQuery('', '', instanceId, threshold);
+            }
+          } else if (service === 'rds') {
+            alarmQuery = `rate(rds_cpu_usage{db_instance="${instanceId}"}[5m]) > ${threshold}`;
           }
 
           if (!alarmQuery) {
-            // Skip if alarmQuery couldn't be constructed
             continue;
           }
 
-          // Build the alarm name based on the convention
           const alarmName = buildAlarmName(
             config,
             service,
-            instanceID,
+            instanceId,
             classification as AlarmClassification,
             'static',
           );
 
-          // Push the alarm configuration into the array
           configs.push({
-            instanceId: instanceID,
+            instanceId: instanceId,
             type: classification,
-            alarmName, // Include the alarm name
+            alarmName,
             alarmQuery,
-            duration: `${Math.floor(durationTime / 60)}m`, // Convert duration to minutes
+            duration: `${Math.floor((updatedDefaults.period * updatedDefaults.evaluationPeriods) / 60)}m`,
             severityType: classification.toLowerCase(),
           });
         }
       }
     }
   }
+
   log
     .info()
     .str('function', 'getPromAlarmConfigs')
@@ -298,22 +278,22 @@ async function getPromAlarmConfigs(
  * Batch update Prometheus rules for all EC2 instances with the necessary tags and metrics reporting.
  * @param prometheusWorkspaceId - The Prometheus workspace ID.
  * @param service - The service name.
- * @param ec2AlarmManagerArray - Array of EC2 instances with state and tags.
+ * @param alarmManagerArray - Array of EC2 and RDS instances with state and tags.
  */
 export async function batchUpdatePromRules(
   prometheusWorkspaceId: string,
-  service: string,
-  ec2AlarmManagerArray: EC2AlarmManagerArray,
+  service: 'ec2' | 'rds',
+  alarmManagerArray: EC2AlarmManagerArray | DBAlarmManagerArray,
 ) {
   log
     .info()
     .str('function', 'batchUpdatePromRules')
-    .msg('Fetching instance details and tags');
+    .msg('Fetching instance details and tags for Prometheus alarms.');
 
   try {
     const alarmConfigs: PrometheusAlarmConfigArray = [];
     const configs: PrometheusAlarmConfigArray = await getPromAlarmConfigs(
-      ec2AlarmManagerArray,
+      alarmManagerArray,
       service,
     );
     alarmConfigs.push(...configs);
@@ -322,7 +302,7 @@ export async function batchUpdatePromRules(
       .info()
       .str('function', 'batchUpdatePromRules')
       .str('alarmConfigs', JSON.stringify(alarmConfigs))
-      .msg('Consolidated alarm configurations');
+      .msg('Generated consolidated alarm configurations');
 
     const namespace = `AutoAlarm-${service.toUpperCase()}`;
     const ruleGroupName = 'AutoAlarm';
@@ -330,9 +310,7 @@ export async function batchUpdatePromRules(
     log
       .info()
       .str('function', 'batchUpdatePromRules')
-      .msg(
-        `Updating Prometheus rules for all instances in batch under namespace: ${namespace}`,
-      );
+      .msg(`Updating Prometheus rules under namespace: ${namespace}`);
 
     await retryWithExponentialBackoff(async () =>
       managePromNamespaceAlarms(
