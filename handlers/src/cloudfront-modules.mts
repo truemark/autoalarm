@@ -26,6 +26,7 @@ const cloudFrontClient: CloudFrontClient = new CloudFrontClient({
   region: region,
   retryStrategy: retryStrategy,
 });
+
 const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   region: region,
   retryStrategy: retryStrategy,
