@@ -202,7 +202,6 @@ function extractTransitGatewayNameFromArn(arn: string): string {
   return match ? match[1] : '';
 }
 
-
 export async function parseTransitGatewayEventAndCreateAlarms(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   event: any,

@@ -509,7 +509,6 @@ async function getDisabledAlarms(
   return (await Promise.all(disabledAlarmsPromises)).flat();
 }
 
-//TODO: For testing we need to do both alarms. After testing, we need to remove cw alarms if we use prometheus.
 export async function manageActiveEC2InstanceAlarms(
   activeInstancesInfoArray: EC2AlarmManagerArray,
 ) {
@@ -652,7 +651,6 @@ export async function manageActiveEC2InstanceAlarms(
   }
 }
 
-// TODO: add prom logic for this function as well.
 export async function manageInactiveInstanceAlarms(
   inactiveInstancesInfoArray: EC2AlarmManagerArray,
 ) {

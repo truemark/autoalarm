@@ -14,7 +14,7 @@ import {AlarmClassification} from './enums.mjs';
 
 const region: string = process.env.AWS_REGION || '';
 const retryStrategy = new ConfiguredRetryStrategy(20);
-const log = logging.getLogger('alarm-tools');
+const log = logging.newLogger('alarm-tools');
 const cloudWatchClient = new CloudWatchClient({
   region,
   retryStrategy: retryStrategy,

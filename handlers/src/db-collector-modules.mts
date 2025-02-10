@@ -13,6 +13,8 @@ const region: string = process.env.AWS_REGION || '';
 
 const rdsClient = new RDSClient({region});
 
+// TODO: remove eslint-disable once the function is implemented
+//eslint-disable-next-line
 async function getDBInstanceDetails(dbInstanceId: string) {
   try {
     const command = new DescribeDBInstancesCommand({
