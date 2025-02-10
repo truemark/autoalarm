@@ -13,7 +13,6 @@ const region: string = process.env.AWS_REGION || '';
 
 const rdsClient = new RDSClient({region});
 
-
 async function getDBInstanceDetails(dbInstanceId: string) {
   try {
     const command = new DescribeDBInstancesCommand({
@@ -152,7 +151,9 @@ export async function manageInactiveDatabaseAlarms(
     : [];
 
   const prometheusAlarmsToDelete: DBAlarmManagerArray = inactiveDBInstancesArray
-    .filter((instance) => dbInstancesReportingToPrometheus.includes(instance.dbInstanceId))
+    .filter((instance) =>
+      dbInstancesReportingToPrometheus.includes(instance.dbInstanceId),
+    )
     .map((instance) => ({
       dbInstanceId: instance.dbInstanceId,
       tags: instance.tags,
@@ -161,7 +162,10 @@ export async function manageInactiveDatabaseAlarms(
 
   // Delete Prometheus alarms for inactive databases
   if (prometheusAlarmsToDelete.length > 0) {
-    await batchPromRulesDeletion(prometheusWorkspaceId, prometheusAlarmsToDelete, 'rds');
+    await batchPromRulesDeletion(
+      prometheusWorkspaceId,
+      prometheusAlarmsToDelete,
+      'rds',
+    );
   }
 }
-
