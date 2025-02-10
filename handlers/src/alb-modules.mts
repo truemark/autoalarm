@@ -202,9 +202,9 @@ export async function manageInactiveALBAlarms(loadBalancerName: string) {
 }
 
 function extractAlbNameFromArn(arn: string): string {
-  const regex = /\/app\/(.*?\/[^/]+)$/;
+  const regex = /\/(app|net)\/(.*?\/[^/]+)$/;
   const match = arn.match(regex);
-  return match ? `app/${match[1]}` : '';
+  return match ? `app/${match[1]}` || `net/${match[1]}` : '';
 }
 
 // TODO Fix the use of any
@@ -213,7 +213,7 @@ export async function parseALBEventAndCreateAlarms(event: any): Promise<{
   loadBalancerArn: string;
   eventType: string;
   tags: Record<string, string>;
-}> {
+} | void> {
   let loadBalancerArn: string = '';
   let eventType: string = '';
   let tags: Record<string, string> = {};
@@ -299,6 +299,22 @@ export async function parseALBEventAndCreateAlarms(event: any): Promise<{
       .str('function', 'parseALBEventAndCreateAlarms')
       .str('loadBalancerArn', loadBalancerArn)
       .msg('Extracted load balancer name is empty');
+  }
+
+  // TODO: we can use this conditional as an entry point to manage nlbs in the future as we build this out.
+  /*
+   *
+   * gracefully logging a warning for now if a network load balancer has been tagged.
+   */
+  if (loadbalancerName.includes('net')) {
+    log
+      .warn()
+      .str('function', 'parseALBEventAndCreateAlarms')
+      .str('load balancerName', loadbalancerName)
+      .str('loadBalancerArn', loadBalancerArn)
+      .msg('Network Load Balancer detected. Skipping processing. Network Load Balancer support is not yet available.');
+    // return early to avoid processing network load balancers
+    return;
   }
 
   log
