@@ -9,6 +9,7 @@
     "build-handlers": "cd handlers && pnpm run build",
     "build-cdk": "cd cdk && pnpm run build",
     "build": "concurrently \"pnpm:build-handlers\" \"pnpm:build-cdk\" -c blue,green",
+    "clean": "cd handlers/src && find . -type f \\( -name \"*.d.mts\" -o -name \"*.d.mts.map\" -o -name \"*.mjs\" -o -name \"*.mjs.map\" \\) -delete",
     "test-handlers": "cd handlers && pnpm run test",
     "test-cdk": "cd cdk && pnpm run test",
     "test": "concurrently \"pnpm:test-handlers\" \"pnpm:test-cdk\" -c blue,green",
