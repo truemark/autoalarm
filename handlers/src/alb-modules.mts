@@ -19,7 +19,7 @@ import {
 } from './alarm-tools.mjs';
 import {MetricAlarmConfigs, parseMetricAlarmOptions} from './alarm-config.mjs';
 
-const log: logging.Logger = logging.getLogger('alb-modules');
+const log: logging.Logger = logging.newLogger('alb-modules');
 const region: string = process.env.AWS_REGION || '';
 const retryStrategy = new ConfiguredRetryStrategy(20);
 const elbClient: ElasticLoadBalancingV2Client =

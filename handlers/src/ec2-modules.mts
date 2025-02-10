@@ -33,7 +33,7 @@ import {
   queryPrometheusForService,
 } from './prometheus-tools.mjs';
 
-const log: logging.Logger = logging.getLogger('ec2-modules');
+const log: logging.Logger = logging.newLogger('ec2-modules');
 export const prometheusWorkspaceId: string =
   process.env.PROMETHEUS_WORKSPACE_ID || '';
 const region: string = process.env.AWS_REGION || '';

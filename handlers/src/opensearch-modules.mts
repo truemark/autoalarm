@@ -16,7 +16,7 @@ import {
 } from '@aws-sdk/client-cloudwatch';
 import {MetricAlarmConfigs, parseMetricAlarmOptions} from './alarm-config.mjs';
 
-const log: logging.Logger = logging.getLogger('opensearch-modules');
+const log: logging.Logger = logging.newLogger('opensearch-modules');
 const region: string = process.env.AWS_REGION || '';
 const retryStrategy = new ConfiguredRetryStrategy(20);
 const openSearchClient: OpenSearchClient = new OpenSearchClient({

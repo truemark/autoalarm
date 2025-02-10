@@ -21,7 +21,7 @@ import {
 import * as arnparser from '@aws-sdk/util-arn-parser';
 import {MetricAlarmConfigs, parseMetricAlarmOptions} from './alarm-config.mjs';
 
-const log: logging.Logger = logging.getLogger('targetgroup-modules');
+const log: logging.Logger = logging.newLogger('targetgroup-modules');
 const region: string = process.env.AWS_REGION || '';
 const retryStrategy = new ConfiguredRetryStrategy(20);
 const elbClient: ElasticLoadBalancingV2Client =

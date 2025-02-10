@@ -16,7 +16,7 @@ import {
 } from '@aws-sdk/client-cloudwatch';
 import {MetricAlarmConfigs, parseMetricAlarmOptions} from './alarm-config.mjs';
 
-const log: logging.Logger = logging.getLogger('transit-gateway-modules');
+const log: logging.Logger = logging.newLogger('transit-gateway-modules');
 const region: string = process.env.AWS_REGION || '';
 const retryStrategy = new ConfiguredRetryStrategy(20);
 const ec2Client: EC2Client = new EC2Client({
@@ -202,7 +202,7 @@ function extractTransitGatewayNameFromArn(arn: string): string {
   return match ? match[1] : '';
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 export async function parseTransitGatewayEventAndCreateAlarms(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   event: any,

@@ -16,7 +16,7 @@ import {
 } from '@aws-sdk/client-cloudwatch';
 import {MetricAlarmConfigs, parseMetricAlarmOptions} from './alarm-config.mjs';
 
-const log: logging.Logger = logging.getLogger('vpn-modules');
+const log: logging.Logger = logging.newLogger('vpn-modules');
 const region: string = process.env.AWS_REGION || '';
 const retryStrategy = new ConfiguredRetryStrategy(20);
 const ec2Client: EC2Client = new EC2Client({
@@ -191,7 +191,6 @@ export async function manageInactiveVpnAlarms(vpnId: string): Promise<void> {
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function parseVpnEventAndCreateAlarms(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   event: any,

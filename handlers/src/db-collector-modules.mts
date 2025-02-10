@@ -7,7 +7,7 @@ import * as logging from '@nr1e/logging';
 import {DescribeDBInstancesCommand, RDSClient} from '@aws-sdk/client-rds';
 import {DBAlarmManagerArray} from './types.mjs';
 
-const log: logging.Logger = logging.getLogger('db-collector-modules');
+const log: logging.Logger = logging.newLogger('db-collector-modules');
 const prometheusWorkspaceId: string = process.env.PROMETHEUS_WORKSPACE_ID || '';
 const region: string = process.env.AWS_REGION || '';
 

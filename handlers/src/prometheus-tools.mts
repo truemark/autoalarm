@@ -38,7 +38,7 @@ import {
   parseMetricAlarmOptions,
 } from './alarm-config.mjs';
 
-const log: logging.Logger = logging.getLogger('ec2-modules');
+const log: logging.Logger = logging.newLogger('prometheus-tools');
 const retryStrategy = new ConfiguredRetryStrategy(20);
 //the following environment variables are used to get the prometheus workspace id and the region
 const region: string = process.env.AWS_REGION || '';
