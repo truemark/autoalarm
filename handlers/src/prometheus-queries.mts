@@ -6,9 +6,9 @@ export function EC2getCpuQuery(
   threshold: number,
 ): string {
   if (platform?.toLowerCase().includes('windows')) {
-    return `100 - (rate(windows_cpu_time_total{instance=~"(${escapedPrivateIp}.*|${instanceId})", mode="idle"}[30s]) * 100) > ${threshold}`;
+    return `100 - (rate(windows_cpu_time_total{instance=~"(${escapedPrivateIp}.*|${instanceId})", mode="idle"}[180s]) * 100) > ${threshold}`;
   } else {
-    return `100 - (rate(node_cpu_seconds_total{mode="idle", instance=~"(${escapedPrivateIp}.*|${instanceId})"}[30s]) * 100) > ${threshold}`;
+    return `100 - (rate(node_cpu_seconds_total{mode="idle", instance=~"(${escapedPrivateIp}.*|${instanceId})"}[180s]) * 100) > ${threshold}`;
   }
 }
 

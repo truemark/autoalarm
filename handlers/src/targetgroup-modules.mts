@@ -71,9 +71,9 @@ export async function fetchTGTags(targetGroupArn: string): Promise<Tag> {
   }
 }
 
-async function checkAndManageTGStatusAlarms(
+async function manageTGAlarms(
   targetGroupName: string,
-  loadBalancerName: string,
+  loadBalancerName: string | null,
   tags: Tag,
 ) {
   log
@@ -98,6 +98,20 @@ async function checkAndManageTGStatusAlarms(
   const alarmsToKeep = new Set<string>();
 
   for (const config of metricConfigs) {
+    /*
+     * log warning if LB is not associated with tg and skip creating alarms as LB is required for all TG Metrics
+     */
+    if (!loadBalancerName) {
+      log
+        .warn()
+        .str('function', 'checkAndManageTGStatusAlarms')
+        .str('TargetGroupName', targetGroupName)
+        .str('LoadBalancerName', loadBalancerName)
+        .msg(
+          `Load balancer name not found but required, skipping alarm creation`,
+        );
+      return;
+    }
     log
       .info()
       .str('function', 'checkAndManageTGStatusAlarms')
@@ -126,7 +140,7 @@ async function checkAndManageTGStatusAlarms(
           targetGroupName,
           [
             {Name: 'TargetGroup', Value: targetGroupName},
-            {Name: 'LoadBalancer', Value: loadBalancerName},
+            {Name: 'LoadBalancer', Value: loadBalancerName!}, // LoadBalancerName will always be provided if the function reaches this point and beyond
           ],
           updatedDefaults,
         );
@@ -144,7 +158,7 @@ async function checkAndManageTGStatusAlarms(
           targetGroupName,
           [
             {Name: 'TargetGroup', Value: targetGroupName},
-            {Name: 'LoadBalancer', Value: loadBalancerName},
+            {Name: 'LoadBalancer', Value: loadBalancerName!},
           ],
           updatedDefaults,
         );
@@ -197,14 +211,6 @@ async function checkAndManageTGStatusAlarms(
     .str('TargetGroupName', targetGroupName)
     .str('LoadBalancerName', loadBalancerName)
     .msg('Finished alarm management process');
-}
-
-export async function manageTGAlarms(
-  targetGroupName: string,
-  loadBalancerName: string,
-  tags: Tag,
-): Promise<void> {
-  await checkAndManageTGStatusAlarms(targetGroupName, loadBalancerName, tags);
 }
 
 export async function manageInactiveTGAlarms(targetGroupName: string) {
@@ -317,16 +323,22 @@ export async function parseTGEventAndCreateAlarms(event: any): Promise<{
       loadBalancerArn = loadBalancerArns[0];
     }
   }
+  /*
+   * This Logs a warning while still allowing the program to finish running and address other workflows like deleting alarms.
+   */
   if (!loadBalancerArn) {
     log
-      .error()
+      .warn()
       .str('function', 'parseTGEventAndCreateAlarms')
       .str('targetGroupArn', targetGroupArn)
-      .msg('Load balancer ARN not found');
-    throw new Error('Load balancer ARN not found');
+      .msg(
+        'Load balancer ARN not found. Target Group Alarms require an associated Load Balancer. No Alarms will be created.',
+      );
   }
-  const lbArn = arnparser.parse(loadBalancerArn);
-  const loadBalancerName = lbArn.resource.replace('loadbalancer/', '');
+  const lbArn = loadBalancerArn ? arnparser.parse(loadBalancerArn) : null;
+  const loadBalancerName = lbArn
+    ? lbArn.resource.replace('loadbalancer/', '')
+    : null;
   const arn = arnparser.parse(targetGroupArn);
   const targetGroupName = arn.resource;
   if (!targetGroupName) {
