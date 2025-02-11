@@ -1,5 +1,13 @@
 # AutoAlarm Changelog
 
+## v1.7.4
+### Changes: 
+- Updated README with more explicit language detailing that only Application Load Balancers are currently supported and Network Load Balancers are not.
+
+### Fixed:
+- Fixed a bug that that allowed Network Load Balancers to trigger the ALB logic to manage alarms for Application Load Balancers. This resulted in an error when creating alarms for Network Load Balancers.
+
+
 ## v1.7.3
 ### Changes: 
 - Implemented logic to throw warning instead of error in case of missing load balancer for target groups target group alarm creation module

@@ -3,7 +3,7 @@ import {
   ElasticLoadBalancingV2Client,
 } from '@aws-sdk/client-elastic-load-balancing-v2';
 import * as logging from '@nr1e/logging';
-import {Tag} from './types.mjs';
+import {LoadBalancerIdentifiers, Tag} from './types.mjs';
 import {AlarmClassification} from './enums.mjs';
 import {
   CloudWatchClient,
@@ -201,10 +201,18 @@ export async function manageInactiveALBAlarms(loadBalancerName: string) {
   }
 }
 
-function extractAlbNameFromArn(arn: string): string {
-  const regex = /\/app\/(.*?\/[^/]+)$/;
+function extractAlbNameFromArn(arn: string): LoadBalancerIdentifiers {
+  const regex = /\/(app|net)\/(.*?\/[^/]+)$/;
   const match = arn.match(regex);
-  return match ? `app/${match[1]}` : '';
+  if (!match)
+    return {
+      LBType: null,
+      LBName: null,
+    };
+  return {
+    LBType: match[1] as 'app' | 'net',
+    LBName: match[2],
+  };
 }
 
 // TODO Fix the use of any
@@ -213,7 +221,7 @@ export async function parseALBEventAndCreateAlarms(event: any): Promise<{
   loadBalancerArn: string;
   eventType: string;
   tags: Record<string, string>;
-}> {
+} | void> {
   let loadBalancerArn: string = '';
   let eventType: string = '';
   let tags: Record<string, string> = {};
@@ -292,13 +300,32 @@ export async function parseALBEventAndCreateAlarms(event: any): Promise<{
         .msg('Unexpected event type');
   }
 
-  const loadbalancerName = extractAlbNameFromArn(loadBalancerArn);
-  if (!loadbalancerName) {
+  const loadBalancer = extractAlbNameFromArn(loadBalancerArn);
+  if (loadBalancer.LBType === null) {
     log
       .error()
       .str('function', 'parseALBEventAndCreateAlarms')
       .str('loadBalancerArn', loadBalancerArn)
+      .obj('Load Balancer Identifiers', loadBalancer)
       .msg('Extracted load balancer name is empty');
+  }
+
+  // TODO: we can use this conditional as an entry point to manage nlbs in the future as we build this out.
+  /*
+   *
+   * gracefully logging a warning for now if a network load balancer has been tagged.
+   */
+  if (loadBalancer.LBType!.includes('net')) {
+    log
+      .warn()
+      .str('function', 'parseALBEventAndCreateAlarms')
+      .str('loadBalancerArn', loadBalancerArn)
+      .obj('Load Balancer Identifiers', loadBalancer)
+      .msg(
+        'Network Load Balancer detected. Skipping processing. Network Load Balancer support is not yet available.',
+      );
+    // return early to avoid processing network load balancers
+    return;
   }
 
   log
@@ -306,7 +333,7 @@ export async function parseALBEventAndCreateAlarms(event: any): Promise<{
     .str('function', 'parseALBEventAndCreateAlarms')
     .str('loadBalancerArn', loadBalancerArn)
     .str('eventType', eventType)
-    .msg('Finished processing ALB event');
+    .msg('starting to process ALB tags and alarm management');
 
   if (
     loadBalancerArn &&
@@ -317,14 +344,14 @@ export async function parseALBEventAndCreateAlarms(event: any): Promise<{
       .str('function', 'parseALBEventAndCreateAlarms')
       .str('loadBalancerArn', loadBalancerArn)
       .msg('Starting to manage ALB alarms');
-    await manageALBAlarms(loadbalancerName, tags);
+    await manageALBAlarms(loadBalancer.LBName!, tags);
   } else if (eventType === 'Delete') {
     log
       .info()
       .str('function', 'parseALBEventAndCreateAlarms')
       .str('loadBalancerArn', loadBalancerArn)
       .msg('Starting to manage inactive ALB alarms');
-    await manageInactiveALBAlarms(loadbalancerName);
+    await manageInactiveALBAlarms(loadBalancer.LBName!);
   }
 
   return {loadBalancerArn, eventType, tags};
