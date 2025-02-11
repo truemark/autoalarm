@@ -616,7 +616,7 @@ project is deployed.:
 
 ## Limitations
 
--   Currently, supports only EC2 instances, ALBs, Target Groups, SQS, Transit Gateway, VPN, Route53Resolver, CloudFront
+-   Currently, supports only EC2 instances, Application Load Balancers (does not include Network Load Balancers), Target Groups, SQS, Transit Gateway, VPN, Route53Resolver, CloudFront
     and OpenSearch. Extension to other services like ECS or RDS would require modifications to the Lambda function and CDK setup.
 -   Tag-based configuration may not be suitable for all use cases. Customization options are limited to the supported tags.
 -   Some alarms and rules are created by default even without tags, such as CPU utilization alarms, and can only be
