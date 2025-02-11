@@ -1,5 +1,13 @@
 # AutoAlarm Changelog
 
+## v1.7.4
+### Changes: 
+- Updated README with more explicit language detailing that only Application Load Balancers are currently supported and Network Load Balancers are not.
+
+### Fixed:
+- Fixed a bug that that allowed Network Load Balancers to trigger the ALB logic to manage alarms for Application Load Balancers. This resulted in an error when creating alarms for Network Load Balancers.
+
+
 ## v1.7.3
 ### Changes: 
 - Implemented logic to throw warning instead of error in case of missing load balancer for target groups target group alarm creation module
@@ -30,7 +38,7 @@
 - New EventBridge rule handler for managing ReAlarm schedules
 - Support for dynamic ReAlarm schedule updates based on tag changes
 - Tag-based configuration with `autoalarm:re-alarm-minutes` for custom schedules
-- Tag-based configuration with `autoalarm:re-alarm-disabled` to disable ReAlarm for specific alarms
+- Tag-based configuration with `autoalarm:re-alarm-enabled` to disable ReAlarm for specific alarms
 
 ### Changed:
 - ReAlarm is now enabled by default with a 120-minute schedule
@@ -44,7 +52,7 @@
 - Removed global ReAlarm schedule configuration via CDK context
 - Removed `useReAlarm` context variable (ReAlarm is now enabled by default)
 - Removed `reAlarmSchedule` context variable (replaced with tag-based configuration)
-- Removed `realarm:disabled` tag in favor of `autoalarm:re-alarm-disabled`
+- Removed `realarm:disabled` tag in favor of `autoalarm:re-alarm-enabled`
 
 ### Fixed:
 - Fixed a bug that prevented retry logic from working correctly in ReAlarm due to improper package import. 

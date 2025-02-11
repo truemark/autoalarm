@@ -1,6 +1,6 @@
 {
   "name": "autoalarm",
-  "version": "1.7.3",
+  "version": "1.7.4",
   "scripts": {
     "install-handlers": "cd handlers && pnpm i --frozen-lockfile",
     "install-cdk": "cd cdk && pnpm i --frozen-lockfile",
@@ -20,20 +20,21 @@
     "fmt-cdk": "cd cdk && pnpm run fmt",
     "fmt": "concurrently \"pnpm:fmt-handlers\" \"pnpm:fmt-cdk\" -c blue,green",
     "watch-handlers": "cd handlers && pnpm run watch",
+    "cdk-deploy": "cd cdk && cdk deploy AutoAlarm",
     "watch-cdk": "cd cdk && cdk watch",
     "deploy-cdk": "cd cdk && cdk deploy",
     "destroy-cdk": "cd cdk && cdk destroy",
     "watch": "concurrently \"pnpm:watch-handlers\" \"pnpm:watch-cdk\" -c blue,green"
   },
   "devDependencies": {
-    "concurrently": "^9.1.0",
-    "prettier": "^3.3.3"
+    "concurrently": "^9.1.2",
+    "prettier": "^3.5.0"
   },
   "dependencies": {
-    "@aws-sdk/credential-provider-node": "^3.687.0",
+    "@aws-sdk/credential-provider-node": "^3.744.0",
     "@aws-sdk/protocol-http": "^3.374.0",
     "@aws-sdk/signature-v4": "^3.374.0",
     "aws4": "^1.13.2",
-    "axios": "^1.7.7"
+    "axios": "^1.7.9"
   }
 }
