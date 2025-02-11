@@ -513,7 +513,7 @@ out-of-the-box. However, it is recommended to customize the alarms based on your
 The ReAlarm function is an AWS Lambda-based handler designed to monitor and reset CloudWatch alarms that are in an
 "ALARM" state. It is an optional part of the AutoAlarm system, aimed at ensuring alarms are not missed or ignored. This
 functionality is built with complex maintenance and infrastructure in mind and is a stop gap to prevent critical alarms
-from being missed or ignored by casuing said alarms to re-alert on a schedule. ReAlarm can be enabled or disabled globally.
+from being missed or ignored by causing said alarms to re-alert on a schedule. ReAlarm can be enabled or disabled globally.
 Additionally, Alarms can individually be tagged to be excluded from the ReAlarm function.
 
 ### Special Note:
