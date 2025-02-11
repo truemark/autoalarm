@@ -38,7 +38,7 @@
 - New EventBridge rule handler for managing ReAlarm schedules
 - Support for dynamic ReAlarm schedule updates based on tag changes
 - Tag-based configuration with `autoalarm:re-alarm-minutes` for custom schedules
-- Tag-based configuration with `autoalarm:re-alarm-disabled` to disable ReAlarm for specific alarms
+- Tag-based configuration with `autoalarm:re-alarm-enabled` to disable ReAlarm for specific alarms
 
 ### Changed:
 - ReAlarm is now enabled by default with a 120-minute schedule
@@ -52,7 +52,7 @@
 - Removed global ReAlarm schedule configuration via CDK context
 - Removed `useReAlarm` context variable (ReAlarm is now enabled by default)
 - Removed `reAlarmSchedule` context variable (replaced with tag-based configuration)
-- Removed `realarm:disabled` tag in favor of `autoalarm:re-alarm-disabled`
+- Removed `realarm:disabled` tag in favor of `autoalarm:re-alarm-enabled`
 
 ### Fixed:
 - Fixed a bug that prevented retry logic from working correctly in ReAlarm due to improper package import. 
