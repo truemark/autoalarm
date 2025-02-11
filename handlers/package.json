@@ -30,7 +30,7 @@
     "@aws-sdk/util-arn-parser": "^3.693.0",
     "@aws-sdk/util-dynamodb": "^3.693.0",
     "@nr1e/commons": "0.0.2-alpha.9",
-    "@nr1e/logging": "^1.4.1",
+    "@nr1e/logging": "1.4.1",
     "@smithy/protocol-http": "^4.1.7",
     "@smithy/signature-v4": "^3.1.2",
     "@smithy/util-retry": "^3.0.10",
