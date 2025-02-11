@@ -527,35 +527,36 @@ By default, the ReAlarm function is enabled. When ReAlarm is enabled, it runs on
 
 ### Configure ReAlarm Behavior with Tags
 
-ReAlarm's behavior can be configured on a per-alarm basis using tags.
+ReAlarm's behavior can be configured on a per alarm basis using tags.
 
-- **Customize ReAlarm Schedule**:
-    - The ReAlarm schedule by default runs every 120 minutes.
-    - ReAlarm can be customized to run at different intervals on a per-alarm basis by setting the `autoalarm:re-alarm-minutes`
-      tag to a whole number value.
+-   **Customize ReAlarm Schedule**:
+    -   The ReAlarm schedule by default runs every 120 minutes.
+    -   ReAlarm can be customized to run at different intervals on a per-alarm basis by setting the `autoalarm:re-alarm-minutes`
+        tag to a whole number value.
+
 
 ### Customizing ReAlarm with Tags
 
 In addition to global controls, individual alarms can be excluded from being reset by ReAlarm. This is done using a specific tag:
 
-- **Tag to Exclude Alarms from ReAlarm**:
-    - Alarms can be tagged with `realarm:disabled=true` to exclude them from the ReAlarm process.
-    - When this tag is present on an alarm, ReAlarm will skip resetting it, regardless of its state.
-    - This is useful for alarms that should be managed manually or have specific conditions that should not trigger ReAlarm.
+-   **Tag to Exclude Alarms from ReAlarm**:
+    -   Alarms can be tagged with `autoalarm:re-alarm-enabled=false` to exclude them from the ReAlarm process.
+    -   When this tag is present on an alarm, ReAlarm will skip resetting it, regardless of its state.
+    -   This is useful for alarms that should be managed manually or have specific conditions that should not trigger ReAlarm.
 
 #### Example:
 
 1. To prevent ReAlarm from resetting a particular alarm, add the following tag:
 
-    - **Key**: `autoalarm:re-alarm-disabled`
-    - **Value**: `true`
+    - **Key**: `autoalarm:re-alarm-enabled`
+    - **Value**: `false`
 
 2. **Tagging via AWS Console**:
 
     - Navigate to the CloudWatch alarm.
     - Under the "Tags" section, add a new tag:
-        - **Key**: `autoalarm:re-alarm-disabled`
-        - **Value**: `true`
+        - **Key**: `autoalarm:re-alarm-enabled`
+        - **Value**: `false`
 
 3. **Tagging via AWS CLI**:
     ```bash
