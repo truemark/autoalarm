@@ -1,5 +1,25 @@
 # AutoAlarm Changelog
 
+## v1.8.0
+### Added:
+- Added AWS Database monitoring via prometheus and tag management 
+
+### Changed:
+- Updated README with new services and tagging schema
+- Updated alarm-config.mts with new services and tagging schema
+- Updated auto-alarm-construct.ts with required resources for new DB functionality. 
+- Updated some deps to address deprecated warnings and dependency requirements.
+
+### Removed:
+- Removed unused dependencies from project.
+
+## v1.7.4
+### Changes:
+- Updated README with more explicit language detailing that only Application Load Balancers are currently supported and Network Load Balancers are not.
+
+### Fixed:
+- Fixed a bug that that allowed Network Load Balancers to trigger the ALB logic to manage alarms for Application Load Balancers. This resulted in an error when creating alarms for Network Load Balancers.
+
 ## v1.7.3
 ### Changes: 
 - Implemented logic to throw warning instead of error in case of missing load balancer for target groups target group alarm creation module

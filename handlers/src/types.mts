@@ -70,6 +70,14 @@ export interface NamespaceDetails {
   groups: RuleGroup[];
 }
 
+/*
+ * Type to used for identifying the type of load balancer
+ */
+export type LoadBalancerIdentifiers = {
+  LBType: 'app' | 'net' | null;
+  LBName: string | null;
+};
+
 export interface AnomalyAlarmProps {
   evaluationPeriods: number;
   period: number;
