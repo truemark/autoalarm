@@ -1,5 +1,35 @@
 # AutoAlarm Changelog
 
+## v1.7.4
+### Changes: 
+- Updated README with more explicit language detailing that only Application Load Balancers are currently supported and Network Load Balancers are not.
+
+### Fixed:
+- Fixed a bug that that allowed Network Load Balancers to trigger the ALB logic to manage alarms for Application Load Balancers. This resulted in an error when creating alarms for Network Load Balancers.
+
+
+## v1.7.3
+### Changes: 
+- Implemented logic to throw warning instead of error in case of missing load balancer for target groups target group alarm creation module
+- Updated README with note that Target Group alarms require a load balancer.
+
+
+### Fixed: 
+- Fixed a bug that resulted in AutoAlarm throwing an error when load balancer is not associated with a target group leading to excessive delays through FIFO queue retries. 
+
+
+## v1.7.2
+
+### Changes
+- Implemented producer-consumer pattern with SQS queue for realarm processing using SQS
+- Implemented rate limiting and backoff for API calls to cloudwatch in ReAlarm processing
+- Significantly reduced number of API calls to cloudwatch in ReAlarm processing
+- Added proper throttling and error handling for ReAlarm processing. 
+
+### Fixed: 
+- Fixed bug that prevented ReAlarm from processing alarms in certain cases where total alarm volume resulted in AWS API throttling.
+
+
 ## v1.7.0
 
 ### Added:
@@ -8,7 +38,7 @@
 - New EventBridge rule handler for managing ReAlarm schedules
 - Support for dynamic ReAlarm schedule updates based on tag changes
 - Tag-based configuration with `autoalarm:re-alarm-minutes` for custom schedules
-- Tag-based configuration with `autoalarm:re-alarm-disabled` to disable ReAlarm for specific alarms
+- Tag-based configuration with `autoalarm:re-alarm-enabled` to disable ReAlarm for specific alarms
 
 ### Changed:
 - ReAlarm is now enabled by default with a 120-minute schedule
@@ -22,7 +52,7 @@
 - Removed global ReAlarm schedule configuration via CDK context
 - Removed `useReAlarm` context variable (ReAlarm is now enabled by default)
 - Removed `reAlarmSchedule` context variable (replaced with tag-based configuration)
-- Removed `realarm:disabled` tag in favor of `autoalarm:re-alarm-disabled`
+- Removed `realarm:disabled` tag in favor of `autoalarm:re-alarm-enabled`
 
 ### Fixed:
 - Fixed a bug that prevented retry logic from working correctly in ReAlarm due to improper package import. 

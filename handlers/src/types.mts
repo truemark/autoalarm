@@ -62,6 +62,11 @@ export interface NamespaceDetails {
   groups: RuleGroup[];
 }
 
+export type LoadBalancerIdentifiers = {
+  LBType: 'app' | 'net' | null;
+  LBName: string | null;
+};
+
 export interface AnomalyAlarmProps {
   evaluationPeriods: number;
   period: number;
