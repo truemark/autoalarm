@@ -1110,7 +1110,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       tagKey: 'replica-lag-anomaly',
       metricName: 'ReplicaLag',
       metricNamespace: 'AWS/RDS',
-      defaultCreate: false,
+      defaultCreate: true,
       anomaly: true,
       defaults: {
         warningThreshold: 2,
@@ -1129,7 +1129,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       tagKey: 'swap-usage-anomaly',
       metricName: 'SwapUsage',
       metricNamespace: 'AWS/RDS',
-      defaultCreate: false,
+      defaultCreate: true,
       anomaly: true,
       defaults: {
         warningThreshold: 2,
@@ -1149,7 +1149,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       tagKey: 'write-latency-anomaly',
       metricName: 'WriteLatency',
       metricNamespace: 'AWS/RDS',
-      defaultCreate: false,
+      defaultCreate: true,
       anomaly: true,
       defaults: {
         warningThreshold: 2,
