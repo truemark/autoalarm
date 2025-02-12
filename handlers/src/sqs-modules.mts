@@ -187,7 +187,22 @@ export async function manageInactiveSQSAlarms(queueUrl: string) {
 
 function extractQueueName(queueUrl: string): string {
   const parts = queueUrl.split('/');
-  return parts[parts.length - 1];
+  log
+    .debug()
+    .str('function', 'extractQueueName')
+    .str('queueUrl', queueUrl)
+    .str('parts', JSON.stringify(parts))
+    .str('queueName', parts.at(-1)!)
+    .msg('Extracted queue name');
+  if (!queueUrl) {
+    log
+      .error()
+      .str('function', 'extractQueueName')
+      .str('queueUrl', queueUrl ? queueUrl : 'undefined')
+      .msg('Invalid queue URL: Queue name not found');
+    throw new Error('Invalid queue URL: Queue name not found');
+  }
+  return parts.at(-1)!;
 }
 
 // TODO Fix the use of any

@@ -991,7 +991,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
   ],
   // Owned by DB Warden
   RDS: [
-
     // 1) CPU - Static Only
     {
       tagKey: 'cpu',

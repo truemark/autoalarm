@@ -176,13 +176,6 @@ async function checkAndManageRDSStatusAlarms(
     .msg('Finished alarm management process');
 }
 
-export async function manageRDSAlarms(
-  dbInstanceId: string,
-  tags: Tag,
-): Promise<void> {
-  await checkAndManageRDSStatusAlarms(dbInstanceId, tags);
-}
-
 export async function manageInactiveRDSAlarms(
   dbInstanceId: string,
 ): Promise<void> {
@@ -342,8 +335,15 @@ export async function parseRDSEventAndCreateAlarms(
       .info()
       .str('function', 'parseRDSEventAndCreateAlarms')
       .str('dbInstanceId', dbInstanceId)
+      .str('tags', JSON.stringify(tags))
+      .str(
+        'autoalarm:enabled',
+        tags['autoalarm:enabled']
+          ? tags['autoalarm:enabled']
+          : 'autoalarm tag does not exist',
+      )
       .msg('Starting to manage RDS alarms');
-    await manageRDSAlarms(dbInstanceId, tags);
+    await checkAndManageRDSStatusAlarms(dbInstanceId, tags);
   } else if (eventType === 'Delete') {
     log
       .info()
@@ -355,3 +355,52 @@ export async function parseRDSEventAndCreateAlarms(
 
   return {dbInstanceArn, dbInstanceId, eventType, tags};
 }
+
+const objTest: any = {
+  eventVersion: '1.10',
+  userIdentity: {
+    type: 'IAMUser',
+    principalId: 'AIDAT6FZA3G2D6AGU2SGV',
+    arn: 'arn:aws:iam::270970968500:user/pub-sub-service',
+    accountId: '270970968500',
+    accessKeyId: 'AKIAT6FZA3G2JNOOGTZH',
+    userName: 'pub-sub-service',
+  },
+  eventTime: '2025-02-12T20:00:19Z',
+  eventSource: 'sqs.amazonaws.com',
+  eventName: 'CreateQueue',
+  awsRegion: 'af-south-1',
+  sourceIPAddress: '13.245.218.199',
+  userAgent:
+    'aws-sdk-dotnet-coreclr/3.7.300.0 aws-sdk-dotnet-core/3.7.300.0 .NET_Core/6.0.7 OS/Linux_5.10.233-223.887.amzn2.x86_64_#1_SMP_Sat_Jan_11_16:55:02_UTC_2025 ClientAsync',
+  errorCode: 'InvalidParameterValueException',
+  errorMessage: 'An unknown error occurred',
+  requestParameters: {
+    queueName:
+      'preprod-pricing-service-service-billing-status-updated_id-default-dead-letter.fifo',
+    attributes: {
+      FifoQueue: 'true',
+      ContentBasedDeduplication: 'false',
+    },
+  },
+  responseElements: null,
+  requestID: '01d1e2b5-5ec6-507c-ab77-82925ed569f0',
+  eventID: '2e824717-a507-4c43-9812-39054a114220',
+  readOnly: false,
+  resources: [
+    {
+      accountId: '270970968500',
+      type: 'AWS::SQS::Queue',
+      ARN: 'arn:aws:sqs:af-south-1:270970968500:preprod-pricing-service-service-billing-status-updated_id-default-dead-letter.fifo',
+    },
+  ],
+  eventType: 'AwsApiCall',
+  managementEvent: true,
+  recipientAccountId: '270970968500',
+  eventCategory: 'Management',
+  tlsDetails: {
+    tlsVersion: 'TLSv1.3',
+    cipherSuite: 'TLS_AES_128_GCM_SHA256',
+    clientProvidedHostHeader: 'sqs.af-south-1.amazonaws.com',
+  },
+};
