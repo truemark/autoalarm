@@ -922,7 +922,7 @@ export class AutoAlarmConstruct extends Construct {
           eventName: [
             'CreateDBInstance',
             'DeleteDBInstance',
-            'AddTagsToResource',
+            'AddTagsToResource', //TODO: Should we remove this? Need to test and see if we're getting duplicate calls
           ],
         },
       },
