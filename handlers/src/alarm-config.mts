@@ -990,12 +990,9 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
     // TODO Add alarms and get buy off from team lead on PR
   ],
   // Owned by DB Warden
-
-  // Owned by DB Warden
   RDS: [
-    // TODO Add alarms and get buy off from team lead on PR
 
-    // 1) CPU - Static + Anomaly
+    // 1) CPU - Static Only
     {
       tagKey: 'cpu',
       metricName: 'CPUUtilization',
@@ -1014,7 +1011,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
 
-    // 2) DatabaseConnections - Static + Anomaly
+    // 2) DatabaseConnections - Anomaly
 
     {
       tagKey: 'db-connections-anomaly',
@@ -1053,7 +1050,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
 
-    // 4) Deadlocks - Static + Anomaly
+    // 4) Deadlocks - Static
     {
       tagKey: 'deadlocks',
       metricName: 'Deadlocks',
@@ -1072,7 +1069,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
 
-    // 5) FreeableMemory - Static Only (from updated snippet)
+    // 5) FreeableMemory - Static Only
     {
       tagKey: 'freeable-memory',
       metricName: 'FreeableMemory',
@@ -1090,8 +1087,6 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         missingDataTreatment: 'ignore',
       },
     },
-
-    // 6) ReadLatency - Static + Anomaly (from updated snippet)
 
     // 7) ReplicaLag - Static + Anomaly
     {
