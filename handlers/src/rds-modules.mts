@@ -15,6 +15,7 @@ import {
   DeleteAlarmsCommand,
 } from '@aws-sdk/client-cloudwatch';
 import {MetricAlarmConfigs, parseMetricAlarmOptions} from './alarm-config.mjs';
+import {fetchSQSTags} from './sqs-modules.mjs';
 
 const log: logging.Logger = logging.getLogger('rds-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -196,16 +197,26 @@ export async function manageInactiveRDSAlarms(
   }
 }
 
+// Function to extract dbInstanceId from ARN
+
+function extractRDSInstanceIdFromArn(arn: string): string {
+  const regex = /db[:/]([^:/]+)$/;
+  const match = arn.match(regex);
+  return match ? match[1] : '';
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function parseRDSEventAndCreateAlarms(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   event: any,
 ): Promise<{
   dbInstanceId: string;
+  dbInstanceArn: string;
   eventType: string;
   tags: Record<string, string>;
 }> {
   let dbInstanceId: string = '';
+  let dbInstanceArn: string = '';
   let eventType: string = '';
   let tags: Record<string, string> = {};
 
@@ -225,9 +236,37 @@ export async function parseRDSEventAndCreateAlarms(
 
     case 'AWS API Call via CloudTrail':
       switch (event.detail.eventName) {
+        case 'AddTagsToResource':
+          dbInstanceArn = event.detail.requestParameters?.resourceName;
+          dbInstanceId = extractRDSInstanceIdFromArn(dbInstanceArn);
+          eventType = 'TagChange';
+          log
+            .info()
+            .str('function', 'parseRDSEventAndCreateAlarms')
+            .str('eventType', 'TagChange')
+            .str('dbInstanceArn', dbInstanceArn)
+            .str('dbInstanceId', dbInstanceId)
+            .str('requestId', event.detail.requestID)
+            .msg('Processing TagChange event');
+          if (dbInstanceId) {
+            tags = await fetchSQSTags(dbInstanceId);
+            log
+              .info()
+              .str('function', 'parseRDSEventAndCreateAlarms')
+              .str('queueUrl', dbInstanceId)
+              .str('tags', JSON.stringify(tags))
+              .msg('Fetched tags for new TagChange event');
+          } else {
+            log
+              .warn()
+              .str('function', 'parseRDSEventAndCreateAlarms')
+              .str('eventType', 'TagChance')
+              .msg('dbInstanceId not found in AddTagsToResource event');
+          }
+          break;
+
         case 'CreateDBInstance':
-          dbInstanceId =
-            event.detail.responseElements?.dbInstance?.dbInstanceIdentifier;
+          dbInstanceId = event.detail.responseElements?.dbInstanceIdentifier;
           eventType = 'Create';
           log
             .info()
@@ -314,5 +353,5 @@ export async function parseRDSEventAndCreateAlarms(
     await manageInactiveRDSAlarms(dbInstanceId);
   }
 
-  return {dbInstanceId, eventType, tags};
+  return {dbInstanceArn, dbInstanceId, eventType, tags};
 }

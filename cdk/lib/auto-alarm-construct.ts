@@ -919,7 +919,11 @@ export class AutoAlarmConstruct extends Construct {
         detailType: ['AWS API Call via CloudTrail'],
         detail: {
           eventSource: ['rds.amazonaws.com'],
-          eventName: ['CreateDBInstance', 'DeleteDBInstance'],
+          eventName: [
+            'CreateDBInstance',
+            'DeleteDBInstance',
+            'AddTagsToResource',
+          ],
         },
       },
       description: 'Routes RDS events to AutoAlarm',
