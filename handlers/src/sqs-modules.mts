@@ -211,7 +211,7 @@ export async function parseSQSEventAndCreateAlarms(event: any): Promise<{
   queueUrl: string;
   eventType: string;
   tags: Record<string, string>;
-}> {
+} | void> {
   let queueUrl: string = '';
   let eventType: string = '';
   let tags: Record<string, string> = {};
@@ -239,10 +239,11 @@ export async function parseSQSEventAndCreateAlarms(event: any): Promise<{
               .msg('Fetched tags for new SQS queue');
           } else {
             log
-              .warn()
+              .error()
               .str('function', 'parseSQSEventAndCreateAlarms')
               .str('eventType', 'Create')
               .msg('QueueUrl not found in CreateQueue event');
+            throw new Error('QueueUrl not found in CreateQueue event');
           }
           break;
 
@@ -278,10 +279,11 @@ export async function parseSQSEventAndCreateAlarms(event: any): Promise<{
               .msg('Fetched tags for new SQS queue');
           } else {
             log
-              .warn()
+              .error()
               .str('function', 'parseSQSEventAndCreateAlarms')
               .str('eventType', 'TagQueue')
               .msg('QueueUrl not found in TagQueue event');
+            throw new Error('Queue not found in TagQueue event');
           }
           break;
 
@@ -304,29 +306,32 @@ export async function parseSQSEventAndCreateAlarms(event: any): Promise<{
               .msg('Fetched tags for new SQS queue');
           } else {
             log
-              .warn()
+              .error()
               .str('function', 'parseSQSEventAndCreateAlarms')
               .str('eventType', 'UnTagQueue')
               .msg('QueueUrl not found in TagQueue event');
+            throw new Error('Queue not found in TagQueue event');
           }
           break;
 
         default:
           log
-            .warn()
+            .error()
             .str('function', 'parseSQSEventAndCreateAlarms')
             .str('eventName', event.detail.eventName)
             .str('requestId', event.detail.requestID)
             .msg('Unexpected CloudTrail event type');
+          throw new Error('Unexpected CloudTrail event type');
       }
       break;
 
     default:
       log
-        .warn()
+        .error()
         .str('function', 'parseSQSEventAndCreateAlarms')
         .str('detail-type', event['detail-type'])
         .msg('Unexpected event type');
+      throw new Error('Unexpected event type');
   }
 
   const queueName = extractQueueName(queueUrl);
@@ -336,6 +341,7 @@ export async function parseSQSEventAndCreateAlarms(event: any): Promise<{
       .str('function', 'parseSQSEventAndCreateAlarms')
       .str('queueUrl', queueUrl)
       .msg('Extracted queue name is empty');
+    throw new Error('Extracted queue name is empty');
   }
 
   log

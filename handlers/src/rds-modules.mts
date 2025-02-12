@@ -15,7 +15,6 @@ import {
   DeleteAlarmsCommand,
 } from '@aws-sdk/client-cloudwatch';
 import {MetricAlarmConfigs, parseMetricAlarmOptions} from './alarm-config.mjs';
-import {fetchSQSTags} from './sqs-modules.mjs';
 
 const log: logging.Logger = logging.getLogger('rds-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -207,7 +206,7 @@ export async function parseRDSEventAndCreateAlarms(
   dbInstanceArn: string;
   eventType: string;
   tags: Record<string, string>;
-}> {
+} | void> {
   let dbInstanceId: string = '';
   let dbInstanceArn: string = '';
   let eventType: string = '';
@@ -242,7 +241,7 @@ export async function parseRDSEventAndCreateAlarms(
             .str('requestId', event.detail.requestID)
             .msg('Processing TagChange event');
           if (dbInstanceId) {
-            tags = await fetchSQSTags(dbInstanceId);
+            tags = await fetchRDSTags(dbInstanceId);
             log
               .info()
               .str('function', 'parseRDSEventAndCreateAlarms')
@@ -251,10 +250,13 @@ export async function parseRDSEventAndCreateAlarms(
               .msg('Fetched tags for new TagChange event');
           } else {
             log
-              .warn()
+              .error()
               .str('function', 'parseRDSEventAndCreateAlarms')
               .str('eventType', 'TagChance')
               .msg('dbInstanceId not found in AddTagsToResource event');
+            throw new Error(
+              'dbInstanceId not found in AddTagsToResource event',
+            );
           }
           break;
 
@@ -278,10 +280,11 @@ export async function parseRDSEventAndCreateAlarms(
               .msg('Fetched tags for new CreateDBInstance event');
           } else {
             log
-              .warn()
+              .error()
               .str('function', 'parseRDSEventAndCreateAlarms')
               .str('eventType', 'Create')
               .msg('dbInstanceId not found in CreateDBInstance event');
+            throw new Error('dbInstanceId not found in CreateDBInstance event');
           }
           break;
 
@@ -299,20 +302,22 @@ export async function parseRDSEventAndCreateAlarms(
 
         default:
           log
-            .warn()
+            .error()
             .str('function', 'parseRDSEventAndCreateAlarms')
             .str('eventName', event.detail.eventName)
             .str('requestId', event.detail.requestID)
             .msg('Unexpected CloudTrail event type');
+          throw new Error('Unexpected CloudTrail event type');
       }
       break;
 
     default:
       log
-        .warn()
+        .error()
         .str('function', 'parseRDSEventAndCreateAlarms')
         .str('detail-type', event['detail-type'])
         .msg('Unexpected event type');
+      throw new Error('Unexpected event type');
   }
 
   if (!dbInstanceId) {
@@ -321,6 +326,7 @@ export async function parseRDSEventAndCreateAlarms(
       .str('function', 'parseRDSEventAndCreateAlarms')
       .str('dbInstanceId', dbInstanceId)
       .msg('dbInstanceId is empty');
+    throw new Error('dbInstanceId is empty');
   }
 
   log
@@ -355,52 +361,3 @@ export async function parseRDSEventAndCreateAlarms(
 
   return {dbInstanceArn, dbInstanceId, eventType, tags};
 }
-
-const objTest: any = {
-  eventVersion: '1.10',
-  userIdentity: {
-    type: 'IAMUser',
-    principalId: 'AIDAT6FZA3G2D6AGU2SGV',
-    arn: 'arn:aws:iam::270970968500:user/pub-sub-service',
-    accountId: '270970968500',
-    accessKeyId: 'AKIAT6FZA3G2JNOOGTZH',
-    userName: 'pub-sub-service',
-  },
-  eventTime: '2025-02-12T20:00:19Z',
-  eventSource: 'sqs.amazonaws.com',
-  eventName: 'CreateQueue',
-  awsRegion: 'af-south-1',
-  sourceIPAddress: '13.245.218.199',
-  userAgent:
-    'aws-sdk-dotnet-coreclr/3.7.300.0 aws-sdk-dotnet-core/3.7.300.0 .NET_Core/6.0.7 OS/Linux_5.10.233-223.887.amzn2.x86_64_#1_SMP_Sat_Jan_11_16:55:02_UTC_2025 ClientAsync',
-  errorCode: 'InvalidParameterValueException',
-  errorMessage: 'An unknown error occurred',
-  requestParameters: {
-    queueName:
-      'preprod-pricing-service-service-billing-status-updated_id-default-dead-letter.fifo',
-    attributes: {
-      FifoQueue: 'true',
-      ContentBasedDeduplication: 'false',
-    },
-  },
-  responseElements: null,
-  requestID: '01d1e2b5-5ec6-507c-ab77-82925ed569f0',
-  eventID: '2e824717-a507-4c43-9812-39054a114220',
-  readOnly: false,
-  resources: [
-    {
-      accountId: '270970968500',
-      type: 'AWS::SQS::Queue',
-      ARN: 'arn:aws:sqs:af-south-1:270970968500:preprod-pricing-service-service-billing-status-updated_id-default-dead-letter.fifo',
-    },
-  ],
-  eventType: 'AwsApiCall',
-  managementEvent: true,
-  recipientAccountId: '270970968500',
-  eventCategory: 'Management',
-  tlsDetails: {
-    tlsVersion: 'TLSv1.3',
-    cipherSuite: 'TLS_AES_128_GCM_SHA256',
-    clientProvidedHostHeader: 'sqs.af-south-1.amazonaws.com',
-  },
-};

@@ -1,4 +1,9 @@
-import {Handler} from 'aws-lambda';
+import {
+  Handler,
+  SQSEvent,
+  SQSBatchResponse,
+  SQSBatchItemFailure,
+} from 'aws-lambda';
 import * as logging from '@nr1e/logging';
 import {
   manageInactiveInstanceAlarms,
@@ -204,7 +209,9 @@ async function routeTagEvent(event: any) {
 
 // TODO Fix the use of any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const handler: Handler = async (event: any): Promise<void> => {
+export const handler: Handler = async (
+  event: SQSEvent,
+): Promise<void | SQSBatchResponse> => {
   log.trace().unknown('event', event).msg('Received event');
   // Create an array for all the EC2 events to be stored in and passed to the processEC2Event function imported form ec2-modules.mts
   // Still need to figure out type for event objects as they can vary from event to event
@@ -212,116 +219,132 @@ export const handler: Handler = async (event: any): Promise<void> => {
   const ec2Events: any[] = [];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ec2TagEvents: any[] = [];
+  /**
+   * Create batch item failures array to store any failed items from the batch.
+   */
+  const batchItemFailures: SQSBatchItemFailure[] = [];
 
-  try {
-    if (event.Records) {
-      for (const record of event.Records) {
-        // Parse the body of the SQS message
-        const event = JSON.parse(record.body);
+  if (!event.Records) {
+    log.warn().msg('No Records found in event');
+    throw new Error('No Records found in event');
+  }
 
-        log.trace().obj('body', event).msg('Processing message body');
+  for (const record of event.Records) {
+    // Check if the record body contains an error message
+    if (record.body && record.body.includes('errorMessage')) {
+      log
+        .error()
+        .str('messageId', record.messageId)
+        .msg('Error message found in record body');
+      batchItemFailures.push({itemIdentifier: record.messageId});
+      continue;
+    }
+    // Parse the body of the SQS message
+    const event = JSON.parse(record.body);
 
-        switch (event.source) {
-          case 'aws.cloudfront':
-            await parseCloudFrontEventAndCreateAlarms(event);
-            break;
-          case 'aws.ec2':
-            switch (event.detail.resourceType) {
-              case 'instance':
-                ec2Events.push(event);
-                break;
-              case 'transit-gateway':
-                if (
-                  event.detail.eventName === 'CreateTransitGateway' ||
-                  event.detail.eventName === 'DeleteTransitGateway'
-                )
-                  await parseTransitGatewayEventAndCreateAlarms(event);
-                break;
-              case 'vpn-connection':
-                if (
-                  event.detail.eventName === 'CreateVpnConnection' ||
-                  event.detail.eventName === 'DeleteVpnConnection'
-                )
-                  await parseVpnEventAndCreateAlarms(event);
-                break;
-              default:
-                log
-                  .warn()
-                  .msg(
-                    `Unhandled resource type for aws.ec2: ${event.detail.resourceType}`,
-                  );
-                break;
-            }
-            break;
-          case 'aws.elasticloadbalancing':
-            if (
-              event.detail.eventName === 'CreateLoadBalancer' ||
-              event.detail.eventName === 'DeleteLoadBalancer'
-            ) {
-              await parseALBEventAndCreateAlarms(event);
-            } else if (
-              event.detail.eventName === 'CreateTargetGroup' ||
-              event.detail.eventName === 'DeleteTargetGroup'
-            ) {
-              await parseTGEventAndCreateAlarms(event);
-            } else {
+    log.trace().obj('body', event).msg('Processing message body');
+    try {
+      switch (event.source) {
+        case 'aws.cloudfront':
+          await parseCloudFrontEventAndCreateAlarms(event);
+          break;
+        case 'aws.ec2':
+          switch (event.detail.resourceType) {
+            case 'instance':
+              ec2Events.push(event);
+              break;
+            case 'transit-gateway':
+              if (
+                event.detail.eventName === 'CreateTransitGateway' ||
+                event.detail.eventName === 'DeleteTransitGateway'
+              )
+                await parseTransitGatewayEventAndCreateAlarms(event);
+              break;
+            case 'vpn-connection':
+              if (
+                event.detail.eventName === 'CreateVpnConnection' ||
+                event.detail.eventName === 'DeleteVpnConnection'
+              )
+                await parseVpnEventAndCreateAlarms(event);
+              break;
+            default:
               log
                 .warn()
-                .msg('Unhandled event name for aws.elasticloadbalancing');
-            }
-            break;
+                .msg(
+                  `Unhandled resource type for aws.ec2: ${event.detail.resourceType}`,
+                );
+              break;
+          }
+          break;
+        case 'aws.elasticloadbalancing':
+          if (
+            event.detail.eventName === 'CreateLoadBalancer' ||
+            event.detail.eventName === 'DeleteLoadBalancer'
+          ) {
+            await parseALBEventAndCreateAlarms(event);
+          } else if (
+            event.detail.eventName === 'CreateTargetGroup' ||
+            event.detail.eventName === 'DeleteTargetGroup'
+          ) {
+            await parseTGEventAndCreateAlarms(event);
+          } else {
+            log.warn().msg('Unhandled event name for aws.elasticloadbalancing');
+          }
+          break;
 
-          case 'aws.opensearch':
-            await parseOSEventAndCreateAlarms(event);
-            break;
+        case 'aws.opensearch':
+          await parseOSEventAndCreateAlarms(event);
+          break;
 
-          case 'aws.rds':
-            await parseRDSEventAndCreateAlarms(event);
-            break;
+        case 'aws.rds':
+          await parseRDSEventAndCreateAlarms(event);
+          break;
 
-          case 'aws.route53resolver':
-            await parseR53ResolverEventAndCreateAlarms(event);
-            break;
+        case 'aws.route53resolver':
+          await parseR53ResolverEventAndCreateAlarms(event);
+          break;
 
-          case 'aws.sqs':
-            await parseSQSEventAndCreateAlarms(event);
-            break;
+        case 'aws.sqs':
+          await parseSQSEventAndCreateAlarms(event);
+          break;
 
-          case 'aws.tag':
-            // add ec2 tag events to another array for processing.
-            if (
-              (event.detail.service === 'ec2' ||
-                event.detail.service === 'aws.ec2') &&
-              event.detail['resource-type'] === 'instance'
-            ) {
-              ec2TagEvents.push(event);
-            } else {
-              await routeTagEvent(event);
-            }
-            break;
+        case 'aws.tag':
+          // add ec2 tag events to another array for processing.
+          if (
+            (event.detail.service === 'ec2' ||
+              event.detail.service === 'aws.ec2') &&
+            event.detail['resource-type'] === 'instance'
+          ) {
+            ec2TagEvents.push(event);
+          } else {
+            await routeTagEvent(event);
+          }
+          break;
 
-          default:
-            log.warn().msg(`Unhandled event source: ${event.source}`);
-            break;
-        }
+        default:
+          log.warn().msg(`Unhandled event source: ${event.source}`);
+          break;
       }
-
-      // If there were EC2 events after all iterations of the event records from the for loop, process them
-      if (ec2Events.length > 0) {
-        await processEC2Event(ec2Events);
-      }
-
-      // If there were EC2 tag events after all iterations of the event records from the for loop, process them
-      if (ec2TagEvents.length > 0) {
-        await processEC2TagEvent(ec2TagEvents);
-      }
-
-      // Else statement from initial if statement at the beginning of function.
-    } else {
-      log.warn().msg('No Records found in event');
+    } catch (error) {
+      log.error().err(error).msg('Error processing event');
+      batchItemFailures.push({itemIdentifier: record.messageId});
     }
-  } catch (error) {
-    log.error().err(error).msg('Error processing event');
-    throw error;
+  }
+
+  // If there were EC2 events after all iterations of the event records from the for loop, process them
+  if (ec2Events.length > 0) {
+    await processEC2Event(ec2Events);
+  }
+
+  // If there were EC2 tag events after all iterations of the event records from the for loop, process them
+  if (ec2TagEvents.length > 0) {
+    await processEC2TagEvent(ec2TagEvents);
+  }
+
+  if (batchItemFailures.length > 0) {
+    log.error().msg('Batch item failures found');
+    return {
+      batchItemFailures: batchItemFailures,
+    };
   }
 };
