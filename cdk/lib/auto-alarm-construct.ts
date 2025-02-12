@@ -296,6 +296,7 @@ export class AutoAlarmConstruct extends Construct {
         new SqsEventSource(reAlarmConsumerQueue, {
           batchSize: 10,
           maxBatchingWindow: Duration.seconds(30),
+          reportBatchItemFailures: true,
         }),
       );
 
@@ -303,6 +304,7 @@ export class AutoAlarmConstruct extends Construct {
         new SqsEventSource(reAlarmEventRuleQueue, {
           batchSize: 10,
           maxBatchingWindow: Duration.seconds(30),
+          reportBatchItemFailures: true,
         }),
       );
 
@@ -457,6 +459,15 @@ export class AutoAlarmConstruct extends Construct {
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: ['ec2:DescribeTransitGateways'],
+        resources: ['*'],
+      }),
+    );
+
+    // Attach policies for RDS
+    mainFunctionExecutionRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['rds:DescribeDBInstances', 'rds:ListTagsForResource'],
         resources: ['*'],
       }),
     );
@@ -898,6 +909,51 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes CloudFront tag events to AutoAlarm',
     });
     cloudFrontTagRule.addTarget(
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
+    );
+
+    // Rule for RDS events
+    const rdsRule = new Rule(this, 'RDSRule', {
+      eventPattern: {
+        source: ['aws.rds'],
+        detailType: ['AWS API Call via CloudTrail'],
+        detail: {
+          eventSource: ['rds.amazonaws.com'],
+          eventName: ['CreateDBInstance', 'DeleteDBInstance'],
+        },
+      },
+      description: 'Routes RDS events to AutoAlarm',
+    });
+    rdsRule.addTarget(
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
+    );
+
+    // Rule for RDS tag changes
+    const rdsTagRule = new Rule(this, 'RDSTagRule', {
+      eventPattern: {
+        source: ['aws.tag'],
+        detailType: ['Tag Change on Resource'],
+        detail: {
+          'service': ['rds'],
+          'resource-type': ['db-instance'],
+          'changed-tag-keys': [
+            'autoalarm:enabled',
+            'autoalarm:cpu',
+            'autoalarm:cpu-anomaly',
+            'autoalarm:write-latency',
+            'autoalarm:write-latency-anomaly',
+            'autoalarm:read-latency',
+            'autoalarm:read-latency-anomaly',
+            'autoalarm:freeable-memory',
+            'autoalarm:freeable-memory-anomaly',
+            'autoalarm:db-connections',
+            'autoalarm:db-connections-anomaly',
+          ],
+        },
+      },
+      description: 'Routes RDS tag events to AutoAlarm',
+    });
+    rdsTagRule.addTarget(
       new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
     );
   }

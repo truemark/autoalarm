@@ -16,6 +16,7 @@ import {parseVpnEventAndCreateAlarms} from './vpn-modules.mjs';
 import {parseR53ResolverEventAndCreateAlarms} from './route53-resolver-modules.mjs';
 import {parseTransitGatewayEventAndCreateAlarms} from './transit-gateway-modules.mjs';
 import {parseCloudFrontEventAndCreateAlarms} from './cloudfront-modules.mjs';
+import {parseRDSEventAndCreateAlarms} from './rds-modules.mjs';
 import {EC2AlarmManagerArray} from './types.mjs';
 
 // Initialize logging
@@ -188,6 +189,10 @@ async function routeTagEvent(event: any) {
       await parseCloudFrontEventAndCreateAlarms(event);
       break;
 
+    case 'rds':
+      await parseRDSEventAndCreateAlarms(event);
+      break;
+
     default:
       log
         .warn()
@@ -268,6 +273,10 @@ export const handler: Handler = async (event: any): Promise<void> => {
 
           case 'aws.opensearch':
             await parseOSEventAndCreateAlarms(event);
+            break;
+
+          case 'aws.rds':
+            await parseRDSEventAndCreateAlarms(event);
             break;
 
           case 'aws.route53resolver':
