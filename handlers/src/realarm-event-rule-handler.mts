@@ -132,7 +132,6 @@ async function createEventBridgeRule(
       }),
     );
 
-    // TODO: Use consumer sqs queue as target instead of lambda
     // Then add the target
     await eventbridge.send(
       new PutTargetsCommand({
