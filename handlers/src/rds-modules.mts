@@ -151,17 +151,17 @@ async function checkAndManageRDSStatusAlarms(
         );
     }
   }
-// Delete alarms that are not in the alarmsToKeep set
+  // Delete alarms that are not in the alarmsToKeep set
   const existingAlarms = await getCWAlarmsForInstance('RDS', dbInstanceId);
 
-// Log the full structure of retrieved alarms for debugging
+  // Log the full structure of retrieved alarms for debugging
   log
     .info()
     .str('function', 'checkAndManageRDSStatusAlarms')
     .obj('raw existing alarms', existingAlarms)
     .msg('Fetched existing alarms before filtering');
 
-// Log the expected pattern
+  // Log the expected pattern
   const expectedPattern = `AutoAlarm-RDS-${dbInstanceId}`;
   log
     .info()
@@ -169,7 +169,7 @@ async function checkAndManageRDSStatusAlarms(
     .str('expected alarm pattern', expectedPattern)
     .msg('Verifying alarms against expected naming pattern');
 
-// Check and log if alarms match expected pattern
+  // Check and log if alarms match expected pattern
   existingAlarms.forEach((alarm) => {
     const matchesPattern = alarm.includes(expectedPattern);
     log
@@ -180,11 +180,10 @@ async function checkAndManageRDSStatusAlarms(
       .msg('Evaluating alarm name match');
   });
 
-// Filter alarms that need deletion
+  // Filter alarms that need deletion
   const alarmsToDelete = existingAlarms.filter(
     (alarm) => !alarmsToKeep.has(alarm),
   );
-
 
   log
     .info()
@@ -203,7 +202,6 @@ async function checkAndManageRDSStatusAlarms(
     .str('function', 'checkAndManageRDSStatusAlarms')
     .str('dbInstanceId', dbInstanceId)
     .msg('Finished alarm management process');
-
 }
 
 export async function manageInactiveRDSAlarms(
@@ -245,7 +243,8 @@ export async function parseRDSEventAndCreateAlarms(
 
   switch (event['detail-type']) {
     case 'Tag Change on Resource':
-      dbInstanceId = event.resources[0];
+      dbInstanceArn = event.detail.requestParameters?.resourceName;
+      dbInstanceId = extractRDSInstanceIdFromArn(dbInstanceArn);
       eventType = 'TagChange';
       tags = event.detail.tags || {};
       log
@@ -255,42 +254,26 @@ export async function parseRDSEventAndCreateAlarms(
         .str('dbInstanceId', dbInstanceId)
         .str('changedTags', JSON.stringify(event.detail['changed-tag-keys']))
         .msg('Processing Tag Change event');
+      if (dbInstanceId) {
+        tags = await fetchRDSTags(dbInstanceId);
+        log
+          .info()
+          .str('function', 'parseRDSEventAndCreateAlarms')
+          .str('queueUrl', dbInstanceId)
+          .str('tags', JSON.stringify(tags))
+          .msg('Fetched tags for new TagChange event');
+      } else {
+        log
+          .error()
+          .str('function', 'parseRDSEventAndCreateAlarms')
+          .str('eventType', 'TagChance')
+          .msg('dbInstanceId not found in AddTagsToResource event');
+        throw new Error('dbInstanceId not found in AddTagsToResource event');
+      }
       break;
 
     case 'AWS API Call via CloudTrail':
       switch (event.detail.eventName) {
-        case 'AddTagsToResource':
-          dbInstanceArn = event.detail.requestParameters?.resourceName;
-          dbInstanceId = extractRDSInstanceIdFromArn(dbInstanceArn);
-          eventType = 'TagChange';
-          log
-            .info()
-            .str('function', 'parseRDSEventAndCreateAlarms')
-            .str('eventType', 'TagChange')
-            .str('dbInstanceArn', dbInstanceArn)
-            .str('dbInstanceId', dbInstanceId)
-            .str('requestId', event.detail.requestID)
-            .msg('Processing TagChange event');
-          if (dbInstanceId) {
-            tags = await fetchRDSTags(dbInstanceId);
-            log
-              .info()
-              .str('function', 'parseRDSEventAndCreateAlarms')
-              .str('queueUrl', dbInstanceId)
-              .str('tags', JSON.stringify(tags))
-              .msg('Fetched tags for new TagChange event');
-          } else {
-            log
-              .error()
-              .str('function', 'parseRDSEventAndCreateAlarms')
-              .str('eventType', 'TagChance')
-              .msg('dbInstanceId not found in AddTagsToResource event');
-            throw new Error(
-              'dbInstanceId not found in AddTagsToResource event',
-            );
-          }
-          break;
-
         case 'CreateDBInstance':
           dbInstanceId = event.detail.responseElements?.dbInstanceIdentifier;
           eventType = 'Create';

@@ -3,6 +3,7 @@ import {
   SQSEvent,
   SQSBatchResponse,
   SQSBatchItemFailure,
+  SQSRecord,
 } from 'aws-lambda';
 import * as logging from '@nr1e/logging';
 import {
@@ -223,6 +224,7 @@ export const handler: Handler = async (
    * Create batch item failures array to store any failed items from the batch.
    */
   const batchItemFailures: SQSBatchItemFailure[] = [];
+  const batchItemBodies: SQSRecord[] = [];
 
   if (!event.Records) {
     log.warn().msg('No Records found in event');
@@ -237,6 +239,7 @@ export const handler: Handler = async (
         .str('messageId', record.messageId)
         .msg('Error message found in record body');
       batchItemFailures.push({itemIdentifier: record.messageId});
+      batchItemBodies.push(record);
       continue;
     }
     // Parse the body of the SQS message
@@ -288,7 +291,11 @@ export const handler: Handler = async (
           ) {
             await parseTGEventAndCreateAlarms(event);
           } else {
-            log.warn().msg('Unhandled event name for aws.elasticloadbalancing');
+            log
+              .error()
+              .msg('Unhandled event name for aws.elasticloadbalancing');
+            batchItemFailures.push({itemIdentifier: record.messageId});
+            batchItemBodies.push(record);
           }
           break;
 
@@ -328,6 +335,7 @@ export const handler: Handler = async (
     } catch (error) {
       log.error().err(error).msg('Error processing event');
       batchItemFailures.push({itemIdentifier: record.messageId});
+      batchItemBodies.push(record);
     }
   }
 
@@ -343,6 +351,10 @@ export const handler: Handler = async (
 
   if (batchItemFailures.length > 0) {
     log.error().msg('Batch item failures found');
+    log
+      .error()
+      .obj('batchItemBodies', batchItemBodies)
+      .msg('Batch item bodies');
     return {
       batchItemFailures: batchItemFailures,
     };
