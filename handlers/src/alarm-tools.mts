@@ -603,6 +603,8 @@ export async function getCWAlarmsForInstance(
     const describeAlarmsCommand = new DescribeAlarmsCommand({
       NextToken: nextToken,
     });
+
+
     const describeAlarmsResponse = await cloudWatchClient.send(
       describeAlarmsCommand,
     );

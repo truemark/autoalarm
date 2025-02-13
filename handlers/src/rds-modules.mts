@@ -151,8 +151,36 @@ async function checkAndManageRDSStatusAlarms(
         );
     }
   }
-  // Delete alarms that are not in the alarmsToKeep set
+// Delete alarms that are not in the alarmsToKeep set
   const existingAlarms = await getCWAlarmsForInstance('RDS', dbInstanceId);
+
+// Log the full structure of retrieved alarms for debugging
+  log
+    .info()
+    .str('function', 'checkAndManageRDSStatusAlarms')
+    .obj('raw existing alarms', existingAlarms)
+    .msg('Fetched existing alarms before filtering');
+
+// Log the expected pattern
+  const expectedPattern = `AutoAlarm-RDS-${dbInstanceId}`;
+  log
+    .info()
+    .str('function', 'checkAndManageRDSStatusAlarms')
+    .str('expected alarm pattern', expectedPattern)
+    .msg('Verifying alarms against expected naming pattern');
+
+// Check and log if alarms match expected pattern
+  existingAlarms.forEach((alarm) => {
+    const matchesPattern = alarm.includes(expectedPattern);
+    log
+      .info()
+      .str('function', 'checkAndManageRDSStatusAlarms')
+      .str('alarm name', alarm)
+      .bool('matches expected pattern', matchesPattern)
+      .msg('Evaluating alarm name match');
+  });
+
+// Filter alarms that need deletion
   const alarmsToDelete = existingAlarms.filter(
     (alarm) => !alarmsToKeep.has(alarm),
   );
@@ -162,6 +190,7 @@ async function checkAndManageRDSStatusAlarms(
     .str('function', 'checkAndManageRDSStatusAlarms')
     .obj('alarms to delete', alarmsToDelete)
     .msg('Deleting alarms that are no longer needed');
+
   await cloudWatchClient.send(
     new DeleteAlarmsCommand({
       AlarmNames: [...alarmsToDelete],
@@ -173,6 +202,7 @@ async function checkAndManageRDSStatusAlarms(
     .str('function', 'checkAndManageRDSStatusAlarms')
     .str('dbInstanceId', dbInstanceId)
     .msg('Finished alarm management process');
+
 }
 
 export async function manageInactiveRDSAlarms(
