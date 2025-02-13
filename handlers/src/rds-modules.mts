@@ -152,7 +152,7 @@ async function checkAndManageRDSStatusAlarms(
     }
   }
   // Delete alarms that are not in the alarmsToKeep set
-  const existingAlarms = await getCWAlarmsForInstance('RDS', dbInstanceId);
+  const existingAlarms = await getCWAlarmsForInstance(dbInstanceId, 'RDS');
   const alarmsToDelete = existingAlarms.filter(
     (alarm) => !alarmsToKeep.has(alarm),
   );
