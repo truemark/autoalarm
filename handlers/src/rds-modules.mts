@@ -259,7 +259,7 @@ export async function parseRDSEventAndCreateAlarms(
         log
           .info()
           .str('function', 'parseRDSEventAndCreateAlarms')
-          .str('queueUrl', dbInstanceId)
+          .str('DB Instance ID', dbInstanceId)
           .str('tags', JSON.stringify(tags))
           .msg('Fetched tags for new TagChange event');
       } else {
