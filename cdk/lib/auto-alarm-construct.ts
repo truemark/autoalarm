@@ -922,7 +922,7 @@ export class AutoAlarmConstruct extends Construct {
           eventName: [
             'CreateDBInstance',
             'DeleteDBInstance',
-            'AddTagsToResource', //TODO: Should we remove this? Need to test and see if we're getting duplicate calls
+            //'AddTagsToResource', //TODO: Should we remove this? Need to test and see if we're getting duplicate calls
           ],
         },
       },
@@ -939,7 +939,7 @@ export class AutoAlarmConstruct extends Construct {
         detailType: ['Tag Change on Resource'],
         detail: {
           'service': ['rds'],
-          'resource-type': ['db-instance'],
+          'resource-type': ['db'],
           'changed-tag-keys': [
             'autoalarm:enabled',
             'autoalarm:cpu',
