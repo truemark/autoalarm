@@ -933,6 +933,7 @@ export class AutoAlarmConstruct extends Construct {
     );
 
     // Rule for RDS tag changes
+
     const rdsTagRule = new Rule(this, 'RDSTagRule', {
       eventPattern: {
         source: ['aws.tag'],
