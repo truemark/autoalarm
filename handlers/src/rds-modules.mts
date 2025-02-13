@@ -185,6 +185,7 @@ async function checkAndManageRDSStatusAlarms(
     (alarm) => !alarmsToKeep.has(alarm),
   );
 
+
   log
     .info()
     .str('function', 'checkAndManageRDSStatusAlarms')
