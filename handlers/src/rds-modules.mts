@@ -245,8 +245,8 @@ function extractRDSInstanceArnFromEvent(event: any): string {
     dbInstanceArn = event.detail.requestParameters.resourceName;
   }
 
-  if (event.body.resources[0]) {
-    dbInstanceArn = event.body.resources[0];
+  if (event.resources?.[0]) {
+    dbInstanceArn = event.resources[0];
   }
 
   return dbInstanceArn;
