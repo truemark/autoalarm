@@ -243,16 +243,25 @@ function extractRDSInstanceArnFromEvent(event: any): string | Error {
   log
     .debug()
     .str('function', 'extractRDSInstanceArnFromEvent')
-    .str('event', event)
+    .obj('event', event) // use obj() to log the structure
+    .str('typed event definition', `${typeof event}`)
     .msg('Extracting RDS instance ARN from event');
 
   let dbInstanceArn = '';
-  if (event.detail.requestParameters?.resourceName) {
+
+  // Some events might put ARN in detail.requestParameters.resourceName
+  if (event.detail?.requestParameters?.resourceName) {
     dbInstanceArn = event.detail.requestParameters.resourceName;
   }
 
+  // Some events have resources[] at the top level
   if (event.resources?.[0]) {
     dbInstanceArn = event.resources[0];
+  }
+
+  // Others have resources[] nested under event.body
+  if (event.body?.resources?.[0]) {
+    dbInstanceArn = event.body.resources[0];
   }
 
   return dbInstanceArn === ''
