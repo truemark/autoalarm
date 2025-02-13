@@ -239,7 +239,13 @@ function extractRDSInstanceIdFromArn(arn: string): string {
  * @param event - The event payload from which to extract the ARN.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function extractRDSInstanceArnFromEvent(event: any): string {
+function extractRDSInstanceArnFromEvent(event: any): string | Error {
+  log
+    .debug()
+    .str('function', 'extractRDSInstanceArnFromEvent')
+    .str('event', event)
+    .msg('Extracting RDS instance ARN from event');
+
   let dbInstanceArn = '';
   if (event.detail.requestParameters?.resourceName) {
     dbInstanceArn = event.detail.requestParameters.resourceName;
@@ -249,7 +255,9 @@ function extractRDSInstanceArnFromEvent(event: any): string {
     dbInstanceArn = event.resources[0];
   }
 
-  return dbInstanceArn;
+  return dbInstanceArn === ''
+    ? new Error('dbInstanceArn not found')
+    : dbInstanceArn;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -263,13 +271,21 @@ export async function parseRDSEventAndCreateAlarms(
   tags: Record<string, string>;
 } | void> {
   let dbInstanceId: string = '';
-  let dbInstanceArn: string = '';
+  let dbInstanceArn: string | Error = '';
   let eventType: string = '';
   let tags: Record<string, string> = {};
 
   switch (event['detail-type']) {
     case 'Tag Change on Resource':
       dbInstanceArn = extractRDSInstanceArnFromEvent(event);
+      if (!dbInstanceArn || dbInstanceArn instanceof Error) {
+        log
+          .error()
+          .str('function', 'parseRDSEventAndCreateAlarms')
+          .str('eventType', 'TagChange')
+          .msg('dbInstanceArn not found in Tag Change event');
+        throw new Error('dbInstanceArn not found in Tag Change event');
+      }
       dbInstanceId = extractRDSInstanceIdFromArn(dbInstanceArn);
       eventType = 'TagChange';
       tags = event.detail.tags || {};
@@ -280,6 +296,7 @@ export async function parseRDSEventAndCreateAlarms(
         .str('dbInstanceId', dbInstanceId)
         .str('changedTags', JSON.stringify(event.detail['changed-tag-keys']))
         .msg('Processing Tag Change event');
+
       if (dbInstanceId) {
         tags = await fetchRDSTags(dbInstanceId);
         log
@@ -302,6 +319,14 @@ export async function parseRDSEventAndCreateAlarms(
       switch (event.detail.eventName) {
         case 'CreateDBInstance':
           dbInstanceArn = extractRDSInstanceArnFromEvent(event);
+          if (!dbInstanceArn || dbInstanceArn instanceof Error) {
+            log
+              .error()
+              .str('function', 'parseRDSEventAndCreateAlarms')
+              .str('eventType', 'TagChange')
+              .msg('dbInstanceArn not found in Tag Change event');
+            throw new Error('dbInstanceArn not found in Tag Change event');
+          }
           dbInstanceId = extractRDSInstanceIdFromArn(dbInstanceArn);
           eventType = 'Create';
           log
