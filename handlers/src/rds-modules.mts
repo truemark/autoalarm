@@ -219,11 +219,37 @@ export async function manageInactiveRDSAlarms(
 }
 
 // Function to extract dbInstanceId from ARN
-
 function extractRDSInstanceIdFromArn(arn: string): string {
   const regex = /db[:/]([^:/]+)$/;
   const match = arn.match(regex);
+
+  // log the arn and the extracted dbInstanceId
+  log
+    .info()
+    .str('function', 'extractRDSInstanceIdFromArn')
+    .str('arn', arn)
+    .str('dbInstanceId', match ? match[1] : 'not found')
+    .msg('Extracted dbInstanceId from ARN');
+
   return match ? match[1] : '';
+}
+
+/**
+ * Helper function to correctly identify ARN from event payload.
+ * @param event - The event payload from which to extract the ARN.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractRDSInstanceArnFromEvent(event: any): string {
+  let dbInstanceArn = '';
+  if (event.detail.requestParameters?.resourceName) {
+    dbInstanceArn = event.detail.requestParameters.resourceName;
+  }
+
+  if (event.body.resources[0]) {
+    dbInstanceArn = event.body.resources[0];
+  }
+
+  return dbInstanceArn;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -243,7 +269,7 @@ export async function parseRDSEventAndCreateAlarms(
 
   switch (event['detail-type']) {
     case 'Tag Change on Resource':
-      dbInstanceArn = event.detail.requestParameters?.resourceName;
+      dbInstanceArn = extractRDSInstanceArnFromEvent(event);
       dbInstanceId = extractRDSInstanceIdFromArn(dbInstanceArn);
       eventType = 'TagChange';
       tags = event.detail.tags || {};
@@ -275,7 +301,8 @@ export async function parseRDSEventAndCreateAlarms(
     case 'AWS API Call via CloudTrail':
       switch (event.detail.eventName) {
         case 'CreateDBInstance':
-          dbInstanceId = event.detail.responseElements?.dbInstanceIdentifier;
+          dbInstanceArn = extractRDSInstanceArnFromEvent(event);
+          dbInstanceId = extractRDSInstanceIdFromArn(dbInstanceArn);
           eventType = 'Create';
           log
             .info()

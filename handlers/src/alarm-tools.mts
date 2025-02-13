@@ -657,6 +657,6 @@ export async function getCWAlarmsForInstance(
       .err(error)
       .str(`${serviceName}`, serviceIdentifier)
       .msg('Failed to fetch alarms for instance');
-    return activeAutoAlarms; // Returning accumulated alarms even in case of an error
+    throw new Error(`Failed to fetch alarms for instance: ${error as string}`);
   }
 }

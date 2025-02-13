@@ -272,10 +272,12 @@ export const handler: Handler = async (
               break;
             default:
               log
-                .warn()
+                .error()
                 .msg(
                   `Unhandled resource type for aws.ec2: ${event.detail.resourceType}`,
                 );
+              batchItemFailures.push({itemIdentifier: record.messageId});
+              batchItemBodies.push(record);
               break;
           }
           break;
@@ -330,6 +332,8 @@ export const handler: Handler = async (
 
         default:
           log.warn().msg(`Unhandled event source: ${event.source}`);
+          batchItemFailures.push({itemIdentifier: record.messageId});
+          batchItemBodies.push(record);
           break;
       }
     } catch (error) {
