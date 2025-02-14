@@ -235,42 +235,57 @@ function extractRDSInstanceIdFromArn(arn: string): string {
 }
 
 /**
- * Find RDS ARN in a JSON object
- * @param {Record<string, any>} jsonObj - The JSON object to search through
- * @returns {string} The RDS ARN if found, empty string otherwise
+ * Searches the provided object for the first occurrence of an RDS ARN.
+ * Serializes the object to a JSON string, looks for the substring "arn:aws:rds",
+ * and then extracts everything up to the next quotation mark.
+ * Logs an error and returns an empty string if no valid RDS ARN can be found.
+ *
+ * @param {Record<string, any>} eventObj - A JSON-serializable object to search for an RDS ARN.
+ * @returns {string} The extracted RDS ARN, or an empty string if not found.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function findRDSArn(jsonObj: Record<string, any>): string {
-  // If it's an object, search all values
-  for (const value of Object.values(jsonObj)) {
-    // If value is a string and contains RDS ARN, return it
-    if (typeof value! === 'string' && value.includes('arn:aws:rds')) {
-      return value;
-    }
+function findRDSArn(eventObj: Record<string, any>): string {
+  const eventString = JSON.stringify(eventObj);
 
-    // If value is an array, search each element
-    if (Array.isArray(value)) {
-      for (const element of value) {
-        if (typeof element! === 'string' && element.includes('arn:aws:rds')) {
-          return element;
-        }
-      }
-    }
-
-    // If value is an object and not null, recurse
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
-      const arn = findRDSArn(value);
-      if (arn) return arn;
-    }
+  // 1) Find where the ARN starts.
+  const startIndex = eventString.indexOf('arn:aws:rds');
+  if (startIndex === -1) {
+    log
+      .error()
+      .str('function', 'findRDSArn')
+      .obj('eventObj', eventObj)
+      .msg('No RDS ARN found in event');
+    return '';
   }
 
-  return '';
+  // 2) Find the next quote after that.
+  const endIndex = eventString.indexOf('"', startIndex);
+  if (endIndex === -1) {
+    log
+      .error()
+      .str('function', 'findRDSArn')
+      .obj('eventObj', eventObj)
+      .msg('No ending quote found for RDS ARN');
+    return '';
+  }
+
+  // 3) Extract the ARN
+  const arn = eventString.substring(startIndex, endIndex);
+
+  log
+    .info()
+    .str('function', 'findRDSArn')
+    .str('arn', arn)
+    .str('startIndex', startIndex.toString())
+    .str('endIndex', endIndex.toString())
+    .msg('Extracted RDS ARN');
+
+  return arn;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function parseRDSEventAndCreateAlarms(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  event: any,
+  event: Record<string, any>,
 ): Promise<{
   dbInstanceId: string;
   dbInstanceArn: string;
