@@ -4,9 +4,9 @@
 
 ### Changes:
 
-- ReAlarm now uses a single dedicated queue for the consumer function and another SQS queue for the relarm event rule function.
-- Added and enhancement where reAlaarm now reports batch item failures individually but continues processing the rest of the batch.
-- restreucture of construct clean up reAlarm implementation.
+- ReAlarm now uses a single dedicated queue for the consumer function and another SQS queue for the reAlarm event rule function.
+- 
+- restructure of construct clean up reAlarm implementation.
 
 ### Fixed:
 
