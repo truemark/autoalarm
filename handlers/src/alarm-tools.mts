@@ -589,9 +589,8 @@ export async function handleStaticAlarms(
  * Retrieves all active CloudWatch auto alarms for a given instance and returns them as an array.
  * This array is typically used when the deleteCWAlarm function is called from within service module files.
  *
- * @param {string} serviceName - Service name in lowercase (e.g., ec2, ecs, eks, rds)
+ * @param {string} serviceName - Service name (e.g., ec2, ecs, eks, rds)
  * @param {string} serviceIdentifier - Instance identifier used by CloudWatch to pull alarm information
- * @param {string} [nextToken] - Optional pagination token for subsequent requests
  * @returns {Promise<string[]>} Array of alarm names to be used for deletion
  * @throws {Error} If fetching alarms fails
  *
@@ -604,8 +603,8 @@ export async function handleStaticAlarms(
 export async function getCWAlarmsForInstance(
   serviceName: string,
   serviceIdentifier: string,
-  nextToken?: string,
 ): Promise<string[]> {
+  let nextToken: string | undefined = undefined;
   const activeAutoAlarms: MetricAlarm[] = [];
   let hasMorePages = true;
 
@@ -619,11 +618,12 @@ export async function getCWAlarmsForInstance(
 
     // Keep fetching until no more pages
     while (hasMorePages) {
-      const describeAlarmsCommand = new DescribeAlarmsCommand({
-        AlarmNamePrefix: `AutoAlarm-${serviceName}-${serviceIdentifier}`,
-        NextToken: nextToken,
-        MaxRecords: 100,
-      });
+      const describeAlarmsCommand: DescribeAlarmsCommand =
+        new DescribeAlarmsCommand({
+          AlarmNamePrefix: `AutoAlarm-${serviceName.toUpperCase()}-${serviceIdentifier}`,
+          NextToken: nextToken,
+          MaxRecords: 100,
+        });
 
       const describeAlarmsResponse = await cloudWatchClient.send(
         describeAlarmsCommand,
@@ -641,7 +641,14 @@ export async function getCWAlarmsForInstance(
       nextToken = describeAlarmsResponse.NextToken;
     }
 
-    return activeAutoAlarms.map((alarm) => alarm.AlarmName || '');
+    const alarms = activeAutoAlarms.map((alarm) => alarm.AlarmName || '');
+    log
+      .info()
+      .str('function', 'getCWAlarmsForInstance')
+      .str(`${serviceName}`, serviceIdentifier)
+      .obj('alarms', alarms)
+      .msg('Fetched alarms for instance');
+    return alarms;
   } catch (error) {
     log
       .error()

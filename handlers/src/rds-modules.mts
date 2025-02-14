@@ -82,7 +82,7 @@ async function checkAndManageRDSStatusAlarms(
       .str('function', 'checkAndManageRDSStatusAlarms')
       .str('dbInstanceId', dbInstanceId)
       .msg('Alarm creation disabled by tag settings');
-    await deleteExistingAlarms('dbInstanceId', dbInstanceId);
+    await deleteExistingAlarms('RDS', dbInstanceId);
     return;
   }
 

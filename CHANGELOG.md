@@ -1,12 +1,18 @@
 # AutoAlarm Changelog
 
-## v1.7.6
+## v1.8.0
+
+### Added:
+- Added CW DB monitoring for individual DB instances in RDS.
 
 ### Changes:
 
 - ReAlarm now uses a single dedicated queue for the consumer function and another SQS queue for the reAlarm event rule function.
-- 
-- restructure of construct clean up reAlarm implementation.
+- CloudWatch Alarms are now evaluated in batches of 100 and filtered in the api call thus significantly reducing the number of API calls made to CloudWatch.
+- Batching of events now report individual failures in the batch rather than failing the entire batch and causing unnecessary retries.
+
+### Fixed:
+- Fixed a bug that caused excessive delay in AutoAlarm due to batch processing of triggers for both ReAlarm functionality and Alarm Management.
 
 ### Fixed:
 
