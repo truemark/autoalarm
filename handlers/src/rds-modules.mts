@@ -237,7 +237,7 @@ function extractRDSInstanceIdFromArn(arn: string): string {
 /**
  * Find RDS ARN in a JSON object
  * @param {Record<string, any>} jsonObj - The JSON object to search through
- * @returns {upstring} The RDS ARN if found, empty string otherwise
+ * @returns {string} The RDS ARN if found, empty string otherwise
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function findRDSArn(jsonObj: Record<string, any>): string {
