@@ -243,7 +243,7 @@ function extractRDSInstanceArnFromEvent(event: any): string | Error {
   log
     .debug()
     .str('function', 'extractRDSInstanceArnFromEvent')
-    .obj('event', event) // use obj() to log the structure
+    //.obj('event', event) // use obj() to log the structure
     .str('typed event definition', `${typeof event}`)
     .msg('Extracting RDS instance ARN from event');
 
