@@ -377,7 +377,7 @@ threshold values are not provided in the tag value when setting the tag on the r
 #### Application Load Balancer (ALB)
 
 | Tag                               | Default Value                                          | Enabled By Default | Standard CloudWatch Metrics |
-|-----------------------------------|--------------------------------------------------------|--------------------|-----------------------------|
+| --------------------------------- | ------------------------------------------------------ | ------------------ | --------------------------- |
 | `autoalarm:4xx-count`             | "-/-/60/2/Sum/2/GreaterThanThreshold/ignore"           | No                 | Yes                         |
 | `autoalarm:4xx-count-anomaly`     | "2/5/300/1/Average/1/GreaterThanUpperThreshold/ignore" | No                 | Yes                         |
 | `autoalarm:5xx-count`             | "-/-/60/2/Sum/2/GreaterThanThreshold/ignore"           | No                 | Yes                         |
@@ -388,7 +388,7 @@ threshold values are not provided in the tag value when setting the tag on the r
 #### CloudFront
 
 | Tag                            | Default Value                                          | Enabled By Default | Standard CloudWatch Metrics |
-|--------------------------------|--------------------------------------------------------|--------------------|-----------------------------|
+| ------------------------------ | ------------------------------------------------------ | ------------------ | --------------------------- |
 | `autoalarm:4xx-errors`         | "100/300/300/1/Sum/1/GreaterThanThreshold/ignore"      | No                 | Yes                         |
 | `autoalarm:4xx-errors-anomaly` | "-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore" | No                 | Yes                         |
 | `autoalarm:5xx-errors`         | "10/50/300/1/Sum/1/GreaterThanThreshold/ignore"        | Yes                | Yes                         |
@@ -399,7 +399,7 @@ threshold values are not provided in the tag value when setting the tag on the r
 Some Metrics require the CloudWatch Agent to be installed on the host.
 
 | Tag                         | Default Value                                          | Enabled By Default | Standard CloudWatch Metrics                    |
-|-----------------------------|--------------------------------------------------------|--------------------|------------------------------------------------|
+| --------------------------- | ------------------------------------------------------ | ------------------ | ---------------------------------------------- |
 | `autoalarm:cpu`             | "95/98/60/5/Maximum/5/GreaterThanThreshold/ignore"     | Yes                | Yes                                            |
 | `autoalarm:cpu-anomaly`     | "2/5/60/5/Average/5/GreaterThanUpperThreshold/ignore"  | No                 | Yes                                            |
 | `autoalarm:memory`          | "95/98/60/10/Maximum/10/GreaterThanThreshold/ignore"   | Yes                | No (Requires CloudWatch Agent Install on Host) |
@@ -410,7 +410,7 @@ Some Metrics require the CloudWatch Agent to be installed on the host.
 #### OpenSearch
 
 | Tag                                     | Default Value                                          | Enabled By Default | Standard CloudWatch Metrics |
-|-----------------------------------------|--------------------------------------------------------|--------------------|-----------------------------|
+| --------------------------------------- | ------------------------------------------------------ | ------------------ | --------------------------- |
 | `autoalarm:4xx-errors`                  | "100/300/300/1/Sum/1/GreaterThanThreshold/ignore"      | No                 | Yes                         |
 | `autoalarm:4xx-errors-anomaly`          | "-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore" | No                 | Yes                         |
 | `autoalarm:5xx-errors`                  | "10/50/300/1/Sum/1/GreaterThanThreshold/ignore"        | Yes                | Yes                         |
@@ -438,7 +438,7 @@ Some Metrics require the CloudWatch Agent to be installed on the host.
 #### Route53Resolver
 
 | Tag                                       | Default Value                                          | Enabled By Default | Standard CloudWatch Metrics |
-|-------------------------------------------|--------------------------------------------------------|--------------------|-----------------------------|
+| ----------------------------------------- | ------------------------------------------------------ | ------------------ | --------------------------- |
 | `autoalarm:inbound-query-volume`          | "-/-/300/1/Sum/1/GreaterThanThreshold/ignore"          | No                 | Yes                         |
 | `autoalarm:inbound-query-volume-anomaly`  | "-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore" | No                 | Yes                         |
 | `autoalarm:outbound-query-volume`         | "-/-/300/1/Sum/1/GreaterThanThreshold/ignore"          | No                 | Yes                         |
@@ -447,7 +447,7 @@ Some Metrics require the CloudWatch Agent to be installed on the host.
 #### SQS
 
 | Tag                                       | Default Value                                          | Enabled By Default | Standard CloudWatch Metrics |
-|-------------------------------------------|--------------------------------------------------------|--------------------|-----------------------------|
+| ----------------------------------------- | ------------------------------------------------------ | ------------------ | --------------------------- |
 | `autoalarm:age-of-oldest-message`         | "-/-/300/1/Maximum/1/GreaterThanThreshold/ignore"      | No                 | Yes                         |
 | `autoalarm:age-of-oldest-message-anomaly` | "-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore" | No                 | Yes                         |
 | `autoalarm:empty-receives`                | "-/-/300/1/Sum/1/GreaterThanThreshold/ignore"          | No                 | Yes                         |
@@ -468,7 +468,7 @@ Some Metrics require the CloudWatch Agent to be installed on the host.
 #### Target Groups (TG)
 
 | Tag                               | Default Value                                          | Enabled By Default | Standard CloudWatch Metrics |
-|-----------------------------------|--------------------------------------------------------|--------------------|-----------------------------|
+| --------------------------------- | ------------------------------------------------------ | ------------------ | --------------------------- |
 | `autoalarm:4xx-count`             | "-/-/60/2/Sum/1/GreaterThanThreshold/ignore"           | No                 | Yes                         |
 | `autoalarm:4xx-count-anomaly`     | "-/-/60/2/Average/1/GreaterThanUpperThreshold/ignore"  | No                 | Yes                         |
 | `autoalarm:5xx-count`             | "-/-/60/2/Sum/1/GreaterThanThreshold/ignore"           | No                 | Yes                         |
@@ -480,7 +480,7 @@ Some Metrics require the CloudWatch Agent to be installed on the host.
 #### Transit Gateway (TGW)
 
 | Tag                           | Default Value                                          | Enabled By Default | Standard CloudWatch Metrics |
-|-------------------------------|--------------------------------------------------------|--------------------|-----------------------------|
+| ----------------------------- | ------------------------------------------------------ | ------------------ | --------------------------- |
 | `autoalarm:bytes-in`          | "-/-/300/1/Maximum/1/GreaterThanThreshold/ignore"      | No                 | Yes                         |
 | `autoalarm:bytes-in-anomaly`  | "-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore" | No                 | Yes                         |
 | `autoalarm:bytes-out`         | "-/-/300/1/Sum/1/GreaterThanThreshold/ignore"          | No                 | Yes                         |
@@ -489,7 +489,7 @@ Some Metrics require the CloudWatch Agent to be installed on the host.
 #### VPN
 
 | Tag                              | Default Value                                       | Enabled By Default | Standard CloudWatch Metrics |
-|----------------------------------|-----------------------------------------------------|--------------------|-----------------------------|
+| -------------------------------- | --------------------------------------------------- | ------------------ | --------------------------- |
 | `autoalarm:tunnel-state`         | "0/0/300/1/Maximum/1/LessThanThreshold/ignore"      | No                 | Yes                         |
 | `autoalarm:tunnel-state-anomaly` | "-/-/300/1/Average/1/LessThanLowerThreshold/ignore" | No                 | Yes                         |
 
@@ -529,20 +529,19 @@ By default, the ReAlarm function is enabled. When ReAlarm is enabled, it runs on
 
 ReAlarm's behavior can be configured on a per alarm basis using tags.
 
--   **Customize ReAlarm Schedule**:
-    -   The ReAlarm schedule by default runs every 120 minutes.
-    -   ReAlarm can be customized to run at different intervals on a per-alarm basis by setting the `autoalarm:re-alarm-minutes`
-        tag to a whole number value.
-
+- **Customize ReAlarm Schedule**:
+    - The ReAlarm schedule by default runs every 120 minutes.
+    - ReAlarm can be customized to run at different intervals on a per-alarm basis by setting the `autoalarm:re-alarm-minutes`
+      tag to a whole number value.
 
 ### Customizing ReAlarm with Tags
 
 In addition to global controls, individual alarms can be excluded from being reset by ReAlarm. This is done using a specific tag:
 
--   **Tag to Exclude Alarms from ReAlarm**:
-    -   Alarms can be tagged with `autoalarm:re-alarm-enabled=false` to exclude them from the ReAlarm process.
-    -   When this tag is present on an alarm, ReAlarm will skip resetting it, regardless of its state.
-    -   This is useful for alarms that should be managed manually or have specific conditions that should not trigger ReAlarm.
+- **Tag to Exclude Alarms from ReAlarm**:
+    - Alarms can be tagged with `autoalarm:re-alarm-enabled=false` to exclude them from the ReAlarm process.
+    - When this tag is present on an alarm, ReAlarm will skip resetting it, regardless of its state.
+    - This is useful for alarms that should be managed manually or have specific conditions that should not trigger ReAlarm.
 
 #### Example:
 
