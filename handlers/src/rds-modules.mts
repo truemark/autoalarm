@@ -235,38 +235,36 @@ function extractRDSInstanceIdFromArn(arn: string): string {
 }
 
 /**
- * Helper function to correctly identify ARN from event payload.
- * @param event - The event payload from which to extract the ARN.
+ * Find RDS ARN in a JSON object
+ * @param {Record<string, any>} jsonObj - The JSON object to search through
+ * @returns {string} The RDS ARN if found, empty string otherwise
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function extractRDSInstanceArnFromEvent(event: any): string | Error {
-  log
-    .debug()
-    .str('function', 'extractRDSInstanceArnFromEvent')
-    //.obj('event', event) // use obj() to log the structure
-    .str('typed event definition', `${typeof event}`)
-    .msg('Extracting RDS instance ARN from event');
+function findRDSArn(jsonObj: Record<string, any>): string {
+  // If it's an object, search all values
+  for (const value of Object.values(jsonObj)) {
+    // If value is a string and contains RDS ARN, return it
+    if (typeof value === 'string' && value.includes('arn:aws:rds')) {
+      return value;
+    }
 
-  let dbInstanceArn = '';
+    // If value is an array, search each element
+    if (Array.isArray(value)) {
+      for (const element of value) {
+        if (typeof element! === 'string' && element.includes('arn:aws:rds')) {
+          return element;
+        }
+      }
+    }
 
-  // Some events might put ARN in detail.requestParameters.resourceName
-  if (event.detail?.requestParameters?.resourceName) {
-    dbInstanceArn = event.detail.requestParameters.resourceName;
+    // If value is an object and not null, recurse
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const arn = findRDSArn(value);
+      if (arn) return arn;
+    }
   }
 
-  // Some events have resources[] at the top level
-  if (event.resources?.[0]) {
-    dbInstanceArn = event.resources[0];
-  }
-
-  // Others have resources[] nested under event.body
-  if (event.body?.resources?.[0]) {
-    dbInstanceArn = event.body.resources[0];
-  }
-
-  return dbInstanceArn === ''
-    ? new Error('dbInstanceArn not found')
-    : dbInstanceArn;
+  return '';
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -286,14 +284,14 @@ export async function parseRDSEventAndCreateAlarms(
 
   switch (event['detail-type']) {
     case 'Tag Change on Resource':
-      dbInstanceArn = extractRDSInstanceArnFromEvent(event);
-      if (!dbInstanceArn || dbInstanceArn instanceof Error) {
+      dbInstanceArn = findRDSArn(event);
+      if (!dbInstanceArn) {
         log
           .error()
-          .str('function', 'parseRDSEventAndCreateAlarms')
-          .str('eventType', 'TagChange')
-          .msg('dbInstanceArn not found in Tag Change event');
-        throw new Error('dbInstanceArn not found in Tag Change event');
+          .str('function', 'extractRDSInstanceArnFromEvent')
+          .obj('event', event)
+          .msg('No RDS ARN found in event for tag change event');
+        throw new Error('No RDS ARN found in event');
       }
       dbInstanceId = extractRDSInstanceIdFromArn(dbInstanceArn);
       eventType = 'TagChange';
@@ -327,14 +325,16 @@ export async function parseRDSEventAndCreateAlarms(
     case 'AWS API Call via CloudTrail':
       switch (event.detail.eventName) {
         case 'CreateDBInstance':
-          dbInstanceArn = extractRDSInstanceArnFromEvent(event);
-          if (!dbInstanceArn || dbInstanceArn instanceof Error) {
+          dbInstanceArn = findRDSArn(event);
+          if (!dbInstanceArn) {
             log
               .error()
-              .str('function', 'parseRDSEventAndCreateAlarms')
-              .str('eventType', 'TagChange')
-              .msg('dbInstanceArn not found in Tag Change event');
-            throw new Error('dbInstanceArn not found in Tag Change event');
+              .str('function', 'extractRDSInstanceArnFromEvent')
+              .obj('event', event)
+              .msg('No RDS ARN found in event for tag change event');
+            throw new Error(
+              'No RDS ARN found in event for AWS API Call via CloudTrail event',
+            );
           }
           dbInstanceId = extractRDSInstanceIdFromArn(dbInstanceArn);
           eventType = 'Create';
