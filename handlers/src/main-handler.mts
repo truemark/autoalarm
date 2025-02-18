@@ -23,6 +23,7 @@ import {parseR53ResolverEventAndCreateAlarms} from './route53-resolver-modules.m
 import {parseTransitGatewayEventAndCreateAlarms} from './transit-gateway-modules.mjs';
 import {parseCloudFrontEventAndCreateAlarms} from './cloudfront-modules.mjs';
 import {parseRDSEventAndCreateAlarms} from './rds-modules.mjs';
+import {parseRDSClusterEventAndCreateAlarms} from './rds-cluster-modules.mjs';
 import {EC2AlarmManagerArray} from './types.mjs';
 
 // Initialize logging
@@ -196,7 +197,22 @@ async function routeTagEvent(event: any) {
       break;
 
     case 'rds':
-      await parseRDSEventAndCreateAlarms(event);
+      switch (resourceType) {
+        case 'db-instance':
+          await parseRDSEventAndCreateAlarms(event);
+          break;
+
+        case 'db-cluster':
+          await parseRDSClusterEventAndCreateAlarms(event);
+          break;
+
+        default:
+          log
+            .warn()
+            .str('function', 'routeTagEvent')
+            .msg(`Unhandled resource type for RDS: ${resourceType}`);
+          break;
+      }
       break;
 
     default:
@@ -306,7 +322,21 @@ export const handler: Handler = async (
           break;
 
         case 'aws.rds':
-          await parseRDSEventAndCreateAlarms(event);
+          if (
+            event.detail.eventName === 'CreateDBInstance' ||
+            event.detail.eventName === 'DeleteDBInstance'
+          ) {
+            await parseRDSEventAndCreateAlarms(event);
+          } else if (
+            event.detail.eventName === 'CreateDBCluster' ||
+            event.detail.eventName === 'DeleteDBCluster'
+          ) {
+            await parseRDSClusterEventAndCreateAlarms(event);
+          } else {
+            log.error().msg('Unhandled event name for aws.rds');
+            batchItemFailures.push({itemIdentifier: record.messageId});
+            batchItemBodies.push(record);
+          }
           break;
 
         case 'aws.route53resolver':

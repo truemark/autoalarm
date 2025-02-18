@@ -919,11 +919,7 @@ export class AutoAlarmConstruct extends Construct {
         detailType: ['AWS API Call via CloudTrail'],
         detail: {
           eventSource: ['rds.amazonaws.com'],
-          eventName: [
-            'CreateDBInstance',
-            'DeleteDBInstance',
-            //'AddTagsToResource', //TODO: Should we remove this? Need to test and see if we're getting duplicate calls
-          ],
+          eventName: ['CreateDBInstance', 'DeleteDBInstance'],
         },
       },
       description: 'Routes RDS events to AutoAlarm',
@@ -958,6 +954,51 @@ export class AutoAlarmConstruct extends Construct {
       description: 'Routes RDS tag events to AutoAlarm',
     });
     rdsTagRule.addTarget(
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
+    );
+
+    // Rule for RDS Cluster events
+    const rdsClusterRule = new Rule(this, 'RDSClusterRule', {
+      eventPattern: {
+        source: ['aws.rds'],
+        detailType: ['AWS API Call via CloudTrail'],
+        detail: {
+          eventSource: ['rds.amazonaws.com'],
+          eventName: ['CreateDBCluster', 'DeleteDBCluster'],
+        },
+      },
+      description: 'Routes RDS Cluster events to AutoAlarm',
+    });
+    rdsClusterRule.addTarget(
+      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
+    );
+
+    // Rule for RDS Cluster tag changes
+    const rdsClusterTagRule = new Rule(this, 'RDSClusterTagRule', {
+      eventPattern: {
+        source: ['aws.tag'],
+        detailType: ['Tag Change on Resource'],
+        detail: {
+          'service': ['rds'],
+          'resource-type': ['db'],
+          'changed-tag-keys': [
+            'autoalarm:enabled',
+            'autoalarm:cpu',
+            'autoalarm:cpu-anomaly',
+            'autoalarm:write-latency',
+            'autoalarm:write-latency-anomaly',
+            'autoalarm:read-latency',
+            'autoalarm:read-latency-anomaly',
+            'autoalarm:freeable-memory',
+            'autoalarm:freeable-memory-anomaly',
+            'autoalarm:db-connections',
+            'autoalarm:db-connections-anomaly',
+          ],
+        },
+      },
+      description: 'Routes RDS Cluster tag events to AutoAlarm',
+    });
+    rdsClusterTagRule.addTarget(
       new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
     );
   }
