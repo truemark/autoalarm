@@ -973,14 +973,15 @@ export class AutoAlarmConstruct extends Construct {
       new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
     );
 
-    // Rule for RDS Cluster tag changes
     const rdsClusterTagRule = new Rule(this, 'RDSClusterTagRule', {
       eventPattern: {
         source: ['aws.tag'],
         detailType: ['Tag Change on Resource'],
         detail: {
           'service': ['rds'],
-          'resource-type': ['db'],
+          'resource-arn': [
+            {prefix: `arn:aws:rds:${region}:${accountId}:cluster/`},
+          ], // Ensures only clusters are matched
           'changed-tag-keys': [
             'autoalarm:enabled',
             'autoalarm:cpu',
@@ -998,6 +999,7 @@ export class AutoAlarmConstruct extends Construct {
       },
       description: 'Routes RDS Cluster tag events to AutoAlarm',
     });
+
     rdsClusterTagRule.addTarget(
       new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
     );

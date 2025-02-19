@@ -197,21 +197,14 @@ async function routeTagEvent(event: any) {
       break;
 
     case 'rds':
-      switch (resourceType) {
-        case 'db-instance':
-          await parseRDSEventAndCreateAlarms(event);
-          break;
-
-        case 'db-cluster':
-          await parseRDSClusterEventAndCreateAlarms(event);
-          break;
-
-        default:
-          log
-            .warn()
-            .str('function', 'routeTagEvent')
-            .msg(`Unhandled resource type for RDS: ${resourceType}`);
-          break;
+      if (event.detail['resource-arn'].includes(':cluster:')) {
+        await parseRDSClusterEventAndCreateAlarms(event);
+      } else if (event.detail['resource-arn'].includes(':db:')) {
+        await parseRDSEventAndCreateAlarms(event);
+      } else {
+        log
+          .warn()
+          .msg(`Unhandled RDS resource: ${event.detail['resource-arn']}`);
       }
       break;
 

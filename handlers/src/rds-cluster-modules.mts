@@ -220,7 +220,7 @@ export async function manageInactiveRDSClusterAlarms(
 
 // Function to extract dbClusterId from ARN
 function extractRDSClusterIdFromArn(arn: string): string {
-  const regex = /db[:/]([^:/]+)$/;
+  const regex = /cluster[:/]([^:/]+)$/;
   const match = arn.match(regex);
 
   // log the arn and the extracted dbClusterId
@@ -244,7 +244,7 @@ function extractRDSClusterIdFromArn(arn: string): string {
  * @returns {string} The extracted RDS ARN, or an empty string if not found.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function findRDSArn(eventObj: Record<string, any>): string {
+function findRDSClusterArn(eventObj: Record<string, any>): string {
   const eventString = JSON.stringify(eventObj);
 
   // 1) Find where the ARN starts.
@@ -299,7 +299,7 @@ export async function parseRDSClusterEventAndCreateAlarms(
 
   switch (event['detail-type']) {
     case 'Tag Change on Resource':
-      dbClusterArn = findRDSArn(event);
+      dbClusterArn = findRDSClusterArn(event);
       if (!dbClusterArn) {
         log
           .error()
@@ -340,7 +340,7 @@ export async function parseRDSClusterEventAndCreateAlarms(
     case 'AWS API Call via CloudTrail':
       switch (event.detail.eventName) {
         case 'CreateDBCluster':
-          dbClusterArn = findRDSArn(event);
+          dbClusterArn = findRDSClusterArn(event);
           if (!dbClusterArn) {
             log
               .error()
