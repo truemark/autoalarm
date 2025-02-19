@@ -18,6 +18,7 @@ import {
 } from 'aws-cdk-lib/aws-iam';
 import {Duration, Stack} from 'aws-cdk-lib';
 import {ReAlarmEventRuleFunction} from './realarm-event-rule-function';
+import {EventRules} from './eventbridge-subconstruct';
 
 export interface AutoAlarmConstructProps {
   readonly prometheusWorkspaceId?: string;
@@ -25,10 +26,10 @@ export interface AutoAlarmConstructProps {
 }
 
 export class AutoAlarmConstruct extends Construct {
-  public readonly reAlarmProducerFunctionARN: string;
+  protected readonly reAlarmProducerFunctionARN: string;
+  protected readonly eventBridgeRules: EventRules;
   constructor(scope: Construct, id: string, props: AutoAlarmConstructProps) {
     super(scope, id);
-
     //the following four consts are used to pass the correct ARN for whichever prometheus ID is being used as well as to the lambda.
     const prometheusWorkspaceId = props.prometheusWorkspaceId || '';
     const accountId = Stack.of(this).account;
@@ -135,7 +136,6 @@ export class AutoAlarmConstruct extends Construct {
        * Allow the producer to describe alarms and list tags
        * Allow the producer to send messages to the consumer queue
        * Allow the producer to write to CloudWatch Logs
-       *
        */
       const reAlarmProducerRole = new Role(this, 'reAlarmProducerRole', {
         assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
@@ -349,11 +349,14 @@ export class AutoAlarmConstruct extends Construct {
     }
 
     /**
+     *
      * Create the MainFunction and associated resources
      * configure the AutoAlarm Function and associated queues and eventbridge rules
      */
 
-    // Define the IAM role with specific permissions for the AutoAlarm Lambda function
+    /**
+     * Set up the IAM role and policies for the main function
+     */
     const mainFunctionExecutionRole = new Role(
       this,
       'mainFunctionExecutionRole',
@@ -506,7 +509,9 @@ export class AutoAlarmConstruct extends Construct {
       }),
     );
 
-    // Create the MainFunction and explicitly pass the execution role
+    /**
+     * Create the MainFuncion and associated Queues
+     */
     const mainFunction = new MainFunction(this, 'MainFunction', {
       role: mainFunctionExecutionRole, // Pass the role here
       prometheusWorkspaceId: prometheusWorkspaceId,
@@ -527,481 +532,112 @@ export class AutoAlarmConstruct extends Construct {
       deadLetterQueue: {queue: autoAlarmDLQ, maxReceiveCount: 3}, // Set the dead letter queue
     };
 
-    // Create the autoAlarmQueue
-    const autoAlarmQueue = new ExtendedQueue(
+    /**
+     * Create a string array of all the autoAlarmQueue names
+     */
+    const autoAlarmQueues = [
+      'autoAlarmAlbQueue',
+      'autoAlarmCloudfrontQueue',
+      'autoAlarmEc2Queue',
+      'autoAlarmOpenSearchRuleQueue',
+      'autoAlarmRdsQueue',
+      'autoAlarmRdsClusterQueue',
+      'autoAlarmRoute53resolverQueue',
+      'autoAlarmSqsQueue',
+      'autoAlarmTargetGroupQueue',
+      'autoAlarmTransitGatewayQueue',
+      'autoAlarmVpnQueue',
+    ];
+
+    /**
+     * create a custom object that contains/will contain all our fifo SQS queues.
+     */
+    const queues: {[key: string]: ExtendedQueue} = {};
+
+    /**
+     * Loop through the autoAlarmQueues array and create a new ExtendedQueue object for each queue and add it to queues object
+     * Grant consume messages to the mainFunction for each queue
+     * Finally add an event source to the mainFunction for each queue
+     */
+    for (const queue of autoAlarmQueues) {
+      queues[queue] = new ExtendedQueue(this, queue, queueProps);
+
+      queues.queue.grantConsumeMessages(mainFunction);
+      mainFunction.addEventSource(
+        new SqsEventSource(queues.queue, {
+          batchSize: 10,
+          reportBatchItemFailures: true,
+          enabled: true,
+        }),
+      );
+    }
+
+    /**
+     * Create the EventBridge rules for each queue
+     */
+    this.eventBridgeRules = new EventRules(
       this,
-      'MainFunctionQueue',
-      queueProps,
-    );
-    autoAlarmQueue.grantConsumeMessages(mainFunction);
-
-    // Add Event Source to the MainFunction
-    mainFunction.addEventSource(
-      new SqsEventSource(autoAlarmQueue, {
-        batchSize: 10,
-        reportBatchItemFailures: true,
-        enabled: true,
-      }),
+      'EventBridgeRules',
+      accountId,
+      region,
     );
 
-    // TODO: Add all event rules in alphabetical order
-    const ec2tagRule = new Rule(this, 'TagRule', {
-      eventPattern: {
-        source: ['aws.tag'],
-        detailType: ['Tag Change on Resource'],
-        detail: {
-          'service': ['ec2', 'ecs', 'rds'],
-          'resource-type': ['instance'],
-          'changed-tag-keys': [
-            'autoalarm:enabled',
-            'autoalarm:cpu',
-            'autoalarm:storage',
-            'autoalarm:memory',
-            'autoalarm:cpu-anomaly',
-            'autoalarm:storage-anomaly',
-            'autoalarm:memory-anomaly',
-            'autoalarm:target', // cloudwatch or prometheus
-          ],
-        },
-      },
-      description: 'Routes tag events to AutoAlarm',
-    });
-    ec2tagRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
-    );
+    /**
+     * Set the targets for each EventBridgeRule rule
+     */
+    this.eventRuleTargetSetter(this.eventBridgeRules, queues);
+  }
 
-    const ec2Rule = new Rule(this, 'Ec2Rule', {
-      eventPattern: {
-        source: ['aws.ec2'],
-        detailType: ['EC2 Instance State-change Notification'],
-        detail: {
-          state: [
-            'running',
-            'terminated',
-            //'stopped', //for testing only
-            //'shutting-down', //to be removed. for testing only
-            //'pending',
-          ],
-        },
-      },
-      description: 'Routes ec2 instance events to AutoAlarm',
-    });
-    ec2Rule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
-    );
+  /**
+   * Helper function to dynamically grab each queue and create messageID and add it as a target for our event bridge rules.
+   * using ugly repetition until this is refactored later and this construct is properly built.
+   */
+  private eventRuleTargetSetter(
+    eventBridgeRules: EventRules,
+    queues: {[key: string]: ExtendedQueue},
+  ): void {
+    try {
+      for (const serviceName of eventBridgeRules.rules.keys()) {
+        // Find queue where the key includes the service name
+        const queueKey = Object.keys(queues).find((key) =>
+          key.toLowerCase().includes(serviceName.toLowerCase()),
+        );
 
-    //Rule for ALB tag changes
-    //Listen to tag changes related to AutoAlarm
-    //WARNING threshold num | CRITICAL threshold num | duration time num | duration periods num
-    //example: "1500|1750|60|2"
-    const albTagRule = new Rule(this, 'AlbTagRule', {
-      eventPattern: {
-        source: ['aws.tag'],
-        detailType: ['Tag Change on Resource'],
-        detail: {
-          'service': ['elasticloadbalancing'],
-          'resource-type': ['loadbalancer'],
-          'changed-tag-keys': [
-            'autoalarm:enabled',
-            'autoalarm:request-count',
-            'autoalarm:4xx-count',
-            'autoalarm:5xx-count',
-            'autoalarm:response-time',
-            'autoalarm:request-count-anomaly',
-            'autoalarm:4xx-count-anomaly',
-            'autoalarm:5xx-count-anomaly',
-            'autoalarm:response-time-anomaly',
-          ],
-        },
-      },
-      description: 'Routes ALB tag events to AutoAlarm',
-    });
-    albTagRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
-    );
+        if (!queueKey) {
+          console.warn(
+            `No queue found containing service name: ${serviceName}`,
+          );
+          break;
+        }
 
-    //Rule for ALB events
-    const albRule = new Rule(this, 'AlbRule', {
-      eventPattern: {
-        source: ['aws.elasticloadbalancing'],
-        detailType: ['AWS API Call via CloudTrail'],
-        detail: {
-          eventSource: ['elasticloadbalancing.amazonaws.com'],
-          eventName: ['CreateLoadBalancer', 'DeleteLoadBalancer'],
-        },
-      },
-      description: 'Routes ALB events to AutoAlarm',
-    });
-    albRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
-    );
+        const queue = queues[queueKey];
+        const serviceRules = eventBridgeRules.rules.get(serviceName);
 
-    // Rule for Target Group tag changes
-    const targetGroupTagRule = new Rule(this, 'TargetGroupTagRule', {
-      eventPattern: {
-        source: ['aws.tag'],
-        detailType: ['Tag Change on Resource'],
-        detail: {
-          'service': ['elasticloadbalancing'],
-          'resource-type': ['targetgroup'],
-          'changed-tag-keys': [
-            'autoalarm:enabled',
-            'autoalarm:unhealthy-host-count',
-            'autoalarm:response-time',
-            'autoalarm:request-count',
-            'autoalarm:4xx-count',
-            'autoalarm:5xx-count',
-            'autoalarm:unhealthy-host-count-anomaly',
-            'autoalarm:request-count-anomaly',
-            'autoalarm:response-time-anomaly',
-            'autoalarm:4xx-count-anomaly',
-            'autoalarm:5xx-count-anomaly',
-          ],
-        },
-      },
-      description: 'Routes Target Group tag events to AutoAlarm',
-    });
-    targetGroupTagRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
-    );
+        if (!serviceRules) {
+          console.warn(`No rules found for service: ${serviceName}`);
+          break;
+        }
 
-    const targetGroupRule = new Rule(this, 'TargetGroupRule', {
-      eventPattern: {
-        source: ['aws.elasticloadbalancing'],
-        detailType: ['AWS API Call via CloudTrail'],
-        detail: {
-          eventSource: ['elasticloadbalancing.amazonaws.com'],
-          eventName: ['CreateTargetGroup', 'DeleteTargetGroup'],
-        },
-      },
-      description: 'Routes Target Group events to AutoAlarm',
-    });
-    targetGroupRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
-    );
-
-    // Rule for OpenSearch tag changes
-    const openSearchTagRule = new Rule(this, 'OpenSearchTagRule', {
-      eventPattern: {
-        source: ['aws.tag'],
-        detailType: ['Tag Change on Resource'],
-        detail: {
-          'service': ['es'],
-          'resource-type': ['domain'],
-          'changed-tag-keys': [
-            'autoalarm:enabled',
-            'autoalarm:4xx-errors',
-            'autoalarm:4xx-errors-anomaly',
-            'autoalarm:5xx-errors',
-            'autoalarm:5xx-errors-anomaly',
-            'autoalarm:cpu',
-            'autoalarm:cpu-anomaly',
-            'autoalarm:iops-throttle',
-            'autoalarm:iops-throttle-anomaly',
-            'autoalarm:jvm-memory',
-            'autoalarm:jvm-memory-anomaly',
-            'autoalarm:read-latency',
-            'autoalarm:read-latency-anomaly',
-            'autoalarm:search-latency',
-            'autoalarm:search-latency-anomaly',
-            'autoalarm:snapshot-failure',
-            'autoalarm:snapshot-failure-anomaly',
-            'autoalarm:storage',
-            'autoalarm:storage-anomaly',
-            'autoalarm:sys-memory-util',
-            'autoalarm:sys-memory-util-anomaly',
-            'autoalarm:throughput-throttle',
-            'autoalarm:throughput-throttle-anomaly',
-            'autoalarm:write-latency',
-            'autoalarm:write-latency-anomaly',
-            'autoalarm:yellow-cluster',
-            'autoalarm:yellow-cluster-anomaly',
-            'autoalarm:red-cluster',
-            'autoalarm:red-cluster-anomaly',
-          ],
-        },
-      },
-      description: 'Routes OpenSearch tag events to AutoAlarm',
-    });
-    openSearchTagRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
-    );
-
-    //Rule for SQS events
-    const sqsRule = new Rule(this, 'SqsRule', {
-      eventPattern: {
-        source: ['aws.sqs'],
-        detailType: ['AWS API Call via CloudTrail'],
-        detail: {
-          eventSource: ['sqs.amazonaws.com'],
-          eventName: ['CreateQueue', 'DeleteQueue', 'TagQueue', 'UntagQueue'],
-        },
-      },
-      description: 'Routes SQS events to AutoAlarm',
-    });
-    sqsRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
-    );
-
-    //Rule for OpenSearch events
-    const openSearchRule = new Rule(this, 'OpenSearchRule', {
-      eventPattern: {
-        source: ['aws.es'],
-        detailType: ['Elasticsearch Service Domain Change'],
-        detail: {
-          state: ['CreateDomain', 'DeleteDomain'],
-        },
-      },
-      description: 'Routes OpenSearch events to AutoAlarm',
-    });
-    openSearchRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
-    );
-
-    // Rule for Transit Gateway events
-    const transitGatewayRule = new Rule(this, 'TransitGatewayRule', {
-      eventPattern: {
-        source: ['aws.ec2'],
-        detailType: ['AWS API Call via CloudTrail'],
-        detail: {
-          eventSource: ['ec2.amazonaws.com'],
-          eventName: ['CreateTransitGateway', 'DeleteTransitGateway'],
-        },
-      },
-      description: 'Routes Transit Gateway events to AutoAlarm',
-    });
-    transitGatewayRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
-    );
-
-    // Rule for Transit Gateway Tag changes
-    const transitGatewayTagRule = new Rule(this, 'TransitGatewayTagRule', {
-      eventPattern: {
-        source: ['aws.tag'],
-        detailType: ['Tag Change on Resource'],
-        detail: {
-          'service': ['ec2'],
-          'resource-type': ['transit-gateway'],
-          'changed-tag-keys': [
-            'autoalarm:enabled',
-            'autoalarm:bytes-in',
-            'autoalarm:bytes-in-anomaly',
-            'autoalarm:bytes-out',
-            'autoalarm:bytes-out-anomaly',
-          ],
-        },
-      },
-      description: 'Routes Transit Gateway tag events to AutoAlarm',
-    });
-    transitGatewayTagRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
-    );
-
-    // Rule for Route53Resolver events
-    const route53ResolverRule = new Rule(this, 'Route53ResolverRule', {
-      eventPattern: {
-        source: ['aws.route53resolver'],
-        detailType: ['AWS API Call via CloudTrail'],
-        detail: {
-          eventSource: ['route53resolver.amazonaws.com'],
-          eventName: ['CreateResolverEndpoint', 'DeleteResolverEndpoint'],
-        },
-      },
-      description: 'Routes Route53Resolver events to AutoAlarm',
-    });
-    route53ResolverRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
-    );
-
-    // Rule for Route53Resolver tag changes
-    const route53ResolverTagRule = new Rule(this, 'Route53ResolverTagRule', {
-      eventPattern: {
-        source: ['aws.tag'],
-        detailType: ['Tag Change on Resource'],
-        detail: {
-          'service': ['route53resolver'],
-          'resource-type': ['resolver-endpoint'],
-          'changed-tag-keys': [
-            'autoalarm:enabled',
-            'autoalarm:inbound-query-volume',
-            'autoalarm:inbound-query-volume-anomaly',
-            'autoalarm:outbound-query-volume',
-            'autoalarm:outbound-query-volume-anomaly',
-          ],
-        },
-      },
-      description: 'Routes Route53Resolver tag events to AutoAlarm',
-    });
-    route53ResolverTagRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
-    );
-
-    // Rule for VPN events
-    const vpnRule = new Rule(this, 'VPNRule', {
-      eventPattern: {
-        source: ['aws.ec2'],
-        detailType: ['AWS API Call via CloudTrail'],
-        detail: {
-          eventSource: ['ec2.amazonaws.com'],
-          eventName: ['CreateVpnConnection', 'DeleteVpnConnection'],
-        },
-      },
-      description: 'Routes VPN events to AutoAlarm',
-    });
-    vpnRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
-    );
-
-    // Rule for VPN tag changes
-    const vpnTagRule = new Rule(this, 'VPNTagRule', {
-      eventPattern: {
-        source: ['aws.tag'],
-        detailType: ['Tag Change on Resource'],
-        detail: {
-          'service': ['ec2'],
-          'resource-type': ['vpn-connection'],
-          'changed-tag-keys': [
-            'autoalarm:enabled',
-            'autoalarm:tunnel-state',
-            'autoalarm:tunnel-state-anomaly',
-          ],
-        },
-      },
-      description: 'Routes VPN tag events to AutoAlarm',
-    });
-    vpnTagRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
-    );
-
-    // Rule for CloudFront events
-    const cloudFrontRule = new Rule(this, 'CloudFrontRule', {
-      eventPattern: {
-        source: ['aws.cloudfront'],
-        detailType: ['AWS API Call via CloudTrail'],
-        detail: {
-          eventSource: ['cloudfront.amazonaws.com'],
-          eventName: ['CreateDistribution', 'DeleteDistribution'],
-        },
-      },
-      description: 'Routes CloudFront events to AutoAlarm',
-    });
-    cloudFrontRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
-    );
-
-    // Rule for CloudFront tag changes
-    const cloudFrontTagRule = new Rule(this, 'CloudFrontTagRule', {
-      eventPattern: {
-        source: ['aws.tag'],
-        detailType: ['Tag Change on Resource'],
-        detail: {
-          'service': ['cloudfront'],
-          'resource-type': ['distribution'],
-          'changed-tag-keys': [
-            'autoalarm:enabled',
-            'autoalarm:4xx-errors',
-            'autoalarm:4xx-errors-anomaly',
-            'autoalarm:5xx-errors',
-            'autoalarm:5xx-errors-anomaly',
-          ],
-        },
-      },
-      description: 'Routes CloudFront tag events to AutoAlarm',
-    });
-    cloudFrontTagRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
-    );
-
-    // Rule for RDS events
-    const rdsRule = new Rule(this, 'RDSRule', {
-      eventPattern: {
-        source: ['aws.rds'],
-        detailType: ['AWS API Call via CloudTrail'],
-        detail: {
-          eventSource: ['rds.amazonaws.com'],
-          eventName: ['CreateDBInstance', 'DeleteDBInstance'],
-        },
-      },
-      description: 'Routes RDS events to AutoAlarm',
-    });
-    rdsRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
-    );
-
-    // Rule for RDS tag changes
-    const rdsTagRule = new Rule(this, 'RDSTagRule', {
-      eventPattern: {
-        source: ['aws.tag'],
-        detailType: ['Tag Change on Resource'],
-        detail: {
-          'service': ['rds'],
-          'resource-type': ['db'],
-          'changed-tag-keys': [
-            'autoalarm:enabled',
-            'autoalarm:cpu',
-            'autoalarm:cpu-anomaly',
-            'autoalarm:write-latency',
-            'autoalarm:write-latency-anomaly',
-            'autoalarm:read-latency',
-            'autoalarm:read-latency-anomaly',
-            'autoalarm:freeable-memory',
-            'autoalarm:freeable-memory-anomaly',
-            'autoalarm:db-connections',
-            'autoalarm:db-connections-anomaly',
-          ],
-        },
-      },
-      description: 'Routes RDS tag events to AutoAlarm',
-    });
-    rdsTagRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
-    );
-
-    // Rule for RDS Cluster events
-    const rdsClusterRule = new Rule(this, 'RDSClusterRule', {
-      eventPattern: {
-        source: ['aws.rds'],
-        detailType: ['AWS API Call via CloudTrail'],
-        detail: {
-          eventSource: ['rds.amazonaws.com'],
-          eventName: ['CreateDBCluster', 'DeleteDBCluster'],
-        },
-      },
-      description: 'Routes RDS Cluster events to AutoAlarm',
-    });
-    rdsClusterRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
-    );
-
-    const rdsClusterTagRule = new Rule(this, 'RDSClusterTagRule', {
-      eventPattern: {
-        source: ['aws.tag'],
-        detailType: ['Tag Change on Resource'],
-        detail: {
-          'service': ['rds'],
-          'resource-arn': [
-            {prefix: `arn:aws:rds:${region}:${accountId}:cluster/`},
-          ], // Ensures only clusters are matched
-          'changed-tag-keys': [
-            'autoalarm:enabled',
-            'autoalarm:cpu',
-            'autoalarm:cpu-anomaly',
-            'autoalarm:write-latency',
-            'autoalarm:write-latency-anomaly',
-            'autoalarm:read-latency',
-            'autoalarm:read-latency-anomaly',
-            'autoalarm:freeable-memory',
-            'autoalarm:freeable-memory-anomaly',
-            'autoalarm:db-connections',
-            'autoalarm:db-connections-anomaly',
-          ],
-        },
-      },
-      description: 'Routes RDS Cluster tag events to AutoAlarm',
-    });
-
-    rdsClusterTagRule.addTarget(
-      new SqsQueue(autoAlarmQueue, {messageGroupId: 'AutoAlarm'}),
-    );
+        serviceRules.forEach((ruleObj) => {
+          Object.values(ruleObj).forEach((rule) => {
+            try {
+              rule.addTarget(
+                new SqsQueue(queue, {
+                  messageGroupId: serviceName,
+                }),
+              );
+            } catch (error) {
+              console.error(
+                `Error adding target for rule in service ${serviceName}:`,
+                error,
+              );
+            }
+          });
+        });
+      }
+    } catch (error) {
+      console.error('Error in eventRuleTargetSetter:', error);
+      throw error;
+    }
   }
 }
