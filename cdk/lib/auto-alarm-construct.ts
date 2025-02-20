@@ -617,7 +617,7 @@ export class AutoAlarmConstruct extends Construct {
             try {
               rule.addTarget(
                 new SqsQueue(queue, {
-                  messageGroupId: serviceName,
+                  messageGroupId: `AutoAlarm-${serviceName}`,
                 }),
               );
             } catch (error) {

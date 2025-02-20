@@ -32,7 +32,7 @@ export class EventRules extends Construct {
   }
 
   /**
-   * Annoyingliy, we can't loop through attributes of a type so we have to manualy be a bit repetitive here.
+   * Annoyingly, we can't loop through attributes of a type so we have to manualy be a bit repetitive here.
    * @private
    */
   private initializeRules() {
