@@ -186,7 +186,7 @@ export class EventRules extends Construct {
     });
 
     ec2Rules.push({
-      ec2StateRule: new Rule(this, 'Ec2Rule', {
+      ec2StateRule: new Rule(this, 'Ec2StateRule', {
         eventPattern: {
           source: ['aws.ec2'],
           detailType: ['EC2 Instance State-change Notification'],
@@ -256,7 +256,7 @@ export class EventRules extends Construct {
     });
 
     openSearchRules.push({
-      openSearchStateRule: new Rule(this, 'OpenSearchRule', {
+      openSearchStateRule: new Rule(this, 'OpenSearchStateRule', {
         eventPattern: {
           source: ['aws.es'],
           detailType: ['Elasticsearch Service Domain Change'],
@@ -302,7 +302,7 @@ export class EventRules extends Construct {
     });
 
     rdsRules.push({
-      rdsStateRule: new Rule(this, 'RDSRule', {
+      rdsStateRule: new Rule(this, 'RDSStateRule', {
         eventPattern: {
           source: ['aws.rds'],
           detailType: ['AWS API Call via CloudTrail'],
@@ -351,7 +351,7 @@ export class EventRules extends Construct {
     });
 
     rdsClusterRules.push({
-      rdsClusterStateRule: new Rule(this, 'RDSClusterRule', {
+      rdsClusterStateRule: new Rule(this, 'RDSClusterStateRule', {
         eventPattern: {
           source: ['aws.rds'],
           detailType: ['AWS API Call via CloudTrail'],
@@ -392,7 +392,7 @@ export class EventRules extends Construct {
     });
 
     route53ResolverRules.push({
-      route53ResolverStateRule: new Rule(this, 'Route53ResolverRule', {
+      route53ResolverStateRule: new Rule(this, 'Route53ResolverStateRule', {
         eventPattern: {
           source: ['aws.route53resolver'],
           detailType: ['AWS API Call via CloudTrail'],
@@ -459,7 +459,7 @@ export class EventRules extends Construct {
     });
 
     targetGroupRules.push({
-      targetGroupStateRule: new Rule(this, 'TargetGroupRule', {
+      targetGroupStateRule: new Rule(this, 'TargetGroupStateRule', {
         eventPattern: {
           source: ['aws.elasticloadbalancing'],
           detailType: ['AWS API Call via CloudTrail'],
@@ -500,7 +500,7 @@ export class EventRules extends Construct {
     });
 
     transitGatewayRules.push({
-      transitGatewayStateRule: new Rule(this, 'TransitGatewayRule', {
+      transitGatewayStateRule: new Rule(this, 'TransitGatewayStateRule', {
         eventPattern: {
           source: ['aws.ec2'],
           detailType: ['AWS API Call via CloudTrail'],
@@ -539,7 +539,7 @@ export class EventRules extends Construct {
     });
 
     vpnRules.push({
-      vpnStateRule: new Rule(this, 'VPNRule', {
+      vpnStateRule: new Rule(this, 'VPNStateRule', {
         eventPattern: {
           source: ['aws.ec2'],
           detailType: ['AWS API Call via CloudTrail'],

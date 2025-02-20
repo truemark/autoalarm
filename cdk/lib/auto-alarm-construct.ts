@@ -2,11 +2,7 @@ import {Construct} from 'constructs';
 import {MainFunction} from './main-function';
 import {ReAlarmProducerFunction} from './realarm-producer-function';
 import {ReAlarmConsumerFunction} from './realarm-consumer-function';
-import {
-  ExtendedQueue,
-  ExtendedQueueProps,
-  StandardQueue,
-} from 'truemark-cdk-lib/aws-sqs';
+import {ExtendedQueue, StandardQueue} from 'truemark-cdk-lib/aws-sqs';
 import {Rule, Schedule} from 'aws-cdk-lib/aws-events';
 import {LambdaFunction, SqsQueue} from 'aws-cdk-lib/aws-events-targets';
 import {SqsEventSource} from 'aws-cdk-lib/aws-lambda-event-sources';
@@ -517,36 +513,21 @@ export class AutoAlarmConstruct extends Construct {
       prometheusWorkspaceId: prometheusWorkspaceId,
     });
 
-    // Create autoAlarmDLQ
-    const autoAlarmDLQ = new ExtendedQueue(this, 'MainFunctionDLQ', {
-      fifo: true,
-      retentionPeriod: Duration.days(14),
-    });
-
-    // Define extended queue props for autoAlarmQueue
-    const queueProps: ExtendedQueueProps = {
-      fifo: true, // Enable FIFO
-      contentBasedDeduplication: true, // Enable idempotency
-      retentionPeriod: Duration.days(14), // Retain messages for 14 days
-      visibilityTimeout: Duration.seconds(900), // Set visibility timeout to 15 minutes to match the AutoAlarm function timeout
-      deadLetterQueue: {queue: autoAlarmDLQ, maxReceiveCount: 3}, // Set the dead letter queue
-    };
-
     /**
      * Create a string array of all the autoAlarmQueue names
      */
     const autoAlarmQueues = [
-      'autoAlarmAlbQueue',
-      'autoAlarmCloudfrontQueue',
-      'autoAlarmEc2Queue',
-      'autoAlarmOpenSearchRuleQueue',
-      'autoAlarmRdsQueue',
-      'autoAlarmRdsClusterQueue',
-      'autoAlarmRoute53resolverQueue',
-      'autoAlarmSqsQueue',
-      'autoAlarmTargetGroupQueue',
-      'autoAlarmTransitGatewayQueue',
-      'autoAlarmVpnQueue',
+      'autoAlarmAlb',
+      'autoAlarmCloudfront',
+      'autoAlarmEc2',
+      'autoAlarmOpenSearchRule',
+      'autoAlarmRds',
+      'autoAlarmRdsCluster',
+      'autoAlarmRoute53resolver',
+      'autoAlarmSqs',
+      'autoAlarmTargetGroup',
+      'autoAlarmTransitGateway',
+      'autoAlarmVpn',
     ];
 
     /**
@@ -559,12 +540,25 @@ export class AutoAlarmConstruct extends Construct {
      * Grant consume messages to the mainFunction for each queue
      * Finally add an event source to the mainFunction for each queue
      */
-    for (const queue of autoAlarmQueues) {
-      queues[queue] = new ExtendedQueue(this, queue, queueProps);
+    for (const queueName of autoAlarmQueues) {
+      // Create DLQ for each queue and let cdk handle the name generation after the queue name
+      const dlq = new ExtendedQueue(this, `${queueName}-failed`, {
+        fifo: true,
+        retentionPeriod: Duration.days(14),
+      });
 
-      queues.queue.grantConsumeMessages(mainFunction);
+      // Create queue with its own DLQ
+      queues[queueName] = new ExtendedQueue(this, queueName, {
+        fifo: true,
+        contentBasedDeduplication: true,
+        retentionPeriod: Duration.days(14),
+        visibilityTimeout: Duration.seconds(900),
+        deadLetterQueue: {queue: dlq, maxReceiveCount: 3},
+      });
+
+      queues[queueName].grantConsumeMessages(mainFunction);
       mainFunction.addEventSource(
-        new SqsEventSource(queues.queue, {
+        new SqsEventSource(queues[queueName], {
           batchSize: 10,
           reportBatchItemFailures: true,
           enabled: true,
