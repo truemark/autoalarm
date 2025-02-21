@@ -167,7 +167,7 @@ export class EventRules extends Construct {
           source: ['aws.tag'],
           detailType: ['Tag Change on Resource'],
           detail: {
-            'service': ['ec2', 'ecs', 'rds'], //TODO: Why are we including ecs, rds here?
+            'service': ['ec2'],
             'resource-type': ['instance'],
             'changed-tag-keys': [
               'autoalarm:enabled',
