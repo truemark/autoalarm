@@ -379,7 +379,18 @@ export async function parseRDSEventAndCreateAlarms(
           break;
 
         case 'DeleteDBInstance':
-          dbInstanceId = event.detail.requestParameters?.dbInstanceIdentifier;
+          dbInstanceArn = findRDSArn(event);
+          if (!dbInstanceArn) {
+            log
+              .error()
+              .str('function', 'extractRDSInstanceArnFromEvent')
+              .obj('event', event)
+              .msg('No RDS ARN found in event for tag change event');
+            throw new Error(
+              'No RDS ARN found in event for AWS API Call via CloudTrail event',
+            );
+          }
+          dbInstanceId = extractRDSInstanceIdFromArn(dbInstanceArn);
           eventType = 'Delete';
           log
             .info()

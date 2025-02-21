@@ -466,7 +466,11 @@ export class AutoAlarmConstruct extends Construct {
     mainFunctionExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
-        actions: ['rds:DescribeDBInstances', 'rds:ListTagsForResource'],
+        actions: [
+          'rds:DescribeDBInstances',
+          'rds:ListTagsForResource',
+          'rds:DescribeDBClusters',
+        ],
         resources: ['*'],
       }),
     );

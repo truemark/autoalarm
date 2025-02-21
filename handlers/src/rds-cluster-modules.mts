@@ -110,7 +110,7 @@ async function checkAndManageRDSClusterStatusAlarms(
           .msg('Tag key indicates anomaly alarm. Handling anomaly alarms');
         const anomalyAlarms = await handleAnomalyAlarms(
           config,
-          'RDS',
+          'RDSCluster',
           dbClusterId,
           [{Name: 'DBClusterIdentifier', Value: dbClusterId}],
           updatedDefaults,
@@ -124,7 +124,7 @@ async function checkAndManageRDSClusterStatusAlarms(
           .msg('Tag key indicates static alarm. Handling static alarms');
         const staticAlarms = await handleStaticAlarms(
           config,
-          'RDS',
+          'RDSCluster',
           dbClusterId,
           [{Name: 'DBClusterIdentifier', Value: dbClusterId}],
           updatedDefaults,
@@ -140,7 +140,7 @@ async function checkAndManageRDSClusterStatusAlarms(
           'alarm prefix: ',
           buildAlarmName(
             config,
-            'RDS',
+            'RDSCluster',
             dbClusterId,
             AlarmClassification.Warning,
             'static',
@@ -162,7 +162,7 @@ async function checkAndManageRDSClusterStatusAlarms(
     .msg('Fetched existing alarms before filtering');
 
   // Log the expected pattern
-  const expectedPattern = `AutoAlarm-RDS-${dbClusterId}`;
+  const expectedPattern = `AutoAlarm-RDSCluster-${dbClusterId}`;
   log
     .info()
     .str('function', 'checkAndManageRDSClusterStatusAlarms')
@@ -379,7 +379,18 @@ export async function parseRDSClusterEventAndCreateAlarms(
           break;
 
         case 'DeleteDBCluster':
-          dbClusterId = event.detail.requestParameters?.dbClusterIdentifier;
+          dbClusterArn = findRDSClusterArn(event);
+          if (!dbClusterArn) {
+            log
+              .error()
+              .str('function', 'parseRDSClusterEventAndCreateAlarms')
+              .obj('event', event)
+              .msg('No RDS Cluster ARN found in event DeleteDBCluster event');
+            throw new Error(
+              'No RDS Cluster ARN found in event for AWS API Call via CloudTrail event',
+            );
+          }
+          dbClusterId = extractRDSClusterIdFromArn(dbClusterArn);
           eventType = 'Delete';
           log
             .info()

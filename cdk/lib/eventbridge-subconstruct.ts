@@ -328,9 +328,7 @@ export class EventRules extends Construct {
           detailType: ['Tag Change on Resource'],
           detail: {
             'service': ['rds'],
-            'resource-arn': [
-              {prefix: `arn:aws:rds:${this.region}:${this.accountId}:cluster/`},
-            ], // Ensures only clusters are matched
+            'resource-type': ['cluster'],
             'changed-tag-keys': [
               'autoalarm:enabled',
               'autoalarm:cpu',

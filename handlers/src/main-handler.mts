@@ -197,14 +197,12 @@ async function routeTagEvent(event: any) {
       break;
 
     case 'rds':
-      if (event.detail['resource-arn'].includes(':cluster:')) {
+      if (resourceType === 'cluster') {
         await parseRDSClusterEventAndCreateAlarms(event);
-      } else if (event.detail['resource-arn'].includes(':db:')) {
+      } else if (resourceType === 'db') {
         await parseRDSEventAndCreateAlarms(event);
       } else {
-        log
-          .warn()
-          .msg(`Unhandled RDS resource: ${event.detail['resource-arn']}`);
+        log.warn().msg(`Unhandled RDS resource: ${resourceType}`);
       }
       break;
 
