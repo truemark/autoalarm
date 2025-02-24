@@ -1,5 +1,7 @@
 import {Construct} from 'constructs';
 import {Rule} from 'aws-cdk-lib/aws-events';
+import {ExtendedQueue} from 'truemark-cdk-lib/aws-sqs';
+import {SqsQueue} from 'aws-cdk-lib/aws-events-targets';
 
 type ServiceName =
   | 'alb'
@@ -19,19 +21,25 @@ type RuleObject = {
 };
 
 export class EventRules extends Construct {
-  public readonly rules: Map<ServiceName, RuleObject[]>;
+  public readonly serviceRules: Map<ServiceName, RuleObject[]>;
 
-  constructor(scope: Construct, id: string) {
+  constructor(
+    scope: Construct,
+    id: string,
+    queues: {[key: string]: ExtendedQueue},
+  ) {
     super(scope, id);
-    this.rules = new Map();
-    this.initializeRules();
+    this.serviceRules = new Map();
+    this.initializeServiceEventRules();
+    this.eventRuleTargetSetter(this, queues);
   }
 
   /**
-   * Annoyingly, we can't loop through attributes of a type so we have to manualy be a bit repetitive here.
+   * Initialize the rules map with empty arrays for each service
+   * Annoyingly, we can't loop through attributes of a type so we have to manually be a bit repetitive here.
    * @private
    */
-  private initializeRules() {
+  private initializeServiceEventRules() {
     const services: ServiceName[] = [
       'alb',
       'cloudfront',
@@ -50,7 +58,7 @@ export class EventRules extends Construct {
      * Initialize the rules map with empty arrays for each service
      */
     services.forEach((service) => {
-      this.rules.set(service, []);
+      this.serviceRules.set(service, []);
     });
 
     /**
@@ -70,7 +78,7 @@ export class EventRules extends Construct {
   }
 
   private addAlbRules() {
-    const albRules = this.rules.get('alb') || [];
+    const albRules = this.serviceRules.get('alb') || [];
 
     albRules.push({
       albTagRule: new Rule(this, 'AlbTagRule', {
@@ -111,11 +119,11 @@ export class EventRules extends Construct {
       }),
     });
 
-    this.rules.set('alb', albRules);
+    this.serviceRules.set('alb', albRules);
   }
 
   private addCloudFrontRules() {
-    const cloudFrontRules = this.rules.get('cloudfront') || [];
+    const cloudFrontRules = this.serviceRules.get('cloudfront') || [];
 
     cloudFrontRules.push({
       cloudStateRule: new Rule(this, 'CloudStateRule', {
@@ -152,11 +160,11 @@ export class EventRules extends Construct {
       }),
     });
 
-    this.rules.set('cloudfront', cloudFrontRules);
+    this.serviceRules.set('cloudfront', cloudFrontRules);
   }
 
   private addEc2Rules() {
-    const ec2Rules = this.rules.get('ec2') || [];
+    const ec2Rules = this.serviceRules.get('ec2') || [];
     ec2Rules.push({
       ec2TagRule: new Rule(this, 'ec2TagRule', {
         eventPattern: {
@@ -200,11 +208,11 @@ export class EventRules extends Construct {
       }),
     });
 
-    this.rules.set('ec2', ec2Rules);
+    this.serviceRules.set('ec2', ec2Rules);
   }
 
   private addOpenSearchRules() {
-    const openSearchRules = this.rules.get('opensearch') || [];
+    const openSearchRules = this.serviceRules.get('opensearch') || [];
 
     openSearchRules.push({
       openSearchTagRule: new Rule(this, 'OpenSearchTagRule', {
@@ -264,11 +272,11 @@ export class EventRules extends Construct {
       }),
     });
 
-    this.rules.set('opensearch', openSearchRules);
+    this.serviceRules.set('opensearch', openSearchRules);
   }
 
   private addRdsRules() {
-    const rdsRules = this.rules.get('rds') || [];
+    const rdsRules = this.serviceRules.get('rds') || [];
 
     rdsRules.push({
       rdsTagRule: new Rule(this, 'RDSTagRule', {
@@ -311,11 +319,11 @@ export class EventRules extends Construct {
       }),
     });
 
-    this.rules.set('rds', rdsRules);
+    this.serviceRules.set('rds', rdsRules);
   }
 
   private addRdsClusterRules() {
-    const rdsClusterRules = this.rules.get('rdscluster') || [];
+    const rdsClusterRules = this.serviceRules.get('rdscluster') || [];
 
     rdsClusterRules.push({
       rdsClusterTagRule: new Rule(this, 'RDSClusterTagRule', {
@@ -358,11 +366,11 @@ export class EventRules extends Construct {
       }),
     });
 
-    this.rules.set('rdscluster', rdsClusterRules);
+    this.serviceRules.set('rdscluster', rdsClusterRules);
   }
 
   private addRoute53ResolverRules() {
-    const route53ResolverRules = this.rules.get('route53resolver') || [];
+    const route53ResolverRules = this.serviceRules.get('route53resolver') || [];
 
     route53ResolverRules.push({
       route53ResolverTagRule: new Rule(this, 'Route53ResolverTagRule', {
@@ -399,11 +407,11 @@ export class EventRules extends Construct {
       }),
     });
 
-    this.rules.set('route53resolver', route53ResolverRules);
+    this.serviceRules.set('route53resolver', route53ResolverRules);
   }
 
   private addSqsRules() {
-    const sqsRules = this.rules.get('sqs') || [];
+    const sqsRules = this.serviceRules.get('sqs') || [];
 
     sqsRules.push({
       sqsStateRule: new Rule(this, 'SqsRule', {
@@ -419,11 +427,11 @@ export class EventRules extends Construct {
       }),
     });
 
-    this.rules.set('sqs', sqsRules);
+    this.serviceRules.set('sqs', sqsRules);
   }
 
   private addTargetGroupRules() {
-    const targetGroupRules = this.rules.get('targetgroup') || [];
+    const targetGroupRules = this.serviceRules.get('targetgroup') || [];
 
     targetGroupRules.push({
       targetGroupTagRule: new Rule(this, 'TargetGroupTagRule', {
@@ -466,11 +474,11 @@ export class EventRules extends Construct {
       }),
     });
 
-    this.rules.set('targetgroup', targetGroupRules);
+    this.serviceRules.set('targetgroup', targetGroupRules);
   }
 
   private addTransitGatewayRules() {
-    const transitGatewayRules = this.rules.get('transitgateway') || [];
+    const transitGatewayRules = this.serviceRules.get('transitgateway') || [];
 
     transitGatewayRules.push({
       transitGatewayTagRule: new Rule(this, 'TransitGatewayTagRule', {
@@ -507,11 +515,11 @@ export class EventRules extends Construct {
       }),
     });
 
-    this.rules.set('transitgateway', transitGatewayRules);
+    this.serviceRules.set('transitgateway', transitGatewayRules);
   }
 
   private addVpnRules() {
-    const vpnRules = this.rules.get('vpn') || [];
+    const vpnRules = this.serviceRules.get('vpn') || [];
 
     vpnRules.push({
       vpnTagRule: new Rule(this, 'VPNTagRule', {
@@ -546,6 +554,60 @@ export class EventRules extends Construct {
       }),
     });
 
-    this.rules.set('vpn', vpnRules);
+    this.serviceRules.set('vpn', vpnRules);
+  }
+
+  /**
+   * Private method to set targets for each rule
+   * @param eventBridgeRules - The rule to add targets to
+   * @param queues - an object containing the queues to add as targets
+   */
+  private eventRuleTargetSetter(
+    eventBridgeRules: EventRules,
+    queues: {[key: string]: ExtendedQueue},
+  ): void {
+    try {
+      for (const serviceName of eventBridgeRules.serviceRules.keys()) {
+        // Find queue where the key includes the service name
+        const queueKey = Object.keys(queues).find((key) =>
+          key.toLowerCase().includes(serviceName.toLowerCase()),
+        );
+
+        if (!queueKey) {
+          console.warn(
+            `No queue found containing service name: ${serviceName}`,
+          );
+          break;
+        }
+
+        const queue = queues[queueKey];
+        const serviceRules = eventBridgeRules.serviceRules.get(serviceName);
+
+        if (!serviceRules) {
+          console.warn(`No rules found for service: ${serviceName}`);
+          break;
+        }
+
+        serviceRules.forEach((ruleObj) => {
+          Object.values(ruleObj).forEach((rule) => {
+            try {
+              rule.addTarget(
+                new SqsQueue(queue, {
+                  messageGroupId: `AutoAlarm-${serviceName}`,
+                }),
+              );
+            } catch (error) {
+              console.error(
+                `Error adding target for rule in service ${serviceName}:`,
+                error,
+              );
+            }
+          });
+        });
+      }
+    } catch (error) {
+      console.error('Error in eventRuleTargetSetter:', error);
+      throw error;
+    }
   }
 }
