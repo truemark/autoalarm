@@ -20,13 +20,9 @@ type RuleObject = {
 
 export class EventRules extends Construct {
   public readonly rules: Map<ServiceName, RuleObject[]>;
-  private readonly accountId: string;
-  private readonly region: string;
 
-  constructor(scope: Construct, id: string, accountId: string, region: string) {
+  constructor(scope: Construct, id: string) {
     super(scope, id);
-    this.accountId = accountId;
-    this.region = region;
     this.rules = new Map();
     this.initializeRules();
   }
@@ -551,28 +547,5 @@ export class EventRules extends Construct {
     });
 
     this.rules.set('vpn', vpnRules);
-  }
-
-  // Helper methods for accessing rules
-  public getRulesByService(service: ServiceName): RuleObject[] {
-    return this.rules.get(service) || [];
-  }
-
-  public getRule(service: ServiceName, ruleName: string): Rule | undefined {
-    const serviceRules = this.rules.get(service);
-    const ruleObject = serviceRules?.find(
-      (obj) => Object.keys(obj)[0] === ruleName,
-    );
-    return ruleObject ? Object.values(ruleObject)[0] : undefined;
-  }
-
-  public getAllRules(): Rule[] {
-    const allRules: Rule[] = [];
-    this.rules.forEach((serviceRules) => {
-      serviceRules.forEach((ruleObj) => {
-        allRules.push(...Object.values(ruleObj));
-      });
-    });
-    return allRules;
   }
 }

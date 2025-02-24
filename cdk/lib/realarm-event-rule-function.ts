@@ -6,15 +6,15 @@ import {Duration} from 'aws-cdk-lib';
 import {Architecture} from 'aws-cdk-lib/aws-lambda';
 
 interface ReAlarmEventRuleFunctionProps {
-  role?: IRole; // Define other props as needed
-  reAlarmFunctionArn?: string;
+  role: IRole; // Define other props as needed
+  targertQueueArn: string;
 }
 
-export class ReAlarmEventRuleFunction extends ExtendedNodejsFunction {
+export class ReAlarmEventRuleFunction extends ExtendedNodejsFunction{
   constructor(
     scope: Construct,
     id: string,
-    props?: ReAlarmEventRuleFunctionProps,
+    props: ReAlarmEventRuleFunctionProps,
   ) {
     super(scope, id, {
       entry: path.join(
@@ -27,11 +27,11 @@ export class ReAlarmEventRuleFunction extends ExtendedNodejsFunction {
       ),
       architecture: Architecture.ARM_64,
       handler: 'handler',
-      timeout: Duration.minutes(5),
+      timeout: Duration.minutes(15),
       memorySize: 768,
-      role: props?.role,
+      role: props.role,
       environment: {
-        RE_ALARM_FUNCTION_ARN: props?.reAlarmFunctionArn || '',
+        TARGET_SQS_QUEUE_ARN: props.targertQueueArn,
       },
       deploymentOptions: {
         createDeployment: false,

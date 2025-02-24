@@ -27,11 +27,8 @@ const log = logging.initialize({
 
 // Configuration constants
 const TAG_KEY = 'autoalarm:re-alarm-minutes';
-const reAlarmARN =
-  process.env.RE_ALARM_FUNCTION_ARN ??
-  (() => {
-    throw new Error('RE_ALARM_FUNCTION_ARN required');
-  })();
+
+const targetSQSQueueArn = process.env.TARGET_SQS_QUEUE_ARN;
 
 // Initialize AWS service clients
 const eventbridge = new EventBridgeClient({});
@@ -103,12 +100,12 @@ async function deleteEventBridgeRule(alarmName: string): Promise<void> {
  * Creates an EventBridge rule that triggers a Lambda function on a schedule
  * @param alarmName - The name of the CloudWatch Alarm
  * @param minutes - The interval in minutes for the rule to trigger
- * @param lambdaArn - The ARN of the Lambda function to trigger
+ * @param sqsArn - The ARN of the SQS queue to send the event to the reAlarm producer lambda
  */
 async function createEventBridgeRule(
   alarmName: string,
   minutes: number,
-  lambdaArn: string,
+  sqsArn: string,
 ): Promise<void> {
   // Generate a hashed 6-character suffix
   const hashSuffix = createAlarmHash(alarmName);
@@ -118,7 +115,6 @@ async function createEventBridgeRule(
   const sanitizedName = sanitizeForEventBridge(alarmName);
 
   const ruleName = `AutoAlarm-ReAlarm-${sanitizedName}-${hashSuffix}`;
-  const targetId = `Target-${sanitizedName}-${hashSuffix}`;
   const rateUnit = minutes === 1 ? 'minute' : 'minutes';
 
   try {
@@ -138,8 +134,8 @@ async function createEventBridgeRule(
         Rule: ruleName,
         Targets: [
           {
-            Id: targetId,
-            Arn: lambdaArn,
+            Id: `ReAlarm Producer SQS Queue for`,
+            Arn: sqsArn,
             Input: JSON.stringify({
               event: {'reAlarmOverride-AlarmName': alarmName},
             }),
@@ -272,7 +268,7 @@ export const handler: Handler = async (event) => {
     }
 
     // Create/update the EventBridge rule with the specified schedule
-    await createEventBridgeRule(alarmName, minutes, reAlarmARN);
+    await createEventBridgeRule(alarmName, minutes, targetSQSQueueArn!);
   } catch (error) {
     log
       .error()

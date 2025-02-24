@@ -2,9 +2,9 @@ import {Construct} from 'constructs';
 import {MainFunction} from './main-function';
 import {ReAlarmProducerFunction} from './realarm-producer-function';
 import {ReAlarmConsumerFunction} from './realarm-consumer-function';
-import {ExtendedQueue, StandardQueue} from 'truemark-cdk-lib/aws-sqs';
+import {ExtendedQueue} from 'truemark-cdk-lib/aws-sqs';
 import {Rule, Schedule} from 'aws-cdk-lib/aws-events';
-import {LambdaFunction, SqsQueue} from 'aws-cdk-lib/aws-events-targets';
+import {SqsQueue} from 'aws-cdk-lib/aws-events-targets';
 import {SqsEventSource} from 'aws-cdk-lib/aws-lambda-event-sources';
 import {
   Role,
@@ -36,27 +36,70 @@ export class AutoAlarmConstruct extends Construct {
 
     if (enableReAlarm) {
       /**
-       *
-       * Create the realarm consumer queue to receive events from producer and process alarms
-       * Create the realarm event rule queue to receive events from event rule lambda and process event rule changes
+       * Create the reAalarm producer queue and dlq
+       * Create the realarm consumer queue and dlq to receive events from producer and process alarms
+       * Create the realarm event rule queue and dlq to receive events from event rule lambda and process event rule changes
        */
-      const reAlarmConsumerQueue = new StandardQueue(
+      const reAlarmProducerDLQ = new ExtendedQueue(
         this,
-        'ReAlarmConsumerQueue',
+        'reAlarmConsumerQueue',
         {
+          fifo: true,
           retentionPeriod: Duration.days(14),
-          visibilityTimeout: Duration.seconds(900),
-          maxReceiveCount: 3,
         },
       );
 
-      const reAlarmEventRuleQueue = new StandardQueue(
+      const reAlarmConsumerDLQ = new ExtendedQueue(
+        this,
+        'reAlarmConsumerQueue-Failed',
+        {
+          fifo: true,
+          retentionPeriod: Duration.days(14),
+        },
+      );
+
+      const reAlarmEventRuleDLQ = new ExtendedQueue(
+        this,
+        'reAlarmEventRuleDLQ-Failed',
+        {
+          fifo: true,
+          retentionPeriod: Duration.days(14),
+        },
+      );
+
+      const reAlarmProducerQueue = new ExtendedQueue(
+        this,
+        'reAlarmProducerQueue-Failed',
+        {
+          fifo: true,
+          contentBasedDeduplication: true,
+          retentionPeriod: Duration.days(14),
+          visibilityTimeout: Duration.seconds(60),
+          deadLetterQueue: {queue: reAlarmProducerDLQ, maxReceiveCount: 3},
+        },
+      );
+
+      const reAlarmConsumerQueue = new ExtendedQueue(
+        this,
+        'reAlarmConsumerQueue',
+        {
+          fifo: true,
+          contentBasedDeduplication: true,
+          retentionPeriod: Duration.days(14),
+          visibilityTimeout: Duration.seconds(60),
+          deadLetterQueue: {queue: reAlarmConsumerDLQ, maxReceiveCount: 3},
+        },
+      );
+
+      const reAlarmEventRuleQueue = new ExtendedQueue(
         this,
         'ReAlarmEventRuleQueue',
         {
+          fifo: true,
+          contentBasedDeduplication: true,
           retentionPeriod: Duration.days(14),
-          visibilityTimeout: Duration.seconds(900),
-          maxReceiveCount: 3,
+          visibilityTimeout: Duration.seconds(60),
+          deadLetterQueue: {queue: reAlarmEventRuleDLQ, maxReceiveCount: 3},
         },
       );
 
@@ -267,31 +310,39 @@ export class AutoAlarmConstruct extends Construct {
         'ReAlarmEventRuleFunction',
         {
           role: reAlarmEventRuleLambdaExecutionRole,
-          reAlarmFunctionArn: this.reAlarmProducerFunctionARN, // this is used as the target for EventBridge rules
+          targertQueueArn: reAlarmProducerQueue.queueArn, // this is used as the target for EventBridge rules
         },
       );
 
       /**
        * Allow reAlarm event rule lambda function to consume messages from the event rule queue
        * Allow the producer to send messages to the consumer queue
+       * Allow the producer to consume messages from the producer queue
        * Allow the consumer to consume messages from the consumer queue
        * Add the consumer function as an event source for the consumer queue
        * Store Producer function ARN for use in Event Rule Lambda function
        */
       reAlarmEventRuleQueue.grantConsumeMessages(reAlarmEventRuleFunction);
+      reAlarmProducerQueue.grantConsumeMessages(reAlarmProducerFunction);
       reAlarmConsumerQueue.grantSendMessages(reAlarmProducerFunction);
       reAlarmConsumerQueue.grantConsumeMessages(reAlarmConsumerFunction);
 
       /**
-       *
+       * Add producer queue as an event source for the producer function
        * Add consumer queue as an event source for the reAlarm consumer function
        * Add event rule queue as an event source for the reAlarm event rule function
        */
 
+      reAlarmProducerFunction.addEventSource(
+        new SqsEventSource(reAlarmProducerQueue, {
+          batchSize: 10,
+          reportBatchItemFailures: true,
+        }),
+      );
+
       reAlarmConsumerFunction.addEventSource(
         new SqsEventSource(reAlarmConsumerQueue, {
           batchSize: 10,
-          maxBatchingWindow: Duration.seconds(30),
           reportBatchItemFailures: true,
         }),
       );
@@ -299,7 +350,6 @@ export class AutoAlarmConstruct extends Construct {
       reAlarmEventRuleFunction.addEventSource(
         new SqsEventSource(reAlarmEventRuleQueue, {
           batchSize: 10,
-          maxBatchingWindow: Duration.seconds(30),
           reportBatchItemFailures: true,
         }),
       );
@@ -314,34 +364,36 @@ export class AutoAlarmConstruct extends Construct {
       });
 
       reAlarmScheduleRule.addTarget(
-        new LambdaFunction(reAlarmProducerFunction),
+        new SqsQueue(reAlarmProducerQueue, {
+          messageGroupId: 'ReAlarmScheduleRule',
+        }),
       );
 
       /**
        * Create the Event Rule to trigger the ReAlarm Event Rule queue on tag changes
        */
-      const reAlarmEventRuleTagRule = new Rule(
-        this,
-        'ReAlarmEventRuleTagRule',
-        {
-          eventPattern: {
-            source: ['aws.tag'],
-            detailType: ['Tag Change on Resource'],
-            detail: {
-              'service': ['cloudwatch'],
-              'resource-type': ['alarm'],
-              'changed-tag-keys': [
-                'autoalarm:re-alarm-minutes',
-                'autoalarm:re-alarm-enabled',
-              ],
-            },
+      const reAlarmEventTagRule = new Rule(this, 'ReAlarmEventTagRule', {
+        eventPattern: {
+          source: ['aws.tag'],
+          detailType: ['Tag Change on Resource'],
+          detail: {
+            'service': ['cloudwatch'],
+            'resource-type': ['alarm'],
+            'changed-tag-keys': [
+              'autoalarm:re-alarm-minutes',
+              'autoalarm:re-alarm-enabled',
+            ],
           },
-          description:
-            'Trigger the ReAlarm Event Rule Lambda function for tag changes',
         },
-      );
+        description:
+          'Trigger the ReAlarm Event Rule Lambda function for tag changes',
+      });
 
-      reAlarmEventRuleTagRule.addTarget(new SqsQueue(reAlarmEventRuleQueue));
+      reAlarmEventTagRule.addTarget(
+        new SqsQueue(reAlarmEventRuleQueue, {
+          messageGroupId: 'ReAlarmEventRuleTagRule',
+        }),
+      );
     }
 
     /**
@@ -546,7 +598,7 @@ export class AutoAlarmConstruct extends Construct {
      */
     for (const queueName of autoAlarmQueues) {
       // Create DLQ for each queue and let cdk handle the name generation after the queue name
-      const dlq = new ExtendedQueue(this, `${queueName}-failed`, {
+      const dlq = new ExtendedQueue(this, `${queueName}-Failed`, {
         fifo: true,
         retentionPeriod: Duration.days(14),
       });
@@ -565,7 +617,6 @@ export class AutoAlarmConstruct extends Construct {
         new SqsEventSource(queues[queueName], {
           batchSize: 10,
           reportBatchItemFailures: true,
-          enabled: true,
         }),
       );
     }
@@ -576,8 +627,6 @@ export class AutoAlarmConstruct extends Construct {
     this.eventBridgeRules = new EventRules(
       this,
       'EventBridgeRules',
-      accountId,
-      region,
     );
 
     /**
