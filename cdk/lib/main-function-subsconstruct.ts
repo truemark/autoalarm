@@ -27,11 +27,6 @@ export class AutoAlarm extends Construct {
   ) {
     super(scope, id);
     /**
-     * Create all the queues for all the services that AutoAlarm supports
-     */
-    this.mainFunctionQueues = this.createQueues();
-
-    /**
      * Set up the IAM role and policies for the main function
      */
     const role = this.createRole(
@@ -45,6 +40,11 @@ export class AutoAlarm extends Construct {
      * Create Node function definition
      */
     this.lambdaFunction = this.createFunction(role, prometheusWorkspaceId);
+
+    /**
+     * Create all the queues for all the services that AutoAlarm supports
+     */
+    this.mainFunctionQueues = this.createQueues();
   }
 
   /**
