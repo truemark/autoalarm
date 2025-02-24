@@ -150,7 +150,7 @@ export class ReAlarmConsumer extends Construct {
     role: IRole,
   ): ExtendedNodejsFunction {
     // Create the ReAlarm Consumer function
-    return new ExtendedNodejsFunction(this, 'ReAlarmConsumerFunction', {
+    return new ExtendedNodejsFunction(this, 'ConsumerFunction', {
       entry: path.join(
         __dirname,
         '..',

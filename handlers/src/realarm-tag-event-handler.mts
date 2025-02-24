@@ -210,6 +210,11 @@ export const handler: Handler = async (
   const batchItemFailures: SQSBatchItemFailure[] = [];
   const batchItemBodies: SQSRecord[] = [];
 
+  if (!event.Records) {
+    log.warn().msg('No Records found in event');
+    throw new Error('No Records found in event');
+  }
+
   for (const record of event.Records) {
     // Check if the record body contains an error message
     if (record.body && record.body.includes('errorMessage')) {
@@ -225,10 +230,6 @@ export const handler: Handler = async (
     const event = JSON.parse(record.body);
 
     log.trace().obj('body', event).msg('Processing message body');
-    if (!event.Records) {
-      log.warn().msg('No Records found in event');
-      throw new Error('No Records found in event');
-    }
 
     try {
       // Validate event structure and convert tags format
