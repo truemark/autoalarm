@@ -89,7 +89,7 @@ export class ReAlarmTagEventHandler extends Construct {
         fifo: true,
         contentBasedDeduplication: true,
         retentionPeriod: Duration.days(14),
-        visibilityTimeout: Duration.seconds(60),
+        visibilityTimeout: Duration.seconds(900),
         deadLetterQueue: {queue: reAlarmTagEventHandlerDLQ, maxReceiveCount: 3},
       },
     );
