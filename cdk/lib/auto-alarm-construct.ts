@@ -38,24 +38,24 @@ export class AutoAlarmConstruct extends Construct {
        */
       this.reAlarmConsumer = new ReAlarmConsumer(
         this,
-        'ReAlarmConsumerFunction',
+        'ReAlarmConsumerSubConstruct',
       );
       this.reAlarmProducer = new ReAlarmProducer(
         this,
-        'ReAlarmProducerFunction',
+        'ReAlarmProducerSubConstruct',
         this.reAlarmConsumer.reAlarmConsumerQueue.queueArn,
         this.reAlarmConsumer.reAlarmConsumerQueue.queueUrl,
       );
       this.reAlarmTagEventHandler = new ReAlarmTagEventHandler(
         this,
-        'ReAlarmTagEventHandlerFunction',
+        'ReAlarmTagEventHandlerSubConstruct',
         region,
         accountId,
         this.reAlarmProducer.lambdaFunction.functionArn,
       );
 
       /**
-       * Allow reAlarm event rule lambda function to consume messages from the event rule queue
+       * Allow reAlarm tag event handler lambda function to consume messages from the event rule queue
        * Allow the producer to send messages to the consumer queue
        * Allow the producer to consume messages from the producer queue
        * Allow the consumer to consume messages from the consumer queue
@@ -82,7 +82,7 @@ export class AutoAlarmConstruct extends Construct {
      */
     this.autoAlarm = new AutoAlarm(
       this,
-      'MainFunction',
+      'MainHandlerSubConstruct',
       region,
       accountId,
       prometheusArn,
@@ -94,7 +94,7 @@ export class AutoAlarmConstruct extends Construct {
      */
     this.eventBridgeRules = new EventRules(
       this,
-      'EventBridgeRules',
+      'EventBridgeRulesSubConstruct',
       this.autoAlarm.mainFunctionQueues,
     );
   }
