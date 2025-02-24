@@ -2,17 +2,7 @@ import {Construct} from 'constructs';
 import {AutoAlarm} from './main-function-subsconstruct';
 import {ReAlarmProducer} from './realarm-producer-subconstruct';
 import {ReAlarmConsumer} from './realarm-consumer-subconstruct';
-import {ExtendedQueue} from 'truemark-cdk-lib/aws-sqs';
-import {Rule} from 'aws-cdk-lib/aws-events';
-import {SqsQueue} from 'aws-cdk-lib/aws-events-targets';
-import {SqsEventSource} from 'aws-cdk-lib/aws-lambda-event-sources';
-import {
-  Role,
-  ServicePrincipal,
-  PolicyStatement,
-  Effect,
-} from 'aws-cdk-lib/aws-iam';
-import {Duration, Stack} from 'aws-cdk-lib';
+import {Stack} from 'aws-cdk-lib';
 import {ReAlarmTagEventHandler} from './realarm-event-rule-function';
 import {EventRules} from './service-eventbridge-subconstruct';
 
