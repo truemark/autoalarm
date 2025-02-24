@@ -40,12 +40,16 @@ export class AutoAlarmConstruct extends Construct {
         this,
         'ReAlarmConsumerSubConstruct',
       );
+
       this.reAlarmProducer = new ReAlarmProducer(
         this,
         'ReAlarmProducerSubConstruct',
+        region,
+        accountId,
         this.reAlarmConsumer.reAlarmConsumerQueue.queueArn,
         this.reAlarmConsumer.reAlarmConsumerQueue.queueUrl,
       );
+
       this.reAlarmTagEventHandler = new ReAlarmTagEventHandler(
         this,
         'ReAlarmTagEventHandlerSubConstruct',
@@ -57,16 +61,12 @@ export class AutoAlarmConstruct extends Construct {
       /**
        * Allow reAlarm tag event handler lambda function to consume messages from the event rule queue
        * Allow the producer to send messages to the consumer queue
-       * Allow the producer to consume messages from the producer queue
        * Allow the consumer to consume messages from the consumer queue
        * Add the consumer function as an event source for the consumer queue
        * Store Producer function ARN for use in Event Rule Lambda function
        */
       this.reAlarmTagEventHandler.reAlarmTagEventQueue.grantConsumeMessages(
         this.reAlarmTagEventHandler.lambdaFunction,
-      );
-      this.reAlarmProducer.reAlarmProducerQueue.grantConsumeMessages(
-        this.reAlarmProducer.lambdaFunction,
       );
       this.reAlarmConsumer.reAlarmConsumerQueue.grantSendMessages(
         this.reAlarmProducer.lambdaFunction,

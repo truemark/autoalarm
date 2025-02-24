@@ -24,7 +24,7 @@ export class ReAlarmTagEventHandler extends Construct {
     id: string,
     region: string,
     accountId: string,
-    producerFunctionArn: string,
+    reAlarmProducerFuncionArn: string,
   ) {
     super(scope, id);
     /**
@@ -47,7 +47,7 @@ export class ReAlarmTagEventHandler extends Construct {
      */
     this.lambdaFunction = this.initializeReAlarmTagEventFunction(
       role,
-      producerFunctionArn,
+      reAlarmProducerFuncionArn,
     );
 
     /**
@@ -63,6 +63,7 @@ export class ReAlarmTagEventHandler extends Construct {
     /**
      * Set up the EventBridge rule to target the ReAlarm Tag Event queue
      */
+    this.createEventBridgeRules();
   }
 
   /**
@@ -191,7 +192,7 @@ export class ReAlarmTagEventHandler extends Construct {
       memorySize: 768,
       role: role,
       environment: {
-        PRODUCER_QUEUE_ARN: reAlarmProducerQueueArn,
+        PRODUCER_FUNCTION_ARN: reAlarmProducerQueueArn,
       },
       deploymentOptions: {
         createDeployment: false,
@@ -201,9 +202,8 @@ export class ReAlarmTagEventHandler extends Construct {
 
   /**
    * private method to create eventbridge rule and set reAlarmTagEventQueue as target
-   * @param target - reAlarmTagEventQueue
    */
-  private createEventBridgeRules(target: ExtendedQueue): void {
+  private createEventBridgeRules(): void {
     const reAlarmEventTagRule = new Rule(this, 'ReAlarmEventTagRule', {
       eventPattern: {
         source: ['aws.tag'],
@@ -222,8 +222,8 @@ export class ReAlarmTagEventHandler extends Construct {
     });
 
     reAlarmEventTagRule.addTarget(
-      new SqsQueue(target, {
-        messageGroupId: 'ReAlarmTagEventRule',
+      new SqsQueue(this.reAlarmTagEventQueue, {
+        messageGroupId: 'ReAlarmTagEventHandler',
       }),
     );
   }

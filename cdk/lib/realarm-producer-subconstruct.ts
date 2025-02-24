@@ -10,17 +10,16 @@ import {Construct} from 'constructs';
 import * as path from 'path';
 import {Duration} from 'aws-cdk-lib';
 import {Architecture} from 'aws-cdk-lib/aws-lambda';
-import {ExtendedQueue} from 'truemark-cdk-lib/aws-sqs';
 import {Rule, Schedule} from 'aws-cdk-lib/aws-events';
-import {SqsQueue} from 'aws-cdk-lib/aws-events-targets';
-import {SqsEventSource} from 'aws-cdk-lib/aws-lambda-event-sources';
+import {LambdaFunction} from 'aws-cdk-lib/aws-events-targets';
 
 export class ReAlarmProducer extends Construct {
   public readonly lambdaFunction: ExtendedNodejsFunction;
-  public readonly reAlarmProducerQueue: ExtendedQueue;
   constructor(
     scope: Construct,
     id: string,
+    region: string,
+    accountId: string,
     reAlarmConsumerQueueArn: string,
     reAlarmConsumerQueueURL: string,
   ) {
@@ -32,14 +31,8 @@ export class ReAlarmProducer extends Construct {
     const role = this.createRole(reAlarmConsumerQueueArn);
 
     /**
-     * Create FIFO queue and FIFO DLQ for the ReAlarm Producer
-     */
-    const queues = this.createQueues();
-
-    /**
      * Expose the ReAlarm Producer queue for use in across the stack
      */
-    this.reAlarmProducerQueue = queues.producerQueue;
 
     /**
      * Initialize the ReAlarm Producer function
@@ -49,19 +42,17 @@ export class ReAlarmProducer extends Construct {
     this.lambdaFunction = this.createFunction(role, reAlarmConsumerQueueURL);
 
     /**
-     * Set up the EventBridge rule to trigger the ReAlarm Producer function
+     * grant eventbridge permissions to trigger the producer function
      */
-    this.createEventBridgeRules(this.reAlarmProducerQueue);
+    this.lambdaFunction.addPermission('EventBridgePermission', {
+      principal: new ServicePrincipal('events.amazonaws.com'),
+      sourceArn: `arn:aws:events:${region}:${accountId}:rule/AutoAlarm-ReAlarm-*`,
+    });
 
     /**
-     * Add producer queue as event source for the producer function
+     * Set up the EventBridge rule to trigger the ReAlarm Producer function
      */
-    this.lambdaFunction.addEventSource(
-      new SqsEventSource(this.reAlarmProducerQueue, {
-        batchSize: 10,
-        reportBatchItemFailures: true,
-      }),
-    );
+    this.createEventBridgeRules();
   }
 
   /**
@@ -113,44 +104,9 @@ export class ReAlarmProducer extends Construct {
   }
 
   /**
-   * Private method to create FIFO queue and FIFO DLQ for the ReAlarm Producer
-   */
-  private createQueues(): {
-    producerQueue: ExtendedQueue;
-    producerDLQ: ExtendedQueue;
-  } {
-    const reAlarmProducerDLQ = new ExtendedQueue(
-      this,
-      'reAlarmProducerQueue-Failed',
-      {
-        fifo: true,
-        retentionPeriod: Duration.days(14),
-      },
-    );
-
-    const reAlarmProducerQueue = new ExtendedQueue(
-      this,
-      'reAlarmProducerQueue',
-      {
-        fifo: true,
-        contentBasedDeduplication: true,
-        retentionPeriod: Duration.days(14),
-        visibilityTimeout: Duration.seconds(60),
-        deadLetterQueue: {queue: reAlarmProducerDLQ, maxReceiveCount: 3},
-      },
-    );
-
-    return {
-      producerQueue: reAlarmProducerQueue,
-      producerDLQ: reAlarmProducerDLQ,
-    };
-  }
-
-  /**
    * private method to up the EventBridge rule to trigger the ReAlarm Producer function
-   * @param target - The target queue for the EventBridge rule
    */
-  private createEventBridgeRules(target: ExtendedQueue): void {
+  private createEventBridgeRules(): void {
     const reAlarmeScheduleRule = new Rule(this, 'ReAlarmScheduleRule', {
       schedule: Schedule.rate(Duration.minutes(120)),
       description:
@@ -158,11 +114,7 @@ export class ReAlarmProducer extends Construct {
     });
 
     // add target to rule
-    reAlarmeScheduleRule.addTarget(
-      new SqsQueue(target, {
-        messageGroupId: 'ReAlarmScheduleRule',
-      }),
-    );
+    reAlarmeScheduleRule.addTarget(new LambdaFunction(this.lambdaFunction));
   }
 
   /**

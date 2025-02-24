@@ -28,7 +28,7 @@ const log = logging.initialize({
 // Configuration constants
 const TAG_KEY = 'autoalarm:re-alarm-minutes';
 
-const targetSQSQueueArn = process.env.TARGET_SQS_QUEUE_ARN;
+const targetFunctionArn = process.env.PRODUCER_FUNCTION_ARN;
 
 // Initialize AWS service clients
 const eventbridge = new EventBridgeClient({});
@@ -100,12 +100,12 @@ async function deleteEventBridgeRule(alarmName: string): Promise<void> {
  * Creates an EventBridge rule that triggers a Lambda function on a schedule
  * @param alarmName - The name of the CloudWatch Alarm
  * @param minutes - The interval in minutes for the rule to trigger
- * @param sqsArn - The ARN of the SQS queue to send the event to the reAlarm producer lambda
+ * @param functionArn - The ARN of the reAlarm producer lambda
  */
 async function createEventBridgeRule(
   alarmName: string,
   minutes: number,
-  sqsArn: string,
+  functionArn: string,
 ): Promise<void> {
   // Generate a hashed 6-character suffix
   const hashSuffix = createAlarmHash(alarmName);
@@ -134,8 +134,8 @@ async function createEventBridgeRule(
         Rule: ruleName,
         Targets: [
           {
-            Id: `ReAlarm Producer SQS Queue for`,
-            Arn: sqsArn,
+            Id: `ReAlarm Producer Function`,
+            Arn: functionArn,
             Input: JSON.stringify({
               event: {'reAlarmOverride-AlarmName': alarmName},
             }),
@@ -268,7 +268,7 @@ export const handler: Handler = async (event) => {
     }
 
     // Create/update the EventBridge rule with the specified schedule
-    await createEventBridgeRule(alarmName, minutes, targetSQSQueueArn!);
+    await createEventBridgeRule(alarmName, minutes, targetFunctionArn!);
   } catch (error) {
     log
       .error()
