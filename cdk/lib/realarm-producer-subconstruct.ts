@@ -121,7 +121,7 @@ export class ReAlarmProducer extends Construct {
   } {
     const reAlarmProducerDLQ = new ExtendedQueue(
       this,
-      'reAlarmConsumerQueue-Failed',
+      'reAlarmProducerQueue-Failed',
       {
         fifo: true,
         retentionPeriod: Duration.days(14),
