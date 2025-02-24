@@ -57,6 +57,7 @@ export class ReAlarmTagEventHandler extends Construct {
       new SqsEventSource(queues.reAlarmTagEventQueue, {
         batchSize: 10,
         reportBatchItemFailures: true,
+        enabled: true,
       }),
     );
 
@@ -184,7 +185,7 @@ export class ReAlarmTagEventHandler extends Construct {
         '..',
         'handlers',
         'src',
-        'realarm-event-rule-handler.mts',
+        'realarm-tag-event-handler.mts',
       ),
       architecture: Architecture.ARM_64,
       handler: 'handler',

@@ -36,14 +36,11 @@ export class AutoAlarmConstruct extends Construct {
        * 2. ReAlarm Producer: Consume from Producer Queue, grabs all alarms, applies pre-filtering and routes to consumer queue.
        * 3. ReAlarm Tag Event Handler: Creates/deletes EventBridge rules for ReAlarm custom schedule tag changes.
        */
-      this.reAlarmConsumer = new ReAlarmConsumer(
-        this,
-        'ReAlarmConsumerSubConstruct',
-      );
+      this.reAlarmConsumer = new ReAlarmConsumer(this, 'ReAlarmConsumer');
 
       this.reAlarmProducer = new ReAlarmProducer(
         this,
-        'ReAlarmProducerSubConstruct',
+        'ReAlarmProducer',
         region,
         accountId,
         this.reAlarmConsumer.reAlarmConsumerQueue.queueArn,
@@ -52,7 +49,7 @@ export class AutoAlarmConstruct extends Construct {
 
       this.reAlarmTagEventHandler = new ReAlarmTagEventHandler(
         this,
-        'ReAlarmTagEventHandlerSubConstruct',
+        'ReAlarmTagHandler',
         region,
         accountId,
         this.reAlarmProducer.lambdaFunction.functionArn,
@@ -82,7 +79,7 @@ export class AutoAlarmConstruct extends Construct {
      */
     this.autoAlarm = new AutoAlarm(
       this,
-      'MainHandlerSubConstruct',
+      'MainHandler',
       region,
       accountId,
       prometheusArn,
@@ -94,7 +91,7 @@ export class AutoAlarmConstruct extends Construct {
      */
     this.eventBridgeRules = new EventRules(
       this,
-      'EventBridgeRulesSubConstruct',
+      'ServiceEventRules',
       this.autoAlarm.mainFunctionQueues,
     );
   }

@@ -82,7 +82,7 @@ async function checkAndManageRDSClusterStatusAlarms(
       .str('function', 'checkAndManageRDSClusterStatusAlarms')
       .str('dbClusterId', dbClusterId)
       .msg('Alarm creation disabled by tag settings');
-    await deleteExistingAlarms('RDS', dbClusterId);
+    await deleteExistingAlarms('RDSCluster', dbClusterId);
     return;
   }
 
@@ -208,7 +208,7 @@ export async function manageInactiveRDSClusterAlarms(
   dbClusterId: string,
 ): Promise<void> {
   try {
-    await deleteExistingAlarms('RDS', dbClusterId);
+    await deleteExistingAlarms('RDSCluster', dbClusterId);
   } catch (e) {
     log
       .error()

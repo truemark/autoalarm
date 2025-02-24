@@ -95,6 +95,7 @@ export class AutoAlarm extends Construct {
         new SqsEventSource(queues[queueName], {
           batchSize: 10,
           reportBatchItemFailures: true,
+          enabled: true,
         }),
       );
     }

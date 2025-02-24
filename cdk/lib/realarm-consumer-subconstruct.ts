@@ -49,6 +49,7 @@ export class ReAlarmConsumer extends Construct {
       new SqsEventSource(this.reAlarmConsumerQueue, {
         batchSize: 10,
         reportBatchItemFailures: true,
+        enabled: true,
       }),
     );
   }

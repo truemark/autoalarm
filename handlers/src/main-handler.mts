@@ -259,6 +259,13 @@ export const handler: Handler = async (
           await parseCloudFrontEventAndCreateAlarms(event);
           break;
         case 'aws.ec2':
+          log
+            .debug()
+            .str('function', 'handler')
+            .obj('eventDetail', event.detail)
+            .str('resourceType', JSON.stringify(event.detail))
+            .msg('Processing EC2 event');
+
           switch (event.detail.resourceType) {
             case 'instance':
               ec2Events.push(event);
@@ -375,7 +382,11 @@ export const handler: Handler = async (
   }
 
   if (batchItemFailures.length > 0) {
-    log.error().msg('Batch item failures found');
+    log
+      .error()
+      .str('function', 'handler')
+      .num('failedItems', batchItemFailures.length)
+      .msg('Batch item failures found');
     log
       .error()
       .obj('batchItemBodies', batchItemBodies)
