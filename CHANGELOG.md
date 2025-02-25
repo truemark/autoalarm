@@ -1,20 +1,46 @@
 # AutoAlarm Changelog
 
+## v1.9.0
+
+### Added:
+- Added CloudWatch monitoring for RDS Clusters with support for several metrics:
+  - CPU utilization
+  - Database connections (with anomaly detection)
+  - DB load (with anomaly detection)
+  - Deadlocks
+  - Freeable memory
+  - Replica lag (both static thresholds and anomaly detection)
+  - Swap usage (anomaly detection)
+  - Write latency (anomaly detection)
+
+### Changed:
+- Implemented improved SQS batch processing to address the "snowball anti-pattern" by:
+  - Tracking individual failed items instead of failing entire batches
+  - Adding proper itemIdentifier tracking for failed SQS messages
+  - Enhancing error handling with detailed logging of failed items
+- Optimized CloudWatch API usage with:
+  - Batching of requests (100 alarms per API call)
+  - Rate limiting with dynamic delays based on API response times
+  - Concurrent tag fetching with controlled parallelism
+- Refactored auto-alarm-construct to use a single SQS queue for all alarm processing
+- Refactored AutoAlarm Construct so that each component of AutoAlarm is now broken off into its own subconstruct to aid in maintainability and readability.
+
+### Fixed:
+- Fixed critical issue where failed messages in a batch would cause the entire batch to be retried, leading to exponential retry growth (snowball anti-pattern)
+- Resolved throttling issues with CloudWatch API calls by implementing batched cloudwatch API calls and backoff strategies. This significantly reduces the number of API calls made to CloudWatch.
+
 ## v1.8.0
 
 ### Added:
-- Added CW DB monitoring for individual DB instances in RDS.
+- Added CloudWatch monitoring for individual DB instances in RDS.
 
 ### Changes:
-
 - ReAlarm now uses a single dedicated queue for the consumer function and another SQS queue for the reAlarm event rule function.
-- CloudWatch Alarms are now evaluated in batches of 100 and filtered in the api call thus significantly reducing the number of API calls made to CloudWatch.
+- CloudWatch Alarms are now evaluated in batches of 100 and filtered in the API call thus significantly reducing the number of API calls made to CloudWatch.
 - Batching of events now report individual failures in the batch rather than failing the entire batch and causing unnecessary retries.
 
 ### Fixed:
 - Fixed a bug that caused excessive delay in AutoAlarm due to batch processing of triggers for both ReAlarm functionality and Alarm Management.
-
-### Fixed:
 
 ## v1.7.4
 
