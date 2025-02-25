@@ -210,12 +210,15 @@ export const handler: Handler = async (
   const batchItemFailures: SQSBatchItemFailure[] = [];
   const batchItemBodies: SQSRecord[] = [];
 
-  if (!event.Records) {
-    log.warn().msg('No Records found in event');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const actualEvent = 'event' in event ? (event as any).event : event;
+
+  if (!actualEvent?.Records) {
+    log.warn().unknown('rawEvent', event).msg('No Records found in event');
     throw new Error('No Records found in event');
   }
 
-  for (const record of event.Records) {
+  for (const record of actualEvent.Records) {
     // Check if the record body contains an error message
     if (record.body && record.body.includes('errorMessage')) {
       log

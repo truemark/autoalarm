@@ -10,12 +10,14 @@ import {Construct} from 'constructs';
 import * as path from 'path';
 import {Duration} from 'aws-cdk-lib';
 import {Architecture} from 'aws-cdk-lib/aws-lambda';
-import {ExtendedQueue} from 'truemark-cdk-lib/aws-sqs';
 import {SqsEventSource} from 'aws-cdk-lib/aws-lambda-event-sources';
+import {NoBreachingExtendedQueue} from './extended-libs-subconstruct';
 
 export class AutoAlarm extends Construct {
   public readonly lambdaFunction: ExtendedNodejsFunction;
-  public readonly mainFunctionQueues: {[key: string]: ExtendedQueue};
+  public readonly mainFunctionQueues: {
+    [key: string]: NoBreachingExtendedQueue;
+  } = {};
 
   constructor(
     scope: Construct,
@@ -50,24 +52,24 @@ export class AutoAlarm extends Construct {
   /**
    * Private method to create all the queues for all the services that AutoAlarm supports
    */
-  private createQueues(): {[key: string]: ExtendedQueue} {
+  private createQueues(): {[key: string]: NoBreachingExtendedQueue} {
     //Create a string array of all the autoAlarmQueue names
     const autoAlarmQueues = [
-      'autoAlarmAlb',
-      'autoAlarmCloudfront',
-      'autoAlarmEc2',
-      'autoAlarmOpenSearchRule',
-      'autoAlarmRds',
-      'autoAlarmRdsCluster',
-      'autoAlarmRoute53resolver',
-      'autoAlarmSqs',
-      'autoAlarmTargetGroup',
-      'autoAlarmTransitGateway',
-      'autoAlarmVpn',
+      'AutoAlarm-Alb',
+      'AutoAlarm-Cloudfront',
+      'AutoAlarm-Ec2',
+      'AutoAlarm-OpenSearchRule',
+      'AutoAlarm-Rds',
+      'AutoAlarm-RdsCluster',
+      'AutoAlarm-Route53resolver',
+      'AutoAlarm-Sqs',
+      'AutoAlarm-TargetGroup',
+      'AutoAlarm-TransitGateway',
+      'AutoAlarm-Vpn',
     ];
 
     //Create a custom object that contains/will constain all our fifo queues
-    const queues: {[key: string]: ExtendedQueue} = {};
+    const queues: {[key: string]: NoBreachingExtendedQueue} = {};
 
     /**
      * Loop through the autoAlarmQueues array and create a new ExtendedQueue object for each queue and add it to queues object
@@ -76,19 +78,29 @@ export class AutoAlarm extends Construct {
      */
     for (const queueName of autoAlarmQueues) {
       // Create DLQ for each queue and let cdk handle the name generation after the queue name
-      const dlq = new ExtendedQueue(this, `${queueName}-Failed`, {
-        fifo: true,
-        retentionPeriod: Duration.days(14),
-      });
+      const dlq = new NoBreachingExtendedQueue(
+        this,
+        `${queueName.replace('AutoAlarm-', '')}-Failed`,
+        queueName,
+        {
+          fifo: true,
+          retentionPeriod: Duration.days(14),
+        },
+      );
 
       // Create queue with its own DLQ
-      queues[queueName] = new ExtendedQueue(this, queueName, {
-        fifo: true,
-        contentBasedDeduplication: true,
-        retentionPeriod: Duration.days(14),
-        visibilityTimeout: Duration.seconds(900),
-        deadLetterQueue: {queue: dlq, maxReceiveCount: 3},
-      });
+      queues[queueName] = new NoBreachingExtendedQueue(
+        this,
+        queueName.replace("'AutoAlarm-", ''),
+        queueName,
+        {
+          fifo: true,
+          contentBasedDeduplication: true,
+          retentionPeriod: Duration.days(14),
+          visibilityTimeout: Duration.seconds(900),
+          deadLetterQueue: {queue: dlq, maxReceiveCount: 3},
+        },
+      );
 
       queues[queueName].grantConsumeMessages(this.lambdaFunction);
       this.lambdaFunction.addEventSource(

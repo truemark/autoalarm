@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "aws-cdk-lib": "^2.178.1",
+    "cdk-monitoring-constructs": "^9.2.0",
     "constructs": "^10.4.2",
     "source-map-support": "^0.5.21",
     "truemark-cdk-lib": "1.18.2"

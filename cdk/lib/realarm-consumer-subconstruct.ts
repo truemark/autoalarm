@@ -10,13 +10,13 @@ import {Construct} from 'constructs';
 import * as path from 'path';
 import {Duration} from 'aws-cdk-lib';
 import {Architecture} from 'aws-cdk-lib/aws-lambda';
-import {ExtendedQueue} from 'truemark-cdk-lib/aws-sqs';
 import {SqsEventSource} from 'aws-cdk-lib/aws-lambda-event-sources';
+import {NoBreachingExtendedQueue} from './extended-libs-subconstruct';
 
 export class ReAlarmConsumer extends Construct {
-  public readonly labmdaFunction: ExtendedNodejsFunction;
+  public readonly lambdaFunction: ExtendedNodejsFunction;
   public readonly reAlarmConsumerFunctionArn: string;
-  public readonly reAlarmConsumerQueue: ExtendedQueue;
+  public readonly reAlarmConsumerQueue: NoBreachingExtendedQueue;
   constructor(scope: Construct, id: string) {
     super(scope, id);
     /**
@@ -35,17 +35,17 @@ export class ReAlarmConsumer extends Construct {
      * Create the ReAlarm Consumer function
      * @param role - The IAM role for the ReAlarm Consumer function
      */
-    this.labmdaFunction = this.initializeReAlarmConsumerFunction(role);
+    this.lambdaFunction = this.initializeReAlarmConsumerFunction(role);
 
     /**
      * Set the ARN of the ReAlarm Consumer function and expose it for use across the stack
      */
-    this.reAlarmConsumerFunctionArn = this.labmdaFunction.functionArn;
+    this.reAlarmConsumerFunctionArn = this.lambdaFunction.functionArn;
 
     /**
      * Add consumer queue as event source for the consumer function
      */
-    this.labmdaFunction.addEventSource(
+    this.lambdaFunction.addEventSource(
       new SqsEventSource(this.reAlarmConsumerQueue, {
         batchSize: 10,
         reportBatchItemFailures: true,
@@ -58,21 +58,23 @@ export class ReAlarmConsumer extends Construct {
    * private method to create the ReAlarm Consumer queue and DLQ
    */
   private createQueues(): {
-    consumerQueue: ExtendedQueue;
-    consumerDLQ: ExtendedQueue;
+    consumerQueue: NoBreachingExtendedQueue;
+    consumerDLQ: NoBreachingExtendedQueue;
   } {
-    const reAlarmConsumerDLQ = new ExtendedQueue(
+    const reAlarmConsumerDLQ = new NoBreachingExtendedQueue(
       this,
-      'reAlarmConsumerQueue-Failed',
+      'reAlarmConsumerFunction-Failed',
+      'reAlarmConsumerFunction',
       {
         fifo: true,
         retentionPeriod: Duration.days(14),
       },
     );
 
-    const reAlarmConsumerQueue = new ExtendedQueue(
+    const reAlarmConsumerQueue = new NoBreachingExtendedQueue(
       this,
-      'reAlarmConsumerQueue',
+      'reAlarmConsumerFunction',
+      'reAlarmConsumerFunction',
       {
         fifo: true,
         contentBasedDeduplication: true,

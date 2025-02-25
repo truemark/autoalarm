@@ -10,14 +10,14 @@ import {Construct} from 'constructs';
 import * as path from 'path';
 import {Duration} from 'aws-cdk-lib';
 import {Architecture} from 'aws-cdk-lib/aws-lambda';
-import {ExtendedQueue} from 'truemark-cdk-lib/aws-sqs';
 import {SqsEventSource} from 'aws-cdk-lib/aws-lambda-event-sources';
 import {Rule} from 'aws-cdk-lib/aws-events';
 import {SqsQueue} from 'aws-cdk-lib/aws-events-targets';
+import {NoBreachingExtendedQueue} from './extended-libs-subconstruct';
 
 export class ReAlarmTagEventHandler extends Construct {
   public readonly lambdaFunction: ExtendedNodejsFunction;
-  public readonly reAlarmTagEventQueue: ExtendedQueue;
+  public readonly reAlarmTagEventQueue: NoBreachingExtendedQueue;
 
   constructor(
     scope: Construct,
@@ -71,21 +71,23 @@ export class ReAlarmTagEventHandler extends Construct {
    * private method to create Fifo Queues for the ReAlarm Tag Event Handler
    */
   private createQueues(): {
-    reAlarmTagEventQueue: ExtendedQueue;
-    reAlarmTagEventDLQ: ExtendedQueue;
+    reAlarmTagEventQueue: NoBreachingExtendedQueue;
+    reAlarmTagEventDLQ: NoBreachingExtendedQueue;
   } {
-    const reAlarmTagEventHandlerDLQ = new ExtendedQueue(
+    const reAlarmTagEventHandlerDLQ = new NoBreachingExtendedQueue(
       this,
       'ReAlarmTagEventHandler-Failed',
+      'ReAlarmTagEventHandler',
       {
         fifo: true,
         retentionPeriod: Duration.days(14),
       },
     );
 
-    const reAlarmTagEventHandlerQueue = new ExtendedQueue(
+    const reAlarmTagEventHandlerQueue = new NoBreachingExtendedQueue(
       this,
       'ReAlarmTagEventHandlerQueue',
+      'ReAlarmTagEventHandler',
       {
         fifo: true,
         contentBasedDeduplication: true,

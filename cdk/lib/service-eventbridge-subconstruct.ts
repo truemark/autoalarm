@@ -1,7 +1,7 @@
 import {Construct} from 'constructs';
 import {Rule} from 'aws-cdk-lib/aws-events';
-import {ExtendedQueue} from 'truemark-cdk-lib/aws-sqs';
 import {SqsQueue} from 'aws-cdk-lib/aws-events-targets';
+import {NoBreachingExtendedQueue} from './extended-libs-subconstruct';
 
 type ServiceName =
   | 'alb'
@@ -26,7 +26,7 @@ export class EventRules extends Construct {
   constructor(
     scope: Construct,
     id: string,
-    queues: {[key: string]: ExtendedQueue},
+    queues: {[key: string]: NoBreachingExtendedQueue},
   ) {
     super(scope, id);
     this.serviceRules = new Map();
@@ -564,7 +564,7 @@ export class EventRules extends Construct {
    */
   private eventRuleTargetSetter(
     eventBridgeRules: EventRules,
-    queues: {[key: string]: ExtendedQueue},
+    queues: {[key: string]: NoBreachingExtendedQueue},
   ): void {
     try {
       for (const serviceName of eventBridgeRules.serviceRules.keys()) {

@@ -3,7 +3,7 @@ import {AutoAlarm} from './main-function-subsconstruct';
 import {ReAlarmProducer} from './realarm-producer-subconstruct';
 import {ReAlarmConsumer} from './realarm-consumer-subconstruct';
 import {Stack} from 'aws-cdk-lib';
-import {ReAlarmTagEventHandler} from './realarm-event-rule-function';
+import {ReAlarmTagEventHandler} from './realarm-tag-event-function';
 import {EventRules} from './service-eventbridge-subconstruct';
 
 interface AutoAlarmConstructProps {
@@ -69,7 +69,7 @@ export class AutoAlarmConstruct extends Construct {
         this.reAlarmProducer.lambdaFunction,
       );
       this.reAlarmConsumer.reAlarmConsumerQueue.grantConsumeMessages(
-        this.reAlarmConsumer.labmdaFunction,
+        this.reAlarmConsumer.lambdaFunction,
       );
     }
 
