@@ -1,4 +1,10 @@
-import {Handler} from 'aws-lambda';
+import {
+  Handler,
+  SQSBatchItemFailure,
+  SQSBatchResponse,
+  SQSEvent,
+  SQSRecord,
+} from 'aws-lambda';
 import {
   CloudWatchClient,
   DescribeAlarmsCommand,
@@ -27,11 +33,8 @@ const log = logging.initialize({
 
 // Configuration constants
 const TAG_KEY = 'autoalarm:re-alarm-minutes';
-const reAlarmARN =
-  process.env.RE_ALARM_FUNCTION_ARN ??
-  (() => {
-    throw new Error('RE_ALARM_FUNCTION_ARN required');
-  })();
+
+const targetFunctionArn = process.env.PRODUCER_FUNCTION_ARN;
 
 // Initialize AWS service clients
 const eventbridge = new EventBridgeClient({});
@@ -103,12 +106,12 @@ async function deleteEventBridgeRule(alarmName: string): Promise<void> {
  * Creates an EventBridge rule that triggers a Lambda function on a schedule
  * @param alarmName - The name of the CloudWatch Alarm
  * @param minutes - The interval in minutes for the rule to trigger
- * @param lambdaArn - The ARN of the Lambda function to trigger
+ * @param functionArn - The ARN of the reAlarm producer lambda
  */
 async function createEventBridgeRule(
   alarmName: string,
   minutes: number,
-  lambdaArn: string,
+  functionArn: string,
 ): Promise<void> {
   // Generate a hashed 6-character suffix
   const hashSuffix = createAlarmHash(alarmName);
@@ -118,7 +121,6 @@ async function createEventBridgeRule(
   const sanitizedName = sanitizeForEventBridge(alarmName);
 
   const ruleName = `AutoAlarm-ReAlarm-${sanitizedName}-${hashSuffix}`;
-  const targetId = `Target-${sanitizedName}-${hashSuffix}`;
   const rateUnit = minutes === 1 ? 'minute' : 'minutes';
 
   try {
@@ -138,8 +140,8 @@ async function createEventBridgeRule(
         Rule: ruleName,
         Targets: [
           {
-            Id: targetId,
-            Arn: lambdaArn,
+            Id: `ReAlarm Producer Function`,
+            Arn: functionArn,
             Input: JSON.stringify({
               event: {'reAlarmOverride-AlarmName': alarmName},
             }),
@@ -197,88 +199,141 @@ function validateEvent(event: {
  * When the tag is removed or invalid:
  * 1. Delete any existing EventBridge rule for the alarm
  */
-export const handler: Handler = async (event) => {
+export const handler: Handler = async (
+  event: SQSEvent,
+): Promise<void | SQSBatchResponse> => {
   log.trace().unknown('event', event).msg('Received event');
 
-  try {
-    // Validate event structure and convert tags format
-    const {resourceARN, tags} = validateEvent(event);
+  /**
+   * Create batch item failures array to store any failed items from the batch.
+   */
+  const batchItemFailures: SQSBatchItemFailure[] = [];
+  const batchItemBodies: SQSRecord[] = [];
 
-    // Get alarm details first to ensure we have a valid alarm
-    const alarmArn = event.resources[0]; // Get the first ARN from resources array
-    const alarmName = alarmArn.split(':alarm:')[1]; // Extract alarm name from ARN
-    try {
-      const {MetricAlarms} = await new CloudWatchClient({}).send(
-        new DescribeAlarmsCommand({
-          AlarmNames: [alarmName],
-        }),
-      );
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const actualEvent = 'event' in event ? (event as any).event : event;
+
+  if (!actualEvent?.Records) {
+    log.warn().unknown('rawEvent', event).msg('No Records found in event');
+    throw new Error('No Records found in event');
+  }
+
+  for (const record of actualEvent.Records) {
+    // Check if the record body contains an error message
+    if (record.body && record.body.includes('errorMessage')) {
       log
-        .info()
-        .str('function', 'handler')
-        .str('resourceARN', resourceARN)
-        .obj('MetricAlarms', MetricAlarms)
-        .msg('Alarm details');
-      if (!MetricAlarms) {
+        .error()
+        .str('messageId', record.messageId)
+        .msg('Error message found in record body');
+      batchItemFailures.push({itemIdentifier: record.messageId});
+      batchItemBodies.push(record);
+      continue;
+    }
+    // Parse the body of the SQS message
+    const event = JSON.parse(record.body);
+
+    log.trace().obj('body', event).msg('Processing message body');
+
+    try {
+      // Validate event structure and convert tags format
+      const {resourceARN, tags} = validateEvent(event);
+
+      // Get alarm details first to ensure we have a valid alarm
+      const alarmArn = event.resources[0]; // Get the first ARN from resources array
+      const alarmName = alarmArn.split(':alarm:')[1]; // Extract alarm name from ARN
+      try {
+        const {MetricAlarms} = await new CloudWatchClient({}).send(
+          new DescribeAlarmsCommand({
+            AlarmNames: [alarmName],
+          }),
+        );
         log
           .info()
           .str('function', 'handler')
           .str('resourceARN', resourceARN)
-          .msg('Alarm not found. Deleting any associated eventbridge rules');
+          .obj('MetricAlarms', MetricAlarms)
+          .msg('Alarm details');
+        if (!MetricAlarms) {
+          log
+            .info()
+            .str('function', 'handler')
+            .str('resourceARN', resourceARN)
+            .msg('Alarm not found. Deleting any associated eventbridge rules');
+          await deleteEventBridgeRule(alarmName);
+          return;
+        }
+      } catch (error) {
+        log
+          .error()
+          .str('function', 'handler')
+          .str('resourceARN', resourceARN)
+          .unknown('error', error)
+          .msg('Error fetching alarm details');
+        batchItemFailures.push({itemIdentifier: record.messageId});
+        batchItemBodies.push(record);
+      }
+
+      // Extract and validate the tags
+      const reAlarmTag = tags.find((t) => t.Key === TAG_KEY);
+      const enabledTag = tags.find(
+        (t) => t.Key === 'autoalarm:re-alarm-enabled',
+      );
+      const minutes = reAlarmTag ? Number(reAlarmTag.Value) : null;
+
+      // Check if explicitly disabled
+      if (
+        enabledTag &&
+        enabledTag.Value &&
+        enabledTag.Value.toLowerCase() === 'false'
+      ) {
+        log
+          .info()
+          .str('function', 'handler')
+          .str('resourceARN', resourceARN)
+          .msg('Re-alarm explicitly disabled - deleting existing rule');
+
         await deleteEventBridgeRule(alarmName);
         return;
       }
+
+      // Validate minutes value
+      if (!minutes || minutes <= 0 || !Number.isInteger(minutes)) {
+        log
+          .info()
+          .str('function', 'handler')
+          .str('resourceARN', resourceARN)
+          .msg('Invalid or missing tag value - deleting existing rule');
+
+        // Delete the rule if tag is invalid or missing
+        await deleteEventBridgeRule(alarmName);
+        return;
+      }
+
+      // Create/update the EventBridge rule with the specified schedule
+      await createEventBridgeRule(alarmName, minutes, targetFunctionArn!);
     } catch (error) {
       log
         .error()
         .str('function', 'handler')
-        .str('resourceARN', resourceARN)
         .unknown('error', error)
-        .msg('Error fetching alarm details');
+        .msg('Error processing event');
+      batchItemFailures.push({itemIdentifier: record.messageId});
+      batchItemBodies.push(record);
     }
 
-    // Extract and validate the tags
-    const reAlarmTag = tags.find((t) => t.Key === TAG_KEY);
-    const enabledTag = tags.find((t) => t.Key === 'autoalarm:re-alarm-enabled');
-    const minutes = reAlarmTag ? Number(reAlarmTag.Value) : null;
-
-    // Check if explicitly disabled
-    if (
-      enabledTag &&
-      enabledTag.Value &&
-      enabledTag.Value.toLowerCase() === 'false'
-    ) {
+    /**
+     * If there are any failed items in the batch, retry
+     */
+    if (batchItemFailures.length > 0) {
       log
-        .info()
+        .error()
         .str('function', 'handler')
-        .str('resourceARN', resourceARN)
-        .msg('Re-alarm explicitly disabled - deleting existing rule');
-
-      await deleteEventBridgeRule(alarmName);
-      return;
+        .num('failedItems', batchItemFailures.length)
+        .obj('failedItems', batchItemBodies)
+        .msg('Retrying failed items');
+      return {
+        batchItemFailures: batchItemFailures,
+      };
     }
-
-    // Validate minutes value
-    if (!minutes || minutes <= 0 || !Number.isInteger(minutes)) {
-      log
-        .info()
-        .str('function', 'handler')
-        .str('resourceARN', resourceARN)
-        .msg('Invalid or missing tag value - deleting existing rule');
-
-      // Delete the rule if tag is invalid or missing
-      await deleteEventBridgeRule(alarmName);
-      return;
-    }
-
-    // Create/update the EventBridge rule with the specified schedule
-    await createEventBridgeRule(alarmName, minutes, reAlarmARN);
-  } catch (error) {
-    log
-      .error()
-      .str('function', 'handler')
-      .unknown('error', error)
-      .msg('Error processing event');
-    throw error;
   }
 };

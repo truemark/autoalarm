@@ -23,6 +23,7 @@ import {parseR53ResolverEventAndCreateAlarms} from './route53-resolver-modules.m
 import {parseTransitGatewayEventAndCreateAlarms} from './transit-gateway-modules.mjs';
 import {parseCloudFrontEventAndCreateAlarms} from './cloudfront-modules.mjs';
 import {parseRDSEventAndCreateAlarms} from './rds-modules.mjs';
+import {parseRDSClusterEventAndCreateAlarms} from './rds-cluster-modules.mjs';
 import {EC2AlarmManagerArray} from './types.mjs';
 
 // Initialize logging
@@ -196,7 +197,13 @@ async function routeTagEvent(event: any) {
       break;
 
     case 'rds':
-      await parseRDSEventAndCreateAlarms(event);
+      if (resourceType === 'cluster') {
+        await parseRDSClusterEventAndCreateAlarms(event);
+      } else if (resourceType === 'db') {
+        await parseRDSEventAndCreateAlarms(event);
+      } else {
+        log.warn().msg(`Unhandled RDS resource: ${resourceType}`);
+      }
       break;
 
     default:
@@ -252,6 +259,13 @@ export const handler: Handler = async (
           await parseCloudFrontEventAndCreateAlarms(event);
           break;
         case 'aws.ec2':
+          log
+            .debug()
+            .str('function', 'handler')
+            .obj('eventDetail', event.detail)
+            .str('resourceType', JSON.stringify(event.detail))
+            .msg('Processing EC2 event');
+
           switch (event.detail.resourceType) {
             case 'instance':
               ec2Events.push(event);
@@ -306,7 +320,21 @@ export const handler: Handler = async (
           break;
 
         case 'aws.rds':
-          await parseRDSEventAndCreateAlarms(event);
+          if (
+            event.detail.eventName === 'CreateDBInstance' ||
+            event.detail.eventName === 'DeleteDBInstance'
+          ) {
+            await parseRDSEventAndCreateAlarms(event);
+          } else if (
+            event.detail.eventName === 'CreateDBCluster' ||
+            event.detail.eventName === 'DeleteDBCluster'
+          ) {
+            await parseRDSClusterEventAndCreateAlarms(event);
+          } else {
+            log.error().msg('Unhandled event name for aws.rds');
+            batchItemFailures.push({itemIdentifier: record.messageId});
+            batchItemBodies.push(record);
+          }
           break;
 
         case 'aws.route53resolver':
@@ -354,7 +382,11 @@ export const handler: Handler = async (
   }
 
   if (batchItemFailures.length > 0) {
-    log.error().msg('Batch item failures found');
+    log
+      .error()
+      .str('function', 'handler')
+      .num('failedItems', batchItemFailures.length)
+      .msg('Batch item failures found');
     log
       .error()
       .obj('batchItemBodies', batchItemBodies)

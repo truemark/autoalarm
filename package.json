@@ -1,6 +1,6 @@
 {
   "name": "autoalarm",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "scripts": {
     "install-handlers": "cd handlers && pnpm i --frozen-lockfile",
     "install-cdk": "cd cdk && pnpm i --frozen-lockfile",

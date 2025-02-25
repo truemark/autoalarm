@@ -1,4 +1,4 @@
-import {RDSClient, DescribeDBInstancesCommand} from '@aws-sdk/client-rds';
+import {RDSClient, DescribeDBClustersCommand} from '@aws-sdk/client-rds';
 import * as logging from '@nr1e/logging';
 import {Tag} from './types.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
@@ -28,19 +28,19 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   retryStrategy: retryStrategy,
 });
 
-const metricConfigs = MetricAlarmConfigs['RDS'];
+const metricConfigs = MetricAlarmConfigs['RDSCluster'];
 
-export async function fetchRDSTags(
-  dbInstanceId: string,
+export async function fetchRDSClusterTags(
+  dbClusterId: string,
 ): Promise<{[key: string]: string}> {
   try {
-    const command = new DescribeDBInstancesCommand({
-      DBInstanceIdentifier: dbInstanceId,
+    const command = new DescribeDBClustersCommand({
+      DBClusterIdentifier: dbClusterId,
     });
     const response = await rdsClient.send(command);
 
     const tags: {[key: string]: string} = {};
-    response.DBInstances?.[0]?.TagList?.forEach((tag) => {
+    response.DBClusters?.[0]?.TagList?.forEach((tag) => {
       if (tag.Key && tag.Value) {
         tags[tag.Key] = tag.Value;
       }
@@ -48,41 +48,41 @@ export async function fetchRDSTags(
 
     log
       .info()
-      .str('function', 'fetchRDSTags')
-      .str('dbInstanceId', dbInstanceId)
+      .str('function', 'fetchRDSClusterTags')
+      .str('dbClusterId', dbClusterId)
       .str('tags', JSON.stringify(tags))
-      .msg('Fetched database tags');
+      .msg('Fetched database cluster tags');
 
     return tags;
   } catch (error) {
     log
       .error()
-      .str('function', 'fetchRDSTags')
+      .str('function', 'fetchRDSClusterTags')
       .err(error)
-      .str('dbInstanceId', dbInstanceId)
-      .msg('Error fetching database tags');
+      .str('dbClusterId', dbClusterId)
+      .msg('Error fetching database cluster tags');
     return {};
   }
 }
 
-async function checkAndManageRDSStatusAlarms(
-  dbInstanceId: string,
+async function checkAndManageRDSClusterStatusAlarms(
+  dbClusterId: string,
   tags: Tag,
 ): Promise<void> {
   log
     .info()
-    .str('function', 'checkAndManageRDSStatusAlarms')
-    .str('dbInstanceId', dbInstanceId)
+    .str('function', 'checkAndManageRDSClusterStatusAlarms')
+    .str('dbClusterId', dbClusterId)
     .msg('Starting alarm management process');
 
   const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
   if (!isAlarmEnabled) {
     log
       .info()
-      .str('function', 'checkAndManageRDSStatusAlarms')
-      .str('dbInstanceId', dbInstanceId)
+      .str('function', 'checkAndManageRDSClusterStatusAlarms')
+      .str('dbClusterId', dbClusterId)
       .msg('Alarm creation disabled by tag settings');
-    await deleteExistingAlarms('RDS', dbInstanceId);
+    await deleteExistingAlarms('RDSCluster', dbClusterId);
     return;
   }
 
@@ -91,9 +91,9 @@ async function checkAndManageRDSStatusAlarms(
   for (const config of metricConfigs) {
     log
       .info()
-      .str('function', 'checkAndManageRDSStatusAlarms')
+      .str('function', 'checkAndManageRDSClusterStatusAlarms')
       .obj('config', config)
-      .str('dbInstanceId', dbInstanceId)
+      .str('dbClusterId', dbClusterId)
       .msg('Processing metric configuration');
 
     const tagValue = tags[`autoalarm:${config.tagKey}`];
@@ -105,28 +105,28 @@ async function checkAndManageRDSStatusAlarms(
       if (config.tagKey.includes('anomaly')) {
         log
           .info()
-          .str('function', 'checkAndManageRDSStatusAlarms')
-          .str('dbInstanceId', dbInstanceId)
+          .str('function', 'checkAndManageRDSClusterStatusAlarms')
+          .str('dbClusterId', dbClusterId)
           .msg('Tag key indicates anomaly alarm. Handling anomaly alarms');
         const anomalyAlarms = await handleAnomalyAlarms(
           config,
-          'RDS',
-          dbInstanceId,
-          [{Name: 'DBInstanceIdentifier', Value: dbInstanceId}],
+          'RDSCluster',
+          dbClusterId,
+          [{Name: 'DBClusterIdentifier', Value: dbClusterId}],
           updatedDefaults,
         );
         anomalyAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
       } else {
         log
           .info()
-          .str('function', 'checkAndManageRDSStatusAlarms')
-          .str('dbInstanceId', dbInstanceId)
+          .str('function', 'checkAndManageRDSClusterStatusAlarms')
+          .str('dbClusterId', dbClusterId)
           .msg('Tag key indicates static alarm. Handling static alarms');
         const staticAlarms = await handleStaticAlarms(
           config,
-          'RDS',
-          dbInstanceId,
-          [{Name: 'DBInstanceIdentifier', Value: dbInstanceId}],
+          'RDSCluster',
+          dbClusterId,
+          [{Name: 'DBClusterIdentifier', Value: dbClusterId}],
           updatedDefaults,
         );
         staticAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
@@ -134,14 +134,14 @@ async function checkAndManageRDSStatusAlarms(
     } else {
       log
         .info()
-        .str('function', 'checkAndManageRDSStatusAlarms')
-        .str('dbInstanceId', dbInstanceId)
+        .str('function', 'checkAndManageRDSClusterStatusAlarms')
+        .str('dbClusterId', dbClusterId)
         .str(
           'alarm prefix: ',
           buildAlarmName(
             config,
-            'RDS',
-            dbInstanceId,
+            'RDSCluster',
+            dbClusterId,
             AlarmClassification.Warning,
             'static',
           ).replace('Warning', ''),
@@ -152,20 +152,20 @@ async function checkAndManageRDSStatusAlarms(
     }
   }
   // Delete alarms that are not in the alarmsToKeep set
-  const existingAlarms = await getCWAlarmsForInstance('RDS', dbInstanceId);
+  const existingAlarms = await getCWAlarmsForInstance('RDS', dbClusterId);
 
   // Log the full structure of retrieved alarms for debugging
   log
     .info()
-    .str('function', 'checkAndManageRDSStatusAlarms')
+    .str('function', 'checkAndManageRDSClusterStatusAlarms')
     .obj('raw existing alarms', existingAlarms)
     .msg('Fetched existing alarms before filtering');
 
   // Log the expected pattern
-  const expectedPattern = `AutoAlarm-RDS-${dbInstanceId}`;
+  const expectedPattern = `AutoAlarm-RDSCluster-${dbClusterId}`;
   log
     .info()
-    .str('function', 'checkAndManageRDSStatusAlarms')
+    .str('function', 'checkAndManageRDSClusterStatusAlarms')
     .str('expected alarm pattern', expectedPattern)
     .msg('Verifying alarms against expected naming pattern');
 
@@ -174,7 +174,7 @@ async function checkAndManageRDSStatusAlarms(
     const matchesPattern = alarm.includes(expectedPattern);
     log
       .info()
-      .str('function', 'checkAndManageRDSStatusAlarms')
+      .str('function', 'checkAndManageRDSClusterStatusAlarms')
       .str('alarm name', alarm)
       .bool('matches expected pattern', matchesPattern)
       .msg('Evaluating alarm name match');
@@ -187,7 +187,7 @@ async function checkAndManageRDSStatusAlarms(
 
   log
     .info()
-    .str('function', 'checkAndManageRDSStatusAlarms')
+    .str('function', 'checkAndManageRDSClusterStatusAlarms')
     .obj('alarms to delete', alarmsToDelete)
     .msg('Deleting alarms that are no longer needed');
 
@@ -199,37 +199,37 @@ async function checkAndManageRDSStatusAlarms(
 
   log
     .info()
-    .str('function', 'checkAndManageRDSStatusAlarms')
-    .str('dbInstanceId', dbInstanceId)
+    .str('function', 'checkAndManageRDSClusterStatusAlarms')
+    .str('dbClusterId', dbClusterId)
     .msg('Finished alarm management process');
 }
 
-export async function manageInactiveRDSAlarms(
-  dbInstanceId: string,
+export async function manageInactiveRDSClusterAlarms(
+  dbClusterId: string,
 ): Promise<void> {
   try {
-    await deleteExistingAlarms('RDS', dbInstanceId);
+    await deleteExistingAlarms('RDSCluster', dbClusterId);
   } catch (e) {
     log
       .error()
-      .str('function', 'manageInactiveRDSAlarms')
+      .str('function', 'manageInactiveRDSClusterAlarms')
       .err(e)
       .msg(`Error deleting RDS alarms: ${e}`);
   }
 }
 
-// Function to extract dbInstanceId from ARN
-function extractRDSInstanceIdFromArn(arn: string): string {
-  const regex = /db[:/]([^:/]+)$/;
+// Function to extract dbClusterId from ARN
+function extractRDSClusterIdFromArn(arn: string): string {
+  const regex = /cluster[:/]([^:/]+)$/;
   const match = arn.match(regex);
 
-  // log the arn and the extracted dbInstanceId
+  // log the arn and the extracted dbClusterId
   log
     .info()
-    .str('function', 'extractRDSInstanceIdFromArn')
+    .str('function', 'extractRDSClusterIdFromArn')
     .str('arn', arn)
-    .str('dbInstanceId', match ? match[1] : 'not found')
-    .msg('Extracted dbInstanceId from ARN');
+    .str('dbClusterId', match ? match[1] : 'not found')
+    .msg('Extracted dbClusterId from ARN');
 
   return match ? match[1] : '';
 }
@@ -244,7 +244,7 @@ function extractRDSInstanceIdFromArn(arn: string): string {
  * @returns {string} The extracted RDS ARN, or an empty string if not found.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function findRDSArn(eventObj: Record<string, any>): string {
+function findRDSClusterArn(eventObj: Record<string, any>): string {
   const eventString = JSON.stringify(eventObj);
 
   // 1) Find where the ARN starts.
@@ -283,128 +283,128 @@ function findRDSArn(eventObj: Record<string, any>): string {
   return arn;
 }
 
-export async function parseRDSEventAndCreateAlarms(
+export async function parseRDSClusterEventAndCreateAlarms(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   event: Record<string, any>,
 ): Promise<{
-  dbInstanceId: string;
-  dbInstanceArn: string;
+  dbClusterId: string;
+  dbClusterArn: string;
   eventType: string;
   tags: Record<string, string>;
 } | void> {
-  let dbInstanceId: string = '';
-  let dbInstanceArn: string | Error = '';
+  let dbClusterId: string = '';
+  let dbClusterArn: string | Error = '';
   let eventType: string = '';
   let tags: Record<string, string> = {};
 
   switch (event['detail-type']) {
     case 'Tag Change on Resource':
-      dbInstanceArn = findRDSArn(event);
-      if (!dbInstanceArn) {
+      dbClusterArn = findRDSClusterArn(event);
+      if (!dbClusterArn) {
         log
           .error()
-          .str('function', 'extractRDSInstanceArnFromEvent')
+          .str('function', 'parseRDSClusterEventAndCreateAlarms')
           .obj('event', event)
-          .msg('No RDS ARN found in event for tag change event');
-        throw new Error('No RDS ARN found in event');
+          .msg('No RDS Cluster ARN found in event for tag change event');
+        throw new Error('No RDS Cluster ARN found in event');
       }
-      dbInstanceId = extractRDSInstanceIdFromArn(dbInstanceArn);
+      dbClusterId = extractRDSClusterIdFromArn(dbClusterArn);
       eventType = 'TagChange';
       tags = event.detail.tags || {};
       log
         .info()
-        .str('function', 'parseRDSEventAndCreateAlarms')
+        .str('function', 'parseRDSClusterEventAndCreateAlarms')
         .str('eventType', 'TagChange')
-        .str('dbInstanceId', dbInstanceId)
+        .str('dbClusterId', dbClusterId)
         .str('changedTags', JSON.stringify(event.detail['changed-tag-keys']))
         .msg('Processing Tag Change event');
 
-      if (dbInstanceId) {
-        tags = await fetchRDSTags(dbInstanceId);
+      if (dbClusterId) {
+        tags = await fetchRDSClusterTags(dbClusterId);
         log
           .info()
-          .str('function', 'parseRDSEventAndCreateAlarms')
-          .str('DB Instance ID', dbInstanceId)
+          .str('function', 'parseRDSClusterEventAndCreateAlarms')
+          .str('DB Cluster ID', dbClusterId)
           .str('tags', JSON.stringify(tags))
           .msg('Fetched tags for new TagChange event');
       } else {
         log
           .error()
-          .str('function', 'parseRDSEventAndCreateAlarms')
+          .str('function', 'parseRDSClusterEventAndCreateAlarms')
           .str('eventType', 'TagChance')
-          .msg('dbInstanceId not found in AddTagsToResource event');
-        throw new Error('dbInstanceId not found in AddTagsToResource event');
+          .msg('dbClusterId not found in AddTagsToResource event');
+        throw new Error('dbClusterId not found in AddTagsToResource event');
       }
       break;
 
     case 'AWS API Call via CloudTrail':
       switch (event.detail.eventName) {
-        case 'CreateDBInstance':
-          dbInstanceArn = findRDSArn(event);
-          if (!dbInstanceArn) {
+        case 'CreateDBCluster':
+          dbClusterArn = findRDSClusterArn(event);
+          if (!dbClusterArn) {
             log
               .error()
-              .str('function', 'extractRDSInstanceArnFromEvent')
+              .str('function', 'parseRDSClusterEventAndCreateAlarms')
               .obj('event', event)
-              .msg('No RDS ARN found in event for tag change event');
+              .msg('No RDS Cluster ARN found in event for tag change event');
             throw new Error(
-              'No RDS ARN found in event for AWS API Call via CloudTrail event',
+              'No RDS Cluster ARN found in event for AWS API Call via CloudTrail event',
             );
           }
-          dbInstanceId = extractRDSInstanceIdFromArn(dbInstanceArn);
+          dbClusterId = extractRDSClusterIdFromArn(dbClusterArn);
           eventType = 'Create';
           log
             .info()
-            .str('function', 'parseRDSEventAndCreateAlarms')
+            .str('function', 'parseRDSClusterEventAndCreateAlarms')
             .str('eventType', 'Create')
-            .str('dbInstanceId', dbInstanceId)
+            .str('dbClusterId', dbClusterId)
             .str('requestId', event.detail.requestID)
-            .msg('Processing CreateDBInstance event');
-          if (dbInstanceId) {
-            tags = await fetchRDSTags(dbInstanceId);
+            .msg('Processing CreateDBCluster event');
+          if (dbClusterId) {
+            tags = await fetchRDSClusterTags(dbClusterId);
             log
               .info()
-              .str('function', 'parseRDSEventAndCreateAlarms')
-              .str('dbInstanceId', dbInstanceId)
+              .str('function', 'parseRDSClusterEventAndCreateAlarms')
+              .str('dbClusterId', dbClusterId)
               .str('tags', JSON.stringify(tags))
-              .msg('Fetched tags for new CreateDBInstance event');
+              .msg('Fetched tags for new CreateDBCluster event');
           } else {
             log
               .error()
-              .str('function', 'parseRDSEventAndCreateAlarms')
+              .str('function', 'parseRDSClusterEventAndCreateAlarms')
               .str('eventType', 'Create')
-              .msg('dbInstanceId not found in CreateDBInstance event');
-            throw new Error('dbInstanceId not found in CreateDBInstance event');
+              .msg('dbClusterId not found in CreateDBCluster event');
+            throw new Error('dbClusterId not found in CreateDBCluster event');
           }
           break;
 
-        case 'DeleteDBInstance':
-          dbInstanceArn = findRDSArn(event);
-          if (!dbInstanceArn) {
+        case 'DeleteDBCluster':
+          dbClusterArn = findRDSClusterArn(event);
+          if (!dbClusterArn) {
             log
               .error()
-              .str('function', 'extractRDSInstanceArnFromEvent')
+              .str('function', 'parseRDSClusterEventAndCreateAlarms')
               .obj('event', event)
-              .msg('No RDS ARN found in event for tag change event');
+              .msg('No RDS Cluster ARN found in event DeleteDBCluster event');
             throw new Error(
-              'No RDS ARN found in event for AWS API Call via CloudTrail event',
+              'No RDS Cluster ARN found in event for AWS API Call via CloudTrail event',
             );
           }
-          dbInstanceId = extractRDSInstanceIdFromArn(dbInstanceArn);
+          dbClusterId = extractRDSClusterIdFromArn(dbClusterArn);
           eventType = 'Delete';
           log
             .info()
-            .str('function', 'parseRDSEventAndCreateAlarms')
+            .str('function', 'parseRDSClusterEventAndCreateAlarms')
             .str('eventType', 'Delete')
-            .str('dbInstanceId', dbInstanceId)
+            .str('dbClusterId', dbClusterId)
             .str('requestId', event.detail.requestID)
-            .msg('Processing DeleteDBInstance event');
+            .msg('Processing DeleteDBCluster event');
           break;
 
         default:
           log
             .error()
-            .str('function', 'parseRDSEventAndCreateAlarms')
+            .str('function', 'parseRDSClusterEventAndCreateAlarms')
             .str('eventName', event.detail.eventName)
             .str('requestId', event.detail.requestID)
             .msg('Unexpected CloudTrail event type');
@@ -415,33 +415,33 @@ export async function parseRDSEventAndCreateAlarms(
     default:
       log
         .error()
-        .str('function', 'parseRDSEventAndCreateAlarms')
+        .str('function', 'parseRDSClusterEventAndCreateAlarms')
         .str('detail-type', event['detail-type'])
         .msg('Unexpected event type');
       throw new Error('Unexpected event type');
   }
 
-  if (!dbInstanceId) {
+  if (!dbClusterId) {
     log
       .error()
-      .str('function', 'parseRDSEventAndCreateAlarms')
-      .str('dbInstanceId', dbInstanceId)
-      .msg('dbInstanceId is empty');
-    throw new Error('dbInstanceId is empty');
+      .str('function', 'parseRDSClusterEventAndCreateAlarms')
+      .str('dbClusterId', dbClusterId)
+      .msg('dbClusterId is empty');
+    throw new Error('dbClusterId is empty');
   }
 
   log
     .info()
-    .str('function', 'parseRDSEventAndCreateAlarms')
-    .str('dbInstanceId', dbInstanceId)
+    .str('function', 'parseRDSClusterEventAndCreateAlarms')
+    .str('dbClusterId', dbClusterId)
     .str('eventType', eventType)
-    .msg('Finished processing RDS event');
+    .msg('Finished processing RDS Cluster event');
 
-  if (dbInstanceId && (eventType === 'Create' || eventType === 'TagChange')) {
+  if (dbClusterId && (eventType === 'Create' || eventType === 'TagChange')) {
     log
       .info()
-      .str('function', 'parseRDSEventAndCreateAlarms')
-      .str('dbInstanceId', dbInstanceId)
+      .str('function', 'parseRDSClusterEventAndCreateAlarms')
+      .str('dbClusterId', dbClusterId)
       .str('tags', JSON.stringify(tags))
       .str(
         'autoalarm:enabled',
@@ -449,16 +449,16 @@ export async function parseRDSEventAndCreateAlarms(
           ? tags['autoalarm:enabled']
           : 'autoalarm tag does not exist',
       )
-      .msg('Starting to manage RDS alarms');
-    await checkAndManageRDSStatusAlarms(dbInstanceId, tags);
+      .msg('Starting to manage RDS Cluster alarms');
+    await checkAndManageRDSClusterStatusAlarms(dbClusterId, tags);
   } else if (eventType === 'Delete') {
     log
       .info()
-      .str('function', 'parseRDSEventAndCreateAlarms')
-      .str('dbInstanceId', dbInstanceId)
-      .msg('Starting to manage inactive RDS alarms');
-    await manageInactiveRDSAlarms(dbInstanceId);
+      .str('function', 'parseRDSClusterEventAndCreateAlarms')
+      .str('dbClusterId', dbClusterId)
+      .msg('Starting to manage inactive RDS Cluster alarms');
+    await manageInactiveRDSClusterAlarms(dbClusterId);
   }
 
-  return {dbInstanceArn, dbInstanceId, eventType, tags};
+  return {dbClusterArn, dbClusterId, eventType, tags};
 }
