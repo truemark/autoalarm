@@ -16,7 +16,7 @@ importers:
         version: 3.623.0
       '@aws-sdk/client-cloudfront':
         specifier: ^3.693.0
-        version: 3.750.0
+        version: 3.757.0
       '@aws-sdk/client-cloudwatch':
         specifier: ^3.694.0
         version: 3.750.0
@@ -25,7 +25,7 @@ importers:
         version: 3.751.0
       '@aws-sdk/client-ec2':
         specifier: ^3.695.0
-        version: 3.750.0
+        version: 3.757.0
       '@aws-sdk/client-elastic-load-balancing-v2':
         specifier: ^3.693.0
         version: 3.750.0
@@ -160,8 +160,8 @@ packages:
     resolution: {integrity: sha512-/ShlKq/zAXdMGf0nmmsxBy5m6bHhZJXPThKoIRlLQ4AgbjFbV/SilWgG+BEAqw7Jw1cJ794udSeNTQbdXOEthQ==}
     engines: {node: '>=16.0.0'}
 
-  '@aws-sdk/client-cloudfront@3.750.0':
-    resolution: {integrity: sha512-fKnoWuvt6ITMknk1tUfNuvWOAu0iuVh5216pMdBYtrBPUix87rRY1YUinLA5tJQBPFGvKh59hg2iTAXk1stO+w==}
+  '@aws-sdk/client-cloudfront@3.757.0':
+    resolution: {integrity: sha512-ngbaf+r0/9QLHyB4pGNgAzSvu7LjDgmWj0bWBlcl2h+hxBV5DHVKcCbDn8RsKyBXyXW4ousVhUVi0H2mQxR+aw==}
     engines: {node: '>=18.0.0'}
 
   '@aws-sdk/client-cloudwatch@3.750.0':
@@ -172,8 +172,8 @@ packages:
     resolution: {integrity: sha512-U7hbXiuePbfmH7wstnCvOmUxwrWRV3/FMK2WuZU7wQZfBrIsPdmMh8XMGyXJ7VZ4dSq66Skqs0U2OBpB+9sO5w==}
     engines: {node: '>=18.0.0'}
 
-  '@aws-sdk/client-ec2@3.750.0':
-    resolution: {integrity: sha512-IIbM82BOeUNsoZJwcRwnb0uhQaG84kWOMGZGv6+JWPl7yGMwd1SZ3whB2LdhaIhVvzkidDIOrxQwQQ5JauE2qg==}
+  '@aws-sdk/client-ec2@3.757.0':
+    resolution: {integrity: sha512-mF7a2MsLSabS/PPIn+mica0OUWOrPFTMs3pvuzJRePs9CVm+bG117zYVEJ470PoHyimPw6ei6YPlqkpD1WIeYg==}
     engines: {node: '>=18.0.0'}
 
   '@aws-sdk/client-elastic-load-balancing-v2@3.750.0':
@@ -1614,8 +1614,8 @@ packages:
     resolution: {integrity: sha512-xkjOecfnKGkSsOwtZ5Pz7Us/T6mrbPQrq0nh+aCO5V9nk5NLWmasAHumTKjiPJPWANe+kAZ84Jc8ooJkzZ88Sw==}
     hasBin: true
 
-  fastq@1.19.0:
-    resolution: {integrity: sha512-7SFSRCNjBQIZH/xZR3iy5iQYR8aGBE0h3VG6/cwlbrpdciNYBMotQav8c1XI3HjHH+NikUpP53nPdlZSdWmFzA==}
+  fastq@1.19.1:
+    resolution: {integrity: sha512-GwLTyxkCXjXbxqIhTsMI2Nui8huMPtnxg7krajPJAjnEG/iiOS7i+zCtWGZR9G0NBKbXKh6X9m9UIsYX/N6vvQ==}
 
   fflate@0.8.1:
     resolution: {integrity: sha512-/exOvEuc+/iaUm105QIiOt4LpBdMTWsXxqR0HDF35vx3fmaKzw7354gTilCh5rkzEt8WYyG//ku3h3nRmd7CHQ==}
@@ -2169,8 +2169,8 @@ packages:
     resolution: {integrity: sha512-pb/MYmXstAkysRFx8piNI1tGFNQIFA3vkE3Gq4EuA1dF6gHp/+vgZqsCGJapvy8N3Q+4o7FwvquPJcnZ7RYy4g==}
     engines: {node: '>=4'}
 
-  reusify@1.0.4:
-    resolution: {integrity: sha512-U9nH88a3fc/ekCF1l0/UP1IosiuIjyTh7hBvXVMHYgVcfGvt897Xguj2UOLDeI5BG2m7/uwyaLVT6fbtCwTyzw==}
+  reusify@1.1.0:
+    resolution: {integrity: sha512-g6QUff04oZpHs0eG5p83rFLhHeV00ug/Yf9nZM6fLeUrPguBTkTQOdpAWWspMh55TZfVQDPaN3NQJfbVRAxdIw==}
     engines: {iojs: '>=1.0.0', node: '>=0.10.0'}
 
   rimraf@3.0.2:
@@ -2635,7 +2635,7 @@ snapshots:
     transitivePeerDependencies:
       - aws-crt
 
-  '@aws-sdk/client-cloudfront@3.750.0':
+  '@aws-sdk/client-cloudfront@3.757.0':
     dependencies:
       '@aws-crypto/sha256-browser': 5.2.0
       '@aws-crypto/sha256-js': 5.2.0
@@ -2776,7 +2776,7 @@ snapshots:
     transitivePeerDependencies:
       - aws-crt
 
-  '@aws-sdk/client-ec2@3.750.0':
+  '@aws-sdk/client-ec2@3.757.0':
     dependencies:
       '@aws-crypto/sha256-browser': 5.2.0
       '@aws-crypto/sha256-js': 5.2.0
@@ -4129,7 +4129,7 @@ snapshots:
   '@nodelib/fs.walk@1.2.8':
     dependencies:
       '@nodelib/fs.scandir': 2.1.5
-      fastq: 1.19.0
+      fastq: 1.19.1
 
   '@nr1e/commons@0.0.2-alpha.9': {}
 
@@ -5424,9 +5424,9 @@ snapshots:
     dependencies:
       strnum: 1.1.1
 
-  fastq@1.19.0:
+  fastq@1.19.1:
     dependencies:
-      reusify: 1.0.4
+      reusify: 1.1.0
 
   fflate@0.8.1: {}
 
@@ -6003,7 +6003,7 @@ snapshots:
 
   resolve-from@4.0.0: {}
 
-  reusify@1.0.4: {}
+  reusify@1.1.0: {}
 
   rimraf@3.0.2:
     dependencies:

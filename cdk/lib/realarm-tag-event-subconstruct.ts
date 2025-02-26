@@ -76,7 +76,7 @@ export class ReAlarmTagEventHandler extends Construct {
   } {
     const reAlarmTagEventHandlerDLQ = new NoBreachingExtendedQueue(
       this,
-      'ReAlarmTagEventHandler-Failed',
+      'ReAlarmTagHandler-Failed',
       'ReAlarmTagEventHandler',
       {
         fifo: true,
@@ -86,7 +86,7 @@ export class ReAlarmTagEventHandler extends Construct {
 
     const reAlarmTagEventHandlerQueue = new NoBreachingExtendedQueue(
       this,
-      'ReAlarmTagEventHandlerQueue',
+      'ReAlarmTagHandlerQueue',
       'ReAlarmTagEventHandler',
       {
         fifo: true,

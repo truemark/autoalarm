@@ -190,6 +190,7 @@ async function sendAlarmsToSQS(
           alarmActions: alarm.AlarmActions || [],
           isOverride,
         }),
+        MessageGroupId: 'reAlarm-Producer',
       }));
 
       // Send the batch to SQS
@@ -263,8 +264,8 @@ export const handler: Handler = async (event: any): Promise<void> => {
     .str('overrideAlarmName', eventData['reAlarmOverride-AlarmName'] ?? '')
     .msg('Received event');
 
-  if (!process.env.QUEUE_URL) {
-    throw new Error('QUEUE_URL environment variable is required');
+  if (!process.env.CONSUMER_QUEUE_URL) {
+    throw new Error('CONSUMER_QUEUE_URL environment variable is required');
   }
 
   resetMetrics();
@@ -277,7 +278,11 @@ export const handler: Handler = async (event: any): Promise<void> => {
         eventData['reAlarmOverride-AlarmName'],
       );
       if (overrideAlarms.length > 0) {
-        await sendAlarmsToSQS(overrideAlarms, process.env.QUEUE_URL, true);
+        await sendAlarmsToSQS(
+          overrideAlarms,
+          process.env.CONSUMER_QUEUE_URL,
+          true,
+        );
       }
     } else {
       // Handle standard alarms case
@@ -292,7 +297,11 @@ export const handler: Handler = async (event: any): Promise<void> => {
         }
 
         totalAlarms += page.MetricAlarms.length;
-        await sendAlarmsToSQS(page.MetricAlarms, process.env.QUEUE_URL, false);
+        await sendAlarmsToSQS(
+          page.MetricAlarms,
+          process.env.CONSUMER_QUEUE_URL,
+          false,
+        );
 
         log
           .info()

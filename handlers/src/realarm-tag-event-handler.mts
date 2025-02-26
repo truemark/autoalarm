@@ -140,7 +140,7 @@ async function createEventBridgeRule(
         Rule: ruleName,
         Targets: [
           {
-            Id: `ReAlarm Producer Function`,
+            Id: `Target-${sanitizedName}-${hashSuffix}`,
             Arn: functionArn,
             Input: JSON.stringify({
               event: {'reAlarmOverride-AlarmName': alarmName},
@@ -160,6 +160,7 @@ async function createEventBridgeRule(
       .error()
       .str('function', 'createEventBridgeRule')
       .str('alarmName', alarmName)
+      .str('functionArn', functionArn)
       .msg(`Error creating rule: ${error}`);
     throw error;
   }
@@ -201,7 +202,7 @@ function validateEvent(event: {
  */
 export const handler: Handler = async (
   event: SQSEvent,
-): Promise<void | SQSBatchResponse> => {
+): Promise<SQSBatchResponse> => {
   log.trace().unknown('event', event).msg('Received event');
 
   /**
@@ -215,62 +216,57 @@ export const handler: Handler = async (
 
   if (!actualEvent?.Records) {
     log.warn().unknown('rawEvent', event).msg('No Records found in event');
-    throw new Error('No Records found in event');
+    // Instead of throwing, return the event as failed
+    return {
+      batchItemFailures: [{itemIdentifier: 'entire-batch'}],
+    };
   }
 
   for (const record of actualEvent.Records) {
-    // Check if the record body contains an error message
-    if (record.body && record.body.includes('errorMessage')) {
-      log
-        .error()
-        .str('messageId', record.messageId)
-        .msg('Error message found in record body');
-      batchItemFailures.push({itemIdentifier: record.messageId});
-      batchItemBodies.push(record);
-      continue;
-    }
-    // Parse the body of the SQS message
-    const event = JSON.parse(record.body);
-
-    log.trace().obj('body', event).msg('Processing message body');
-
     try {
+      // Check if the record body contains an error message
+      if (record.body && record.body.includes('errorMessage')) {
+        log
+          .error()
+          .str('messageId', record.messageId)
+          .msg('Error message found in record body');
+        batchItemFailures.push({itemIdentifier: record.messageId});
+        batchItemBodies.push(record);
+        continue;
+      }
+
+      // Parse the body of the SQS message
+      const event = JSON.parse(record.body);
+      log.trace().obj('body', event).msg('Processing message body');
+
       // Validate event structure and convert tags format
       const {resourceARN, tags} = validateEvent(event);
 
       // Get alarm details first to ensure we have a valid alarm
       const alarmArn = event.resources[0]; // Get the first ARN from resources array
       const alarmName = alarmArn.split(':alarm:')[1]; // Extract alarm name from ARN
-      try {
-        const {MetricAlarms} = await new CloudWatchClient({}).send(
-          new DescribeAlarmsCommand({
-            AlarmNames: [alarmName],
-          }),
-        );
+
+      const {MetricAlarms} = await new CloudWatchClient({}).send(
+        new DescribeAlarmsCommand({
+          AlarmNames: [alarmName],
+        }),
+      );
+
+      log
+        .info()
+        .str('function', 'handler')
+        .str('resourceARN', resourceARN)
+        .obj('MetricAlarms', MetricAlarms)
+        .msg('Alarm details');
+
+      if (!MetricAlarms) {
         log
           .info()
           .str('function', 'handler')
           .str('resourceARN', resourceARN)
-          .obj('MetricAlarms', MetricAlarms)
-          .msg('Alarm details');
-        if (!MetricAlarms) {
-          log
-            .info()
-            .str('function', 'handler')
-            .str('resourceARN', resourceARN)
-            .msg('Alarm not found. Deleting any associated eventbridge rules');
-          await deleteEventBridgeRule(alarmName);
-          return;
-        }
-      } catch (error) {
-        log
-          .error()
-          .str('function', 'handler')
-          .str('resourceARN', resourceARN)
-          .unknown('error', error)
-          .msg('Error fetching alarm details');
-        batchItemFailures.push({itemIdentifier: record.messageId});
-        batchItemBodies.push(record);
+          .msg('Alarm not found. Deleting any associated eventbridge rules');
+        await deleteEventBridgeRule(alarmName);
+        continue; // Continue to next record instead of returning
       }
 
       // Extract and validate the tags
@@ -293,7 +289,7 @@ export const handler: Handler = async (
           .msg('Re-alarm explicitly disabled - deleting existing rule');
 
         await deleteEventBridgeRule(alarmName);
-        return;
+        continue; // Continue to next record instead of returning
       }
 
       // Validate minutes value
@@ -306,7 +302,7 @@ export const handler: Handler = async (
 
         // Delete the rule if tag is invalid or missing
         await deleteEventBridgeRule(alarmName);
-        return;
+        continue; // Continue to next record instead of returning
       }
 
       // Create/update the EventBridge rule with the specified schedule
@@ -315,25 +311,26 @@ export const handler: Handler = async (
       log
         .error()
         .str('function', 'handler')
+        .str('messageId', record.messageId)
         .unknown('error', error)
-        .msg('Error processing event');
+        .msg('Error processing record');
       batchItemFailures.push({itemIdentifier: record.messageId});
       batchItemBodies.push(record);
     }
-
-    /**
-     * If there are any failed items in the batch, retry
-     */
-    if (batchItemFailures.length > 0) {
-      log
-        .error()
-        .str('function', 'handler')
-        .num('failedItems', batchItemFailures.length)
-        .obj('failedItems', batchItemBodies)
-        .msg('Retrying failed items');
-      return {
-        batchItemFailures: batchItemFailures,
-      };
-    }
   }
+
+  if (batchItemFailures.length > 0) {
+    log
+      .info()
+      .str('function', 'handler')
+      .num('failedItems', batchItemFailures.length)
+      .obj('failedItems', batchItemFailures)
+      .obj('batchItemBodies', batchItemBodies)
+      .msg('Reporting failed items for partial batch processing');
+  }
+
+  // Always return the batchItemFailures, which will be empty if all succeeded
+  return {
+    batchItemFailures: batchItemFailures,
+  };
 };
