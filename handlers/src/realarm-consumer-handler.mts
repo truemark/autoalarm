@@ -1,4 +1,10 @@
-import {SQSHandler, SQSEvent} from 'aws-lambda';
+import {
+  SQSHandler,
+  SQSEvent,
+  SQSBatchResponse,
+  SQSBatchItemFailure,
+  SQSRecord,
+} from 'aws-lambda';
 import {
   CloudWatchClient,
   ListTagsForResourceCommand,
@@ -358,7 +364,9 @@ async function processAlarm(message: AlarmMessage, tags: Tag[]): Promise<void> {
   }
 }
 
-export const handler: SQSHandler = async (event: SQSEvent): Promise<void> => {
+export const handler: SQSHandler = async (
+  event: SQSEvent,
+): Promise<SQSBatchResponse> => {
   log
     .trace()
     .str('function', 'handler')
@@ -367,9 +375,36 @@ export const handler: SQSHandler = async (event: SQSEvent): Promise<void> => {
 
   resetMetrics();
 
-  const messages = event.Records.map(
-    (record) => JSON.parse(record.body) as AlarmMessage,
-  );
+  /**
+   * Create batch item failures array to store any failed items from the batch.
+   */
+  const batchItemFailures: SQSBatchItemFailure[] = [];
+  const batchItemBodies: SQSRecord[] = [];
+
+  const messages = event.Records.map((record) => {
+    try {
+      // Check if the record body contains an error message
+      if (record.body && record.body.includes('errorMessage')) {
+        log
+          .error()
+          .str('messageId', record.messageId)
+          .msg('Error message found in record body');
+        batchItemFailures.push({itemIdentifier: record.messageId});
+        batchItemBodies.push(record);
+        return null;
+      }
+      return JSON.parse(record.body) as AlarmMessage;
+    } catch (error) {
+      log
+        .error()
+        .str('messageId', record.messageId)
+        .str('error', String(error))
+        .msg('Error parsing record body');
+      batchItemFailures.push({itemIdentifier: record.messageId});
+      batchItemBodies.push(record);
+      return null;
+    }
+  }).filter((message): message is AlarmMessage => message !== null);
 
   // Fetch all tags upfront
   const tagCache = await rateLimitedTagFetch(messages);
@@ -382,9 +417,27 @@ export const handler: SQSHandler = async (event: SQSEvent): Promise<void> => {
       ),
     );
 
-    const failures = processingResults.filter(
-      (result) => result.status === 'rejected',
-    );
+    const failures = processingResults.filter((result, index) => {
+      if (result.status === 'rejected') {
+        // Find the corresponding record ID for this failed message
+        const failedMessage = messages[index];
+        const failedRecordId = event.Records.find(
+          (r) => r.body && r.body.includes(failedMessage.alarmName),
+        )?.messageId;
+
+        if (failedRecordId) {
+          batchItemFailures.push({itemIdentifier: failedRecordId});
+          const record = event.Records.find(
+            (r) => r.messageId === failedRecordId,
+          );
+          if (record) {
+            batchItemBodies.push(record);
+          }
+        }
+        return true;
+      }
+      return false;
+    });
 
     logMetricsSummary();
 
@@ -395,7 +448,7 @@ export const handler: SQSHandler = async (event: SQSEvent): Promise<void> => {
         .num('failureCount', failures.length)
         .num('successCount', processingResults.length - failures.length)
         .msg('Some alarms failed to process');
-      throw new Error('Some alarms failed to process');
+      // No longer throw error here
     }
 
     log
@@ -409,6 +462,33 @@ export const handler: SQSHandler = async (event: SQSEvent): Promise<void> => {
       .str('function', 'handler')
       .str('error', String(error))
       .msg('Failed to process SQS event');
-    throw error;
+
+    // Instead of throwing, mark all remaining records as failed
+    for (const record of event.Records) {
+      if (
+        !batchItemFailures.some((f) => f.itemIdentifier === record.messageId)
+      ) {
+        batchItemFailures.push({itemIdentifier: record.messageId});
+        batchItemBodies.push(record);
+      }
+    }
   }
+
+  if (batchItemFailures.length > 0) {
+    log
+      .info()
+      .str('function', 'handler')
+      .num('failedItems', batchItemFailures.length)
+      .obj(
+        'failedItemIds',
+        batchItemFailures.map((f) => f.itemIdentifier),
+      )
+      .obj('failedItemBodies', batchItemBodies)
+      .msg('Reporting failed items for partial batch processing');
+  }
+
+  // Return the batch item failures
+  return {
+    batchItemFailures: batchItemFailures,
+  };
 };
