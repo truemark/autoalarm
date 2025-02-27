@@ -440,9 +440,10 @@ export class EventRules extends Construct {
       sfnStateRule: new Rule(this, 'SFNRule', {
         eventPattern: {
           source: ['aws.states'],
-          detailType: ['AWS Step Functions Activity State Change'],
+          detailType: ['AWS API Call via CloudTrail'],
           detail: {
-            state: ['CreateStateMachine', 'DeleteStateMachine'],
+            eventSource: ['states.amazonaws.com'],
+            eventName: ['CreateStateMachine', 'DeleteStateMachine'],
           },
         },
         description: 'Routes Step Functions events to AutoAlarm',
@@ -456,7 +457,7 @@ export class EventRules extends Construct {
           detailType: ['Tag Change on Resource'],
           detail: {
             'service': ['states'],
-            'resource-type': ['state-machine'],
+            'resource-type': ['stateMachine'],
             'changed-tag-keys': [
               'autoalarm:enabled',
               'autoalarm:executions-failed',
@@ -473,6 +474,7 @@ export class EventRules extends Construct {
     });
     this.serviceRules.set('sfn', sfnRules);
   }
+
   private addTargetGroupRules() {
     const targetGroupRules = this.serviceRules.get('targetgroup') || [];
 
