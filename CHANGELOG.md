@@ -1,5 +1,14 @@
 # AutoAlarm Changelog
 
+## v1.9.1
+
+### Added:
+- Added CloudWatch monitoring for State Machines(Step Functions) with support for several metrics:
+  - Executions Timed Out
+  - Executions Failed
+  - Executions Aborted
+  
+
 ## v1.9.0
 
 ### Added:
