@@ -24,6 +24,7 @@ import {parseTransitGatewayEventAndCreateAlarms} from './transit-gateway-modules
 import {parseCloudFrontEventAndCreateAlarms} from './cloudfront-modules.mjs';
 import {parseRDSEventAndCreateAlarms} from './rds-modules.mjs';
 import {parseRDSClusterEventAndCreateAlarms} from './rds-cluster-modules.mjs';
+import {parseSFNEventAndCreateAlarms} from './step-function-modules.mjs';
 import {EC2AlarmManagerArray} from './types.mjs';
 
 // Initialize logging
@@ -206,6 +207,10 @@ async function routeTagEvent(event: any) {
       }
       break;
 
+    case 'states':
+      await parseSFNEventAndCreateAlarms(event);
+      break;
+
     default:
       log
         .warn()
@@ -343,6 +348,10 @@ export const handler: Handler = async (
 
         case 'aws.sqs':
           await parseSQSEventAndCreateAlarms(event);
+          break;
+
+        case 'aws.states':
+          await parseSFNEventAndCreateAlarms(event);
           break;
 
         case 'aws.tag':
