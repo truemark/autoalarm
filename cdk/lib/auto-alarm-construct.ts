@@ -3,7 +3,7 @@ import {AutoAlarm} from './main-function-subsconstruct';
 import {ReAlarmProducer} from './realarm-producer-subconstruct';
 import {ReAlarmConsumer} from './realarm-consumer-subconstruct';
 import {Stack} from 'aws-cdk-lib';
-import {ReAlarmTagEventHandler} from './realarm-tag-event-function';
+import {ReAlarmTagEventHandler} from './realarm-tag-event-subconstruct';
 import {EventRules} from './service-eventbridge-subconstruct';
 
 interface AutoAlarmConstructProps {
