@@ -7,6 +7,9 @@
   - Executions Timed Out
   - Executions Failed
 
+### Changed:
+- Updated README with new services and metrics supported by AutoAlarm.
+
 ## v1.9.0
 
 ### Added:
