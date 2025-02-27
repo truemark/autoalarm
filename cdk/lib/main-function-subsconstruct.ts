@@ -47,6 +47,13 @@ export class AutoAlarm extends Construct {
      * Create all the queues for all the services that AutoAlarm supports
      */
     this.mainFunctionQueues = this.createQueues();
+
+    /**
+     * Grant consume messages to the mainFunction for each queue
+     */
+    for (const queue in this.mainFunctionQueues) {
+      this.mainFunctionQueues[queue].grantConsumeMessages(this.lambdaFunction);
+    }
   }
 
   /**
