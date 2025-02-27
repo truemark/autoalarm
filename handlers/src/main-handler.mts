@@ -271,33 +271,45 @@ export const handler: Handler = async (
             .str('resourceType', JSON.stringify(event.detail))
             .msg('Processing EC2 event');
 
-          switch (event.detail.resourceType) {
-            case 'instance':
-              ec2Events.push(event);
-              break;
-            case 'transit-gateway':
-              if (
-                event.detail.eventName === 'CreateTransitGateway' ||
-                event.detail.eventName === 'DeleteTransitGateway'
-              )
-                await parseTransitGatewayEventAndCreateAlarms(event);
-              break;
-            case 'vpn-connection':
-              if (
-                event.detail.eventName === 'CreateVpnConnection' ||
-                event.detail.eventName === 'DeleteVpnConnection'
-              )
-                await parseVpnEventAndCreateAlarms(event);
-              break;
-            default:
-              log
-                .error()
-                .msg(
-                  `Unhandled resource type for aws.ec2: ${event.detail.resourceType}`,
-                );
-              batchItemFailures.push({itemIdentifier: record.messageId});
-              batchItemBodies.push(record);
-              break;
+          // Check for EC2 Instance State-change Notification based on detail-type
+          if (
+            event['detail-type'] === 'EC2 Instance State-change Notification'
+          ) {
+            ec2Events.push(event);
+          } else if (event.detail && event.detail.resourceType) {
+            // Handle other EC2 events that have a resourceType defined
+            switch (event.detail.resourceType) {
+              case 'instance':
+                ec2Events.push(event);
+                break;
+              case 'transit-gateway':
+                if (
+                  event.detail.eventName === 'CreateTransitGateway' ||
+                  event.detail.eventName === 'DeleteTransitGateway'
+                )
+                  await parseTransitGatewayEventAndCreateAlarms(event);
+                break;
+              case 'vpn-connection':
+                if (
+                  event.detail.eventName === 'CreateVpnConnection' ||
+                  event.detail.eventName === 'DeleteVpnConnection'
+                )
+                  await parseVpnEventAndCreateAlarms(event);
+                break;
+              default:
+                log
+                  .error()
+                  .msg(
+                    `Unhandled resource type for aws.ec2: ${event.detail.resourceType}`,
+                  );
+                batchItemFailures.push({itemIdentifier: record.messageId});
+                batchItemBodies.push(record);
+                break;
+            }
+          } else {
+            log.error().msg('Unhandled EC2 event format');
+            batchItemFailures.push({itemIdentifier: record.messageId});
+            batchItemBodies.push(record);
           }
           break;
         case 'aws.elasticloadbalancing':
