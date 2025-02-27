@@ -63,6 +63,7 @@ export class AutoAlarm extends Construct {
       'AutoAlarm-RdsCluster',
       'AutoAlarm-Route53resolver',
       'AutoAlarm-Sqs',
+      'AutoAlarm-Sfn',
       'AutoAlarm-TargetGroup',
       'AutoAlarm-TransitGateway',
       'AutoAlarm-Vpn',
@@ -275,6 +276,15 @@ export class AutoAlarm extends Construct {
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: ['ec2:DescribeVpnConnections'],
+        resources: ['*'],
+      }),
+    );
+
+    // Attach policies for Step Functions to list statemachine and get tags
+    autoAlarmExecutionRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['states:ListStateMachines', 'states:ListTagsForResource'],
         resources: ['*'],
       }),
     );

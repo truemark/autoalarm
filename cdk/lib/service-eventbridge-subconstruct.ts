@@ -12,6 +12,7 @@ type ServiceName =
   | 'rdscluster'
   | 'route53resolver'
   | 'sqs'
+  | 'sfn'
   | 'targetgroup'
   | 'transitgateway'
   | 'vpn';
@@ -49,6 +50,7 @@ export class EventRules extends Construct {
       'rdscluster',
       'route53resolver',
       'sqs',
+      'sfn',
       'targetgroup',
       'transitgateway',
       'vpn',
@@ -72,6 +74,7 @@ export class EventRules extends Construct {
     this.addRdsClusterRules();
     this.addRoute53ResolverRules();
     this.addSqsRules();
+    this.addSNFRules();
     this.addTargetGroupRules();
     this.addTransitGatewayRules();
     this.addVpnRules();
@@ -430,6 +433,46 @@ export class EventRules extends Construct {
     this.serviceRules.set('sqs', sqsRules);
   }
 
+  private addSNFRules() {
+    const sfnRules = this.serviceRules.get('sfn') || [];
+
+    sfnRules.push({
+      sfnStateRule: new Rule(this, 'SFNRule', {
+        eventPattern: {
+          source: ['aws.states'],
+          detailType: ['AWS Step Functions Activity State Change'],
+          detail: {
+            state: ['CreateStateMachine', 'DeleteStateMachine'],
+          },
+        },
+        description: 'Routes Step Functions events to AutoAlarm',
+      }),
+    });
+
+    sfnRules.push({
+      sfnTagRule: new Rule(this, 'SFNTagRule', {
+        eventPattern: {
+          source: ['aws.tag'],
+          detailType: ['Tag Change on Resource'],
+          detail: {
+            'service': ['states'],
+            'resource-type': ['state-machine'],
+            'changed-tag-keys': [
+              'autoalarm:enabled',
+              'autoalarm:executions-failed',
+              'autoalarm:executions-failed-anomaly',
+              'autoalarm:executions-aborted',
+              'autoalarm:executions-aborted-anomaly',
+              'autoalarm:executions-timed-out',
+              'autoalarm:executions-timed-out-anomaly',
+            ],
+          },
+        },
+        description: 'Routes Step Functions tag events to AutoAlarm',
+      }),
+    });
+    this.serviceRules.set('sfn', sfnRules);
+  }
   private addTargetGroupRules() {
     const targetGroupRules = this.serviceRules.get('targetgroup') || [];
 
