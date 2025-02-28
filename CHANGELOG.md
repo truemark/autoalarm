@@ -1,5 +1,18 @@
 # AutoAlarm Changelog
 
+## v1.10.0
+
+### Added:
+- Added CloudWatch monitoring for State Machines(Step Functions) with support for several metrics:
+  - Executions Timed Out
+  - Executions Failed
+
+### Changed:
+- Updated README with new services and metrics supported by AutoAlarm.
+
+### Fixed:
+- Fixed a bug that caused AutoAlarm to fail when creating alarms for EC2 instances during creation or termination events.
+
 ## v1.9.0
 
 ### Added:
