@@ -2,6 +2,7 @@ import {
   CloudWatchClient,
   DeleteAlarmsCommand,
   DescribeAlarmsCommand,
+  MetricAlarm,
   MetricDataQuery,
   PutAnomalyDetectorCommand,
   PutMetricAlarmCommand,
@@ -584,71 +585,70 @@ export async function handleStaticAlarms(
   return createdAlarms;
 }
 
-// This function is used to grab all active CW auto alarms for a given instance and then pushes those to the activeAutoAlarms array
-// which it returns to be used when the deleteCWAlarm function is called from within service module files.
-// service identifier should be lowercase e.g. ec2, ecs, eks, rds, etc.
-// serviceIdentifier should be all UPPER CASE
-// instance identifier should be the identifier that is use for cloudwatch to pull alarm information. When adding a new service
-// EC2: instanceID
-// ECS: ...
-// EKS: ...
-// RDS: ...
+/**
+ * Retrieves all active CloudWatch auto alarms for a given instance and returns them as an array.
+ * This array is typically used when the deleteCWAlarm function is called from within service module files.
+ *
+ * @param {string} serviceName - Service name (e.g., ec2, ecs, eks, rds)
+ * @param {string} serviceIdentifier - Instance identifier used by CloudWatch to pull alarm information
+ * @returns {Promise<string[]>} Array of alarm names to be used for deletion
+ * @throws {Error} If fetching alarms fails
+ *
+ * @example Instance Identifier Formats:
+ * - EC2: instanceID
+ * - ECS: [TBD]
+ * - EKS: [TBD]
+ * - RDS: [TBD]
+ */
 export async function getCWAlarmsForInstance(
   serviceName: string,
   serviceIdentifier: string,
-  nextToken?: string, // Added to pass the token for the next recursive call
-  activeAutoAlarms: string[] = [], // Accumulating results across recursive calls
 ): Promise<string[]> {
-  try {
-    const describeAlarmsCommand = new DescribeAlarmsCommand({
-      NextToken: nextToken,
-    });
-    const describeAlarmsResponse = await cloudWatchClient.send(
-      describeAlarmsCommand,
-    );
-    const alarms = describeAlarmsResponse.MetricAlarms || [];
+  let nextToken: string | undefined = undefined;
+  const activeAutoAlarms: MetricAlarm[] = [];
+  let hasMorePages = true;
 
-    // Filter alarms by name prefix
+  try {
     log
       .info()
       .str('function', 'getCWAlarmsForInstance')
       .str('serviceName', serviceName)
       .str('serviceIdentifier', serviceIdentifier)
-      .str('alarm prefix', `AutoAlarm-${serviceName}-${serviceIdentifier}`)
-      .msg('Filtering alarms by name');
+      .msg('Fetching alarms for instance');
 
-    const instanceAlarms = alarms.filter(
-      (alarm) =>
-        alarm.AlarmName?.includes(serviceName) &&
-        alarm.AlarmName?.includes(serviceIdentifier),
-    );
+    // Keep fetching until no more pages
+    while (hasMorePages) {
+      const describeAlarmsCommand: DescribeAlarmsCommand =
+        new DescribeAlarmsCommand({
+          AlarmNamePrefix: `AutoAlarm-${serviceName.toUpperCase()}-${serviceIdentifier}`,
+          NextToken: nextToken,
+          MaxRecords: 100,
+        });
 
-    // Accumulate the alarm names, ensuring AlarmName is defined
-    activeAutoAlarms.push(
-      ...instanceAlarms
-        .map((alarm) => alarm.AlarmName)
-        .filter((alarmName): alarmName is string => !!alarmName),
-    );
+      const describeAlarmsResponse = await cloudWatchClient.send(
+        describeAlarmsCommand,
+      );
 
+      // Accumulate alarms from this page
+      if (describeAlarmsResponse.MetricAlarms) {
+        activeAutoAlarms.push(...describeAlarmsResponse.MetricAlarms);
+      }
+
+      // Check if there are more pages
+      if (!describeAlarmsResponse.NextToken) {
+        hasMorePages = false;
+      }
+      nextToken = describeAlarmsResponse.NextToken;
+    }
+
+    const alarms = activeAutoAlarms.map((alarm) => alarm.AlarmName || '');
     log
       .info()
       .str('function', 'getCWAlarmsForInstance')
       .str(`${serviceName}`, serviceIdentifier)
-      .str('alarms', JSON.stringify(instanceAlarms))
+      .obj('alarms', alarms)
       .msg('Fetched alarms for instance');
-
-    // If there's a next token, recursively call the function with it
-    if (describeAlarmsResponse.NextToken) {
-      return getCWAlarmsForInstance(
-        serviceName,
-        serviceIdentifier,
-        describeAlarmsResponse.NextToken,
-        activeAutoAlarms,
-      );
-    }
-
-    // Return accumulated results when no more pages are left
-    return activeAutoAlarms;
+    return alarms;
   } catch (error) {
     log
       .error()
@@ -656,6 +656,6 @@ export async function getCWAlarmsForInstance(
       .err(error)
       .str(`${serviceName}`, serviceIdentifier)
       .msg('Failed to fetch alarms for instance');
-    return activeAutoAlarms; // Returning accumulated alarms even in case of an error
+    throw new Error(`Failed to fetch alarms for instance: ${error as string}`);
   }
 }
