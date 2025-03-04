@@ -1,4 +1,9 @@
 # AutoAlarm Changelog
+## v1.10.2
+
+### Fixed:
+- Fixed alarm filtering logic in NoBreachingExtendedQueue to correctly set TreatMissingData to 'notBreaching' for all SQS queue alarms using
+- Fixed statistic case in alarm configuration for OpenSearch metrics ('SUM' to 'Sum')
 
 ## v1.10.0
 
