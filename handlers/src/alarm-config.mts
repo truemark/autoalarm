@@ -3,6 +3,7 @@ export type MissingDataTreatment =
   | 'ignore'
   | 'breaching'
   | 'notBreaching';
+
 export type ComparisonOperator =
   | 'GreaterThanOrEqualToThreshold'
   | 'GreaterThanThreshold'
@@ -11,6 +12,33 @@ export type ComparisonOperator =
   | 'LessThanLowerOrGreaterThanUpperThreshold'
   | 'LessThanLowerThreshold'
   | 'GreaterThanUpperThreshold';
+
+/**
+ * The Statistic type below is necessary to ensure that the statistic is strongly typed for both metric alarm
+ * statistic and anomaly detector extended statistic patterns used in AWS. AWS used to have a Statistic type
+ * but now is deprecated in the new AWS CDKv2. This is a workaround to ensure that the statistic is strongly typed.
+ */
+
+enum ExtendedStatisticPrefix {
+  p = 'p',
+  tm = 'tm',
+  tc = 'tc',
+  ts = 'ts',
+  wm = 'wm',
+  iqm = 'iqm',
+}
+
+enum MetricAlarmStatistic {
+  average = 'Average',
+  maximum = 'Maximum',
+  minimum = 'Minimum',
+  samplecount = 'SampleCount',
+  sum = 'Sum',
+}
+type Statistic =
+  | `${ExtendedStatisticPrefix}${number|string}`
+  | `${MetricAlarmStatistic}`;
+
 
 // Note that these apply to both anomaly and non-anomaly alarms in CloudWatch.
 export interface MetricAlarmOptions {
@@ -32,7 +60,7 @@ export interface MetricAlarmOptions {
   dataPointsToAlarm: number;
 
   // The statistic or extended statistic for the metric associated with the alarm
-  statistic: string;
+  statistic: Statistic;
 
   // Missing data treatment
   missingDataTreatment: MissingDataTreatment;
@@ -95,23 +123,39 @@ function parseIntegerOption(value: string, defaultValue: number): number {
   return parsedValue;
 }
 
-function parseStatisticOption(value: string, defaultValue: string): string {
-  const regexp = /^p.*|^tm.*|^tc.*|^ts.*|^wm.*|^iqm$/;
-  const statistics = ['SampleCount', 'Average', 'Sum', 'Minimum', 'Maximum'];
-  const statisticsRecord: Record<string, string> = {};
-  for (const statistic of statistics) {
-    statisticsRecord[statistic.toLowerCase()] = statistic;
-  }
+function parseStatisticOption(value: string, defaultValue: Statistic): Statistic {
   const trimmed = value.trim().toLowerCase();
-  if (trimmed === '') {
-    return defaultValue;
+  // Get the keys of MetricAlarmStatistic
+  const metricAlarmStatKeys = Object.keys(MetricAlarmStatistic);
+
+  // Look for a matching key (case-insensitive)
+  const matchedKey = metricAlarmStatKeys.find(key =>
+    key.toLowerCase() === trimmed
+  );
+
+  if (matchedKey) {
+    // If we found a matching key, return the corresponding enum value
+    return MetricAlarmStatistic[matchedKey as keyof typeof MetricAlarmStatistic];
   }
-  if (statisticsRecord[trimmed]) {
-    return statisticsRecord[trimmed];
+
+  // Check for extended statistic pattern
+  const extendedPrefixKeys = Object.keys(ExtendedStatisticPrefix);
+
+  for (const prefixKey of extendedPrefixKeys) {
+    if (trimmed.startsWith(prefixKey.toLowerCase())) {
+      // Get the correct extneded statistic prefix value from the enum
+      const prefixValue = ExtendedStatisticPrefix[prefixKey as keyof typeof ExtendedStatisticPrefix];
+      // Extract the parameters for the extended statistic
+      const parameterPart = trimmed.substring(prefixKey.length);
+
+      if (parameterPart.length > 0) {
+        // Reconstruct with the correct case of the prefix
+        return `${prefixValue}${parameterPart}` as Statistic;
+      }
+    }
   }
-  if (trimmed.match(regexp)) {
-    return trimmed;
-  }
+
+  // Not a valid statistic, return the default
   return defaultValue;
 }
 
@@ -190,7 +234,7 @@ export function parseMetricAlarmOptions(
         : defaults.evaluationPeriods,
     statistic:
       parts.length > 4
-        ? parseStatisticOption(parts[4], defaults.statistic)
+        ? parseStatisticOption(parts[4] as Statistic, defaults.statistic)
         : defaults.statistic,
     dataPointsToAlarm:
       parts.length > 5

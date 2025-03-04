@@ -15,61 +15,61 @@ importers:
         specifier: 3.623.0
         version: 3.623.0
       '@aws-sdk/client-cloudfront':
-        specifier: ^3.693.0
+        specifier: ^3.758.0
         version: 3.758.0
       '@aws-sdk/client-cloudwatch':
-        specifier: ^3.694.0
+        specifier: ^3.758.0
         version: 3.758.0
       '@aws-sdk/client-dynamodb':
-        specifier: ^3.693.0
+        specifier: ^3.758.0
         version: 3.758.0
       '@aws-sdk/client-ec2':
-        specifier: ^3.695.0
+        specifier: ^3.760.0
         version: 3.760.0
       '@aws-sdk/client-elastic-load-balancing-v2':
-        specifier: ^3.693.0
+        specifier: ^3.758.0
         version: 3.758.0
       '@aws-sdk/client-eventbridge':
-        specifier: ^3.693.0
+        specifier: ^3.758.0
         version: 3.758.0
       '@aws-sdk/client-kms':
-        specifier: ^3.693.0
+        specifier: ^3.758.0
         version: 3.758.0
       '@aws-sdk/client-opensearch':
-        specifier: ^3.693.0
+        specifier: ^3.758.0
         version: 3.758.0
       '@aws-sdk/client-rds':
-        specifier: ^3.744.0
+        specifier: ^3.758.0
         version: 3.758.0
       '@aws-sdk/client-route53resolver':
-        specifier: ^3.694.0
+        specifier: ^3.758.0
         version: 3.758.0
       '@aws-sdk/client-s3':
-        specifier: ^3.693.0
+        specifier: ^3.758.0
         version: 3.758.0
       '@aws-sdk/client-sesv2':
-        specifier: ^3.693.0
+        specifier: ^3.758.0
         version: 3.758.0
       '@aws-sdk/client-sfn':
-        specifier: ^3.750.0
+        specifier: ^3.758.0
         version: 3.758.0
       '@aws-sdk/client-sqs':
-        specifier: ^3.693.0
+        specifier: ^3.758.0
         version: 3.758.0
       '@aws-sdk/credential-provider-node':
-        specifier: ^3.693.0
+        specifier: ^3.758.0
         version: 3.758.0
       '@aws-sdk/lib-dynamodb':
-        specifier: ^3.693.0
+        specifier: ^3.758.0
         version: 3.758.0(@aws-sdk/client-dynamodb@3.758.0)
       '@aws-sdk/s3-request-presigner':
-        specifier: ^3.693.0
+        specifier: ^3.758.0
         version: 3.758.0
       '@aws-sdk/util-arn-parser':
-        specifier: ^3.693.0
+        specifier: ^3.723.0
         version: 3.723.0
       '@aws-sdk/util-dynamodb':
-        specifier: ^3.693.0
+        specifier: ^3.758.0
         version: 3.758.0(@aws-sdk/client-dynamodb@3.758.0)
       '@nr1e/commons':
         specifier: 0.0.2-alpha.9
@@ -78,13 +78,13 @@ importers:
         specifier: 1.4.1
         version: 1.4.1(pino@9.6.0)
       '@smithy/protocol-http':
-        specifier: ^4.1.7
+        specifier: ^4.1.8
         version: 4.1.8
       '@smithy/signature-v4':
         specifier: ^3.1.2
         version: 3.1.2
       '@smithy/util-retry':
-        specifier: ^3.0.10
+        specifier: ^3.0.11
         version: 3.0.11
       '@types/js-yaml':
         specifier: ^4.0.9
@@ -94,7 +94,7 @@ importers:
         version: 4.1.0
     devDependencies:
       '@types/aws-lambda':
-        specifier: ^8.10.145
+        specifier: ^8.10.147
         version: 8.10.147
       '@types/aws4':
         specifier: ^1.11.6
@@ -106,7 +106,7 @@ importers:
         specifier: 20.8.2
         version: 20.8.2
       '@vitest/coverage-v8':
-        specifier: ^1.6.0
+        specifier: ^1.6.1
         version: 1.6.1(vitest@1.6.1(@types/node@20.8.2))
       aws-sdk-client-mock:
         specifier: ^1.0.0
@@ -115,7 +115,7 @@ importers:
         specifier: ^8.57.1
         version: 8.57.1
       prettier:
-        specifier: ^3.3.3
+        specifier: ^3.5.3
         version: 3.5.3
       source-map-support:
         specifier: ^0.5.21
@@ -127,7 +127,7 @@ importers:
         specifier: ^7.18.0
         version: 7.18.0(eslint@8.57.1)(typescript@5.5.4)
       vitest:
-        specifier: ^1.6.0
+        specifier: ^1.6.1
         version: 1.6.1(@types/node@20.8.2)
 
 packages:
