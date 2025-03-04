@@ -8,7 +8,7 @@ Changelog Entry:
 - Statistic Validation and parsing is now more robust and uses strong type guarding to prevent invalid configurations
 
 ### Fixed:
-- Fixed alarm filtering logic in NoBreachingExtendedQueue to correctly set TreatMissingData to 'notBreaching' for all SQS queue alarms that occasionally resulted in some sqs alarms 
+- Fixed alarm filtering logic in NoBreachingExtendedQueue to correctly set TreatMissingData to 'notBreaching' for all SQS queue alarms that occasionally resulted in some sqs alarms not properly being updated with the correct missing data treatment
 - Fixed statistic case in alarm configuration for RDS metrics ('SUM' to 'Sum')
 - Added error handling for invalid metric configurations in RDS cluster module
 
