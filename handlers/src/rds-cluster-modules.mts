@@ -75,6 +75,16 @@ async function checkAndManageRDSClusterStatusAlarms(
     .str('dbClusterId', dbClusterId)
     .msg('Starting alarm management process');
 
+  // And in the function, add a check
+  if (!Array.isArray(metricConfigs)) {
+    log
+      .error()
+      .str('function', 'checkAndManageRDSClusterStatusAlarms')
+      .obj('metricConfigs', metricConfigs)
+      .msg('MetricConfigs is not an array, cannot process alarms');
+    return;
+  }
+
   const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
   if (!isAlarmEnabled) {
     log

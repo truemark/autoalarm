@@ -1,5 +1,14 @@
 # AutoAlarm Changelog
 
+Changelog Entry:
+## v1.10.2
+
+### Fixed:
+- Fixed alarm filtering logic in NoBreachingExtendedQueue to correctly set TreatMissingData to 'notBreaching' for all SQS queue alarms that occasionally resulted in some sqs alarms 
+- Fixed statistic case in alarm configuration for RDS metrics ('SUM' to 'Sum')
+- Added error handling for invalid metric configurations in RDS cluster module
+
+
 ## v1.10.0
 
 ### Added:
