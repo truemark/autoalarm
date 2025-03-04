@@ -9,6 +9,7 @@ interface AlarmWithProtectedMembers {
 
 export class NoBreachingExtendedQueue extends ExtendedQueue {
   private readonly queueNameLower: string;
+  private readonly id: string;
   constructor(
     scope: Construct,
     id: string,
@@ -18,6 +19,7 @@ export class NoBreachingExtendedQueue extends ExtendedQueue {
     super(scope, id, props);
 
     this.queueNameLower = queueName.toLowerCase();
+    this.id = id;
 
     //run through construct validation to force the alarms to be set to notBreaching before synth
     this.node.addValidation({
@@ -52,7 +54,9 @@ export class NoBreachingExtendedQueue extends ExtendedQueue {
       // console.log('queueName prefix:', this.queueNameLower);
 
       const nameToCheck = (alarm.node.id || exposedPhysicalName).toLowerCase();
-      const queueMatch = nameToCheck.includes(this.queueNameLower);
+      const queueMatch =
+        nameToCheck.includes(this.queueNameLower) ||
+        nameToCheck.includes(this.id.toLowerCase());
       const metricMatch =
         nameToCheck.includes('dlq') ||
         nameToCheck.includes('deadletterqueue') ||
