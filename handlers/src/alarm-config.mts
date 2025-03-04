@@ -35,10 +35,10 @@ enum MetricAlarmStatistic {
   samplecount = 'SampleCount',
   sum = 'Sum',
 }
-type Statistic =
-  | `${ExtendedStatisticPrefix}${number|string}`
-  | `${MetricAlarmStatistic}`;
 
+type Statistic =
+  | `${ExtendedStatisticPrefix}${number | string}`
+  | `${MetricAlarmStatistic}`;
 
 // Note that these apply to both anomaly and non-anomaly alarms in CloudWatch.
 export interface MetricAlarmOptions {
@@ -123,19 +123,24 @@ function parseIntegerOption(value: string, defaultValue: number): number {
   return parsedValue;
 }
 
-function parseStatisticOption(value: string, defaultValue: Statistic): Statistic {
+function parseStatisticOption(
+  value: string,
+  defaultValue: Statistic,
+): Statistic {
   const trimmed = value.trim().toLowerCase();
   // Get the keys of MetricAlarmStatistic
   const metricAlarmStatKeys = Object.keys(MetricAlarmStatistic);
 
   // Look for a matching key (case-insensitive)
-  const matchedKey = metricAlarmStatKeys.find(key =>
-    key.toLowerCase() === trimmed
+  const matchedKey = metricAlarmStatKeys.find(
+    (key) => key.toLowerCase() === trimmed,
   );
 
   if (matchedKey) {
     // If we found a matching key, return the corresponding enum value
-    return MetricAlarmStatistic[matchedKey as keyof typeof MetricAlarmStatistic];
+    return MetricAlarmStatistic[
+      matchedKey as keyof typeof MetricAlarmStatistic
+    ];
   }
 
   // Check for extended statistic pattern
@@ -144,7 +149,10 @@ function parseStatisticOption(value: string, defaultValue: Statistic): Statistic
   for (const prefixKey of extendedPrefixKeys) {
     if (trimmed.startsWith(prefixKey.toLowerCase())) {
       // Get the correct extneded statistic prefix value from the enum
-      const prefixValue = ExtendedStatisticPrefix[prefixKey as keyof typeof ExtendedStatisticPrefix];
+      const prefixValue =
+        ExtendedStatisticPrefix[
+          prefixKey as keyof typeof ExtendedStatisticPrefix
+        ];
       // Extract the parameters for the extended statistic
       const parameterPart = trimmed.substring(prefixKey.length);
 
