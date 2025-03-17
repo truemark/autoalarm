@@ -2,6 +2,7 @@ import {
   ElasticLoadBalancingV2Client,
   DescribeTagsCommand,
   DescribeTargetGroupsCommand,
+  DescribeTargetGroupsCommandOutput,
 } from '@aws-sdk/client-elastic-load-balancing-v2';
 import * as logging from '@nr1e/logging';
 import {Tag} from './types.mjs';
@@ -311,20 +312,69 @@ export async function parseTGEventAndCreateAlarms(event: any): Promise<{
         .msg('Unexpected event type');
   }
 
-  const response = await elbClient.send(
-    new DescribeTargetGroupsCommand({
-      TargetGroupArns: [targetGroupArn],
-    }),
-  );
+  /**
+   * Extract the target group name from the ARN so we can use it to create or delete alarms as needed.
+   */
+  const tgArn = arnparser.parse(targetGroupArn);
+  const targetGroupName = tgArn.resource;
+
+  /**
+   * Delete alarms if a TG is deleted
+   */
+  if (eventType === 'Delete') {
+    log
+      .info()
+      .str('function', 'parseTGEventAndCreateAlarms')
+      .str('targetGroupArn', targetGroupArn)
+      .msg('Starting to manage inactive target group alarms');
+    await manageInactiveTGAlarms(targetGroupName);
+    return {targetGroupArn, eventType, tags};
+  }
+
+  /**
+   * Defensively describe the target group to confirm it exists. If it doesn't, log an error then return early
+   * Purposely not managing alarms for TGs that do not exist in the case that there is a genuine error, and we don't want to manage alarms that may exist and are needed.
+   */
+  let response: DescribeTargetGroupsCommandOutput;
+
+  try {
+    response = await elbClient.send(
+      new DescribeTargetGroupsCommand({
+        TargetGroupArns: [targetGroupArn],
+      }),
+    );
+  } catch (e) {
+    log
+      .error()
+      .str('function', 'parseTGEventAndCreateAlarms')
+      .err(e)
+      .str('targetGroupArn', targetGroupArn)
+      .msg('Error fetching target group or target group does not exist.');
+    return {targetGroupArn, eventType, tags};
+  }
+
+  /**
+   * initialize load balancer ARN var to be used to filter through TGs that do not have a load balancer associated with them.
+   */
   let loadBalancerArn: string | undefined = undefined;
+
   if (response.TargetGroups && response.TargetGroups.length > 0) {
     const loadBalancerArns = response.TargetGroups[0].LoadBalancerArns;
     if (loadBalancerArns && loadBalancerArns.length > 0) {
       loadBalancerArn = loadBalancerArns[0];
     }
   }
+
+  /**
+   * Extract the load balancer name from the ARN so we can filter out TG that do not have a load balancer associated with them.
+   */
+  const lbArn = loadBalancerArn ? arnparser.parse(loadBalancerArn) : null;
+  const loadBalancerName = lbArn
+    ? lbArn.resource.replace('loadbalancer/', '')
+    : null;
+
   /*
-   * This Logs a warning while still allowing the program to finish running and address other workflows like deleting alarms.
+   * This Logs a warning while still allowing the program to finish running and address other workflows for eligible TGs
    */
   if (!loadBalancerArn) {
     log
@@ -335,18 +385,14 @@ export async function parseTGEventAndCreateAlarms(event: any): Promise<{
         'Load balancer ARN not found. Target Group Alarms require an associated Load Balancer. No Alarms will be created.',
       );
   }
-  const lbArn = loadBalancerArn ? arnparser.parse(loadBalancerArn) : null;
-  const loadBalancerName = lbArn
-    ? lbArn.resource.replace('loadbalancer/', '')
-    : null;
-  const arn = arnparser.parse(targetGroupArn);
-  const targetGroupName = arn.resource;
+
   if (!targetGroupName) {
     log
       .error()
       .str('function', 'parseTGEventAndCreateAlarms')
       .str('targetGroupArn', targetGroupArn)
       .msg('Extracted target group name is empty');
+    throw new Error('Extracted target group name is empty');
   }
 
   log
@@ -356,6 +402,9 @@ export async function parseTGEventAndCreateAlarms(event: any): Promise<{
     .str('eventType', eventType)
     .msg('Finished processing target group event');
 
+  /**
+   * initialize alarm create/modification if a TG is created or a Tg tag is changed
+   */
   if (
     targetGroupArn &&
     (eventType === 'Create' || eventType === 'Target Group TagChange')
@@ -366,13 +415,6 @@ export async function parseTGEventAndCreateAlarms(event: any): Promise<{
       .str('targetGroupArn', targetGroupArn)
       .msg('Starting to manage target group alarms');
     await manageTGAlarms(targetGroupName, loadBalancerName, tags);
-  } else if (eventType === 'Delete') {
-    log
-      .info()
-      .str('function', 'parseTGEventAndCreateAlarms')
-      .str('targetGroupArn', targetGroupArn)
-      .msg('Starting to manage inactive target group alarms');
-    await manageInactiveTGAlarms(targetGroupName);
   }
 
   return {targetGroupArn, eventType, tags};
