@@ -1,8 +1,14 @@
 # AutoAlarm Changelog
+## v1.10.3
+
+### Fixed:
+- Fixed issue where target group alarms were not properly cleaned up on deletion due to TargetGroupNotFoundException during the delete event processing workflow
+- Improved error handling for target group events with defensive programming to handle race conditions between delete and tag change events
+
 ## v1.10.2
 
 ### Fixed:
-- Fixed alarm filtering logic in NoBreachingExtendedQueue to correctly set TreatMissingData to 'notBreaching' for all SQS queue alarms using
+- Fixed alarm filtering logic in NoBreachingExtendedQueue to correctly set TreatMissingData to 'notBreaching' for all SQS queue alarms for default SQS queues.
 - Fixed statistic case in alarm configuration for OpenSearch metrics ('SUM' to 'Sum')
 
 ## v1.10.0
