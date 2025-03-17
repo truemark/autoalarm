@@ -99,7 +99,7 @@ export class AutoAlarm extends Construct {
       // Create queue with its own DLQ
       queues[queueName] = new NoBreachingExtendedQueue(
         this,
-        queueName.replace("'AutoAlarm-", ''),
+        queueName.replace('AutoAlarm-', ''),
         queueName,
         {
           fifo: true,
