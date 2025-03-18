@@ -48,7 +48,7 @@ async function processRecord(record: SQSRecord): Promise<boolean> {
       .substring(0, 8);
 
     // Create a unique message group ID by appending the hash to the message ID
-    const messageGroupId = `${record.messageId}-${messageHash}`;
+    const messageGroupId = `${record.attributes.MessageGroupId}-${messageHash}`;
 
     // Log routing details
     log
@@ -96,7 +96,8 @@ export const handler: Handler<
   {batchItemFailures: {itemIdentifier: string}[]}
 > = async (event) => {
   log
-    .info()
+    .trace()
+    .obj('event', event)
     .num('recordCount', event.Records.length)
     .msg('Received SQS event batch');
 
