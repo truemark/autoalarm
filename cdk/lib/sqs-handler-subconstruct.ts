@@ -162,7 +162,7 @@ export class SqsHandlerSubConstruct extends Construct {
     role: IRole,
     mainFunctionQueueURL: string,
   ): ExtendedNodejsFunction {
-    return new ExtendedNodejsFunction(this, 'ReAlarmProducerFunction', {
+    return new ExtendedNodejsFunction(this, 'SQSHandlerFunction', {
       entry: path.join(
         __dirname,
         '..',
