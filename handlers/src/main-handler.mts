@@ -247,11 +247,9 @@ export const handler: Handler = async (
     // Check if the record body contains an error message
     if (record.body && record.body.includes('errorMessage')) {
       log
-        .error()
+        .warn()
         .str('messageId', record.messageId)
         .msg('Error message found in record body');
-      batchItemFailures.push({itemIdentifier: record.messageId});
-      batchItemBodies.push(record);
       continue;
     }
     // Parse the body of the SQS message
