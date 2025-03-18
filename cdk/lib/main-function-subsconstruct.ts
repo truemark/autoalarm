@@ -15,9 +15,7 @@ import {NoBreachingExtendedQueue} from './extended-libs-subconstruct';
 
 export class AutoAlarm extends Construct {
   public readonly lambdaFunction: ExtendedNodejsFunction;
-  public readonly mainFunctionQueues: {
-    [key: string]: NoBreachingExtendedQueue;
-  } = {};
+  public readonly mainFunctionQueue: NoBreachingExtendedQueue;
 
   constructor(
     scope: Construct,
@@ -46,81 +44,48 @@ export class AutoAlarm extends Construct {
     /**
      * Create all the queues for all the services that AutoAlarm supports
      */
-    this.mainFunctionQueues = this.createQueues();
-
-    /**
-     * Grant consume messages to the mainFunction for each queue
-     */
-    for (const queue in this.mainFunctionQueues) {
-      this.mainFunctionQueues[queue].grantConsumeMessages(this.lambdaFunction);
-    }
+    this.mainFunctionQueue = this.createMainFunctionQueue();
   }
 
   /**
-   * Private method to create all the queues for all the services that AutoAlarm supports
+   * Private method to create all the main function queue.
    */
-  private createQueues(): {[key: string]: NoBreachingExtendedQueue} {
-    //Create a string array of all the autoAlarmQueue names
-    const autoAlarmQueues = [
-      'AutoAlarm-Alb',
-      'AutoAlarm-Cloudfront',
-      'AutoAlarm-Ec2',
-      'AutoAlarm-OpenSearchRule',
-      'AutoAlarm-Rds',
-      'AutoAlarm-RdsCluster',
-      'AutoAlarm-Route53resolver',
-      'AutoAlarm-Sqs',
-      'AutoAlarm-Sfn',
-      'AutoAlarm-TargetGroup',
-      'AutoAlarm-TransitGateway',
-      'AutoAlarm-Vpn',
-    ];
+  private createMainFunctionQueue(): NoBreachingExtendedQueue {
+    // Create DLQ for each queue and let cdk handle the name generation after the queue name
+    const dlq = new NoBreachingExtendedQueue(
+      this,
+      'Main-Handler-Failed',
+      'Main-Handler',
+      {
+        fifo: true,
+        retentionPeriod: Duration.days(14),
+      },
+    );
 
-    //Create a custom object that contains/will constain all our fifo queues
-    const queues: {[key: string]: NoBreachingExtendedQueue} = {};
+    // Create queue with its own DLQ
+    const mainHandlerQueue = new NoBreachingExtendedQueue(
+      this,
+      'Main-Handler',
+      'Main-Handler',
+      {
+        fifo: true,
+        contentBasedDeduplication: true,
+        retentionPeriod: Duration.days(14),
+        visibilityTimeout: Duration.seconds(900),
+        deadLetterQueue: {queue: dlq, maxReceiveCount: 3},
+      },
+    );
 
-    /**
-     * Loop through the autoAlarmQueues array and create a new ExtendedQueue object for each queue and add it to queues object
-     * Grant consume messages to the mainFunction for each queue
-     * Finally add an event source to the mainFunction for each queue
-     */
-    for (const queueName of autoAlarmQueues) {
-      // Create DLQ for each queue and let cdk handle the name generation after the queue name
-      const dlq = new NoBreachingExtendedQueue(
-        this,
-        `${queueName.replace('AutoAlarm-', '')}-Failed`,
-        queueName,
-        {
-          fifo: true,
-          retentionPeriod: Duration.days(14),
-        },
-      );
+    mainHandlerQueue.grantConsumeMessages(this.lambdaFunction);
+    this.lambdaFunction.addEventSource(
+      new SqsEventSource(mainHandlerQueue, {
+        batchSize: 10,
+        reportBatchItemFailures: true,
+        enabled: true,
+      }),
+    );
 
-      // Create queue with its own DLQ
-      queues[queueName] = new NoBreachingExtendedQueue(
-        this,
-        queueName.replace('AutoAlarm-', ''),
-        queueName,
-        {
-          fifo: true,
-          contentBasedDeduplication: true,
-          retentionPeriod: Duration.days(14),
-          visibilityTimeout: Duration.seconds(900),
-          deadLetterQueue: {queue: dlq, maxReceiveCount: 3},
-        },
-      );
-
-      queues[queueName].grantConsumeMessages(this.lambdaFunction);
-      this.lambdaFunction.addEventSource(
-        new SqsEventSource(queues[queueName], {
-          batchSize: 10,
-          reportBatchItemFailures: true,
-          enabled: true,
-        }),
-      );
-    }
-
-    return queues;
+    return mainHandlerQueue;
   }
 
   /**
