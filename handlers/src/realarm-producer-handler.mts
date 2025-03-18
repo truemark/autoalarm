@@ -11,6 +11,7 @@ import {
   SendMessageBatchRequestEntry,
 } from '@aws-sdk/client-sqs';
 import * as logging from '@nr1e/logging';
+import * as crypto from 'crypto';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 
 const retryStrategy = new ConfiguredRetryStrategy(20);
@@ -180,6 +181,15 @@ async function sendAlarmsToSQS(
     const startTime = Date.now();
     let batchThrottleCount = 0;
 
+    // Create hash for unique message id
+    const messageHash = (alarm: string): string => {
+      return crypto
+        .createHash('sha256')
+        .update(alarm)
+        .digest('hex')
+        .substring(0, 8);
+    };
+
     try {
       // Prepare messages for the batch
       const entries: SendMessageBatchRequestEntry[] = batch.map((alarm, i) => ({
@@ -190,7 +200,7 @@ async function sendAlarmsToSQS(
           alarmActions: alarm.AlarmActions || [],
           isOverride,
         }),
-        MessageGroupId: 'reAlarm-Producer',
+        MessageGroupId: `realarm-producer-${messageHash(`${alarm.AlarmName}${alarm.AlarmArn}${alarm.AlarmActions}${isOverride}-${i}`)}`,
       }));
 
       // Send the batch to SQS
