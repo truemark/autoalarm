@@ -3,7 +3,7 @@ import {
   SendMessageCommand,
   SendMessageCommandInput,
 } from '@aws-sdk/client-sqs';
-import {SQSEvent, SQSRecord, Handler} from 'aws-lambda';
+import {SQSEvent, SQSRecord, Handler, SQSBatchResponse} from 'aws-lambda';
 import * as logging from '@nr1e/logging';
 import * as crypto from 'crypto';
 
@@ -24,6 +24,10 @@ const sqsClient = new SQSClient({region: process.env.AWS_REGION});
 // Get the target FIFO queue URL from environment variables
 const targetQueueUrl = process.env.TARGET_FIFO_QUEUE_URL;
 
+if (!targetQueueUrl) {
+  throw new Error('TARGET_FIFO_QUEUE_URL environment variable is required');
+}
+
 // No service-specific functions needed
 
 // Function to process a single SQS record
@@ -31,14 +35,6 @@ async function processRecord(record: SQSRecord): Promise<boolean> {
   try {
     // Log the message being processed
     log.info().str('messageId', record.messageId).msg('Processing message');
-
-    if (!targetQueueUrl) {
-      log
-        .error()
-        .str('messageId', record.messageId)
-        .msg('Target FIFO queue URL not configured');
-      return false;
-    }
 
     // Create a hash of the message body to use as a unique identifier
     const messageHash = crypto
@@ -63,7 +59,6 @@ async function processRecord(record: SQSRecord): Promise<boolean> {
       QueueUrl: targetQueueUrl,
       MessageBody: record.body, // Forward the original message unchanged
       MessageGroupId: messageGroupId,
-      MessageDeduplicationId: `${record.messageId}-${Date.now()}`,
     };
 
     // Send the message to the target queue
@@ -91,10 +86,9 @@ async function processRecord(record: SQSRecord): Promise<boolean> {
 }
 
 // Lambda handler
-export const handler: Handler<
-  SQSEvent,
-  {batchItemFailures: {itemIdentifier: string}[]}
-> = async (event) => {
+export const handler: Handler = async (
+  event: SQSEvent,
+): Promise<void | SQSBatchResponse> => {
   log
     .trace()
     .obj('event', event)
@@ -104,8 +98,8 @@ export const handler: Handler<
   const batchItemFailures: {itemIdentifier: string}[] = [];
 
   // Process each record in the batch
-  for (const record of event.Records) {
-    try {
+  await Promise.allSettled(
+    event.Records.map(async (record: SQSRecord) => {
       const success = await processRecord(record);
 
       if (!success) {
@@ -116,16 +110,8 @@ export const handler: Handler<
           .str('messageId', record.messageId)
           .msg('Adding message to batch item failures');
       }
-    } catch (error) {
-      // If an exception was thrown, add to failures list
-      batchItemFailures.push({itemIdentifier: record.messageId});
-      log
-        .error()
-        .str('messageId', record.messageId)
-        .err(error)
-        .msg('Unexpected error processing message');
-    }
-  }
+    }));
+
 
   // Return report of failed messages
   log

@@ -14,7 +14,7 @@ export class AutoAlarmStack extends ExtendedStack {
   constructor(scope: Construct, id: string, props: ExtendedAutoAlarmProps) {
     // Use the extended interface here
     super(scope, id, props);
-    new AutoAlarmConstruct(this, 'AutoAlarm', {
+    new AutoAlarmConstruct(this, 'AutoAlarmConstruct', {
       prometheusWorkspaceId: props.prometheusWorkspaceId,
       enableReAlarm: props.enableReAlarm,
     });
