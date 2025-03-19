@@ -1,4 +1,25 @@
 # AutoAlarm Changelog
+## v1.11.0
+
+### Added:
+- Implemented SQS-based message routing layer to resolve FIFO queue head-of-line blocking issues
+- Added content-based message group ID generation to prevent head-of-Line blocking in FIFO queues
+- Created dedicated SQS handler function that routes service-specific events to a single main function queue
+
+### Changed:
+- Refactored main-function-subconstruct to use a single consolidated FIFO queue instead of multiple service-specific queues
+- Improved CloudWatch API error handling by properly propagating throttling errors through the call chain
+- Enhanced resource naming and organization for better operational visibility and debugging
+- Optimized error recovery by ensuring failed operations can be properly retried without blocking other messages
+- AutoAlarm no longer fails SQS messages that contain error language in the message body
+- Changed queue visibility timeout from 900 seconds to 120 seconds for event source and main function queues
+
+### Fixed:
+- Fixed an issue where FIFO queue head-of-line blocking caused significant delays in event processing
+- Fixed error handling in CloudWatch alarm operations to ensure throttling errors are properly captured for retry
+- Improved error propagation in alarm-tools.mts to ensure failed alarm operations are properly recycled to SQS for retry
+
+
 ## v1.10.3
 
 ### Fixed:
