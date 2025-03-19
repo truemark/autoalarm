@@ -135,11 +135,21 @@ async function processEC2TagEvent(events: any[]) {
   }
 
   if (activeInstancesInfoArray.length > 0) {
-    await manageActiveEC2InstanceAlarms(activeInstancesInfoArray);
+    try {
+      await manageActiveEC2InstanceAlarms(activeInstancesInfoArray);
+    } catch (error) {
+      log.error().err(error).msg('Error managing active EC2 instance alarms');
+      throw new Error('Error managing active EC2 instance alarms');
+    }
   }
 
   if (inactiveInstancesInfoArray.length > 0) {
-    await manageInactiveInstanceAlarms(inactiveInstancesInfoArray);
+    try {
+      await manageInactiveInstanceAlarms(inactiveInstancesInfoArray);
+    } catch (error) {
+      log.error().err(error).msg('Error managing inactive EC2 instance alarms');
+      throw new Error('Error managing inactive EC2 instance alarms');
+    }
   }
 }
 
