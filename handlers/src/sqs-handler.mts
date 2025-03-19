@@ -110,8 +110,8 @@ export const handler: Handler = async (
           .str('messageId', record.messageId)
           .msg('Adding message to batch item failures');
       }
-    }));
-
+    }),
+  );
 
   // Return report of failed messages
   log

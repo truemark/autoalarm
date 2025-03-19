@@ -220,7 +220,6 @@ async function routeTagEvent(event: any) {
   }
 }
 
-
 export const handler: Handler = async (
   event: SQSEvent,
 ): Promise<void | SQSBatchResponse> => {
