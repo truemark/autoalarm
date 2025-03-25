@@ -9,7 +9,6 @@ import * as logging from '@nr1e/logging';
 import {
   manageInactiveInstanceAlarms,
   manageActiveEC2InstanceAlarms,
-  getEC2IdAndState,
   fetchInstanceTags,
   liveStates,
   deadStates,
@@ -26,6 +25,9 @@ import {parseRDSEventAndCreateAlarms} from './rds-modules.mjs';
 import {parseRDSClusterEventAndCreateAlarms} from './rds-cluster-modules.mjs';
 import {parseSFNEventAndCreateAlarms} from './step-function-modules.mjs';
 import {EC2AlarmManagerArray} from './types.mjs';
+import {DescribeInstancesCommand, EC2Client} from '@aws-sdk/client-ec2';
+import {ConfiguredRetryStrategy} from '@smithy/util-retry';
+import {ValidEC2States} from './types.mjs';
 
 // Initialize logging
 const level = process.env.LOG_LEVEL || 'trace';
@@ -37,6 +39,88 @@ const log = logging.initialize({
   name: 'main-handler',
   level,
 });
+
+const region: string = process.env.AWS_REGION || '';
+const retryStrategy = new ConfiguredRetryStrategy(20);
+
+const ec2Client: EC2Client = new EC2Client({
+  region: region,
+  retryStrategy: retryStrategy,
+});
+
+/**
+ * Helper function to agnosticly, dynamically and linearly search for resource identifiers or other data needed to route events.
+ * @param record This is the SQS record that contains the event data.
+ * @param indexStart use a universal string preamble to categorically search for the start of the strings you are looking for.
+ * @param indexEnd Use this as the last delimiter that separates your desired string and the next index after your string. Usually '"'
+ * @returns string
+ *
+ */
+function eventSearch<T>(
+  record: T,
+  indexStart: string,
+  indexEnd: string,
+): string {
+  const recordString: string = JSON.stringify(record);
+
+  const startIndex: number = recordString.indexOf(indexStart);
+  if (startIndex === -1) {
+    log
+      .error()
+      .str('function', 'eventSearch')
+      .str('indexStart', indexStart)
+      .msg('Event search failed for indexStart');
+    return '';
+  }
+
+  const endIndex: number = recordString.indexOf(indexEnd, startIndex);
+  if (endIndex === -1) {
+    log
+      .error()
+      .str('function', 'eventSearch')
+      .str('indexEnd', indexStart)
+      .msg('Event search failed for indexEnd');
+    return '';
+  }
+
+  return recordString.substring(startIndex, endIndex);
+}
+
+/**
+ * Helper function to get EC2 ID and state
+ * @param record
+ * returns {instanceId: string, state: string}
+ */
+const EC2IdAndState = async (
+  record: SQSRecord,
+): Promise<{instanceId: string; state: string | undefined}> => {
+  const instanceId = eventSearch(record, 'arn:aws:ec2:', '"');
+  let state: string | undefined;
+
+  eventSearch(record, 'state": "', '"')
+    ? (state = eventSearch(record, 'state": "', '"'))
+    : (state = undefined);
+
+  if (state === undefined) {
+    // if state is empty, we'll need to make a call to the ec2Client to get the state of the instance.
+    const instanceInfo = await ec2Client.send(
+      new DescribeInstancesCommand({
+        InstanceIds: [instanceId],
+      }),
+    );
+
+    const instanceInfoSearch: string | undefined = await Promise.race([
+      eventSearch(instanceInfo, `"State: {`, `Name: ${state}`),
+    ]);
+
+    instanceInfoSearch
+      ? (state = instanceInfoSearch.split(':').pop()!.replace('"', ''))
+      : (state = undefined);
+  }
+
+  if (ValidEC2States instanceof state) {
+  return {instanceId, state};
+};
 
 // TODO Fix the use of any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -230,6 +314,7 @@ async function routeTagEvent(event: any) {
   }
 }
 
+// TODO: we are going to use promise.race to perform asynchronous linear search across a map of all these payloads instead of looping and casing everything. It's terrible and I hate it.
 export const handler: Handler = async (
   event: SQSEvent,
 ): Promise<void | SQSBatchResponse> => {

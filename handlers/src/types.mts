@@ -1,5 +1,13 @@
 // Type definitions for autoalarm
 
+export type ValidEC2States =
+  | 'running'
+  //| 'pending'
+  //| 'stopped'
+  //| 'stopping'
+  //| 'shutting-down'
+  | 'terminated';
+
 export interface EC2AlarmManagerObject {
   instanceID: string;
   tags: Tag;
@@ -71,4 +79,17 @@ export interface AnomalyAlarmProps {
   evaluationPeriods: number;
   period: number;
   extendedStatistic: string;
+}
+
+// Build type casting for state event types
+export type ValidEvent =
+  |'aws.cloudfront'
+  |'EC2 Instance State-change Notification'
+  |`Create${`LoadBalancer` | `Queue` | `TargetGroup`}`
+  |`Delete${`LoadBalancer` | `Queue` | `TargetGroup`}`
+
+// Define valid state event types
+export interface ValidStateEvent {
+  stateEvent: ValidEvent;
+  isTag: boolean;
 }

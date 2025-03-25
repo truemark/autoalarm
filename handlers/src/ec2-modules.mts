@@ -1,11 +1,11 @@
 import {
-  DescribeInstancesCommand,
+  DescribeInstancesCommand, DescribeInstancesCommandOutput,
   DescribeTagsCommand,
   EC2Client,
 } from '@aws-sdk/client-ec2';
 import {
   CloudWatchClient,
-  DeleteAlarmsCommand,
+  DeleteAlarmsCommand, DescribeAlarmsCommandOutput,
   ListMetricsCommand,
   PutMetricAlarmCommand,
 } from '@aws-sdk/client-cloudwatch';
@@ -845,7 +845,7 @@ export async function getEC2IdAndState(
   const instanceId = event.resources[0].split('/').pop();
   log.info().str('resourceId', instanceId).msg('Processing tag event');
 
-  const describeInstancesResponse = await ec2Client.send(
+  const describeInstancesResponse: DescribeInstancesCommandOutput = await ec2Client.send(
     new DescribeInstancesCommand({
       InstanceIds: [instanceId],
     }),
