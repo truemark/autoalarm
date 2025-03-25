@@ -237,7 +237,7 @@ export async function parseCloudFrontEventAndCreateAlarms(
         .str('changedTags', JSON.stringify(event.detail['changed-tag-keys']))
         .msg('Processing Tag Change event');
       break;
-
+    //TODO: current implementation does not correctly handle create and delete events without ARN
     case 'AWS API Call via CloudTrail':
       switch (event.detail.eventName) {
         case 'CreateDistribution':

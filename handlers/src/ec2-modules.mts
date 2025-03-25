@@ -1,7 +1,7 @@
 import {
   DescribeInstancesCommand, DescribeInstancesCommandOutput,
   DescribeTagsCommand,
-  EC2Client,
+  EC2Client, Reservation,
 } from '@aws-sdk/client-ec2';
 import {
   CloudWatchClient,
@@ -12,7 +12,7 @@ import {
 import * as logging from '@nr1e/logging';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {ValidInstanceState} from './enums.mjs';
-import {PathMetrics, Tag, EC2AlarmManagerArray} from './types.mjs';
+import {PathMetrics, Tag, EC2AlarmManagerArray, ValidEC2States} from './types.mjs';
 import {
   deleteAlarm,
   doesAlarmExist,
@@ -32,6 +32,7 @@ import {
   batchUpdatePromRules,
   queryPrometheusForService,
 } from './prometheus-tools.mjs';
+import {SQSRecord} from "aws-lambda";
 
 const log: logging.Logger = logging.getLogger('ec2-modules');
 export const prometheusWorkspaceId: string =
@@ -545,7 +546,8 @@ export async function manageActiveEC2InstanceAlarms(
         const ec2Metadata = await getInstanceDetails(instanceID);
 
         const isWindows = ec2Metadata.platform?.includes('Windows') || false;
-        const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
+        const isAlarmEnabled = (): boolean => !!tags.find((tag) => tag.Key === 'autoalarm:enabled' && tag.Value === 'true');
+
 
         if (!isAlarmEnabled) {
           log
@@ -566,7 +568,7 @@ export async function manageActiveEC2InstanceAlarms(
         // Check if instance reports to Prometheus and process Prometheus alarms
         if (
           prometheusWorkspaceId &&
-          (tags['autoalarm:target'] === 'prometheus' ||
+          (tags{'autoalarm:target'} === 'prometheus' ||
             (!tags['autoalarm:target'] &&
               instanceIDsReportingToPrometheus.includes(instanceID)))
         ) {
@@ -837,31 +839,77 @@ export async function manageInactiveInstanceAlarms(
   }
 }
 
-export async function getEC2IdAndState(
-  // TODO Fix the use of any
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  event: any,
-): Promise<{instanceId: string; state: ValidInstanceState}> {
-  const instanceId = event.resources[0].split('/').pop();
-  log.info().str('resourceId', instanceId).msg('Processing tag event');
+/**
+ * Helper function to get EC2 ID and state
+ * @param records These are all records that have been filtred by the main handler to be related to ec2 instances.
+ */
+export async function manageEC2(records: Record<string, SQSRecord>[]): Promise<Record<string, SQSRecord>[]> {
+  const ec2AlarmManagerBatch: EC2AlarmManagerArray = [];
 
-  const describeInstancesResponse: DescribeInstancesCommandOutput = await ec2Client.send(
+  // Get all EC2 instance information in a single api call
+  const instanceInfo: DescribeInstancesCommandOutput = await ec2Client.send(
     new DescribeInstancesCommand({
-      InstanceIds: [instanceId],
+      InstanceIds: [...Object.keys(records)],
     }),
   );
-  const instance = describeInstancesResponse.Reservations?.[0]?.Instances?.[0];
-  const state = instance?.State?.Name as ValidInstanceState;
-  return {instanceId: instanceId, state: state};
+
+  // concurrently get all EC2 Alarm Manager objects that are available in SQS Event batch.
+  await Promise.allSettled(
+    instanceInfo.Reservations!.map(async (reservation: Reservation) => {
+      return reservation.Instances!.map((instance) => {
+        ec2AlarmManagerBatch.push({
+          instanceID: instance.InstanceId!,
+          tags: instance.Tags!,
+          state: instance.State!.Name! as ValidEC2States, // Our event bridge rules only ever trigger on running or terminated instances.
+          ec2Metadata: {
+            platform: instance.Platform || null,
+            privateIP: instance.PrivateIpAddress || null,
+          },
+        });
+      });
+    }),
+  );
+
+  // Concurrently sort instances for alarm management into active and inactive instances
+  const results = await Promise.allSettled([
+    manageActiveEC2InstanceAlarms(
+      ec2AlarmManagerBatch.filter((instance) => liveStates.has(instance.state)),
+    ),
+    manageInactiveInstanceAlarms(
+      ec2AlarmManagerBatch.filter((instance) => deadStates.has(instance.state)),
+    ),
+  ]);
+  
+  // Filter out the rejected promises
+  const failures = results
+    .filter(result => result.status === 'rejected')
+    .map((rejected: PromiseRejectedResult) => rejected.reason);
+    
+  if (failures.length > 0) {
+    log.error()
+      .obj('failures', failures)
+      .msg('Some EC2 alarm management operations failed');
+      
+    // Return the failed records that should be retried
+    // Map the failures to their corresponding records
+    const failedInstanceIds = failures.map(failure => failure.instanceID);
+    
+    // Return only the records that correspond to failed instances
+    return records.filter(record => 
+      Object.keys(record).some(key => failedInstanceIds.includes(key))
+    );
+  }
+  
+  return [];
 }
 
-export const liveStates: Set<ValidInstanceState> = new Set([
-  ValidInstanceState.Running,
+export const liveStates: Set<ValidEC2States> = new Set([
+  'running',
   //ValidInstanceState.Pending,
 ]);
 
-export const deadStates: Set<ValidInstanceState> = new Set([
-  ValidInstanceState.Terminated,
+export const deadStates: Set<ValidEC2States> = new Set([
+  'terminated'
   //ValidInstanceState.Stopping, //for testing.
   //ValidInstanceState.Stopped, //for testing.
   //ValidInstanceState.ShuttingDown, //for testing.

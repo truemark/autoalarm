@@ -1,3 +1,6 @@
+import {Tag} from '@aws-sdk/client-ec2';
+import {SQSEvent, SQSRecord} from "aws-lambda";
+
 // Type definitions for autoalarm
 
 export type ValidEC2States =
@@ -10,12 +13,12 @@ export type ValidEC2States =
 
 export interface EC2AlarmManagerObject {
   instanceID: string;
-  tags: Tag;
-  state: string;
+  tags: Tag[];
+  state: ValidEC2States;
   ec2Metadata?: {platform: string | null; privateIP: string | null};
 }
 
-export interface Tag {
+export interface LegacyTag {
   [key: string]: string;
 }
 
@@ -25,6 +28,28 @@ export interface Dimension {
   Name: string;
   Value: string;
 }
+
+// Todo: We will change any once we unify the modules into a consolidated master module
+// type for dynamically managing alarms in main handler:
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type AsyncAlarmManager = (records: SQSRecord) => Promise<any>;
+
+export type ServiceType =
+  | 'alb'
+  | 'cloudfront'
+  | 'opensearch'
+  | 'rds'
+  | 'rds-cluster'
+  | 'route53-resolver'
+  | 'sqs'
+  | 'step-function'
+  | 'targetgroup'
+  | 'transit-gateway'
+  | 'vpn';
+
+export type AsycnAlarmManagerMap = {
+  [key in ServiceType]: AsyncAlarmManager;
+};
 
 export interface PathMetrics {
   [path: string]: Dimension[];
@@ -79,17 +104,4 @@ export interface AnomalyAlarmProps {
   evaluationPeriods: number;
   period: number;
   extendedStatistic: string;
-}
-
-// Build type casting for state event types
-export type ValidEvent =
-  |'aws.cloudfront'
-  |'EC2 Instance State-change Notification'
-  |`Create${`LoadBalancer` | `Queue` | `TargetGroup`}`
-  |`Delete${`LoadBalancer` | `Queue` | `TargetGroup`}`
-
-// Define valid state event types
-export interface ValidStateEvent {
-  stateEvent: ValidEvent;
-  isTag: boolean;
 }
