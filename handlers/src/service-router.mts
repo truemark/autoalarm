@@ -26,11 +26,18 @@ export function eventSearch(
 
   // Handle different input types
   if (typeof record === 'string') {
+    // Input is already a string (pre-stringified JSON or parsed object)
     recordString = record;
   } else {
-    recordString = record.body
-      ? JSON.stringify(record.body)
-      : JSON.stringify(record);
+    // For SQSRecord objects
+    if (record.body) {
+      // For our current SQS handler use case, we want to search within the body content
+      // Important: We keep the same behavior as before for backward compatibility
+      recordString = JSON.stringify(record.body);
+    } else {
+      // Fallback for other record types
+      recordString = JSON.stringify(record);
+    }
   }
 
   const startIndex = recordString.indexOf(searchPattern);
@@ -95,23 +102,15 @@ export class ServiceRouter {
   
   /**
    * Get stringified version of record - parse once and cache for efficiency
+   * Ensures consistent format with eventSearch function
    */
   private getStringifiedRecord(record: SQSRecord): string {
     const messageId = record.messageId;
     if (!this.stringifiedRecords.has(messageId)) {
-      try {
-        // Parse and re-stringify to ensure consistent format
-        const parsed = JSON.parse(record.body);
-        const stringified = JSON.stringify(parsed);
-        this.stringifiedRecords.set(messageId, stringified);
-      } catch (error) {
-        // If parsing fails, use raw body
-        this.stringifiedRecords.set(messageId, record.body);
-        log.warn()
-          .str('messageId', messageId)
-          .err(error)
-          .msg('Failed to parse record body - using raw body');
-      }
+      // For consistency with eventSearch, we use JSON.stringify(record.body)
+      // This ensures the same string format is used for searching
+      const stringified = JSON.stringify(record.body);
+      this.stringifiedRecords.set(messageId, stringified);
     }
     return this.stringifiedRecords.get(messageId)!;
   }
@@ -209,7 +208,7 @@ export class ServiceRouter {
     // Transform records into the format expected by manageEC2
     for (const record of records) {
       try {
-        // Use cached stringified version if available
+        // Get cached stringified record (consistent with eventSearch format)
         const stringRecord = this.getStringifiedRecord(record);
         const searchResult: string = eventSearch(stringRecord, 'arn:aws:ec2:', '"');
 
