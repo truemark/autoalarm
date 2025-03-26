@@ -35,21 +35,21 @@ export function eventSearch(
 
   const startIndex = recordString.indexOf(searchPattern);
   if (startIndex === -1) {
-    log
-      .error()
+    // Only log at debug level for common patterns to reduce noise
+    log.debug()
       .str('function', 'eventSearch')
       .str('searchPattern', searchPattern)
-      .msg('Event search failed for search pattern');
+      .msg('Search pattern not found in record');
     return '';
   }
 
   const endIndex = recordString.indexOf(endDelimiter, startIndex);
   if (endIndex === -1) {
-    log
-      .error()
+    // Only log at debug level for common patterns to reduce noise
+    log.debug()
       .str('function', 'eventSearch')
       .str('endDelimiter', endDelimiter)
-      .msg('Event search failed for end delimiter');
+      .msg('End delimiter not found in record');
     return '';
   }
 
@@ -63,6 +63,9 @@ export function eventSearch(
 export class ServiceRouter {
   private serviceProps: ServiceProps[];
   private serviceHandlers: Map<ServiceType, AsyncAlarmManager>;
+  
+  // Per-invocation state that must be reset between invocations
+  private stringifiedRecords: Map<string, string> = new Map();
 
   /**
    * Create a new ServiceRouter
@@ -70,19 +73,49 @@ export class ServiceRouter {
    */
   constructor(serviceProps: ServiceProps[]) {
     this.serviceProps = serviceProps;
-    
+
     // Build a map of service types to handlers for direct lookups
     this.serviceHandlers = new Map();
-    serviceProps.forEach(prop => {
+    serviceProps.forEach((prop) => {
       this.serviceHandlers.set(prop.service, prop.handler);
     });
-    
+
     log
       .info()
       .num('serviceConfigsCount', serviceProps.length)
       .msg('ServiceRouter initialized');
   }
   
+  /**
+   * Reset per-invocation state to prevent issues with warm Lambda starts
+   */
+  reset(): void {
+    this.stringifiedRecords.clear();
+  }
+  
+  /**
+   * Get stringified version of record - parse once and cache for efficiency
+   */
+  private getStringifiedRecord(record: SQSRecord): string {
+    const messageId = record.messageId;
+    if (!this.stringifiedRecords.has(messageId)) {
+      try {
+        // Parse and re-stringify to ensure consistent format
+        const parsed = JSON.parse(record.body);
+        const stringified = JSON.stringify(parsed);
+        this.stringifiedRecords.set(messageId, stringified);
+      } catch (error) {
+        // If parsing fails, use raw body
+        this.stringifiedRecords.set(messageId, record.body);
+        log.warn()
+          .str('messageId', messageId)
+          .err(error)
+          .msg('Failed to parse record body - using raw body');
+      }
+    }
+    return this.stringifiedRecords.get(messageId)!;
+  }
+
   /**
    * Get the handler for a specific service type
    * @param serviceType The service type to get the handler for
@@ -101,44 +134,61 @@ export class ServiceRouter {
    * @param record SQS record to process
    * @returns Object containing the service type and handler, or undefined if no match
    */
-  private findHandler(record: SQSRecord, stringRecord: string): 
-    {
+  private findHandler(
+    record: SQSRecord,
+  ):
+    | {
         service: ServiceType;
         handler: AsyncAlarmManager;
-    } | undefined {
+      }
+    | undefined {
+    // Get stringified record - cached if already processed
+    const stringRecord = this.getStringifiedRecord(record);
+      
     for (const mapping of this.serviceProps) {
       // Try each identifier for this service
       for (const identifier of mapping.identifiers) {
         try {
           const result = eventSearch(stringRecord, identifier, '"');
           if (result) {
+            // Skip VPN and Transit Gateway events if it's EC2
+            if (mapping.service === 'ec2' && 
+                (result.includes('vpn') || result.includes('transit'))) {
+              log.trace()
+                .str('messageId', record.messageId)
+                .str('identifier', identifier)
+                .str('result', result)
+                .msg('Skipping VPN/Transit Gateway event');
+              continue;
+            }
+            
             log
               .debug()
               .str('service', mapping.service)
               .str('identifier', identifier)
               .str('messageId', record.messageId)
               .msg('Found matching service for record');
+              
             return {
               service: mapping.service,
               handler: mapping.handler,
             };
           }
         } catch (error) {
+          // Only log at debug level to reduce noise
           log
-            .error()
-            .str('class', 'ServiceRouter')
+            .debug()
             .str('function', 'findHandler')
             .str('service', mapping.service)
             .str('messageId', record.messageId)
             .err(error)
             .msg('Error searching for service identifier');
         }
-
       }
     }
 
     log
-      .error()
+      .warn()
       .str('messageId', record.messageId)
       .msg('No matching service handler found for record');
     return undefined;
@@ -149,48 +199,49 @@ export class ServiceRouter {
    * @param records Array of SQS records to process
    * @returns SQS failure response if there were any failures
    */
-  async processEC2Batch(
-    records: SQSRecord[],
-  ): Promise<{
+  async processEC2Batch(records: SQSRecord[]): Promise<{
     failureResponse?: SQSFailureResponse;
   }> {
     const batchItemFailures: SQSBatchItemFailure[] = [];
     const batchItemBodies: SQSRecord[] = [];
     const ec2InstanceMap: Record<string, SQSRecord>[] = [];
-    
+
     // Transform records into the format expected by manageEC2
     for (const record of records) {
       try {
-        const stringyJson = JSON.parse(record.body);
-        const searchResult: string = eventSearch(
-          stringyJson,
-          'arn:aws:ec2:',
-          '"',
-        );
+        // Use cached stringified version if available
+        const stringRecord = this.getStringifiedRecord(record);
+        const searchResult: string = eventSearch(stringRecord, 'arn:aws:ec2:', '"');
 
         if (searchResult) {
+          // Skip VPN and Transit Gateway events
+          if (searchResult.includes('vpn') || searchResult.includes('transit')) {
+            log.trace()
+              .str('messageId', record.messageId)
+              .msg('Skipping VPN/Transit Gateway event in EC2 batch processing');
+            continue;
+          }
+          
           // Extract instance ID
           const instanceId = searchResult.split('/').pop();
-          
+
           if (instanceId) {
             log
               .trace()
-              .str('function', 'processEC2Batch')
               .str('messageId', record.messageId)
               .str('instanceId', instanceId)
-              .msg('Processing EC2 instance ID');
-              
+              .msg('Adding EC2 instance to batch');
+
             ec2InstanceMap.push({[searchResult]: record});
           }
         }
       } catch (error) {
         log
           .error()
-          .str('function', 'processEC2Batch')
           .str('messageId', record.messageId)
           .err(error)
           .msg('Error preparing EC2 event for batch processing');
-          
+
         batchItemFailures.push({
           itemIdentifier: record.messageId,
         });
@@ -204,18 +255,17 @@ export class ServiceRouter {
         .info()
         .num('instanceIDs', ec2InstanceMap.length)
         .msg('Processing batch of EC2 instances');
-        
+
       try {
         const ec2FailedRecords = await manageEC2(ec2InstanceMap);
 
         if (ec2FailedRecords.length > 0) {
           log
             .error()
-            .str('function', 'processEC2Batch')
             .num('failedItems', ec2FailedRecords.length)
             .msg('Batch item failures found in EC2 processing');
-            
-          ec2FailedRecords.forEach(record => {
+
+          ec2FailedRecords.forEach((record) => {
             const messageId = record[Object.keys(record)[0]].messageId;
             batchItemFailures.push({
               itemIdentifier: messageId,
@@ -226,15 +276,14 @@ export class ServiceRouter {
       } catch (error) {
         log
           .error()
-          .str('function', 'processEC2Batch')
           .err(error)
           .msg('Unhandled error during batch EC2 processing');
-          
+
         // Add all records from the batch to failures since we can't determine which ones failed
-        ec2InstanceMap.forEach(record => {
+        ec2InstanceMap.forEach((record) => {
           const instanceKey = Object.keys(record)[0];
           const sqsRecord = record[instanceKey];
-          
+
           batchItemFailures.push({
             itemIdentifier: sqsRecord.messageId,
           });
@@ -244,155 +293,10 @@ export class ServiceRouter {
     }
 
     return {
-      failureResponse: batchItemFailures.length > 0 
-        ? { batchItemFailures, batchItemBodies } 
-        : undefined
-    };
-  }
-  
-  /**
-   * Process EC2 records in a batch using workflow to extract instance IDs
-   * @param records Array of SQS records to process
-   * @returns Object containing processed EC2 records IDs and any failed batch items
-   * @deprecated Use categorizeEvents and processEC2Batch instead
-   */
-  async processEC2(
-    records: SQSRecord[],
-  ): Promise<{
-    processedRecordIds: Set<string>;
-    failureResponse?: SQSFailureResponse;
-  }> {
-    const batchItemFailures: SQSBatchItemFailure[] = [];
-    const batchItemBodies: SQSRecord[] = [];
-    const ec2InstanceMap: Record<string, SQSRecord>[] = [];
-    const processedRecordIds = new Set<string>();
-    
-    // First pass: identify all EC2 events and filter out VPN/Transit Gateway
-    const ec2Records = await Promise.all(
-      records.map(async (record) => {
-        try {
-          const stringyJson = JSON.parse(record.body);
-          const searchResult: string = eventSearch(
-            stringyJson,
-            'arn:aws:ec2:',
-            '"',
-          );
-
-          if (searchResult) {
-            // Skip VPN and Transit Gateway events early
-            if (searchResult.includes('vpn') || searchResult.includes('transit')) {
-              log
-                .trace()
-                .str('service', 'ServiceRouter')
-                .str('function', 'processEC2')
-                .str('messageId', record.messageId)
-                .msg('Skipping VPN and Transit Gateway event');
-              
-              // Still mark as processed to avoid double processing
-              processedRecordIds.add(record.messageId);
-              return null;
-            }
-
-            processedRecordIds.add(record.messageId);
-            const instanceId = searchResult.split('/').pop();
-            
-            if (instanceId) {
-              log
-                .trace()
-                .str('service', 'ServiceRouter')
-                .str('function', 'processEC2')
-                .str('messageId', record.messageId)
-                .str('instanceId', instanceId)
-                .msg('Found EC2 instance ID in event');
-                
-              return { 
-                instanceId: searchResult, 
-                record 
-              };
-            }
-          }
-          return null;
-        } catch (error) {
-          log
-            .error()
-            .str('service', 'ServiceRouter')
-            .str('function', 'processEC2')
-            .str('messageId', record.messageId)
-            .err(error)
-            .msg('Error parsing EC2 event');
-            
-          batchItemFailures.push({
-            itemIdentifier: record.messageId,
-          });
-          batchItemBodies.push(record);
-          
-          // Mark as processed even if it failed, to avoid double processing
-          processedRecordIds.add(record.messageId);
-          return null;
-        }
-      })
-    );
-    
-    // Filter out nulls and map to the format expected by manageEC2
-    const validRecords = ec2Records.filter(Boolean);
-    
-    // Transform records for EC2 processing
-    validRecords.forEach(record => {
-      if (record) {
-        ec2InstanceMap.push({[record.instanceId]: record.record});
-      }
-    });
-
-    // If we found EC2 instances, process them in batch
-    if (ec2InstanceMap.length > 0) {
-      log
-        .info()
-        .num('instanceIDs', ec2InstanceMap.length)
-        .msg('Processing batch of EC2 instances');
-        
-      try {
-        const ec2FailedRecords = await manageEC2(ec2InstanceMap);
-
-        if (ec2FailedRecords.length > 0) {
-          log
-            .error()
-            .str('function', 'processEC2')
-            .num('failedItems', ec2FailedRecords.length)
-            .msg('Batch item failures found in EC2 processing');
-            
-          ec2FailedRecords.forEach(record => {
-            const messageId = record[Object.keys(record)[0]].messageId;
-            batchItemFailures.push({
-              itemIdentifier: messageId,
-            });
-            batchItemBodies.push(record[Object.keys(record)[0]]);
-          });
-        }
-      } catch (error) {
-        log
-          .error()
-          .str('function', 'processEC2')
-          .err(error)
-          .msg('Unhandled error during batch EC2 processing');
-          
-        // Add all records from the batch to failures since we can't determine which ones failed
-        ec2InstanceMap.forEach(record => {
-          const instanceKey = Object.keys(record)[0];
-          const sqsRecord = record[instanceKey];
-          
-          batchItemFailures.push({
-            itemIdentifier: sqsRecord.messageId,
-          });
-          batchItemBodies.push(sqsRecord);
-        });
-      }
-    }
-
-    return {
-      processedRecordIds,
-      failureResponse: batchItemFailures.length > 0 
-        ? { batchItemFailures, batchItemBodies } 
-        : undefined
+      failureResponse:
+        batchItemFailures.length > 0
+          ? {batchItemFailures, batchItemBodies}
+          : undefined,
     };
   }
 
@@ -407,74 +311,35 @@ export class ServiceRouter {
   }> {
     const serviceMap = new Map<ServiceType, SQSRecord[]>();
     const uncategorizedRecords: SQSRecord[] = [];
-    
-    // Process all records in parallel
-    const results = await Promise.allSettled(
-      records.map(async (record) => {
-        try {
-          // Parse the record body once
-          const stringRecord = JSON.parse(record.body);
-          const handlerInfo = this.findHandler(record, stringRecord);
-          
-          if (handlerInfo) {
-            // Skip EC2 VPN and transit gateway events early
-            if (handlerInfo.service === 'ec2') {
-              const searchResult = eventSearch(stringRecord, 'arn:aws:ec2:', '"');
-              if (searchResult && (searchResult.includes('vpn') || searchResult.includes('transit'))) {
-                log
-                  .trace()
-                  .str('service', 'ServiceRouter')
-                  .str('function', 'categorizeEvents')
-                  .str('messageId', record.messageId)
-                  .msg('Skipping VPN and Transit Gateway event');
-                return null;
-              }
-            }
 
-            return {
-              service: handlerInfo.service,
-              record,
-              stringRecord
-            };
-          }
-          
-          log
-            .warn()
-            .str('messageId', record.messageId)
-            .msg('Unable to categorize record - no matching service found');
-          uncategorizedRecords.push(record);
-          return null;
-        } catch (error) {
-          log
-            .error()
-            .str('function', 'categorizeEvents')
-            .str('messageId', record.messageId)
-            .err(error)
-            .msg('Error categorizing record');
-          uncategorizedRecords.push(record);
-          return null;
-        }
-      })
-    );
-    
-    // Process successful categorizations
-    results
-      .filter((result): result is PromiseFulfilledResult<{service: ServiceType; record: SQSRecord; stringRecord: any} | null> => 
-        result.status === 'fulfilled' && result.value !== null)
-      .forEach(result => {
-        if (result.value) {
-          const { service, record } = result.value;
-          
+    // With small Lambda batches (≤10 records), we can simplify for clarity
+    for (const record of records) {
+      try {
+        const handlerInfo = this.findHandler(record);
+        
+        if (handlerInfo) {
           // Initialize array for this service if needed
-          if (!serviceMap.has(service)) {
-            serviceMap.set(service, []);
+          if (!serviceMap.has(handlerInfo.service)) {
+            serviceMap.set(handlerInfo.service, []);
           }
           
           // Add record to the appropriate service category
-          serviceMap.get(service)!.push(record);
+          serviceMap.get(handlerInfo.service)!.push(record);
+        } else {
+          log.warn()
+            .str('messageId', record.messageId)
+            .msg('Unable to categorize record');
+          uncategorizedRecords.push(record);
         }
-      });
-      
+      } catch (error) {
+        log.error()
+          .str('messageId', record.messageId)
+          .err(error)
+          .msg('Error categorizing record');
+        uncategorizedRecords.push(record);
+      }
+    }
+
     // Log categorization results
     log
       .info()
@@ -482,16 +347,19 @@ export class ServiceRouter {
       .num('categorizedServices', serviceMap.size)
       .num('uncategorizedRecords', uncategorizedRecords.length)
       .msg('Record categorization complete');
-      
-    Array.from(serviceMap.entries()).forEach(([service, serviceRecords]) => {
-      log
-        .info()
-        .str('service', service)
-        .num('recordCount', serviceRecords.length)
-        .msg('Service categorization breakdown');
-    });
 
-    return { serviceMap, uncategorizedRecords };
+    // Log detailed breakdown only when records exist
+    if (serviceMap.size > 0) {
+      Array.from(serviceMap.entries()).forEach(([service, serviceRecords]) => {
+        log
+          .debug() // Changed to debug level for less noise
+          .str('service', service)
+          .num('recordCount', serviceRecords.length)
+          .msg('Service categorization breakdown');
+      });
+    }
+
+    return {serviceMap, uncategorizedRecords};
   }
 
   /**
@@ -500,11 +368,11 @@ export class ServiceRouter {
    * @returns Object containing batch item failures and their bodies
    */
   async processRecordsByService(
-    serviceMap: Map<ServiceType, SQSRecord[]>
+    serviceMap: Map<ServiceType, SQSRecord[]>,
   ): Promise<SQSFailureResponse> {
     const batchItemFailures: SQSBatchItemFailure[] = [];
     const batchItemBodies: SQSRecord[] = [];
-    
+
     // Process each service's records in parallel
     const results = await Promise.allSettled(
       Array.from(serviceMap.entries()).map(async ([serviceType, records]) => {
@@ -513,29 +381,28 @@ export class ServiceRouter {
           .str('service', serviceType)
           .num('recordCount', records.length)
           .msg('Processing records for service type');
-          
+
         try {
           // Special handling for EC2 records - batch processing
           if (serviceType === 'ec2' && records.length > 0) {
-            const { failureResponse } = await this.processEC2Batch(records);
-            
+            const {failureResponse} = await this.processEC2Batch(records);
+
             if (failureResponse) {
               return {
                 service: serviceType,
-                failures: failureResponse
+                failures: failureResponse,
               };
             }
-            return { service: serviceType, failures: null };
-          } 
-          
+            return {service: serviceType, failures: null};
+          }
+
           // For all other service types, process records individually but in parallel
           const handler = this.getHandlerForService(serviceType);
+          
+          // Process records in parallel
           const serviceResults = await Promise.allSettled(
             records.map(async (record) => {
               try {
-                // Parse record body
-                const stringRecord = JSON.parse(record.body);
-                
                 // Process with the appropriate handler
                 await handler(record);
                 return null;
@@ -546,105 +413,91 @@ export class ServiceRouter {
                   .str('messageId', record.messageId)
                   .err(error)
                   .msg('Error processing record');
-                  
+
                 return {
                   itemIdentifier: record.messageId,
-                  record
+                  record,
                 };
               }
-            })
+            }),
           );
-          
+
           // Collect failures for this service type
           const serviceFailures = serviceResults
-            .filter((result): result is PromiseFulfilledResult<{itemIdentifier: string, record: SQSRecord}> => 
-              result.status === 'fulfilled' && result.value !== null)
-            .map(result => result.value!)
+            .filter(
+              (
+                result,
+              ): result is PromiseFulfilledResult<{
+                itemIdentifier: string;
+                record: SQSRecord;
+              }> => result.status === 'fulfilled' && result.value !== null,
+            )
+            .map((result) => result.value!)
             .filter(Boolean);
-            
+
           if (serviceFailures.length > 0) {
             return {
               service: serviceType,
               failures: {
-                batchItemFailures: serviceFailures.map(f => ({ itemIdentifier: f.itemIdentifier })),
-                batchItemBodies: serviceFailures.map(f => f.record)
-              }
+                batchItemFailures: serviceFailures.map((f) => ({
+                  itemIdentifier: f.itemIdentifier,
+                })),
+                batchItemBodies: serviceFailures.map((f) => f.record),
+              },
             };
           }
-          
-          return { service: serviceType, failures: null };
+
+          return {service: serviceType, failures: null};
         } catch (error) {
           log
             .error()
             .str('service', serviceType)
             .err(error)
             .msg('Unhandled error processing service records');
-            
+
           return {
             service: serviceType,
             failures: {
-              batchItemFailures: records.map(r => ({ itemIdentifier: r.messageId })),
-              batchItemBodies: records
-            }
+              batchItemFailures: records.map((r) => ({
+                itemIdentifier: r.messageId,
+              })),
+              batchItemBodies: records,
+            },
           };
         }
-      })
+      }),
     );
-    
+
     // Collect all failures from different service types
     results
-      .filter((result): result is PromiseFulfilledResult<{service: ServiceType, failures: SQSFailureResponse | null}> => 
-        result.status === 'fulfilled' && result.value.failures !== null)
-      .forEach(result => {
+      .filter(
+        (
+          result,
+        ): result is PromiseFulfilledResult<{
+          service: ServiceType;
+          failures: SQSFailureResponse | null;
+        }> => result.status === 'fulfilled' && result.value.failures !== null,
+      )
+      .forEach((result) => {
         if (result.value.failures) {
           batchItemFailures.push(...result.value.failures.batchItemFailures);
           batchItemBodies.push(...result.value.failures.batchItemBodies);
         }
       });
-      
+
     // Also collect failures from rejected promises
     results
-      .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
-      .forEach(result => {
+      .filter(
+        (result): result is PromiseRejectedResult =>
+          result.status === 'rejected',
+      )
+      .forEach((result) => {
         log
           .error()
           .err(result.reason)
           .msg('Service processing failed with unhandled error');
       });
 
-    return { batchItemFailures, batchItemBodies };
-  }
-
-  /**
-   * Process a single SQS record
-   * @param record SQS record for logging and parsing as necessary
-   * @param stringRecord Stringified version of the record for searching - we don't want to re-stringify the record every iteration over hundreds of invocations
-   * @returns Promise that resolves when processing is complete
-   * @deprecated Use the service-based batch processing with categorizeEvents and processRecordsByService
-   */
-  async processRecord(record: SQSRecord, stringRecord: string): Promise<void> {
-    const handlerInfo = this.findHandler(record, stringRecord);
-
-    if (!handlerInfo) {
-      throw new Error(`No handler found for record ${record.messageId}`);
-    }
-
-    log
-      .info()
-      .str('service', handlerInfo.service)
-      .str('messageId', record.messageId)
-      .msg('Processing record with service handler');
-
-    try {
-      await handlerInfo.handler(record);
-    } catch (error) {
-      log
-        .error()
-        .str('service', handlerInfo.service)
-        .str('messageId', record.messageId)
-        .err(error)
-        .msg('Error processing record with service handler');
-      throw error;
-    }
+    return {batchItemFailures, batchItemBodies};
   }
 }
