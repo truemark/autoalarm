@@ -12,16 +12,16 @@ export enum AlarmClassification {
 }
 
 export enum AlarmManagerEnumberation {
-   'alb'= 'arn:aws:elasticloadbalancing:',
-   'cloudfront'= 'arn:aws:cloudfront:', // can only be seen from us-east-1
-   'ec2'= 'arn:aws:ec2:',
-   'opensearch'= 'arn:aws:es', // for open search clusters only and need additional filtering to make sure it has 'domain' in teh ARN
-   'rds'= 'test',
-   'rds-cluster'= 'arn:place:holder1',
-   'route53-resolver'= 'arn:place:holder',
-   'sqs'= 'arn:place:holder2',
-   'step-function'= 'arn:place:holder3',
-   'targetgroup'= 'arn:place:holder4',
-   'transit-gateway'= 'arn:place:holder5',
-   'vpn'= 'arn:place:holder6'
+  'alb' = 'arn:aws:elasticloadbalancing:',
+  'cloudfront' = 'arn:aws:cloudfront:', // can only be seen from us-east-1
+  'ec2' = 'arn:aws:ec2:',
+  'opensearch' = 'arn:aws:es:', // for open search clusters only and need additional filtering to make sure it has 'domain' in the ARN
+  'rds' = 'arn:aws:rds:',
+  'rds-cluster' = 'arn:aws:rds:cluster:',
+  'route53-resolver' = 'arn:aws:route53resolver:',
+  'sqs' = 'arn:aws:sqs:',
+  'step-function' = 'arn:aws:states:',
+  'targetgroup' = 'arn:aws:elasticloadbalancing:targetgroup:',
+  'transit-gateway' = 'arn:aws:ec2:transit-gateway:',
+  'vpn' = 'arn:aws:ec2:vpn:',
 }

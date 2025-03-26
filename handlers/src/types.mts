@@ -1,5 +1,4 @@
-import {Tag} from '@aws-sdk/client-ec2';
-import {SQSEvent, SQSRecord} from "aws-lambda";
+import {SQSBatchItemFailure, SQSRecord} from 'aws-lambda';
 
 // Type definitions for autoalarm
 
@@ -11,14 +10,16 @@ export type ValidEC2States =
   //| 'shutting-down'
   | 'terminated';
 
+export type TagArray = {[key: string]: string}[];
+
 export interface EC2AlarmManagerObject {
   instanceID: string;
-  tags: Tag[];
+  tags: Tag;
   state: ValidEC2States;
   ec2Metadata?: {platform: string | null; privateIP: string | null};
 }
 
-export interface LegacyTag {
+export interface Tag {
   [key: string]: string;
 }
 
@@ -32,11 +33,12 @@ export interface Dimension {
 // Todo: We will change any once we unify the modules into a consolidated master module
 // type for dynamically managing alarms in main handler:
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AsyncAlarmManager = (records: SQSRecord) => Promise<any>;
+export type AsyncAlarmManager = (records: SQSRecord | any) => Promise<any>;
 
 export type ServiceType =
   | 'alb'
   | 'cloudfront'
+  | 'ec2'
   | 'opensearch'
   | 'rds'
   | 'rds-cluster'
@@ -47,8 +49,15 @@ export type ServiceType =
   | 'transit-gateway'
   | 'vpn';
 
-export type AsycnAlarmManagerMap = {
-  [key in ServiceType]: AsyncAlarmManager;
+export interface ServiceProps {
+  service: ServiceType;
+  identifiers: string[];
+  handler: AsyncAlarmManager;
+}
+
+export type SQSFailureResponse = {
+  batchItemFailures: SQSBatchItemFailure[];
+  batchItemBodies: SQSRecord[];
 };
 
 export interface PathMetrics {

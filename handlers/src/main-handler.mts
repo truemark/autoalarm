@@ -18,9 +18,8 @@ import {parseCloudFrontEventAndCreateAlarms} from './cloudfront-modules.mjs';
 import {parseRDSEventAndCreateAlarms} from './rds-modules.mjs';
 import {parseRDSClusterEventAndCreateAlarms} from './rds-cluster-modules.mjs';
 import {parseSFNEventAndCreateAlarms} from './step-function-modules.mjs';
-import {AlarmManagerEnumberation} from './enums.mjs';
-import {rejects} from 'node:assert';
-import {AsycnAlarmManagerMap} from "./types.mjs";
+import {eventSearch, ServiceRouter} from './service-router.mjs';
+import {SQSFailureResponse} from './types.mjs';
 
 // Initialize logging
 const level = process.env.LOG_LEVEL || 'trace';
@@ -33,178 +32,131 @@ const log = logging.initialize({
   level,
 });
 
-/**
- * Helper function to agnosticly, dynamically and linearly search for resource identifiers or other data needed to route events.
- * @param record<T> This is the SQS record that contains the event data or other object type.
- * @param indexStart use a universal string preamble to categorically search for the start of the strings you are looking for.
- * @param indexEnd Use this as the last delimiter that separates your desired string and the next index after your string. Usually '"'
- * @returns string
- *
- */
-function eventSearch<T>(
-  record: T,
-  indexStart: string,
-  indexEnd: string,
-): string {
-  const recordString: string = JSON.stringify(record);
+// Configure service handlers
+const serviceRouter = new ServiceRouter([
+  {
+    service: 'alb',
+    identifiers: ['arn:aws:elasticloadbalancing:'],
+    handler: parseALBEventAndCreateAlarms,
+  },
+  {
+    service: 'cloudfront',
+    identifiers: ['arn:aws:cloudfront:'],
+    handler: parseCloudFrontEventAndCreateAlarms,
+  },
+  {
+    service: 'ec2',
+    identifiers: ['arn:aws:ec2:'],
+    handler: manageEC2,
+  },
+  {
+    service: 'opensearch',
+    identifiers: ['arn:aws:es:'],
+    handler: parseOSEventAndCreateAlarms,
+  },
+  {
+    service: 'rds',
+    identifiers: ['arn:aws:rds:'],
+    handler: parseRDSEventAndCreateAlarms,
+  },
+  {
+    service: 'rds-cluster',
+    identifiers: ['arn:aws:rds:cluster:'],
+    handler: parseRDSClusterEventAndCreateAlarms,
+  },
+  {
+    service: 'route53-resolver',
+    identifiers: ['arn:aws:route53resolver:'],
+    handler: parseR53ResolverEventAndCreateAlarms,
+  },
+  {
+    service: 'sqs',
+    identifiers: ['arn:aws:sqs:'],
+    handler: parseSQSEventAndCreateAlarms,
+  },
+  {
+    service: 'step-function',
+    identifiers: ['arn:aws:states:'],
+    handler: parseSFNEventAndCreateAlarms,
+  },
+  {
+    service: 'targetgroup',
+    identifiers: ['arn:aws:elasticloadbalancing:'],
+    handler: parseTGEventAndCreateAlarms,
+  },
+  {
+    service: 'transit-gateway',
+    identifiers: ['arn:aws:ec2:transit-gateway:'],
+    handler: parseTransitGatewayEventAndCreateAlarms,
+  },
+  {
+    service: 'vpn',
+    identifiers: ['arn:aws:ec2:vpn:'],
+    handler: parseVpnEventAndCreateAlarms,
+  },
+]);
 
-  const startIndex: number = recordString.indexOf(indexStart);
-  if (startIndex === -1) {
-    log
-      .error()
-      .str('function', 'eventSearch')
-      .str('indexStart', indexStart)
-      .msg('Event search failed for indexStart');
-    return '';
-  }
-
-  const endIndex: number = recordString.indexOf(indexEnd, startIndex);
-  if (endIndex === -1) {
-    log
-      .error()
-      .str('function', 'eventSearch')
-      .str('indexEnd', indexStart)
-      .msg('Event search failed for indexEnd');
-    return '';
-  }
-
-  return recordString.substring(startIndex, endIndex);
-}
-
-// Build a map with keys related to each service and then call the appropriate function to handle the event
-const asyncAlarmManagerMap: AsycnAlarmManagerMap = {
-  'alb': parseALBEventAndCreateAlarms,
-  'cloudfront': parseCloudFrontEventAndCreateAlarms,
-  'opensearch': parseOSEventAndCreateAlarms,
-  'rds': parseRDSEventAndCreateAlarms,
-  'rds-cluster': parseRDSClusterEventAndCreateAlarms,
-  'route53-resolver': parseR53ResolverEventAndCreateAlarms,
-  'sqs': parseSQSEventAndCreateAlarms,
-  'step-function': parseSFNEventAndCreateAlarms,
-  'targetgroup': parseTGEventAndCreateAlarms,
-  'transit-gateway': parseTransitGatewayEventAndCreateAlarms,
-  'vpn': parseVpnEventAndCreateAlarms,
-};
-
-//concurrently parse all the events and call the proper function to handle the event
-
-// TODO: we are going to use promise.race to perform asynchronous linear search across a map of all these payloads instead of looping and casing everything. It's terrible and I hate it.
 export const handler: Handler = async (
   event: SQSEvent,
 ): Promise<void | SQSBatchResponse> => {
-  log.trace().unknown('event', event).msg('Received event');
-  /**
-   * Create batch item failures array to store any failed items from the batch.
-   */
-  const batchItemFailures: SQSBatchItemFailure[] = [];
-  const batchItemBodies: SQSRecord[] = [];
-  const ec2InstanceMap: Record<string, SQSRecord>[] = [];
+  log.trace()
+    .unknown('event', event)
+    .num('recordCount', event.Records?.length || 0)
+    .msg('Received SQS event batch');
 
-
-  /**
-   * Check if we have any EC2 events in the interim and get the instance IDs. W'll clean up teh logic when we consolidate the modules into a single module.
-   */
-  await Promise.allSettled(
-    event.Records.map(async (record) => {
-      const searchResult: string | undefined = eventSearch(record, 'arn:aws:ec2:', '"').split('/').pop()!
-      if (searchResult) {
-        ec2InstanceMap.push({[searchResult]: record});
-      }
-    }),
-  );
-
-  if (ec2InstanceMap.length > 0) {
-    log
-      .trace()
-      .num('instanceIDs', ec2InstanceMap.length)
-      .msg('Instance IDs found in event');
-    try {
-      await manageEC2(ec2InstanceMap);
-    } catch (error) {
-      batchItemFailures.push({itemIdentifier: ec2InstanceMap[searchResult]});
-      log.error().msg('Error processing EC2 event');
-      return;
-    }
+  if (!event.Records || event.Records.length === 0) {
+    log.warn().msg('No records found in event');
+    return;
   }
 
-  /**
-   * Initialize function key to store the key of the function that will be called to handle the event
-   */
-  let functionKey: string;
+  // Phase 1: Categorize all records by service type
+  const startTime = Date.now();
+  const { serviceMap, uncategorizedRecords } = await serviceRouter.categorizeEvents(event.Records);
+  log.info()
+    .num('categorizeTime', Date.now() - startTime)
+    .num('serviceTypes', serviceMap.size)
+    .msg('Record categorization complete');
 
-
-  if (!event.Records) {
-    log.warn().msg('No Records found in event');
-    throw new Error('No Records found in event');
+  // Phase 2: Process all services in parallel, with each service handling its records appropriately
+  const processingStartTime = Date.now();
+  const { batchItemFailures, batchItemBodies } = await serviceRouter.processRecordsByService(serviceMap);
+  log.info()
+    .num('processingTime', Date.now() - processingStartTime)
+    .msg('Service-based batch processing complete');
+    
+  // Add any uncategorized records as failures
+  if (uncategorizedRecords.length > 0) {
+    log.warn()
+      .num('uncategorizedCount', uncategorizedRecords.length)
+      .msg('Some records could not be categorized');
+      
+    uncategorizedRecords.forEach(record => {
+      batchItemFailures.push({ itemIdentifier: record.messageId });
+      batchItemBodies.push(record);
+    });
   }
 
-  /**
-   * Process all the events concurrently and call the proper function to handle each event
-   */
-  await Promise.allSettled(
-    event.Records.map(async (record) => {
-      try {
-        try {
-          functionKey = await Promise.any(
-            Object.keys(asyncAlarmManagerMap).map(async (key) => {
-              const result = eventSearch(
-                record,
-                AlarmManagerEnumberation[
-                  `${key as keyof typeof AlarmManagerEnumberation}`
-                ],
-                '"',
-              );
-              if (result) return key;
-              throw new Error('No match found');
-            }),
-          );
-        } catch (error) {
-          log
-            .error()
-            .str('messageId', record.messageId)
-            .msg('Could not determine service type from event');
-          batchItemFailures.push({itemIdentifier: record.messageId});
-          batchItemBodies.push(record);
-          return;
-        }
-      } catch (error) {
-        log
-          .error()
-          .str('messageId', record.messageId)
-          .msg('Error processing event');
-        batchItemFailures.push({itemIdentifier: record.messageId});
-        batchItemBodies.push(record);
-        return;
-      }
-
-      // Now that we have the proper key, we can call teh correct function;
-
-      try {
-        await asyncAlarmManagerMap[functionKey](record);
-      } catch (error) {
-        log
-          .error()
-          .str('messageId', record.messageId)
-          .msg('Error processing event');
-        batchItemFailures.push({itemIdentifier: record.messageId});
-        batchItemBodies.push(record);
-        return;
-      }
-    }),
-  );
-
+  // Return failures if any were found
   if (batchItemFailures.length > 0) {
     log
       .error()
-      .str('function', 'handler')
       .num('failedItems', batchItemFailures.length)
-      .msg('Batch item failures found');
+      .num('totalItems', event.Records.length)
+      .msg('Batch processing completed with failures');
+      
+    // Only log detailed bodies at trace level as they could be large
     log
-      .error()
+      .trace()
       .obj('batchItemBodies', batchItemBodies)
-      .msg('Batch item bodies');
+      .msg('Failed batch items');
+      
     return {
-      batchItemFailures: batchItemFailures,
+      batchItemFailures
     };
   }
+  
+  log.info()
+    .num('totalTime', Date.now() - startTime)
+    .num('recordCount', event.Records.length)
+    .msg('Batch processing completed successfully');
 };

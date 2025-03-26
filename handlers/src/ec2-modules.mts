@@ -1,18 +1,24 @@
 import {
-  DescribeInstancesCommand, DescribeInstancesCommandOutput,
+  DescribeInstancesCommand,
+  DescribeInstancesCommandOutput,
   DescribeTagsCommand,
-  EC2Client, Reservation,
+  EC2Client,
+  Reservation,
 } from '@aws-sdk/client-ec2';
 import {
   CloudWatchClient,
-  DeleteAlarmsCommand, DescribeAlarmsCommandOutput,
+  DeleteAlarmsCommand,
   ListMetricsCommand,
   PutMetricAlarmCommand,
 } from '@aws-sdk/client-cloudwatch';
 import * as logging from '@nr1e/logging';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
-import {ValidInstanceState} from './enums.mjs';
-import {PathMetrics, Tag, EC2AlarmManagerArray, ValidEC2States} from './types.mjs';
+import {
+  PathMetrics,
+  Tag,
+  EC2AlarmManagerArray,
+  ValidEC2States,
+} from './types.mjs';
 import {
   deleteAlarm,
   doesAlarmExist,
@@ -32,7 +38,7 @@ import {
   batchUpdatePromRules,
   queryPrometheusForService,
 } from './prometheus-tools.mjs';
-import {SQSRecord} from "aws-lambda";
+import {SQSRecord} from 'aws-lambda';
 
 const log: logging.Logger = logging.getLogger('ec2-modules');
 export const prometheusWorkspaceId: string =
@@ -92,13 +98,8 @@ async function getMemoryMetricsFromCloudWatch(
 async function getStoragePathsFromCloudWatch(
   instanceId: string,
   metricName: string,
+  isWindows: boolean,
 ): Promise<PathMetrics> {
-  // First, determine if the instance is running Windows
-  const instanceDetailProps = await getInstanceDetails(instanceId);
-  const isWindows = instanceDetailProps.platform
-    ? instanceDetailProps.platform.toLowerCase().includes('windows')
-    : false;
-
   // Set required dimensions based on the operating system
   const requiredDimensions = isWindows
     ? [
@@ -170,65 +171,6 @@ async function getStoragePathsFromCloudWatch(
   }
 
   return paths;
-}
-
-//this function is used to get the instance OS platform type for CW metrics specific to mem and storage and private IP
-// address for promQL queries
-async function getInstanceDetails(
-  instanceId: string,
-): Promise<{platform: string | null; privateIP: string | null}> {
-  try {
-    const describeInstancesCommand = new DescribeInstancesCommand({
-      InstanceIds: [instanceId],
-    });
-    const describeInstancesResponse = await ec2Client.send(
-      describeInstancesCommand,
-    );
-
-    if (
-      describeInstancesResponse.Reservations &&
-      describeInstancesResponse.Reservations.length > 0 &&
-      describeInstancesResponse.Reservations[0].Instances &&
-      describeInstancesResponse.Reservations[0].Instances.length > 0
-    ) {
-      const instance = describeInstancesResponse.Reservations[0].Instances[0];
-      const platform = instance.PlatformDetails ?? null;
-      const privateIP = instance.PrivateIpAddress ?? '';
-
-      if (!platform) {
-        log
-          .info()
-          .str('function', 'getInstanceDetails')
-          .err('No platform details found')
-          .str('instanceId', instanceId)
-          .msg('No platform details found');
-        throw new Error('No platform details found');
-      }
-      log
-        .info()
-        .str('function', 'getInstanceDetails')
-        .str('instanceId', instanceId)
-        .str('platform', platform)
-        .str('privateIP', privateIP)
-        .msg('Fetched instance details');
-      return {platform, privateIP};
-    } else {
-      log
-        .info()
-        .str('function', 'getInstanceDetails')
-        .str('instanceId', instanceId)
-        .msg('No reservations found or no instances in reservation');
-      return {platform: null, privateIP: ''};
-    }
-  } catch (error) {
-    log
-      .error()
-      .str('function', 'getInstanceDetails')
-      .err(error)
-      .str('instanceId', instanceId)
-      .msg('Failed to fetch instance details');
-    return {platform: null, privateIP: ''};
-  }
 }
 
 export async function createStatusAlarmForInstance(
@@ -399,6 +341,7 @@ async function handleAlarmCreation(
       const storagePaths = await getStoragePathsFromCloudWatch(
         instanceId,
         config.metricName,
+        isWindows,
       );
 
       if (Object.keys(storagePaths).length > 0) {
@@ -535,7 +478,12 @@ export async function manageActiveEC2InstanceAlarms(
       ? await queryPrometheusForService('ec2', prometheusWorkspaceId, region)
       : [];
 
-    for (const {instanceID, tags, state} of activeInstancesInfoArray) {
+    for (const {
+      instanceID,
+      tags,
+      state,
+      ec2Metadata,
+    } of activeInstancesInfoArray) {
       try {
         log
           .info()
@@ -543,11 +491,8 @@ export async function manageActiveEC2InstanceAlarms(
           .str('EC2 instance ID', instanceID)
           .msg('Starting alarm management process');
 
-        const ec2Metadata = await getInstanceDetails(instanceID);
-
-        const isWindows = ec2Metadata.platform?.includes('Windows') || false;
-        const isAlarmEnabled = (): boolean => !!tags.find((tag) => tag.Key === 'autoalarm:enabled' && tag.Value === 'true');
-
+        const isWindows = ec2Metadata!.platform?.includes('Windows') || false;
+        const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
 
         if (!isAlarmEnabled) {
           log
@@ -568,7 +513,7 @@ export async function manageActiveEC2InstanceAlarms(
         // Check if instance reports to Prometheus and process Prometheus alarms
         if (
           prometheusWorkspaceId &&
-          (tags{'autoalarm:target'} === 'prometheus' ||
+          (tags['autoalarm:target'] === 'prometheus' ||
             (!tags['autoalarm:target'] &&
               instanceIDsReportingToPrometheus.includes(instanceID)))
         ) {
@@ -576,7 +521,7 @@ export async function manageActiveEC2InstanceAlarms(
             .info()
             .str('function', 'manageActiveEC2InstanceAlarms')
             .str('EC2 instance ID', instanceID)
-            .str('privateIP', ec2Metadata.privateIP as string)
+            .str('privateIP', ec2Metadata!.privateIP as string)
             .msg(
               'Instance reports to Prometheus. Processing Prometheus alarms',
             );
@@ -786,7 +731,7 @@ export async function manageInactiveInstanceAlarms(
   const CWAlarmsToDelete: string[] = [];
   const prometheusAlarmsToDelete: EC2AlarmManagerArray = [];
   for (const instanceInfo of inactiveInstancesInfoArray) {
-    const ec2MetaData = await getInstanceDetails(instanceInfo.instanceID);
+    const ec2MetaData = instanceInfo.ec2Metadata;
     //const privateIP = ec2MetaData.privateIP || '';
 
     // Check if instance reports to Prometheus and process Prometheus alarm deletion
@@ -843,7 +788,9 @@ export async function manageInactiveInstanceAlarms(
  * Helper function to get EC2 ID and state
  * @param records These are all records that have been filtred by the main handler to be related to ec2 instances.
  */
-export async function manageEC2(records: Record<string, SQSRecord>[]): Promise<Record<string, SQSRecord>[]> {
+export async function manageEC2(
+  records: Record<string, SQSRecord>[],
+): Promise<Record<string, SQSRecord>[]> {
   const ec2AlarmManagerBatch: EC2AlarmManagerArray = [];
 
   // Get all EC2 instance information in a single api call
@@ -857,9 +804,15 @@ export async function manageEC2(records: Record<string, SQSRecord>[]): Promise<R
   await Promise.allSettled(
     instanceInfo.Reservations!.map(async (reservation: Reservation) => {
       return reservation.Instances!.map((instance) => {
+        const tags: {[key: string]: string} = {};
+        instance.Tags?.forEach((tag) => {
+          if (tag.Key && tag.Value) {
+            tags[tag.Key] = tag.Value;
+          }
+        });
         ec2AlarmManagerBatch.push({
           instanceID: instance.InstanceId!,
-          tags: instance.Tags!,
+          tags: tags,
           state: instance.State!.Name! as ValidEC2States, // Our event bridge rules only ever trigger on running or terminated instances.
           ec2Metadata: {
             platform: instance.Platform || null,
@@ -879,27 +832,28 @@ export async function manageEC2(records: Record<string, SQSRecord>[]): Promise<R
       ec2AlarmManagerBatch.filter((instance) => deadStates.has(instance.state)),
     ),
   ]);
-  
+
   // Filter out the rejected promises
   const failures = results
-    .filter(result => result.status === 'rejected')
+    .filter((result) => result.status === 'rejected')
     .map((rejected: PromiseRejectedResult) => rejected.reason);
-    
+
   if (failures.length > 0) {
-    log.error()
+    log
+      .error()
       .obj('failures', failures)
       .msg('Some EC2 alarm management operations failed');
-      
+
     // Return the failed records that should be retried
     // Map the failures to their corresponding records
-    const failedInstanceIds = failures.map(failure => failure.instanceID);
-    
+    const failedInstanceIds = failures.map((failure) => failure.instanceID);
+
     // Return only the records that correspond to failed instances
-    return records.filter(record => 
-      Object.keys(record).some(key => failedInstanceIds.includes(key))
+    return records.filter((record) =>
+      Object.keys(record).some((key) => failedInstanceIds.includes(key)),
     );
   }
-  
+
   return [];
 }
 
@@ -909,7 +863,7 @@ export const liveStates: Set<ValidEC2States> = new Set([
 ]);
 
 export const deadStates: Set<ValidEC2States> = new Set([
-  'terminated'
+  'terminated',
   //ValidInstanceState.Stopping, //for testing.
   //ValidInstanceState.Stopped, //for testing.
   //ValidInstanceState.ShuttingDown, //for testing.
