@@ -143,7 +143,7 @@ export const handler: Handler = async (
     // Phase 1: Categorize all records by service type
     const startTime = Date.now();
     const {serviceMap, uncategorizedRecords} =
-      processorRegistry.categorizeRecords(event.Records);
+      await processorRegistry.categorizeRecords(event.Records);
     log
       .info()
       .str('function', 'handler')

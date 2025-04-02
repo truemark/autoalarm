@@ -183,8 +183,6 @@ export class ProcessorRegistry {
    * @param records Array of SQS records to categorize
    * @returns Object containing a map of service types to records and uncategorized records
    */
-  //TODO: We can make this even better buy just looking at the queue it came from - MessageGroupID
-  // This way we can avoid the searchRecord function in processors that can't process an unrelated record
   async categorizeRecords(records: SQSRecord[]): Promise<{
     serviceMap: Map<ServiceType, SQSRecord[]>;
     uncategorizedRecords: SQSRecord[];
