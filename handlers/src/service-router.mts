@@ -185,22 +185,40 @@ export class ProcessorRegistry {
    */
   //TODO: We can make this even better buy just looking at the queue it came from - MessageGroupID
   // This way we can avoid the searchRecord function in processors that can't process an unrelated record
-  categorizeRecords(records: SQSRecord[]): {
+  async categorizeRecords(records: SQSRecord[]): Promise<{
     serviceMap: Map<ServiceType, SQSRecord[]>;
     uncategorizedRecords: SQSRecord[];
-  } {
+  }> {
     const serviceMap = new Map<ServiceType, SQSRecord[]>();
     const uncategorizedRecords: SQSRecord[] = [];
 
-    // Add record to the appropriate service category based on message group id
+    // Loop through records and categorize by service type
     for (const record of records) {
-      let categorized = false;
+      // Coerce the messageGroupId into a string for comparison against service types
+      const messageGroupId: string = record.messageAttributes
+        .messageGroupId as unknown as string;
 
-      // Try each processor
-      for (const processor of this.processors) {
-        if (processor.canProcess(record)) {
-          // Get the service type directly from the processor
-          const serviceType = processor.getServiceType();
+      // Asynchronously search for the service type in the messageGroupId, set the service type, and categorize the record
+      await Promise.any([
+        new Promise<ServiceType>((resolve, reject) => {
+          this.processors.forEach((p) => {
+            const serviceType = p.getServiceType();
+            if (messageGroupId.includes(serviceType)) {
+              resolve(serviceType);
+            } else {
+              reject('No service type found in SQS record messageGroupId');
+            }
+          });
+        }),
+      ])
+        .then((serviceType) => {
+          log
+            .debug()
+            .str('class', 'ProcessorRegistry')
+            .str('function', 'categorizeRecords')
+            .str('messageId', record.messageId)
+            .str('serviceType', serviceType)
+            .msg('Successfully resolved service type from messageGroupId');
 
           // Initialize array for this service if needed
           if (!serviceMap.has(serviceType)) {
@@ -209,26 +227,26 @@ export class ProcessorRegistry {
 
           // Add record to the appropriate service category
           serviceMap.get(serviceType)!.push(record);
-          categorized = true;
-          break; // Stop after first match
-        }
-      }
+        })
+        .catch((error) => {
+          log
+            .error()
+            .str('class', 'ProcessorRegistry')
+            .str('function', 'categorizeRecords')
+            .str('messageId', record.messageId)
+            .str('Failed Promises: ', error.join('\n'))
+            .msg(
+              'Unable to categorize record sending back to Queue for reprocessing',
+            );
 
-      // Add to uncategorized if no processor claimed it
-      if (!categorized) {
-        log
-          .warn()
-          .str('class', 'ProcessorRegistry')
-          .str('function', 'categorizeRecords')
-          .str('messageId', record.messageId)
-          .msg('Unable to categorize record');
-        uncategorizedRecords.push(record);
-      }
+          //add to uncategorized records if no processor was able to find a match
+          uncategorizedRecords.push(record);
+        });
     }
 
     // Log categorization results
     log
-      .info()
+      .debug()
       .str('class', 'ProcessorRegistry')
       .str('function', 'categorizeRecords')
       .num('totalRecords', records.length)
@@ -539,7 +557,9 @@ export abstract class ServiceProcessor {
         .str('pattern', pattern)
         .str('record', stringified)
         .msg('Error searching for pattern in record');
-      throw new Error("Error searching for pattern in record. Event Search didn't return a value");
+      throw new Error(
+        "Error searching for pattern in record. Event Search didn't return a value",
+      );
     }
   }
 }
