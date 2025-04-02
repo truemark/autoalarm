@@ -196,10 +196,16 @@ export class ProcessorRegistry {
       const messageGroupId: string = record.messageAttributes
         .messageGroupId as unknown as string;
 
-      // Asynchronously search for the service type in the messageGroupId, set the service type, and categorize the record
-      await Promise.any([
-        new Promise<ServiceType>((resolve, reject) => {
-          this.processors.forEach((p) => {
+      /**
+       * Check if the record has a messageGroupId against all service types across all processors concurrently
+       * Promise.any creates a race between all processors to the processor who's service type is contained in the messageGroupId.
+       * Each processor returns a promise that resolves if its service type is contained in the messageGroupId
+       * When any processor succeeds: Promise.any.then() categorizes the record by the matching service type
+       * If all processors fail: Promise.any.catch() adds the record to uncategorized records to an array for handling in main-handler.mts
+       */
+      await Promise.any(
+        this.processors.map((p) => {
+          return new Promise<ServiceType>((resolve, reject) => {
             const serviceType = p.getServiceType();
             if (messageGroupId.includes(serviceType)) {
               resolve(serviceType);
@@ -207,8 +213,9 @@ export class ProcessorRegistry {
               reject('No service type found in SQS record messageGroupId');
             }
           });
-        }),
-      ])
+        }), // End of new Promise for each processor
+      )
+        // Resolve the service type in Promise.any from the first resolving processor Promise and categorize the record
         .then((serviceType) => {
           log
             .debug()
@@ -226,21 +233,27 @@ export class ProcessorRegistry {
           // Add record to the appropriate service category
           serviceMap.get(serviceType)!.push(record);
         })
+        // Handle the case where no processor was able to categorize the record in any processor Promise
         .catch((error) => {
           log
             .error()
             .str('class', 'ProcessorRegistry')
             .str('function', 'categorizeRecords')
             .str('messageId', record.messageId)
-            .str('Failed Promises: ', error.join('\n'))
+            .str(
+              'Failed Promises: ',
+              error instanceof AggregateError
+                ? error.errors.join('\n')
+                : String(error),
+            )
             .msg(
               'Unable to categorize record sending back to Queue for reprocessing',
             );
 
           //add to uncategorized records if no processor was able to find a match
           uncategorizedRecords.push(record);
-        });
-    }
+        }); // End of Promise.any for processors
+    } // End of for loop over records
 
     // Log categorization results
     log
