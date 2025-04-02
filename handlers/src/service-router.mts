@@ -210,7 +210,7 @@ export class ProcessorRegistry {
             if (messageGroupId.includes(serviceType)) {
               resolve(serviceType);
             } else {
-              reject('No service type found in SQS record messageGroupId');
+              reject();
             }
           });
         }), // End of new Promise for each processor
