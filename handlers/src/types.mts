@@ -41,12 +41,12 @@ export type ServiceType =
   | 'ec2'
   | 'opensearch'
   | 'rds'
-  | 'rds-cluster'
-  | 'route53-resolver'
+  | 'rdscluster'
+  | 'route53resolver'
   | 'sqs'
-  | 'step-function'
+  | 'sfn'
   | 'targetgroup'
-  | 'transit-gateway'
+  | 'transitgateway'
   | 'vpn';
 
 export interface ServiceProps {

@@ -390,7 +390,7 @@ export class RDSProcessor extends ServiceProcessor {
  */
 export class RDSClusterProcessor extends ServiceProcessor {
   constructor() {
-    super('rds-cluster');
+    super('rdscluster');
   }
 
   /**
@@ -446,7 +446,7 @@ export class RDSClusterProcessor extends ServiceProcessor {
  */
 export class Route53ResolverProcessor extends ServiceProcessor {
   constructor() {
-    super('route53-resolver');
+    super('route53resolver');
   }
 
   /**
@@ -558,7 +558,7 @@ export class SQSProcessor extends ServiceProcessor {
  */
 export class StepFunctionProcessor extends ServiceProcessor {
   constructor() {
-    super('step-function');
+    super('sfn');
   }
 
   /**
@@ -674,7 +674,7 @@ export class TargetGroupProcessor extends ServiceProcessor {
  */
 export class TransitGatewayProcessor extends ServiceProcessor {
   constructor() {
-    super('transit-gateway');
+    super('transitgateway');
   }
 
   /**

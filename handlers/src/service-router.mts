@@ -10,9 +10,11 @@ import {
   RDSProcessor,
   Route53ResolverProcessor,
   SQSProcessor,
-  StepFunctionProcessor, TargetGroupProcessor, TransitGatewayProcessor, VPNProcessor,
+  StepFunctionProcessor,
+  TargetGroupProcessor,
+  TransitGatewayProcessor,
+  VPNProcessor,
 } from './processors-temp.mjs';
-
 
 const log: logging.Logger = logging.getLogger('service-router');
 
@@ -25,48 +27,64 @@ const log: logging.Logger = logging.getLogger('service-router');
  * @returns Matched string or empty string if not found
  */
 export function eventSearch(
-  record: SQSRecord | string,
+  record: SQSRecord | string | Record<string, unknown>,
   searchPattern: string,
   endDelimiter: string,
-): string {
+): string | undefined {
+  // Used to store striginified record data across record types
   let recordString: string;
 
-  // Handle different input types
-  if (typeof record === 'string') {
-    // Input is already a string (pre-stringified JSON or parsed object)
-    recordString = record;
-  } else {
-    // For SQSRecord objects
-    if (record.body) {
-      // For our current SQS handler use case, we want to search within the body content
-      recordString = JSON.stringify(record.body);
-    } else {
-      // Fallback for other record types for future compatability with other object parsing if needed
-      recordString = JSON.stringify(record);
+  // Anonymous function to search for the pattern in the record and return the result
+  const getSearchResult = (): string | undefined => {
+    let startIndex: number;
+    let endIndex: number;
+
+    // Try to get start and end index of the pattern
+    try {
+      startIndex = recordString.indexOf(searchPattern);
+      endIndex = recordString.indexOf(endDelimiter, startIndex);
+      return recordString.substring(startIndex, endIndex);
+    } catch (e) {
+      log
+        .error()
+        .str('function', 'eventSearch')
+        .str('searchPattern', searchPattern)
+        .err(e)
+        .msg('Error searching for pattern in record');
+      return undefined;
     }
+  };
+
+  /**
+   * Record handling logic based on the type of record passed with early conditional returns
+   * Handle string records directly
+   * Fall back logic if the record is not a string but is an SQS record
+   * Fallback for other record types for future compatability with other object parsing if needed
+   */
+  if (typeof record === 'string') {
+    recordString = record;
+    return getSearchResult();
   }
 
-  const startIndex = recordString.indexOf(searchPattern);
-  if (startIndex === -1) {
-    log
-      .debug()
-      .str('function', 'eventSearch')
-      .str('searchPattern', searchPattern)
-      .msg('Search pattern not found in record');
-    return '';
+  if (typeof record === 'object' && record.body) {
+    recordString = JSON.stringify(record.body);
+    return getSearchResult();
   }
 
-  const endIndex = recordString.indexOf(endDelimiter, startIndex);
-  if (endIndex === -1) {
-    log
-      .debug()
-      .str('function', 'eventSearch')
-      .str('endDelimiter', endDelimiter)
-      .msg('End delimiter not found in record');
-    return '';
+  if (typeof record === 'object' && record) {
+    recordString = JSON.stringify(record);
+    return getSearchResult();
   }
 
-  return recordString.substring(startIndex, endIndex);
+  // Log an error and return undefined if no supported record type is found
+  log
+    .error()
+    .str('function', 'eventSearch')
+    .str('searchPattern', searchPattern)
+    .str('recordType', typeof record)
+    .unknown('record', record)
+    .msg('Unsupported record type for event search');
+  return undefined;
 }
 
 /**
@@ -174,7 +192,7 @@ export class ProcessorRegistry {
     const serviceMap = new Map<ServiceType, SQSRecord[]>();
     const uncategorizedRecords: SQSRecord[] = [];
 
-    // Process each record
+    // Add record to the appropriate service category based on message group id
     for (const record of records) {
       let categorized = false;
 
@@ -381,12 +399,12 @@ export class ProcessorRegistry {
       case 'rds':
         processor = this.processors.find((p) => p instanceof RDSProcessor);
         break;
-      case 'rds-cluster':
+      case 'rdscluster':
         processor = this.processors.find(
           (p) => p instanceof RDSClusterProcessor,
         );
         break;
-      case 'route53-resolver':
+      case 'route53resolver':
         processor = this.processors.find(
           (p) => p instanceof Route53ResolverProcessor,
         );
@@ -394,7 +412,7 @@ export class ProcessorRegistry {
       case 'sqs':
         processor = this.processors.find((p) => p instanceof SQSProcessor);
         break;
-      case 'step-function':
+      case 'sfn':
         processor = this.processors.find(
           (p) => p instanceof StepFunctionProcessor,
         );
@@ -404,7 +422,7 @@ export class ProcessorRegistry {
           (p) => p instanceof TargetGroupProcessor,
         );
         break;
-      case 'transit-gateway':
+      case 'transitgateway':
         processor = this.processors.find(
           (p) => p instanceof TransitGatewayProcessor,
         );
@@ -460,6 +478,7 @@ export abstract class ServiceProcessor {
    * Creates a new ServiceProcessor
    * @param serviceType The AWS service type this processor handles
    */
+  //Todo: Will likely need to add tags and other info needed from describe api calls
   constructor(protected serviceType: ServiceType) {
     this.log = logging.getLogger(`processor-${serviceType}`);
   }
@@ -510,10 +529,17 @@ export abstract class ServiceProcessor {
     endDelimiter: string = '"',
   ): string {
     const stringified = this.getStringifiedRecord(record);
-    return eventSearch(stringified, pattern, endDelimiter);
+
+    if (eventSearch(stringified, pattern, endDelimiter)) {
+      return eventSearch(stringified, pattern, endDelimiter)!;
+    } else {
+      log
+        .error()
+        .str('function', 'searchRecord')
+        .str('pattern', pattern)
+        .str('record', stringified)
+        .msg('Error searching for pattern in record');
+      throw new Error("Error searching for pattern in record. Event Search didn't return a value");
+    }
   }
 }
-
-
-
-

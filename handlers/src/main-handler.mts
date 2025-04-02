@@ -68,12 +68,12 @@ const processorRegistry = new ProcessorRegistry([
     handler: parseRDSEventAndCreateAlarms,
   },
   {
-    service: 'rds-cluster',
+    service: 'rdscluster',
     identifiers: ['arn:aws:rds:cluster:'],
     handler: parseRDSClusterEventAndCreateAlarms,
   },
   {
-    service: 'route53-resolver',
+    service: 'route53resolver',
     identifiers: ['arn:aws:route53resolver:'],
     handler: parseR53ResolverEventAndCreateAlarms,
   },
@@ -83,7 +83,7 @@ const processorRegistry = new ProcessorRegistry([
     handler: parseSQSEventAndCreateAlarms,
   },
   {
-    service: 'step-function',
+    service: 'sfn',
     identifiers: ['arn:aws:states:'],
     handler: parseSFNEventAndCreateAlarms,
   },
@@ -93,7 +93,7 @@ const processorRegistry = new ProcessorRegistry([
     handler: parseTGEventAndCreateAlarms,
   },
   {
-    service: 'transit-gateway',
+    service: 'transitgateway',
     identifiers: ['arn:aws:ec2:transit-gateway:'],
     handler: parseTransitGatewayEventAndCreateAlarms,
   },
