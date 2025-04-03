@@ -1,28 +1,13 @@
 import {Construct} from 'constructs';
-import {Rule} from 'aws-cdk-lib/aws-events';
 import {SqsQueue} from 'aws-cdk-lib/aws-events-targets';
 import {NoBreachingExtendedQueue} from './extended-libs-subconstruct';
+import {EventPatterns} from '../../handlers/src/enums.mjs';
+import {RuleObject, ServiceType} from '../../handlers/src/types.mjs';
+import {Rule} from 'aws-cdk-lib/aws-events';
 
-type ServiceName =
-  | 'alb'
-  | 'cloudfront'
-  | 'ec2'
-  | 'opensearch'
-  | 'rds'
-  | 'rdscluster'
-  | 'route53resolver'
-  | 'sqs'
-  | 'sfn'
-  | 'targetgroup'
-  | 'transitgateway'
-  | 'vpn';
-
-type RuleObject = {
-  [ruleName: string]: Rule;
-};
 
 export class EventRules extends Construct {
-  public readonly serviceRules: Map<ServiceName, RuleObject[]>;
+  public readonly serviceRules: Map<ServiceType, RuleObject[]>;
 
   constructor(
     scope: Construct,
@@ -35,33 +20,16 @@ export class EventRules extends Construct {
     this.eventRuleTargetSetter(this, queues);
   }
 
+
   /**
-   * Initialize the rules map with empty arrays for each service
-   * Annoyingly, we can't loop through attributes of a type so we have to manually be a bit repetitive here.
+   * Initialize the rules map with empty arrays for each service using EventPatterns Enum
    * @private
    */
   private initializeServiceEventRules() {
-    const services: ServiceName[] = [
-      'alb',
-      'cloudfront',
-      'ec2',
-      'opensearch',
-      'rds',
-      'rdscluster',
-      'route53resolver',
-      'sqs',
-      'sfn',
-      'targetgroup',
-      'transitgateway',
-      'vpn',
-    ];
-
-    /**
-     * Initialize the rules map with empty arrays for each service
-     */
-    services.forEach((service) => {
-      this.serviceRules.set(service, []);
-    });
+    // Map the EventPatterns service keys to initialize the serviceRules map
+    Object.keys(EventPatterns).map((K) => {
+      this.serviceRules.set(K as ServiceType, []); // Initialize each service in the map with an empty array
+    })
 
     /**
      * Add rules for each service

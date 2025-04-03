@@ -13,7 +13,7 @@ import {
 import {
   RuleGroup,
   NamespaceDetails,
-  Rule,
+  PrometheusRule,
   EC2AlarmManagerArray,
   PrometheusAlarmConfigArray,
 } from './types.mjs';
@@ -952,7 +952,7 @@ export async function managePromNamespaceAlarms(
   for (const config of alarmConfigs) {
     // Find the index of the existing rule with the same name
     const existingRuleIndex = ruleGroup.rules.findIndex(
-      (rule): rule is Rule => rule.alert === config.alarmName,
+      (rule): rule is PrometheusRule => rule.alert === config.alarmName,
     );
 
     if (existingRuleIndex !== -1) {
@@ -969,7 +969,7 @@ export async function managePromNamespaceAlarms(
           .str('ruleGroupName', ruleGroupName)
           .str('alarmName', config.alarmName)
           .msg(
-            'Rule exists but expression or duration has changed. Updating the rule.',
+            'PrometheusRule exists but expression or duration has changed. Updating the rule.',
           );
 
         // Update existing rule's expression and duration
@@ -985,7 +985,7 @@ export async function managePromNamespaceAlarms(
           .str('namespace', namespace)
           .str('ruleGroupName', ruleGroupName)
           .str('alarmName', config.alarmName)
-          .msg('Rule exists and is identical. No update needed.');
+          .msg('PrometheusRule exists and is identical. No update needed.');
       }
     } else {
       // If the rule does not exist, add a new rule to the rule group
@@ -995,7 +995,7 @@ export async function managePromNamespaceAlarms(
         .str('namespace', namespace)
         .str('ruleGroupName', ruleGroupName)
         .str('alarmName', config.alarmName)
-        .msg('Rule does not exist. Adding new rule to the rule group.');
+        .msg('PrometheusRule does not exist. Adding new rule to the rule group.');
       ruleGroup.rules.push({
         alert: config.alarmName,
         expr: config.alarmQuery,
@@ -1086,7 +1086,7 @@ export async function deletePromRulesForService(
         .info()
         .str('function', 'deletePromRulesForService')
         .str('ruleGroupName', ruleGroupName)
-        .msg('Prometheus Rule group not found, nothing to delete');
+        .msg('Prometheus PrometheusRule group not found, nothing to delete');
       return;
     }
 

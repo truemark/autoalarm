@@ -1,3 +1,7 @@
+import {ALBProcessor} from './processors-temp.mjs';
+import {SQSRecord} from "aws-lambda";
+import {SQSFailureResponse} from "./types.mjs";
+
 export enum ValidInstanceState {
   Running = 'running',
   //Pending = 'pending', //this doesn't work because a pending instance cant report stats... duh. Let's remove it... later
@@ -11,17 +15,19 @@ export enum AlarmClassification {
   Warning = 'Warning',
 }
 
-export enum AlarmManagerEnumberation {
+// map services to matching patterns for event parsing see line 126 in processor-factory.mts and processor classes
+export enum EventPatterns {
   'alb' = 'arn:aws:elasticloadbalancing:',
   'cloudfront' = 'arn:aws:cloudfront:', // can only be seen from us-east-1
   'ec2' = 'arn:aws:ec2:',
   'opensearch' = 'arn:aws:es:', // for open search clusters only and need additional filtering to make sure it has 'domain' in the ARN
   'rds' = 'arn:aws:rds:',
-  'rds-cluster' = 'arn:aws:rds:cluster:',
-  'route53-resolver' = 'arn:aws:route53resolver:',
+  'rdscluster' = 'arn:aws:rds:cluster:',
+  'route53resolver' = 'arn:aws:route53resolver:',
   'sqs' = 'arn:aws:sqs:',
-  'step-function' = 'arn:aws:states:',
+  'sfn' = 'arn:aws:states:',
   'targetgroup' = 'arn:aws:elasticloadbalancing:targetgroup:',
-  'transit-gateway' = 'arn:aws:ec2:transit-gateway:',
+  'transitgateway' = 'arn:aws:ec2:transit-gateway:',
   'vpn' = 'arn:aws:ec2:vpn:',
 }
+

@@ -10,16 +10,19 @@ import {parseSFNEventAndCreateAlarms} from './step-function-modules.mjs';
 import {parseTGEventAndCreateAlarms} from './targetgroup-modules.mjs';
 import {parseTransitGatewayEventAndCreateAlarms} from './transit-gateway-modules.mjs';
 import {parseVpnEventAndCreateAlarms} from './vpn-modules.mjs';
-import {ServiceProcessor} from './service-router.mjs';
+import {ServiceProcessor} from './service-processor.mjs';
 import {SQSBatchItemFailure, SQSRecord} from 'aws-lambda';
 import {SQSFailureResponse} from './types.mjs';
+import {EventPatterns} from "./enums.mjs";
 
 /**
  * EC2-specific processor implementation
  */
 export class EC2Processor extends ServiceProcessor {
-  constructor() {
+  private records: SQSRecord[];
+  constructor(records: SQSRecord[]) {
     super('ec2');
+    this.records = records;
   }
 
   /**
@@ -29,7 +32,7 @@ export class EC2Processor extends ServiceProcessor {
    * @returns true if this is an EC2 record (and not a VPN or Transit Gateway record)
    */
   canProcess(record: SQSRecord): boolean {
-    const searchResult = this.searchRecord(record, 'arn:aws:ec2:', '"');
+    const searchResult = this.searchRecord(record, EventPatterns.ec2, '"');
 
     // Make sure it's an EC2 record but not a VPN or Transit Gateway
     if (searchResult) {
@@ -60,7 +63,7 @@ export class EC2Processor extends ServiceProcessor {
     const ec2InstanceMap: Record<string, SQSRecord>[] = [];
 
     // Transform records into the format expected by manageEC2
-    for (const record of records) {
+    for (const record of this.records) {
       try {
         const searchResult = this.searchRecord(record, 'arn:aws:ec2:', '"');
 
@@ -156,8 +159,10 @@ export class EC2Processor extends ServiceProcessor {
  * ALB processor implementation
  */
 export class ALBProcessor extends ServiceProcessor {
-  constructor() {
-    super('alb');
+  private records: SQSRecord[]; // Store the records for processing
+  constructor(records: SQSRecord[]) {
+    super('alb', records);
+    this.records = records;
   }
 
   /**
@@ -186,7 +191,7 @@ export class ALBProcessor extends ServiceProcessor {
     const batchItemBodies: SQSRecord[] = [];
 
     await Promise.allSettled(
-      records.map(async (record) => {
+      this.records.map(async (record) => {
         try {
           await parseALBEventAndCreateAlarms(record);
           return true;
@@ -219,8 +224,10 @@ export class ALBProcessor extends ServiceProcessor {
  * CloudFront processor implementation
  */
 export class CloudFrontProcessor extends ServiceProcessor {
-  constructor() {
-    super('cloudfront');
+  private records: SQSRecord[]; // Store the records for processing
+  constructor(records: SQSRecord[]) {
+    super('cloudfront', records);
+    this.records = records;
   }
 
   /**
@@ -242,7 +249,7 @@ export class CloudFrontProcessor extends ServiceProcessor {
     const batchItemBodies: SQSRecord[] = [];
 
     await Promise.allSettled(
-      records.map(async (record) => {
+      this.records.map(async (record) => {
         try {
           await parseCloudFrontEventAndCreateAlarms(record);
           return true;
@@ -275,8 +282,10 @@ export class CloudFrontProcessor extends ServiceProcessor {
  * OpenSearch processor implementation
  */
 export class OpenSearchProcessor extends ServiceProcessor {
-  constructor() {
-    super('opensearch');
+  private records: SQSRecord[]; // Store the records for processing
+  constructor(records: SQSRecord[]) {
+    super('opensearch', records);
+    this.records = records;
   }
 
   /**
@@ -298,7 +307,7 @@ export class OpenSearchProcessor extends ServiceProcessor {
     const batchItemBodies: SQSRecord[] = [];
 
     await Promise.allSettled(
-      records.map(async (record) => {
+      this.records.map(async (record) => {
         try {
           await parseOSEventAndCreateAlarms(record);
           return true;
@@ -331,8 +340,10 @@ export class OpenSearchProcessor extends ServiceProcessor {
  * RDS processor implementation
  */
 export class RDSProcessor extends ServiceProcessor {
-  constructor() {
-    super('rds');
+  private records: SQSRecord[]; // Store the records for processing
+  constructor(records: SQSRecord[]) {
+    super('rds', records);
+    this.records = records;
   }
 
   /**
@@ -356,7 +367,7 @@ export class RDSProcessor extends ServiceProcessor {
     const batchItemBodies: SQSRecord[] = [];
 
     await Promise.allSettled(
-      records.map(async (record) => {
+      this.records.map(async (record) => {
         try {
           await parseRDSEventAndCreateAlarms(record);
           return true;
@@ -389,8 +400,10 @@ export class RDSProcessor extends ServiceProcessor {
  * RDS Cluster processor implementation
  */
 export class RDSClusterProcessor extends ServiceProcessor {
-  constructor() {
-    super('rdscluster');
+  private records: SQSRecord[]; // Store the records for processing
+  constructor(records: SQSRecord[]) {
+    super('rdscluster', records);
+    this.records = records;
   }
 
   /**
@@ -412,7 +425,7 @@ export class RDSClusterProcessor extends ServiceProcessor {
     const batchItemBodies: SQSRecord[] = [];
 
     await Promise.allSettled(
-      records.map(async (record) => {
+      this.records.map(async (record) => {
         try {
           await parseRDSClusterEventAndCreateAlarms(record);
           return true;
@@ -445,8 +458,10 @@ export class RDSClusterProcessor extends ServiceProcessor {
  * Route53 Resolver processor implementation
  */
 export class Route53ResolverProcessor extends ServiceProcessor {
-  constructor() {
-    super('route53resolver');
+  private records: SQSRecord[]; // Store the records for processing
+  constructor(records: SQSRecord[]) {
+    super('route53resolver', records);
+    this.records = records;
   }
 
   /**
@@ -468,7 +483,7 @@ export class Route53ResolverProcessor extends ServiceProcessor {
     const batchItemBodies: SQSRecord[] = [];
 
     await Promise.allSettled(
-      records.map(async (record) => {
+      this.records.map(async (record) => {
         try {
           await parseR53ResolverEventAndCreateAlarms(record);
           return true;
@@ -501,8 +516,10 @@ export class Route53ResolverProcessor extends ServiceProcessor {
  * SQS Queue processor implementation
  */
 export class SQSProcessor extends ServiceProcessor {
-  constructor() {
-    super('sqs');
+  private records: SQSRecord[]; // Store the records for processing
+  constructor(records: SQSRecord[]) {
+    super('sqs', records);
+    this.records = records;
   }
 
   /**
@@ -524,7 +541,7 @@ export class SQSProcessor extends ServiceProcessor {
     const batchItemBodies: SQSRecord[] = [];
 
     await Promise.allSettled(
-      records.map(async (record) => {
+      this.records.map(async (record) => {
         try {
           await parseSQSEventAndCreateAlarms(record);
           return true;
@@ -557,8 +574,10 @@ export class SQSProcessor extends ServiceProcessor {
  * Step Function processor implementation
  */
 export class StepFunctionProcessor extends ServiceProcessor {
-  constructor() {
-    super('sfn');
+  private records: SQSRecord[]; // Store the records for processing
+  constructor(records: SQSRecord[]) {
+    super('sfn', records);
+    this.records = records;
   }
 
   /**
@@ -580,7 +599,7 @@ export class StepFunctionProcessor extends ServiceProcessor {
     const batchItemBodies: SQSRecord[] = [];
 
     await Promise.allSettled(
-      records.map(async (record) => {
+      this.records.map(async (record) => {
         try {
           await parseSFNEventAndCreateAlarms(record);
           return true;
@@ -613,8 +632,10 @@ export class StepFunctionProcessor extends ServiceProcessor {
  * Target Group processor implementation
  */
 export class TargetGroupProcessor extends ServiceProcessor {
-  constructor() {
-    super('targetgroup');
+  private records: SQSRecord[]; // Store the records for processing
+  constructor(records: SQSRecord[]) {
+    super('targetgroup', records);
+    this.records = records;
   }
 
   /**
@@ -640,7 +661,7 @@ export class TargetGroupProcessor extends ServiceProcessor {
     const batchItemBodies: SQSRecord[] = [];
 
     await Promise.allSettled(
-      records.map(async (record) => {
+      this.records.map(async (record) => {
         try {
           await parseTGEventAndCreateAlarms(record);
           return true;
@@ -673,8 +694,10 @@ export class TargetGroupProcessor extends ServiceProcessor {
  * Transit Gateway processor implementation
  */
 export class TransitGatewayProcessor extends ServiceProcessor {
-  constructor() {
-    super('transitgateway');
+  private records: SQSRecord[]; // Store the records for processing
+  constructor(records: SQSRecord[]) {
+    super('transitgateway', records);
+    this.records = records;
   }
 
   /**
@@ -696,7 +719,7 @@ export class TransitGatewayProcessor extends ServiceProcessor {
     const batchItemBodies: SQSRecord[] = [];
 
     await Promise.allSettled(
-      records.map(async (record) => {
+      this.records.map(async (record) => {
         try {
           await parseTransitGatewayEventAndCreateAlarms(record);
           return true;
@@ -729,8 +752,10 @@ export class TransitGatewayProcessor extends ServiceProcessor {
  * VPN processor implementation
  */
 export class VPNProcessor extends ServiceProcessor {
-  constructor() {
-    super('vpn');
+  private records: SQSRecord[]; // Store the records for processing
+  constructor(records: SQSRecord[]) {
+    super('vpn', records);
+    this.records = records;
   }
 
   /**
@@ -752,7 +777,7 @@ export class VPNProcessor extends ServiceProcessor {
     const batchItemBodies: SQSRecord[] = [];
 
     await Promise.allSettled(
-      records.map(async (record) => {
+      this.records.map(async (record) => {
         try {
           await parseVpnEventAndCreateAlarms(record);
           return true;
