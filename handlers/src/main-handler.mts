@@ -25,12 +25,12 @@
  *
  * 1. Categorization Phase
  *    - Groups SQS records by AWS service type
- *    - Uses messageGroupId to ingelligently route messages
+ *    - Uses messageGroupId to intelligently route messages
  *    - Creates a map of service types to their respective records
  *
  * 2. Parallel Processing Phase
  *    - Processes each service type's records concurrently
- *    - Initializes processors only when needdded to process records
+ *    - Initializes processors only when needed to process records
  *    - Collects and consolidates failures across all processors
  *
  * @optimizations
@@ -44,7 +44,7 @@
  *
  * @example
  * // Sample event processing flow:
- * // 1. Lambda receives SQS event with 3 records (EC2, RDS, SQS)
+ * // 1. Lambda receives SQS event with 10 records (EC2:4, RDS:3, SQS:3)
  * // 2. Records are categorized by service
  * // 3. Processors for EC2, RDS, and SQS are instantiated
  * // 4. Records processed in parallel by service type
