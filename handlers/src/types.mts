@@ -1,6 +1,7 @@
 import {SQSBatchItemFailure, SQSRecord} from 'aws-lambda';
 import {Rule} from 'aws-cdk-lib/aws-events';
-import {EventPatterns} from "./enums.mjs";
+import {EventPatterns} from './enums.mjs';
+import {ServiceProcessor} from './service-processor.mjs';
 
 // Type definitions for autoalarm
 
@@ -38,29 +39,99 @@ export type RuleObject = {
 };
 
 /**
- * ServiceType is a mapped type that matches the keys of the EventPatterns enum to their string values.
- * This allows us to use the enum keys as types in the ProcessorFactory and other places where service type iteration
- * is needed.
+ * Represents a supported AWS service type in the AutoAlarm system.
+ *
+ * This is a mapped type that extracts the keys from the EventPatterns enum,
+ * allowing us to maintain a single source of truth for supported services.
+ * Using this type ensures type safety when referring to service types throughout
+ * the codebase, particularly in processor registration and message routing.
+ *
+ * @example
+ * // Valid service types might include:
+ * // 'ec2', 'sqs', 'rds', 'alb', etc.
  */
 export type ServiceType = keyof typeof EventPatterns;
 
-// This type is used to define the matching pattern for a service type from the EventPatterns Enum
-export type ServiceTypePattern = {
-  [K in keyof typeof EventPatterns]: typeof EventPatterns[K];
+/**
+ * Represents an AWS ARN pattern used to match and identify resources for a specific service.
+ *
+ * This type extracts the string values from the EventPatterns enum, ensuring
+ * that parsing patterns always match their corresponding service definition.
+ * Used when searching for service identifiers in event messages and for
+ * pattern matching during record categorization.
+ *
+ * @example
+ * // Example pattern: 'arn:aws:sqs:'
+ */
+export type EventParsingPattern =
+  (typeof EventPatterns)[keyof typeof EventPatterns];
+
+/**
+ * Constructor interface for service processor classes.
+ *
+ * This interface defines the expected constructor signature for all processor
+ * implementations, allowing us to store, reference, and instantiate processor
+ * classes without using type assertions. It creates a contract that all
+ * concrete processors must follow - accepting an array of SQS records during
+ * instantiation and returning a ServiceProcessor instance.
+ *
+ * @template T - The specific ServiceProcessor subclass being constructed
+ */
+export interface ProcessorConstructor {
+  /**
+   * Constructs a new ServiceProcessor instance
+   * @param records - The SQS records to be processed by this processor
+   * @returns A new ServiceProcessor instance
+   */
+  new (records: SQSRecord[]): ServiceProcessor;
+}
+
+/**
+ * Configuration properties for registering a service processor.
+ *
+ * Used when registering processors with the ProcessorRegistry, this type
+ * encapsulates all the information needed to properly categorize and instantiate
+ * a processor for a specific AWS service.
+ *
+ * @property service - The AWS service type identifier. Defined in the ServiceType type, which maps to the keys of the EventPatterns enum.
+ * @property serviceProcessor - The processor class constructor
+ * @property eventParsingPattern - Custom ARN pattern for service detection as defined in the EventPatterns enum
+ */
+export type ServiceProcessorRegisterProps = {
+  /** The AWS service type this processor handles */
+  service: ServiceType;
+
+  /** The processor class constructor */
+  serviceProcessor: ProcessorConstructor;
+
+  /** Pattern that matches ARNs for this service, used for event parsing and derived from EventPatterns Enum*/
+  eventParsingPattern: EventParsingPattern;
 };
 
-// This interface is used to define the structure of the service processors map in the ProcessorFactory on line 23 of processor-factory.mts
-export type ServiceProcessorMap = {
-  serviceEventPattern: ServiceTypePattern; // The service type pattern used to match the ARN in the SQS record
-  serviceProcessor: (records: SQSRecord[]) => Promise<SQSFailureResponse>; // The actual processor function for handling records of this service type
-};
-
-
+/**
+ * Response type for batch processing operations containing failed items.
+ *
+ * Used throughout the processing pipeline to track and aggregate failures,
+ * this type maintains both the standardized SQS batch failure format
+ * required by AWS Lambda and the original record bodies for detailed
+ * error logging
+ *
+ * @property batchItemFailures - Array of failure objects with message IDs for AWS Lambda
+ * @property batchItemBodies - The original SQS records that failed processing
+ */
 export type SQSFailureResponse = {
+  /**
+   * Array of failure objects with message IDs.
+   * This is the format expected by AWS Lambda's batch response.
+   */
   batchItemFailures: SQSBatchItemFailure[];
+
+  /**
+   * The original SQS records that failed processing.
+   * Used for detailed error reporting and diagnostics.
+   */
   batchItemBodies: SQSRecord[];
 };
-
 
 export interface PathMetrics {
   [path: string]: Dimension[];

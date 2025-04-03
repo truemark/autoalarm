@@ -1,54 +1,157 @@
 /**
- * Abstract base class for all service processors
- * Defines the interface and common functionality that all service-specific processors must implement
+ * Abstract base class for all service-specific alarm processors
  *
- * This class serves as the foundation for the processor-based architecture, enabling:
- * 1. Service-specific optimizations (like EC2 batch processing)
- * 2. Clear separation of responsibilities per service
- * 3. Consistent error handling and failure reporting
- * 4. Extensibility for new AWS services by adding new processor implementations
+ * Defines the contract and shared functionality that all service-specific
+ * processors must implement. This class is the cornerstone of the processor-based
+ * architecture, providing standardized interfaces for record processing while
+ * enabling service-specific implementations.
  *
- * In Lambda environments, processors are initialized once and maintained across warm invocations,
- * optimizing performance while maintaining clean state boundaries.
+ * @abstract
+ * @class
+ *
+ * @description
+ * The ServiceProcessor architecture enables:
+ * 1. Service-specific optimizations (e.g., EC2 batch processing)
+ * 2. Clear separation of responsibilities per AWS service
+ * 3. Consistent error handling and failure reporting across services
+ * 4. Straightforward extensibility through new processor implementations
+ * 5. Standardized logging and event searching capabilities
+ *
+ * Each service processor is responsible for:
+ * - Determining if it can process a specific SQS record
+ * - Processing batches of records for its service type
+ * - Reporting failures in a consistent format
+ * - Implementing service-specific alarm creation logic
+ *
+ * @example
+ * ```typescript
+ * export class EC2Processor extends ServiceProcessor {
+ *   private records: SQSRecord[];
+ *
+ *   constructor(records: SQSRecord[]) {
+ *     super('ec2');
+ *     this.records = records;
+ *   }
+ *
+ *   canProcess(record: SQSRecord): boolean {
+ *     // Implementation specific to EC2
+ *   }
+ *
+ *   async process(records: SQSRecord[]): Promise<SQSFailureResponse> {
+ *     // EC2-specific implementation
+ *   }
+ * }
+ * ```
+ *
+ * @remarks
+ * In AWS Lambda environments, processors are instantiated on demand and
+ * maintained for the duration of a single invocation. The factory/registry pattern
+ * optimizes processor creation while maintaining clean state boundaries between
+ * invocations.
  */
-import {ServiceType, SQSFailureResponse} from "./types.mjs";
-import {SQSRecord} from "aws-lambda";
+import {ServiceType, SQSFailureResponse} from './types.mjs';
+import {SQSRecord} from 'aws-lambda';
 import * as logging from '@nr1e/logging';
-import {eventSearch} from "./processor-factory.mjs";
+import {eventSearch} from './processor-factory.mjs';
 
 // TODO: Add config parsing, alarm creation, tag fetching, and other common functionality to this abstract class
 export abstract class ServiceProcessor {
-  protected log: logging.Logger;
+  protected readonly log: logging.Logger;
 
   /**
-   * Creates a new ServiceProcessor
-   * @param serviceType The AWS service type this processor handles
+   * Creates a new ServiceProcessor instance
+   *
+   * Initializes the base functionality for a service processor, including
+   * setting up service-specific logging. Each concrete processor must call
+   * this constructor with its corresponding service type.
+   *
+   * @param serviceType - The AWS service type identifier for this processor
+   *
+   * @example
+   * ```typescript
+   * constructor(records: SQSRecord[]) {
+   *   super('ec2'); // Initialize the base processor with service type
+   *   this.records = records; // Store service-specific state
+   * }
+   * ```
+   *
+   * @remarks
+   * Future enhancements may include passing additional parameters such as:
+   * - AWS SDK clients
+   * - Configuration settings
+   * - Resource tagging information for alarm creation
    */
-  //Todo: Will likely need to add tags and other info needed from describe api calls
-  protected constructor(protected serviceType: ServiceType['key']) {
-    this.log = logging.getLogger(`${this.serviceType}-Processor`);
+  constructor(protected readonly serviceType: ServiceType) {
+    this.log = logging.getLogger(`${serviceType}-Processor`);
   }
 
-
   /**
-   * Check if this processor can handle the given record
-   * @param record SQS record to check
-   * @returns true if this processor can handle the record
+   * Determines whether this processor can handle the given SQS record
+   *
+   * This method examines the record to determine if it belongs to the service type
+   * that this processor is responsible for. Each service processor must implement
+   * specific logic to identify its records, typically by examining ARNs, message
+   * attributes, or content patterns.
+   *
+   * @param record - The SQS record to evaluate
+   * @returns `true` if this processor should handle the record, `false` otherwise
+   *
+   * @remarks
+   * Implementations should:
+   * - Handle cases where records might not contain an ARN
+   * - Be efficient as this method may be called frequently during record categorization
+   * - Avoid throwing exceptions; return false for unrecognized records
+   * - Consider service-specific edge cases (e.g., EC2 records that are actually VPN)
    */
-  //TODO: Ensure any class extended from this one includes handling for records without an ARN when implementing this function
   abstract canProcess(record: SQSRecord): boolean;
 
   /**
-   * Process a batch of records for this service type
-   * @param records Array of SQS records to process
-   * @returns SQS failure response containing any failed records
+   * Processes a batch of records for this service type
+   *
+   * This method contains the core processing logic for a specific AWS service.
+   * It's responsible for transforming records, making AWS API calls, creating
+   * CloudWatch alarms, and tracking any failures.
+   *
+   * @param records - Array of SQS records to process, all belonging to this service type
+   * @returns Promise resolving to an SQSFailureResponse containing any failed records
+   *
+   * @remarks
+   * Implementations should:
+   * - Optimize for batch processing where possible (e.g., consolidating AWS API calls)
+   * - Handle partial batch failures gracefully
+   * - Provide detailed error logging
+   * - Return any failed records for Lambda's batch item failure mechanism
+   * - Be idempotent where possible to handle potential reprocessing
+   *
+   * @example
+   * ```typescript
+   * async process(records: SQSRecord[]): Promise<SQSFailureResponse> {
+   *   const batchItemFailures: SQSBatchItemFailure[] = [];
+   *   const batchItemBodies: SQSRecord[] = [];
+   *
+   *   // Process records...
+   *
+   *   return { batchItemFailures, batchItemBodies };
+   * }
+   * ```
    */
   abstract process(records: SQSRecord[]): Promise<SQSFailureResponse>;
 
   /**
-   * Helper method to get a stringified version of a record for searching
-   * @param record SQS record to stringify
-   * @returns Stringified version of the record
+   * Helper method to get a stringified version of a record for pattern matching
+   *
+   * Converts an SQS record's body to a JSON string representation for use in
+   * pattern matching operations. This consistent string format is essential for
+   * reliable ARN and resource identifier extraction.
+   *
+   * @param record - The SQS record to stringify
+   * @returns A string representation of the record body
+   *
+   * @remarks
+   * Uses the same stringification approach as the eventSearch utility function
+   * to ensure consistent pattern matching across the application.
+   *
+   * @protected
    */
   protected getStringifiedRecord(record: SQSRecord): string {
     // For consistency with eventSearch, we use JSON.stringify(record.body)
@@ -57,10 +160,18 @@ export abstract class ServiceProcessor {
 
   /**
    * Helper method to search for patterns in records
-   * @param record SQS record to search
-   * @param pattern Pattern to search for
-   * @param endDelimiter Delimiter that marks the end of the pattern
-   * @returns Matched string or empty string if not found
+   *
+   * Searches for a specific pattern within an SQS record and extracts the matching
+   * substring. This is primarily used to extract ARNs and resource identifiers from
+   * event payloads to determine record ownership and extract resource information.
+   *
+   * @param record - The SQS record to search within
+   * @param pattern - The pattern string to search for (typically an ARN prefix)
+   * @param endDelimiter - Character that marks the end of the pattern (defaults to '"')
+   * @returns The matched string containing the pattern and content up to the delimiter
+   * @throws Error if the pattern is not found in the record
+   *
+   * @protected
    */
   protected searchRecord(
     record: SQSRecord,

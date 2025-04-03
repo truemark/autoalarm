@@ -5,7 +5,6 @@ import {EventPatterns} from '../../handlers/src/enums.mjs';
 import {RuleObject, ServiceType} from '../../handlers/src/types.mjs';
 import {Rule} from 'aws-cdk-lib/aws-events';
 
-
 export class EventRules extends Construct {
   public readonly serviceRules: Map<ServiceType, RuleObject[]>;
 
@@ -20,7 +19,6 @@ export class EventRules extends Construct {
     this.eventRuleTargetSetter(this, queues);
   }
 
-
   /**
    * Initialize the rules map with empty arrays for each service using EventPatterns Enum
    * @private
@@ -29,7 +27,7 @@ export class EventRules extends Construct {
     // Map the EventPatterns service keys to initialize the serviceRules map
     Object.keys(EventPatterns).map((K) => {
       this.serviceRules.set(K as ServiceType, []); // Initialize each service in the map with an empty array
-    })
+    });
 
     /**
      * Add rules for each service

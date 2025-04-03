@@ -1,27 +1,14 @@
 import {SQSBatchItemFailure, SQSRecord} from 'aws-lambda';
 import * as logging from '@nr1e/logging';
-import {
-  ServiceProcessorMap,
-  ServiceType, ServiceTypePattern,
-  SQSFailureResponse,
-} from './types.mjs';
-import {
-  ALBProcessor,
-  CloudFrontProcessor,
-  EC2Processor,
-  OpenSearchProcessor,
-  RDSClusterProcessor,
-  RDSProcessor,
-  Route53ResolverProcessor,
-  SQSProcessor,
-} from './processors-temp.mjs';
+import {ServiceType, SQSFailureResponse} from './types.mjs';
+import {ServiceProcessor} from './service-processor.mjs';
+import {ProcessorRegistry} from './processor-registry.mjs';
 import {EventPatterns} from './enums.mjs';
 
 const log: logging.Logger = logging.getLogger('service-router');
 
 /**
  * Helper function to search for resource identifiers in events
- * Efficiently extracts pattern matches from SQS records or string data
  * @param record SQS record or other object containing event data Best practice is to pass the records object already stringified.
  * @param searchPattern String pattern to search for
  * @param endDelimiter Character that marks the end of the pattern
@@ -56,12 +43,7 @@ export function eventSearch(
     }
   };
 
-  /**
-   * Record handling logic based on the type of record passed with early conditional returns
-   * Handle string records directly
-   * Fall back logic if the record is not a string but is an SQS record
-   * Fallback for other record types for future compatability with other object parsing if needed
-   */
+  // Handle different types of input for the record parameter
   if (typeof record === 'string') {
     recordString = record;
     return getSearchResult();
@@ -88,47 +70,41 @@ export function eventSearch(
   return undefined;
 }
 
-class ServiceStringType {
-}
-
 /**
- * Registry that manages all service processors and handles routing
+ * Service Processor Factory that creates and manages routing and processing
  */
 export class ProcessorFactory {
-  private processors: Map<ServiceType, ServiceProcessorMap>;
-  protected serviceProcessorsMap: Map<ServiceType, ServiceProcessorMap>;
+  // Cache of instantiated processor instances (created on demand)
+  private processorInstances: Map<ServiceType, ServiceProcessor> = new Map();
 
   /**
    * Cache for storing stringified records to avoid repeated JSON processing
    * Keys are message IDs, values are the stringified record bodies
-   * Cache entries are cleared after successful processing or on reset
    */
   private stringifiedCache = new Map<string, string>();
-
-  /**
-   * Create a new processor registry
-   * This constructor initializes a mapped registry of all the specialized processors for each AWS service type.
-   */
   constructor() {
-    // Initialize specialized processors
-    this.processors = this.ProcessorMap();
+    // Initialize ProcessorRegistry if not already done
+    if (ProcessorRegistry.getServiceTypes().length === 0) {
+      ProcessorRegistry.initialize();
+    }
 
     log
       .info()
       .str('class', 'ProcessorFactory')
       .str('function', 'constructor')
-      .num('processorCount', this.processors.length)
-      .msg('ProcessorFactory initialized with specialized processors');
+      .num('registeredProcessors', ProcessorRegistry.getServiceTypes().length)
+      .msg('ProcessorFactory initialized with processor registry');
   }
 
   /**
-   * Reset any per-invocation state
-   * Essential for Lambda warm starts to ensure clean state between invocations
+   * Reset any past-invocation state
    * This prevents cross-invocation data leakage and memory buildup
    */
   reset(): void {
-    // Clear cache to prevent memory leaks between invocations
+    // Clear caches to prevent memory leaks between invocations
     this.stringifiedCache.clear();
+    this.processorInstances.clear();
+
     log
       .trace()
       .str('class', 'ProcessorFactory')
@@ -148,133 +124,31 @@ export class ProcessorFactory {
   }
 
   /**
-   * Initialize all service processor mappings
-   * Contains service type, service event pattern, and the actual processor class
+   * Gets or creates a processor instance for the given service type
+   * @param serviceType The service type to get a processor for
+   * @param records[] The SQS records to process
+   * @returns The processor instance
    */
-  private ProcessorMap = () => {
-    return new Map<ServiceType, ServiceProcessorMap>([
-      [
-        'alb',
-        {
-          serviceEventPattern: EventPatterns.alb,
-          serviceProcessor: {
-            create: (records: SQSRecord[]) => new ALBProcessor(records)
-          }
-        },
-      ],
-      [
-        'cloudfront',
-        {
-          serviceEventPattern: EventPatterns.cloudfront,
-          serviceProcessor: {
-            create: (records: SQSRecord[]) => new CloudFrontProcessor(records)
-          }
-        },
-      ],
-      [
-        'ec2',
-        {
-          serviceEventPattern: EventPatterns.ec2,
-          serviceProcessor: {
-            create: (records: SQSRecord[]) => new EC2Processor(records)
-          }
-        },
-      ],
-      [
-        'opensearch',
-        {
-          serviceEventPattern: EventPatterns.opensearch,
-          serviceProcessor: {
-            create: (records: SQSRecord[]) => new OpenSearchProcessor(records)
-          }
-        },
-      ],
-      [
-        'rds',
-        {
-          serviceEventPattern: EventPatterns.rds,
-          serviceProcessor: {
-            create: (records: SQSRecord[]) => new RDSProcessor(records)
-          }
-        },
-      ],
-      [
-        'rdscluster',
-        {
-          serviceEventPattern: EventPatterns.rdscluster,
-          serviceProcessor: {
-            create: (records: SQSRecord[]) => new RDSClusterProcessor(records)
-          }
-        },
-      ],
-      [
-        'route53resolver',
-        {
-          serviceEventPattern: EventPatterns.route53resolver,
-          serviceProcessor: {
-            create: (records: SQSRecord[]) => new Route53ResolverProcessor(records)
-          }
-        },
-      ],
-      [
-        'sqs',
-        {
-          serviceEventPattern: EventPatterns.sqs,
-          serviceProcessor: {
-            create: (records: SQSRecord[]) => new SQSProcessor(records)
-          }
-        },
-      ],
-      [
-        'sfn',
-        {
-          serviceEventPattern: EventPatterns.sfn,
-          serviceProcessor: {
-            create: (records: SQSRecord[]) => new CloudFrontProcessor(records)
-          }
-        },
-      ], // Placeholder for now
-      [
-        'targetgroup',
-        {
-          serviceEventPattern: EventPatterns.targetgroup,
-          serviceProcessor: {
-            create: (records: SQSRecord[]) => new ALBProcessor(records)
-          }
-        },
-      ],
-      [
-        'transitgateway',
-        {
-          serviceEventPattern: EventPatterns.transitgateway,
-          serviceProcessor: {
-            create: (records: SQSRecord[]) => new EC2Processor(records)
-          }
-        },
-      ],
-      [
-        'vpn',
-        {
-          serviceEventPattern: EventPatterns.vpn,
-          serviceProcessor: {
-            create: (records: SQSRecord[]) => new EC2Processor(records)
-          }
-        },
-      ],
-    ]);
+  private getProcessor(
+    serviceType: ServiceType,
+    records: SQSRecord[],
+  ): ServiceProcessor {
+    if (!this.processorInstances.has(serviceType)) {
+      const processor = ProcessorRegistry.createProcessor(serviceType, records);
+      if (!processor) {
+        throw new Error(
+          `No processor registered for service type: ${serviceType}`,
+        );
+      }
+      this.processorInstances.set(serviceType, processor);
+    }
 
-    log
-      .debug()
-      .str('class', 'ProcessorFactory')
-      .str('function', 'initializeProcessorMap')
-      .num('processorCount', this.processors.length)
-      .msg('Initialized all service processor mappings');
-  };
+    return this.processorInstances.get(serviceType)!;
+  }
 
   /**
    * Categorize records by service type
    * Maps each SQS record to its corresponding service processor
-   * Optimized for Lambda's batch size of up to 10 records
    * @param records Array of SQS records to categorize
    * @returns Object containing a map of service types to records and uncategorized records
    */
@@ -282,7 +156,7 @@ export class ProcessorFactory {
     serviceMap: Map<ServiceType, SQSRecord[]>;
     uncategorizedRecords: SQSRecord[];
   }> {
-    const serviceMap = new Map<ServiceType['key'], SQSRecord[]>();
+    const serviceMap = new Map<ServiceType, SQSRecord[]>();
     const uncategorizedRecords: SQSRecord[] = [];
 
     // Loop through records and categorize by service type
@@ -292,26 +166,20 @@ export class ProcessorFactory {
         .messageGroupId as unknown as string;
 
       /**
-       * Check if the record has a messageGroupId against all service types across service types in EventPatterns enum.
-       * Promise.any creates a race between EventPatterns Enum keys who's service type is contained in the messageGroupId.
-       * Each EventPattern key returns a promise that resolves if its service type is contained in the messageGroupId
-       * When any EventPattern key resolves: Promise.any.then() categorizes the record by the matching service type
-       * If all processors fail: Promise.any.catch() adds the record to uncategorized records to an array for handling in main-handler.mts
+       * Check the record messageGroupId against all service types defined in the EventPatterns Enum.
+       * Promise.any creates a race between service types, resolving with the correct processor. No need to wait.
        */
       await Promise.any(
         Object.keys(EventPatterns).map((K) => {
           return new Promise<ServiceType>((resolve, reject) => {
             if (messageGroupId.toLowerCase().includes(K)) {
-              resolve(K as ServiceType); // Resolve with the matching service type pattern
+              resolve(K as keyof typeof EventPatterns);
             } else {
               reject();
             }
-          });
-        }), // End of new Promise for each EventPatterns key
+          }); // End of Enum key matching Promise
+        }),
       )
-        //TODO: once we get the service process mapping in place we can use the actual processor class to resolve the service type instead of just the string match in messageGroupId
-        // and instead of initializing all processors, we can only initialize the ones that match the messageGroupId in the first place.
-        // Resolve the service type in Promise.any from the first resolving processor Promise and categorize the record
         .then((serviceType) => {
           log
             .debug()
@@ -329,7 +197,6 @@ export class ProcessorFactory {
           // Add record to the appropriate service category
           serviceMap.get(serviceType)!.push(record);
         })
-        // Handle the case where no processor was able to categorize the record in any processor Promise
         .catch((error: Error) => {
           log
             .error()
@@ -346,10 +213,10 @@ export class ProcessorFactory {
               'Unable to categorize record sending back to Queue for reprocessing',
             );
 
-          //add to uncategorized records if no processor was able to find a match
+          // Add to uncategorized records if no processor was able to find a match
           uncategorizedRecords.push(record);
-        }); // End of Promise.any for processors
-    } // End of for loop over records
+        }); // End of Promise.any for service type Categorization
+    } // End of records loop
 
     // Log categorization results
     log
@@ -379,9 +246,7 @@ export class ProcessorFactory {
   }
 
   /**
-   * Process records by service type
-   * Efficiently executes service-specific processing in parallel
-   * Optimized for Lambda execution environment with batch processing
+   * Process records by service type concurrently
    * @param serviceMap Map of service types to arrays of records
    * @returns SQS failure response containing any failed records
    */
@@ -394,33 +259,27 @@ export class ProcessorFactory {
     // Process each service's records in parallel
     const results = await Promise.allSettled(
       Array.from(serviceMap.entries()).map(async ([serviceType, records]) => {
-        log
-          .debug()
-          .str('class', 'ProcessorFactory')
-          .str('function', 'processRecordsByService')
-          .str('service', serviceType)
-          .num('recordCount', records.length)
-          .msg('Processing records for service type');
-
         try {
-          // Find the matching processor for this service type
-          const processor = this.findProcessorForService(serviceType);
+          // Get or create the processor for this service type
+          const processor = this.getProcessor(serviceType, records);
 
           // Process the records using the appropriate processor
           const {batchItemFailures, batchItemBodies} =
             await processor.process(records);
 
-          // Clear cache entries for successfully processed records
+          // Create a set of failed message IDs from the batchItemFailures that we'll use to clear the cache
           const failedMessageIds = new Set(
             batchItemFailures.map((f) => f.itemIdentifier),
           );
+
+          // Look through failedMessageIds and clear the cache for only those records that were successfully processed
           records.forEach((record) => {
-            // Only clear cache for successfully processed records (not in failures)
             if (!failedMessageIds.has(record.messageId)) {
               this.clearCacheEntry(record.messageId);
             }
           });
 
+          // Return the failures to aggregate to send to main handler
           if (batchItemFailures.length > 0) {
             return {
               service: serviceType,
@@ -428,6 +287,7 @@ export class ProcessorFactory {
             };
           }
 
+          // If no failures, return null to indicate success for this service
           return {service: serviceType, failures: null};
         } catch (error) {
           log
@@ -443,6 +303,7 @@ export class ProcessorFactory {
             this.clearCacheEntry(record.messageId);
           });
 
+          // In case of an unhandled error, return the failure response for the service with all records
           return {
             service: serviceType,
             failures: {
@@ -454,7 +315,7 @@ export class ProcessorFactory {
           };
         }
       }),
-    );
+    ); // End of results Promise.allSettled
 
     // Collect all failures
     results

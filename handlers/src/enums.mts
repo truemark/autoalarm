@@ -1,7 +1,3 @@
-import {ALBProcessor} from './processors-temp.mjs';
-import {SQSRecord} from "aws-lambda";
-import {SQSFailureResponse} from "./types.mjs";
-
 export enum ValidInstanceState {
   Running = 'running',
   //Pending = 'pending', //this doesn't work because a pending instance cant report stats... duh. Let's remove it... later
@@ -30,4 +26,3 @@ export enum EventPatterns {
   'transitgateway' = 'arn:aws:ec2:transit-gateway:',
   'vpn' = 'arn:aws:ec2:vpn:',
 }
-
