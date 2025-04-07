@@ -135,11 +135,21 @@ async function processEC2TagEvent(events: any[]) {
   }
 
   if (activeInstancesInfoArray.length > 0) {
-    await manageActiveEC2InstanceAlarms(activeInstancesInfoArray);
+    try {
+      await manageActiveEC2InstanceAlarms(activeInstancesInfoArray);
+    } catch (error) {
+      log.error().err(error).msg('Error managing active EC2 instance alarms');
+      throw new Error('Error managing active EC2 instance alarms');
+    }
   }
 
   if (inactiveInstancesInfoArray.length > 0) {
-    await manageInactiveInstanceAlarms(inactiveInstancesInfoArray);
+    try {
+      await manageInactiveInstanceAlarms(inactiveInstancesInfoArray);
+    } catch (error) {
+      log.error().err(error).msg('Error managing inactive EC2 instance alarms');
+      throw new Error('Error managing inactive EC2 instance alarms');
+    }
   }
 }
 
@@ -220,8 +230,6 @@ async function routeTagEvent(event: any) {
   }
 }
 
-// TODO Fix the use of any
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const handler: Handler = async (
   event: SQSEvent,
 ): Promise<void | SQSBatchResponse> => {
@@ -247,11 +255,9 @@ export const handler: Handler = async (
     // Check if the record body contains an error message
     if (record.body && record.body.includes('errorMessage')) {
       log
-        .error()
+        .warn()
         .str('messageId', record.messageId)
         .msg('Error message found in record body');
-      batchItemFailures.push({itemIdentifier: record.messageId});
-      batchItemBodies.push(record);
       continue;
     }
     // Parse the body of the SQS message

@@ -47,7 +47,7 @@ Before you begin, ensure you have the following:
 
 1. **AWS CLI**: Installed and configured with appropriate access to your AWS account.
 2. **AWS CDK**
-3. **Node.js**
+3. **Node.js**: Version 22.x+.
 4. **Git**
 5. **pnpm**: Version 9.1.4 or later.
 
