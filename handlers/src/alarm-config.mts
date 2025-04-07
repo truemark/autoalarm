@@ -1151,8 +1151,8 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaultCreate: true,
       anomaly: true,
       defaults: {
-        warningThreshold: 2,
-        criticalThreshold: 6,
+        warningThreshold: 5,
+        criticalThreshold: 9,
         period: 300,
         evaluationPeriods: 2,
         statistic: 'Average',
@@ -1324,8 +1324,8 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaultCreate: true,
       anomaly: true,
       defaults: {
-        warningThreshold: 2,
-        criticalThreshold: 6,
+        warningThreshold: 5,
+        criticalThreshold: 9,
         period: 300,
         evaluationPeriods: 2,
         statistic: 'Average',

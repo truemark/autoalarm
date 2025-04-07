@@ -219,19 +219,95 @@ export async function manageInactiveRDSAlarms(
 }
 
 // Function to extract dbInstanceId from ARN
-function extractRDSInstanceIdFromArn(arn: string): string {
-  const regex = /db[:/]([^:/]+)$/;
-  const match = arn.match(regex);
+function extractRDSInstanceIdFromArn(arn: string | null | undefined): string {
+  log
+    .debug()
+    .str('function', 'extractRDSInstanceIdFromArn')
+    .str('arn', arn ?? 'No ARN provided')
+    .msg('Attempting to extract dbInstanceId from ARN');
 
-  // log the arn and the extracted dbInstanceId
+  // Validate ARN input
+  if (!arn) {
+    log
+      .error()
+      .str('function', 'extractRDSInstanceIdFromArn')
+      .msg('No ARN provided');
+    throw new Error('No ARN provided');
+  }
+
+  // Define regex to match dbInstanceId from ARN string
+  const regex = /db[:/]([^:/]+)$/;
+
+  // Nullish check to ensure that if match is null we don't throw type errors and gracefully fail over to an empty array
+  const match = arn.match(regex) ?? [];
+
+  // If match is found, return the extracted dbInstanceId
+  if (match && match[1]) {
+    const dbInstanceId = match[1];
+    log
+      .info()
+      .str('function', 'extractRDSInstanceIdFromArn')
+      .str('arn', arn)
+      .str('dbInstanceId', dbInstanceId)
+      .msg('Extracted dbInstanceId from ARN');
+    return dbInstanceId;
+  }
+
+  log
+    .debug()
+    .str('function', 'extractRDSInstanceIdFromArn')
+    .str('arn', arn)
+    .msg(
+      'No dbInstanceId found in ARN via regex matching. Attempting fallback logic',
+    );
+
+  /**
+   * Fallback logic to extract dbInstanceId from ARN string
+   */
+  // Find the index of the db: substring in the ARN
+  const startIndex = arn.indexOf('db:');
+
+  // If the db: substring is not found, log an error and throw an exception
+  if (startIndex === -1) {
+    log
+      .error()
+      .str('function', 'extractRDSInstanceIdFromArn')
+      .str('arn', arn)
+      .msg('No dbInstanceId found in ARN');
+    throw new Error('ExtractRDSInstanceIdFromArn failed');
+  }
+
+  // Split the ARN string from the db: substring to the end of the string to get the instance id. Throw error with logging if it doesn't exist.
+  const arnParts = arn.substring(startIndex).split(':');
+  if (arnParts.length < 2) {
+    log
+      .error()
+      .str('function', 'extractRDSInstanceIdFromArn')
+      .str('arn', arn)
+      .msg('Invalid ARN format');
+    throw new Error('Invalid ARN format');
+  }
+
+  const instanceIdFromArn = arnParts[1];
+
+  // Make sure our isntance id is not empty or undefined. If it is, log an error and throw an exception.
+  if (!instanceIdFromArn) {
+    log
+      .error()
+      .str('function', 'extractRDSInstanceIdFromArn')
+      .str('arn', arn)
+      .msg('No dbInstanceId found in ARN using fallback logic');
+    throw new Error('ExtractRDSInstanceIdFromArn using fallback logic failed');
+  }
+
+  // log success with details and return the instance id
   log
     .info()
     .str('function', 'extractRDSInstanceIdFromArn')
     .str('arn', arn)
-    .str('dbInstanceId', match ? match[1] : 'not found')
-    .msg('Extracted dbInstanceId from ARN');
-
-  return match ? match[1] : '';
+    .str('dbInstanceId', instanceIdFromArn)
+    .msg('Extracted dbInstanceId from ARN using fallback logic');
+  return instanceIdFromArn;
 }
 
 /**

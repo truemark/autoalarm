@@ -2,6 +2,7 @@ import {
   CloudWatchClient,
   DeleteAlarmsCommand,
   DescribeAlarmsCommand,
+  DescribeAlarmsCommandOutput,
   MetricAlarm,
   MetricDataQuery,
   PutAnomalyDetectorCommand,
@@ -22,16 +23,27 @@ const cloudWatchClient = new CloudWatchClient({
 });
 
 export async function doesAlarmExist(alarmName: string): Promise<boolean> {
-  const response = await cloudWatchClient.send(
-    new DescribeAlarmsCommand({AlarmNames: [alarmName]}),
-  );
-  log
-    .info()
-    .str('function', 'doesAlarmExist')
-    .str('alarmName', alarmName)
-    .str('response', JSON.stringify(response))
-    .msg('Checking if alarm exists');
-
+  //initialize response variable
+  let response: DescribeAlarmsCommandOutput;
+  try {
+    response = await cloudWatchClient.send(
+      new DescribeAlarmsCommand({AlarmNames: [alarmName]}),
+    );
+    log
+      .info()
+      .str('function', 'doesAlarmExist')
+      .str('alarmName', alarmName)
+      .str('response', JSON.stringify(response))
+      .msg('Checking if alarm exists');
+  } catch (error) {
+    log
+      .error()
+      .str('function', 'doesAlarmExist')
+      .str('alarmName', alarmName)
+      .str('error', String(error))
+      .msg('Failed to check if alarm exists');
+    throw error;
+  }
   return (response.MetricAlarms?.length ?? 0) > 0;
 }
 
@@ -208,49 +220,49 @@ async function handleAnomalyDetectionWorkflow(
     .str('AlarmName', alarmName)
     .msg('Handling anomaly detection alarm workflow');
 
-  const anomalyDetectorInput = {
-    Namespace: config.metricNamespace,
-    MetricName: config.metricName,
-    Dimensions: [...dimensions],
-    Stat: updatedDefaults.statistic,
-    Configuration: {MetricTimezone: 'UTC'},
-  };
-
-  log
-    .debug()
-    .str('function', 'handleAnomalyDetectionWorkflow')
-    .obj('AnomalyDetectorInput', anomalyDetectorInput)
-    .msg('Sending PutAnomalyDetectorCommand');
-  const response = await cloudWatchClient.send(
-    new PutAnomalyDetectorCommand(anomalyDetectorInput),
-  );
-  log
-    .info()
-    .str('function', 'handleAnomalyDetectionWorkflow')
-    .str('AlarmName', alarmName)
-    .obj('response', response)
-    .msg('Successfully created or updated anomaly detector');
-
-  const metrics: MetricDataQuery[] = [
-    {
-      Id: 'primaryMetric',
-      MetricStat: {
-        Metric: {
-          Namespace: config.metricNamespace,
-          MetricName: config.metricName,
-          Dimensions: [...dimensions],
-        },
-        Period: updatedDefaults.period,
-        Stat: updatedDefaults.statistic,
-      },
-    },
-    {
-      Id: 'anomalyDetectionBand',
-      Expression: `ANOMALY_DETECTION_BAND(primaryMetric, ${threshold})`,
-    },
-  ];
-
   try {
+    const anomalyDetectorInput = {
+      Namespace: config.metricNamespace,
+      MetricName: config.metricName,
+      Dimensions: [...dimensions],
+      Stat: updatedDefaults.statistic,
+      Configuration: {MetricTimezone: 'UTC'},
+    };
+
+    log
+      .debug()
+      .str('function', 'handleAnomalyDetectionWorkflow')
+      .obj('AnomalyDetectorInput', anomalyDetectorInput)
+      .msg('Sending PutAnomalyDetectorCommand');
+    const response = await cloudWatchClient.send(
+      new PutAnomalyDetectorCommand(anomalyDetectorInput),
+    );
+    log
+      .info()
+      .str('function', 'handleAnomalyDetectionWorkflow')
+      .str('AlarmName', alarmName)
+      .obj('response', response)
+      .msg('Successfully created or updated anomaly detector');
+
+    const metrics: MetricDataQuery[] = [
+      {
+        Id: 'primaryMetric',
+        MetricStat: {
+          Metric: {
+            Namespace: config.metricNamespace,
+            MetricName: config.metricName,
+            Dimensions: [...dimensions],
+          },
+          Period: updatedDefaults.period,
+          Stat: updatedDefaults.statistic,
+        },
+      },
+      {
+        Id: 'anomalyDetectionBand',
+        Expression: `ANOMALY_DETECTION_BAND(primaryMetric, ${threshold})`,
+      },
+    ];
+
     const alarmInput = {
       AlarmName: alarmName,
       ComparisonOperator: updatedDefaults.comparisonOperator,
@@ -268,14 +280,14 @@ async function handleAnomalyDetectionWorkflow(
       .obj('AlarmInput', alarmInput)
       .msg('Sending PutMetricAlarmCommand');
 
-    const response = await cloudWatchClient.send(
+    const alarmResponse = await cloudWatchClient.send(
       new PutMetricAlarmCommand(alarmInput),
     );
     log
       .info()
       .str('function', 'handleAnomalyDetectionWorkflow')
       .str('AlarmName', alarmName)
-      .obj('response', response)
+      .obj('response', alarmResponse)
       .msg('Successfully created or updated anomaly detection alarm');
   } catch (e) {
     log
@@ -284,6 +296,8 @@ async function handleAnomalyDetectionWorkflow(
       .str('AlarmName', alarmName)
       .err(e)
       .msg('Error creating or updating anomaly detection alarm');
+    // Rethrow the error so it can be caught by the caller
+    throw e;
   }
 }
 
@@ -462,6 +476,8 @@ async function handleStaticThresholdWorkflow(
       .str('AlarmName', alarmName)
       .err(e)
       .msg('Error creating or updating static threshold alarm');
+    // Rethrow the error so it can be caught by the caller
+    throw e;
   }
 }
 
