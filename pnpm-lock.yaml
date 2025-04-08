@@ -27,6 +27,9 @@ importers:
       prettier:
         specifier: ^3.5.0
         version: 3.5.2
+      valibot:
+        specifier: ^1.0.0
+        version: 1.0.0
 
 packages:
 
@@ -465,6 +468,14 @@ packages:
   uuid@9.0.1:
     resolution: {integrity: sha512-b+1eJOlsR9K8HJpow9Ok3fiWOWSIcIzXodvv0rQjVoOVNpWMpxf1wZNpt4y9h10odCNrqnYp1OBzRktckBe3sA==}
     hasBin: true
+
+  valibot@1.0.0:
+    resolution: {integrity: sha512-1Hc0ihzWxBar6NGeZv7fPLY0QuxFMyxwYR2sF1Blu7Wq7EnremwY2W02tit2ij2VJT8HcSkHAQqmFfl77f73Yw==}
+    peerDependencies:
+      typescript: '>=5'
+    peerDependenciesMeta:
+      typescript:
+        optional: true
 
   wrap-ansi@7.0.0:
     resolution: {integrity: sha512-YVGIj2kamLSTxw6NsZjoBxfSwsn0ycdesmc4p+Q21c5zPuZ1pl+NfxVdxPtdHvmNVOQ6XSYG4AUtyt/Fi7D16Q==}
@@ -1216,6 +1227,8 @@ snapshots:
   tslib@2.8.1: {}
 
   uuid@9.0.1: {}
+
+  valibot@1.0.0: {}
 
   wrap-ansi@7.0.0:
     dependencies:

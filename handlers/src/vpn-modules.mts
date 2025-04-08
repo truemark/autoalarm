@@ -14,7 +14,10 @@ import {
   CloudWatchClient,
   DeleteAlarmsCommand,
 } from '@aws-sdk/client-cloudwatch';
-import {MetricAlarmConfigs, parseMetricAlarmOptions} from './alarm-config.mjs';
+import {
+  AlarmConfigs,
+  parseMetricAlarmOptions,
+} from './alarm-configs/alarm-config.mjs';
 
 const log: logging.Logger = logging.getLogger('vpn-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -28,7 +31,7 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   retryStrategy: retryStrategy,
 });
 
-const metricConfigs = MetricAlarmConfigs['VPN'];
+const metricConfigs = AlarmConfigs['VPN'];
 
 export async function fetchVpnTags(
   vpnId: string,

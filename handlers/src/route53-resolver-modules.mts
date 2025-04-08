@@ -17,7 +17,10 @@ import {
   handleStaticAlarms,
   getCWAlarmsForInstance,
 } from './alarm-tools.mjs';
-import {MetricAlarmConfigs, parseMetricAlarmOptions} from './alarm-config.mjs';
+import {
+  AlarmConfigs,
+  parseMetricAlarmOptions,
+} from './alarm-configs/alarm-config.mjs';
 
 const log: logging.Logger = logging.getLogger('route53-resolver-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -31,7 +34,7 @@ const cloudWatchClient = new CloudWatchClient({
   retryStrategy,
 });
 
-const metricConfigs = MetricAlarmConfigs['R53ResolverEndpoint'];
+const metricConfigs = AlarmConfigs['R53ResolverEndpoint'];
 
 export async function fetchR53ResolverTags(endpointId: string): Promise<Tag> {
   try {

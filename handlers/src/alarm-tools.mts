@@ -9,7 +9,8 @@ import {
   PutMetricAlarmCommand,
   Statistic,
 } from '@aws-sdk/client-cloudwatch';
-import {MetricAlarmConfig, MetricAlarmOptions} from './alarm-config.mjs';
+import {ComparisonOperator} from 'aws-cdk-lib/aws-cloudwatch';
+import {MetricAlarmConfig, MetricAlarmOptions} from './alarm-configs/types.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import * as logging from '@nr1e/logging';
 import {AlarmClassification} from './enums.mjs';
@@ -265,7 +266,8 @@ async function handleAnomalyDetectionWorkflow(
 
     const alarmInput = {
       AlarmName: alarmName,
-      ComparisonOperator: updatedDefaults.comparisonOperator,
+      ComparisonOperator:
+        updatedDefaults.comparisonOperator as ComparisonOperator,
       EvaluationPeriods: updatedDefaults.evaluationPeriods,
       Metrics: metrics,
       ThresholdMetricId: 'anomalyDetectionBand',
@@ -438,7 +440,8 @@ async function handleStaticThresholdWorkflow(
   try {
     const alarmInput = {
       AlarmName: alarmName,
-      ComparisonOperator: updatedDefaults.comparisonOperator,
+      ComparisonOperator:
+        updatedDefaults.comparisonOperator as ComparisonOperator,
       EvaluationPeriods: updatedDefaults.evaluationPeriods,
       MetricName: config.metricName,
       Namespace: config.metricNamespace,

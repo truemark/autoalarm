@@ -30,10 +30,10 @@ import {defaultProvider} from '@aws-sdk/credential-provider-node';
 import {buildAlarmName} from './alarm-tools.mjs';
 import {AlarmClassification} from './enums.mjs';
 import {
-  MetricAlarmConfig,
-  MetricAlarmConfigs,
+  AlarmConfigs,
   parseMetricAlarmOptions,
-} from './alarm-config.mjs';
+} from './alarm-configs/alarm-config.mjs';
+import {MetricAlarmConfig} from './alarm-configs/types.mjs';
 
 const log: logging.Logger = logging.getLogger('ec2-modules');
 const retryStrategy = new ConfiguredRetryStrategy(20);
@@ -158,7 +158,7 @@ export async function batchPromRulesDeletion(
 /**
  * Get alarm configurations for Prometheus alarms for EC2 instances based on their tags and metric configurations.
  * @param ec2AlarmManagerArray - Array of EC2 instances with state and tags.
- * @param service - The service name: 'EC2', 'ECS', 'EKS', 'RDS', etc. These correspond with service names in the MetricAlarmConfigs object from alarm-config.mts.
+ * @param service - The service name: 'EC2', 'ECS', 'EKS', 'RDS', etc. These correspond with service names in the AlarmConfigs object from alarm-config.mts.
  * @returns Array of Prometheus alarm configurations.
  */
 async function getPromAlarmConfigs(
@@ -167,7 +167,7 @@ async function getPromAlarmConfigs(
 ): Promise<PrometheusAlarmConfigArray> {
   const configs: PrometheusAlarmConfigArray = [];
   const metricConfigs: MetricAlarmConfig[] =
-    MetricAlarmConfigs[service.toUpperCase()];
+    AlarmConfigs[service.toUpperCase()];
 
   // Loop through each instance in the ec2AlarmManagerArray
   for (const {instanceID, tags, ec2Metadata} of ec2AlarmManagerArray) {

@@ -1,45 +1,13 @@
-export type MissingDataTreatment =
-  | 'missing'
-  | 'ignore'
-  | 'breaching'
-  | 'notBreaching';
-export type ComparisonOperator =
-  | 'GreaterThanOrEqualToThreshold'
-  | 'GreaterThanThreshold'
-  | 'LessThanThreshold'
-  | 'LessThanOrEqualToThreshold'
-  | 'LessThanLowerOrGreaterThanUpperThreshold'
-  | 'LessThanLowerThreshold'
-  | 'GreaterThanUpperThreshold';
-
-// Note that these apply to both anomaly and non-anomaly alarms in CloudWatch.
-export interface MetricAlarmOptions {
-  // Anomaly: Based on a standard deviation. Higher number means thicker band, lower number means thinner band.
-  // Non-Anomaly: The value against which the specified statistic is compared.
-  warningThreshold: number | null;
-
-  // Anomaly: Based on a standard deviation. Higher number means thicker band, lower number means thinner band.
-  // Non-Anomaly: The value against which the specified statistic is compared.
-  criticalThreshold: number | null;
-
-  // The period, in seconds, over which the statistic is applied.
-  period: number;
-
-  // The number of periods over which data is compared to the specified threshold.
-  evaluationPeriods: number;
-
-  // Data points to alarm
-  dataPointsToAlarm: number;
-
-  // The statistic or extended statistic for the metric associated with the alarm
-  statistic: string;
-
-  // Missing data treatment
-  missingDataTreatment: MissingDataTreatment;
-
-  // The arithmetic operation to use when comparing the specified statistic and threshold
-  comparisonOperator: ComparisonOperator;
-}
+import {
+  MissingDataTreatment,
+  MetricAlarmOptions,
+  MetricAlarmConfigs,
+  ValidStatistic,
+  ValidComparisonOperator, ValidExtendedStat,
+} from './types.mjs';
+import { string, custom, safeParse } from 'valibot';
+import {ComparisonOperator} from 'aws-cdk-lib/aws-cloudwatch';
+import {StandardStatistic} from "./enums.mjs";
 
 export function metricAlarmOptionsToString(value: MetricAlarmOptions): string {
   return (
@@ -95,7 +63,10 @@ function parseIntegerOption(value: string, defaultValue: number): number {
   return parsedValue;
 }
 
-function parseStatisticOption(value: string, defaultValue: string): string {
+function parseStatisticOption(
+  value: ValidStatistic,
+  defaultValue: string,
+): string {
   const regexp = /^p.*|^tm.*|^tc.*|^ts.*|^wm.*|^iqm$/;
   const statistics = ['SampleCount', 'Average', 'Sum', 'Minimum', 'Maximum'];
   const statisticsRecord: Record<string, string> = {};
@@ -103,6 +74,7 @@ function parseStatisticOption(value: string, defaultValue: string): string {
     statisticsRecord[statistic.toLowerCase()] = statistic;
   }
   const trimmed = value.trim().toLowerCase();
+
   if (trimmed === '') {
     return defaultValue;
   }
@@ -115,31 +87,34 @@ function parseStatisticOption(value: string, defaultValue: string): string {
   return defaultValue;
 }
 
+
+function parseStatisticsOption2(
+  value: ValidStatistic,
+  defaultValue: ValidStatistic,
+): ValidStatistic {
+  const trimmed = value.trim().toLowerCase();
+  const isStandardStat = Object.values(StandardStatistic).find((s=> s.toLowerCase() === trimmed))
+  const isExtendedStat = safeParse(value, ValidExtendedStat);
+  if (isStandardStat) {
+    return trimmed;
+  }
+
+  if (isExtendedStat.success) {
+    return trimmed;
+  }
+
+  return defaultValue;
+}
+
 function parseComparisonOperatorOption(
   value: string,
-  defaultValue: ComparisonOperator,
-): ComparisonOperator {
-  const operators: ComparisonOperator[] = [
-    'GreaterThanOrEqualToThreshold',
-    'GreaterThanThreshold',
-    'LessThanThreshold',
-    'LessThanOrEqualToThreshold',
-    'LessThanLowerOrGreaterThanUpperThreshold',
-    'LessThanLowerThreshold',
-    'GreaterThanUpperThreshold',
-  ];
-  const operatorsRecord: Record<string, ComparisonOperator> = {};
-  for (const operator of operators) {
-    operatorsRecord[operator.toLowerCase()] = operator;
-  }
-  const trimmed = value.trim().toLowerCase();
-  if (trimmed === '') {
-    return defaultValue;
-  }
-  if (operatorsRecord[trimmed]) {
-    return operatorsRecord[trimmed];
-  }
-  return defaultValue;
+  defaultValue: ValidComparisonOperator,
+): ValidComparisonOperator {
+  return (
+    Object.values(ComparisonOperator).find(
+      (op) => op.toLowerCase() === value.trim().toLowerCase(),
+    ) || defaultValue
+  );
 }
 
 function parseMissingDataTreatmentOption(
@@ -210,19 +185,10 @@ export function parseMetricAlarmOptions(
   };
 }
 
-export interface MetricAlarmConfig {
-  tagKey: string;
-  metricName: string;
-  metricNamespace: string;
-  defaultCreate: boolean;
-  anomaly: boolean;
-  defaults: MetricAlarmOptions;
-}
-
 // You are expected to collaborate and get approval from the team lead for each team that owns the service
 // to determine the appropriate alarm configurations. Do not make assumptions and ensure any alarm configurations
 // are approved by the team lead. At the end of the day, the team lead is responsible for the service and the alarms.
-export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
+export const AlarmConfigs: MetricAlarmConfigs = {
   // Keep these in alphabetical order or your PRs will be rejected
   // Anomaly alarms can only use the following comparison operators: GreaterThanUpperThreshold, LessThanLowerOrGreaterThanUpperThreshold, LessThanLowerThreshold
   // Owned by Harmony
@@ -324,7 +290,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         criticalThreshold: 5,
         period: 300,
         evaluationPeriods: 2,
-        statistic: 'Average',
+        statistic: 'tm',
         dataPointsToAlarm: 2,
         comparisonOperator: 'GreaterThanUpperThreshold',
         missingDataTreatment: 'ignore',

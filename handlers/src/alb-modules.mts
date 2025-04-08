@@ -17,7 +17,10 @@ import {
   handleStaticAlarms,
   getCWAlarmsForInstance,
 } from './alarm-tools.mjs';
-import {MetricAlarmConfigs, parseMetricAlarmOptions} from './alarm-config.mjs';
+import {
+  AlarmConfigs,
+  parseMetricAlarmOptions,
+} from './alarm-configs/alarm-config.mjs';
 
 const log: logging.Logger = logging.getLogger('alb-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -32,7 +35,7 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   retryStrategy: retryStrategy,
 });
 
-const metricConfigs = MetricAlarmConfigs['ALB'];
+const metricConfigs = AlarmConfigs['ALB'];
 
 export async function fetchALBTags(loadBalancerArn: string): Promise<Tag> {
   try {

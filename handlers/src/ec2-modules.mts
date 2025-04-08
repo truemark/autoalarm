@@ -22,16 +22,15 @@ import {
   massDeleteAlarms,
 } from './alarm-tools.mjs';
 import {
-  MetricAlarmConfig,
-  MetricAlarmConfigs,
-  MetricAlarmOptions,
+  AlarmConfigs,
   parseMetricAlarmOptions,
-} from './alarm-config.mjs';
+} from './alarm-configs/alarm-config.mjs';
 import {
   batchPromRulesDeletion,
   batchUpdatePromRules,
   queryPrometheusForService,
 } from './prometheus-tools.mjs';
+import {MetricAlarmConfig, MetricAlarmOptions} from './alarm-configs/types.mjs';
 
 const log: logging.Logger = logging.getLogger('ec2-modules');
 export const prometheusWorkspaceId: string =
@@ -298,7 +297,7 @@ async function checkAndManageStatusAlarm(instanceId: string, tags: Tag) {
   }
 }
 
-const metricConfigs = MetricAlarmConfigs['EC2'];
+const metricConfigs = AlarmConfigs['EC2'];
 
 export async function fetchInstanceTags(
   instanceId: string,

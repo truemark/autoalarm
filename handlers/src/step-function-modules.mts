@@ -14,7 +14,10 @@ import {
   CloudWatchClient,
   DeleteAlarmsCommand,
 } from '@aws-sdk/client-cloudwatch';
-import {MetricAlarmConfigs, parseMetricAlarmOptions} from './alarm-config.mjs';
+import {
+  AlarmConfigs,
+  parseMetricAlarmOptions,
+} from './alarm-configs/alarm-config.mjs';
 
 const log: logging.Logger = logging.getLogger('step-function-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -28,7 +31,7 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   retryStrategy: retryStrategy,
 });
 
-const metricConfigs = MetricAlarmConfigs['StepFunctions'];
+const metricConfigs = AlarmConfigs['StepFunctions'];
 
 export async function fetchSFNTags(sfnArn: string): Promise<Tag> {
   try {

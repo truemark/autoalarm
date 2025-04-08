@@ -20,7 +20,10 @@ import {
   getCWAlarmsForInstance,
 } from './alarm-tools.mjs';
 import * as arnparser from '@aws-sdk/util-arn-parser';
-import {MetricAlarmConfigs, parseMetricAlarmOptions} from './alarm-config.mjs';
+import {
+  AlarmConfigs,
+  parseMetricAlarmOptions,
+} from './alarm-configs/alarm-config.mjs';
 
 const log: logging.Logger = logging.getLogger('targetgroup-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -35,7 +38,7 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   retryStrategy: retryStrategy,
 });
 
-const metricConfigs = MetricAlarmConfigs['TG'];
+const metricConfigs = AlarmConfigs['TG'];
 
 export async function fetchTGTags(targetGroupArn: string): Promise<Tag> {
   try {
