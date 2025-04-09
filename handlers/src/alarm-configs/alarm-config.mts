@@ -4,9 +4,9 @@ import {
   MetricAlarmConfigs,
   ValidStatistic,
   ValidComparisonOperator,
-  ValidExtendedStatSchema,
   ValidComparisonOperatorSchema, StatMethods,
 } from './types.mjs';
+//TODO: I don't think we need to use valibot anymore.
 import * as v from 'valibot';
 import {StandardStatistic} from './enums.mjs';
 
@@ -101,8 +101,7 @@ function parseStatisticOption(
 
   // parse trimmed value to catch any unormalized values
   const parts: unknown[] = [...value.trim()];
-  // TODO: grab indicies 0 and 1 to check for Extended.
-  //  Check index 0 for standard statisitc.
+  // TODO: grab indices 0 and 1 to check for Extended.
   //  parse through values, filter out any non alphanumeric values
   //  use satisfies to check rebuilt stat with our Valid Statistic and extended stat types
   //  if newly built statistic matches a type, build it with StatMethods and return it.

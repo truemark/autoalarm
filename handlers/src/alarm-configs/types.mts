@@ -159,7 +159,7 @@ export const StatMethods = {
  * @see {@link StatMethods} - Reference object for generating statistic strings.
  * @see {@link https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Statistics-definitions.html | AWS CloudWatch statistics documentation}
  */
-export type ValidExtendedStatMethodCall = {
+export type ValidExtendedStat = {
   [K in keyof typeof StatMethods.Extended]: (typeof StatMethods.Extended)[K] extends (
     p1: number,
     p2?: number,
@@ -167,30 +167,6 @@ export type ValidExtendedStatMethodCall = {
     ? `${K}(${number},${number}) ` | `${K}(${number})`
       : never;
 }[keyof typeof StatMethods.Extended];
-
-
-/**
- * Represents all valid extended statistic strings acceptable by CloudWatch APIs,
- * either in direct method-call format or precomputed string literal values.
- *
- * This type combines formatted method call strings and computed string literals.
- *
- * Useful when explicitly typing configurations or inputs for CloudWatch alarms and metrics.
- *
- * @example
- * ```typescript
- * // Method call literal
- * const methodCallStat: ValidExtendedStat = 'wm(95)';
- *
- * // Computed string from method call
- * const computedStat: ValidExtendedStat = StatMethods.Extended.wm(95);
- * ```
- *
- * @see {@link StatMethods.Extended} for generating these extended statistics.
- * @see {@link https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_GetMetricStatistics.html | AWS CloudWatch GetMetricStatistics API documentation}
- */
-export type ValidExtendedStat = ValidExtendedStatMethodCall
-
 
 /**
  * Type representing valid standard CloudWatch statistics string literals.
