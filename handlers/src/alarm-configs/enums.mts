@@ -13,12 +13,3 @@ export enum StandardStatistic {
   IQM = 'IQM',
 }
 
-// Extended statistics preambles enum (method prefixes)
-export enum ExtStatPrefix {
-  PERCENTILE = 'p',
-  TRIMMED_MEAN = 'tm',
-  WINSORIZED_MEAN = 'wm',
-  TRIMMED_COUNT = 'tc',
-  TRIMMED_SUM = 'ts',
-  PERCENTILE_RANK = 'pr',
-}

@@ -3,11 +3,12 @@ import {
   MetricAlarmOptions,
   MetricAlarmConfigs,
   ValidStatistic,
-  ValidComparisonOperator, ValidExtendedStat,
+  ValidComparisonOperator,
+  ValidExtendedStatSchema,
+  ValidComparisonOperatorSchema, StatMethods,
 } from './types.mjs';
-import { string, custom, safeParse } from 'valibot';
-import {ComparisonOperator} from 'aws-cdk-lib/aws-cloudwatch';
-import {StandardStatistic} from "./enums.mjs";
+import * as v from 'valibot';
+import {StandardStatistic} from './enums.mjs';
 
 export function metricAlarmOptionsToString(value: MetricAlarmOptions): string {
   return (
@@ -63,9 +64,9 @@ function parseIntegerOption(value: string, defaultValue: number): number {
   return parsedValue;
 }
 
-function parseStatisticOption(
+function parseStatisticOption2(
   value: ValidStatistic,
-  defaultValue: string,
+  defaultValue: ValidStatistic,
 ): string {
   const regexp = /^p.*|^tm.*|^tc.*|^ts.*|^wm.*|^iqm$/;
   const statistics = ['SampleCount', 'Average', 'Sum', 'Minimum', 'Maximum'];
@@ -73,7 +74,7 @@ function parseStatisticOption(
   for (const statistic of statistics) {
     statisticsRecord[statistic.toLowerCase()] = statistic;
   }
-  const trimmed = value.trim().toLowerCase();
+  const trimmed: string = value.trim().toLowerCase();
 
   if (trimmed === '') {
     return defaultValue;
@@ -87,34 +88,44 @@ function parseStatisticOption(
   return defaultValue;
 }
 
-
-function parseStatisticsOption2(
-  value: ValidStatistic,
+function parseStatisticOption(
+  value: string,
   defaultValue: ValidStatistic,
 ): ValidStatistic {
-  const trimmed = value.trim().toLowerCase();
-  const isStandardStat = Object.values(StandardStatistic).find((s=> s.toLowerCase() === trimmed))
-  const isExtendedStat = safeParse(value, ValidExtendedStat);
-  if (isStandardStat) {
-    return trimmed;
-  }
+  // Normalize the input value
+  const trimmed: unknown = value.trim().toLowerCase();
+  // Check if the value is a valid and properly formatted standard statistic
+  const standardStat = Object.entries(StandardStatistic).find(
+    ([, stat]) => stat.toLowerCase() === trimmed
+  );
 
-  if (isExtendedStat.success) {
-    return trimmed;
-  }
+  // parse trimmed value to catch any unormalized values
+  const parts: unknown[] = [...value.trim()];
+  // TODO: grab indicies 0 and 1 to check for Extended.
+  //  Check index 0 for standard statisitc.
+  //  parse through values, filter out any non alphanumeric values
+  //  use satisfies to check rebuilt stat with our Valid Statistic and extended stat types
+  //  if newly built statistic matches a type, build it with StatMethods and return it.
 
-  return defaultValue;
+  return standardStat
+    ? standardStat[1] // if standardStat matches, return the StandardStatistic
+    : trimmed ?
+      trimmed satisfies ValidStatistic //For testing only
+      : defaultValue;
 }
 
 function parseComparisonOperatorOption(
   value: string,
   defaultValue: ValidComparisonOperator,
 ): ValidComparisonOperator {
-  return (
-    Object.values(ComparisonOperator).find(
-      (op) => op.toLowerCase() === value.trim().toLowerCase(),
-    ) || defaultValue
+  // Try to parse the value using the ValidComparisonOperatorSchema
+  const result = v.safeParse(
+    ValidComparisonOperatorSchema,
+    value.trim().toLowerCase(),
   );
+
+  // If validation succeeds, return the parsed output therwise return the default value
+  return result.success ? result.output : defaultValue;
 }
 
 function parseMissingDataTreatmentOption(
@@ -165,8 +176,8 @@ export function parseMetricAlarmOptions(
         : defaults.evaluationPeriods,
     statistic:
       parts.length > 4
-        ? parseStatisticOption(parts[4], defaults.statistic)
-        : defaults.statistic,
+        ? parseStatisticOption(parts[4], defaults.statistic) satisfies ValidStatistic
+        : defaults.statistic satisfies ValidStatistic,
     dataPointsToAlarm:
       parts.length > 5
         ? parseIntegerOption(parts[5], defaults.dataPointsToAlarm)
@@ -205,7 +216,7 @@ export const AlarmConfigs: MetricAlarmConfigs = {
         criticalThreshold: null,
         period: 60,
         evaluationPeriods: 2,
-        statistic: 'Sum',
+        statistic: "p(89)",
         dataPointsToAlarm: 2,
         comparisonOperator: 'GreaterThanThreshold',
         missingDataTreatment: 'ignore',
@@ -290,6 +301,7 @@ export const AlarmConfigs: MetricAlarmConfigs = {
         criticalThreshold: 5,
         period: 300,
         evaluationPeriods: 2,
+        //TODO: Confirm with DevOps to fix typo
         statistic: 'tm',
         dataPointsToAlarm: 2,
         comparisonOperator: 'GreaterThanUpperThreshold',
@@ -1839,7 +1851,7 @@ export const AlarmConfigs: MetricAlarmConfigs = {
         criticalThreshold: 5,
         period: 60,
         evaluationPeriods: 2,
-        statistic: 'p90',
+        statistic: 'p(90)',
         dataPointsToAlarm: 2,
         comparisonOperator: 'GreaterThanThreshold',
         missingDataTreatment: 'ignore',
