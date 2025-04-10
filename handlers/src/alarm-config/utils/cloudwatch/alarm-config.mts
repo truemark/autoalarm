@@ -3,8 +3,8 @@ import {
   MetricAlarmOptions,
   MetricAlarmConfigs,
   ValidStatistic,
-} from '../../../types/alarm-config-types.mjs';
-import { StatFactory } from '../stats-factory/stat-factory.mjs';
+} from '#types/alarm-config-types.mjs'
+import { StatFactory } from '#stats-factory/stat-factory.mjs';
 import { ComparisonOperator } from '@aws-sdk/client-cloudwatch';
 
 
@@ -1853,7 +1853,7 @@ export const AlarmConfigs: MetricAlarmConfigs = {
         criticalThreshold: 5,
         period: 60,
         evaluationPeriods: 2,
-        statistic: 'p(90)',
+        statistic: 'p90',
         dataPointsToAlarm: 2,
         comparisonOperator: 'GreaterThanThreshold',
         missingDataTreatment: 'ignore',

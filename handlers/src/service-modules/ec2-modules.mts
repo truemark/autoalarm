@@ -11,8 +11,8 @@ import {
 } from '@aws-sdk/client-cloudwatch';
 import * as logging from '@nr1e/logging';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
-import {ValidInstanceState} from '../types/enums.mjs';
-import {PathMetrics, Tag, EC2AlarmManagerArray} from '../types/module-types.mjs';
+import {ValidInstanceState} from '#types/enums.mjs';
+import {PathMetrics, Tag, EC2AlarmManagerArray} from '#types/module-types.mjs';
 import {
   deleteAlarm,
   doesAlarmExist,
@@ -20,17 +20,17 @@ import {
   handleAnomalyAlarms,
   handleStaticAlarms,
   massDeleteAlarms,
-} from '../alarm-configs/utils/cloudwatch/alarm-tools.mjs';
+} from '#cloudwatch-alarm-utils/alarm-tools.mjs';
 import {
   AlarmConfigs,
   parseMetricAlarmOptions,
-} from '../alarm-configs/utils/cloudwatch/alarm-config.mjs';
+} from '#cloudwatch-alarm-utils/alarm-config.mjs';
 import {
   batchPromRulesDeletion,
   batchUpdatePromRules,
   queryPrometheusForService,
-} from '../alarm-configs/utils/prometheus/prometheus-tools.mjs';
-import {MetricAlarmConfig, MetricAlarmOptions} from '../types/alarm-config-types.mjs'
+} from '#prometheus-alarm-utils/prometheus-tools.mjs';
+import {MetricAlarmConfig, MetricAlarmOptions} from '#types/alarm-config-types.mjs'
 
 const log: logging.Logger = logging.getLogger('ec2-modules');
 export const prometheusWorkspaceId: string =

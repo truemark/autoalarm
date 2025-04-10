@@ -1,15 +1,15 @@
 import {EC2Client, DescribeTagsCommand} from '@aws-sdk/client-ec2';
 import * as logging from '@nr1e/logging';
-import {Tag} from '../types/module-types.mjs';
+import {Tag} from '#types/module-types.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
-import {AlarmClassification} from '../types/enums.mjs';
+import {AlarmClassification} from '#types/enums.mjs';
 import {
   getCWAlarmsForInstance,
   deleteExistingAlarms,
   buildAlarmName,
   handleAnomalyAlarms,
   handleStaticAlarms,
-} from '../alarm-configs/utils/cloudwatch/alarm-tools.mjs';
+} from '#cloudwatch-alarm-utils/alarm-tools.mjs';
 import {
   CloudWatchClient,
   DeleteAlarmsCommand,
@@ -17,7 +17,7 @@ import {
 import {
   AlarmConfigs,
   parseMetricAlarmOptions,
-} from '../alarm-configs/utils/cloudwatch/alarm-config.mjs';
+} from '#cloudwatch-alarm-utils/alarm-config.mjs';
 
 const log: logging.Logger = logging.getLogger('transit-gateway-modules');
 const region: string = process.env.AWS_REGION || '';

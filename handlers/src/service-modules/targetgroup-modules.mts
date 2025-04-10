@@ -5,25 +5,25 @@ import {
   DescribeTargetGroupsCommandOutput,
 } from '@aws-sdk/client-elastic-load-balancing-v2';
 import * as logging from '@nr1e/logging';
-import {Tag} from '../types/module-types.mjs';
+import {Tag} from '#types/module-types.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
   CloudWatchClient,
   DeleteAlarmsCommand,
 } from '@aws-sdk/client-cloudwatch';
-import {AlarmClassification} from '../types/enums.mjs';
+import {AlarmClassification} from '#types/enums.mjs';
 import {
   deleteExistingAlarms,
   buildAlarmName,
   handleAnomalyAlarms,
   handleStaticAlarms,
   getCWAlarmsForInstance,
-} from '../alarm-configs/utils/cloudwatch/alarm-tools.mjs';
+} from '#cloudwatch-alarm-utils/alarm-tools.mjs';
 import * as arnparser from '@aws-sdk/util-arn-parser';
 import {
   AlarmConfigs,
   parseMetricAlarmOptions,
-} from '../alarm-configs/utils/cloudwatch/alarm-config.mjs';
+} from '#cloudwatch-alarm-utils/alarm-config.mjs';
 
 const log: logging.Logger = logging.getLogger('targetgroup-modules');
 const region: string = process.env.AWS_REGION || '';

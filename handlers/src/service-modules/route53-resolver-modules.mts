@@ -3,8 +3,8 @@ import {
   Route53ResolverClient,
 } from '@aws-sdk/client-route53resolver'; // ES Module import
 import * as logging from '@nr1e/logging';
-import {Tag} from '../types/module-types.mjs';
-import {AlarmClassification} from '../types/enums.mjs';
+import {Tag} from '#types/module-types.mjs';
+import {AlarmClassification} from '#types/enums.mjs';
 import {
   CloudWatchClient,
   DeleteAlarmsCommand,
@@ -16,11 +16,11 @@ import {
   handleAnomalyAlarms,
   handleStaticAlarms,
   getCWAlarmsForInstance,
-} from '../alarm-configs/utils/cloudwatch/alarm-tools.mjs';
+} from '#cloudwatch-alarm-utils/alarm-tools.mjs';
 import {
   AlarmConfigs,
   parseMetricAlarmOptions,
-} from '../alarm-configs/utils/cloudwatch/alarm-config.mjs';
+} from '#cloudwatch-alarm-utils/alarm-config.mjs';
 
 const log: logging.Logger = logging.getLogger('route53-resolver-modules');
 const region: string = process.env.AWS_REGION || '';

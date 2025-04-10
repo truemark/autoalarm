@@ -6,26 +6,8 @@ import {
   SQSRecord,
 } from 'aws-lambda';
 import * as logging from '@nr1e/logging';
-import {
-  manageInactiveInstanceAlarms,
-  manageActiveEC2InstanceAlarms,
-  getEC2IdAndState,
-  fetchInstanceTags,
-  liveStates,
-  deadStates,
-} from './service-modules/ec2-modules.mjs';
-import {parseALBEventAndCreateAlarms} from './service-modules/alb-modules.mjs';
-import {parseTGEventAndCreateAlarms} from './service-modules/targetgroup-modules.mjs';
-import {parseSQSEventAndCreateAlarms} from './service-modules/sqs-modules.mjs';
-import {parseOSEventAndCreateAlarms} from './service-modules/opensearch-modules.mjs';
-import {parseVpnEventAndCreateAlarms} from './service-modules/vpn-modules.mjs';
-import {parseR53ResolverEventAndCreateAlarms} from './service-modules/route53-resolver-modules.mjs';
-import {parseTransitGatewayEventAndCreateAlarms} from './service-modules/transit-gateway-modules.mjs';
-import {parseCloudFrontEventAndCreateAlarms} from './service-modules/cloudfront-modules.mjs';
-import {parseRDSEventAndCreateAlarms} from './service-modules/rds-modules.mjs';
-import {parseRDSClusterEventAndCreateAlarms} from './service-modules/rds-cluster-modules.mjs';
-import {parseSFNEventAndCreateAlarms} from './service-modules/step-function-modules.mjs';
-import {EC2AlarmManagerArray} from './types/module-types.mjs';
+import {ServiceModules} from '#service-modules/_index.mjs'; /** @see {ServiceModules} for barrel file */
+import {EC2AlarmManagerArray} from '#types/module-types.mjs';
 
 // Initialize logging
 const level = process.env.LOG_LEVEL || 'trace';
@@ -47,11 +29,11 @@ async function processEC2Event(events: any[]): Promise<void> {
   for (const event of events) {
     const instanceId = event.detail['instance-id'];
     const state = event.detail.state;
-    const tags = await fetchInstanceTags(instanceId);
+    const tags = await ServiceModules.EC2.fetchInstanceTags(instanceId);
 
     if (
       instanceId &&
-      liveStates.has(state) &&
+      ServiceModules.EC2.liveStates.has(state) &&
       tags['autoalarm:enabled'] === 'true'
     ) {
       activeInstancesInfoArray.push({
@@ -60,8 +42,8 @@ async function processEC2Event(events: any[]): Promise<void> {
         state: state,
       });
     } else if (
-      (deadStates.has(state) && tags['autoalarm:enabled'] === 'false') ||
-      (tags['autoalarm:enabled'] === 'true' && deadStates.has(state)) ||
+      (ServiceModules.EC2.deadStates.has(state) && tags['autoalarm:enabled'] === 'false') ||
+      (tags['autoalarm:enabled'] === 'true' && ServiceModules.EC2.deadStates.has(state)) ||
       !tags['autoalarm:enabled']
     ) {
       inactiveInstancesInfoArray.push({
@@ -73,12 +55,12 @@ async function processEC2Event(events: any[]): Promise<void> {
     // checking our liveStates set to see if the instance is in a state that we should be managing alarms for.
     // we are iterating over the AlarmClassification enum to manage alarms for each classification: 'Critical'|'Warning'.
     if (activeInstancesInfoArray.length > 0) {
-      await manageActiveEC2InstanceAlarms(activeInstancesInfoArray);
+      await ServiceModules.EC2.manageActiveEC2InstanceAlarms(activeInstancesInfoArray);
     }
 
     // If the instance is in a state that we should not be managing alarms for, we will remove the alarms.
     if (inactiveInstancesInfoArray.length > 0) {
-      await manageInactiveInstanceAlarms(inactiveInstancesInfoArray);
+      await ServiceModules.EC2.manageInactiveInstanceAlarms(inactiveInstancesInfoArray);
     }
   }
 }
@@ -89,8 +71,8 @@ async function processEC2TagEvent(events: any[]) {
   const activeInstancesInfoArray: EC2AlarmManagerArray = [];
   const inactiveInstancesInfoArray: EC2AlarmManagerArray = [];
   for (const event of events) {
-    const {instanceId, state} = await getEC2IdAndState(event);
-    const tags = await fetchInstanceTags(instanceId);
+    const {instanceId, state} = await ServiceModules.EC2.getEC2IdAndState(event);
+    const tags = await ServiceModules.EC2.fetchInstanceTags(instanceId);
     if (tags['autoalarm:enabled'] === 'false') {
       inactiveInstancesInfoArray.push({
         instanceID: instanceId,
@@ -108,7 +90,7 @@ async function processEC2TagEvent(events: any[]) {
     } else if (
       tags['autoalarm:enabled'] === 'true' &&
       instanceId &&
-      liveStates.has(state)
+      ServiceModules.EC2.liveStates.has(state)
     ) {
       activeInstancesInfoArray.push({
         instanceID: instanceId,
@@ -136,7 +118,7 @@ async function processEC2TagEvent(events: any[]) {
 
   if (activeInstancesInfoArray.length > 0) {
     try {
-      await manageActiveEC2InstanceAlarms(activeInstancesInfoArray);
+      await ServiceModules.EC2.manageActiveEC2InstanceAlarms(activeInstancesInfoArray);
     } catch (error) {
       log.error().err(error).msg('Error managing active EC2 instance alarms');
       throw new Error('Error managing active EC2 instance alarms');
@@ -145,7 +127,7 @@ async function processEC2TagEvent(events: any[]) {
 
   if (inactiveInstancesInfoArray.length > 0) {
     try {
-      await manageInactiveInstanceAlarms(inactiveInstancesInfoArray);
+      await ServiceModules.EC2.manageInactiveInstanceAlarms(inactiveInstancesInfoArray);
     } catch (error) {
       log.error().err(error).msg('Error managing inactive EC2 instance alarms');
       throw new Error('Error managing inactive EC2 instance alarms');
@@ -169,21 +151,21 @@ async function routeTagEvent(event: any) {
 
   switch (service) {
     case 'transit-gateway':
-      await parseTransitGatewayEventAndCreateAlarms(event);
+      await ServiceModules.parseTransitGatewayEventAndCreateAlarms(event);
       break;
 
     case 'vpn-connection':
-      await parseVpnEventAndCreateAlarms(event);
+      await ServiceModules.parseVpnEventAndCreateAlarms(event);
       break;
 
     case 'elasticloadbalancing':
       switch (resourceType) {
         case 'loadbalancer':
-          await parseALBEventAndCreateAlarms(event);
+          await ServiceModules.parseALBEventAndCreateAlarms(event);
           break;
 
         case 'targetgroup':
-          await parseTGEventAndCreateAlarms(event);
+          await ServiceModules.parseTGEventAndCreateAlarms(event);
           break;
 
         default:
@@ -196,29 +178,29 @@ async function routeTagEvent(event: any) {
       break;
 
     case 'es':
-      await parseOSEventAndCreateAlarms(event);
+      await ServiceModules.parseOSEventAndCreateAlarms(event);
       break;
 
     case 'route53resolver':
-      await parseR53ResolverEventAndCreateAlarms(event);
+      await ServiceModules.parseR53ResolverEventAndCreateAlarms(event);
       break;
 
     case 'cloudfront':
-      await parseCloudFrontEventAndCreateAlarms(event);
+      await ServiceModules.parseCloudFrontEventAndCreateAlarms(event);
       break;
 
     case 'rds':
       if (resourceType === 'cluster') {
-        await parseRDSClusterEventAndCreateAlarms(event);
+        await ServiceModules.parseRDSClusterEventAndCreateAlarms(event);
       } else if (resourceType === 'db') {
-        await parseRDSEventAndCreateAlarms(event);
+        await ServiceModules.parseRDSEventAndCreateAlarms(event);
       } else {
         log.warn().msg(`Unhandled RDS resource: ${resourceType}`);
       }
       break;
 
     case 'states':
-      await parseSFNEventAndCreateAlarms(event);
+      await ServiceModules.parseSFNEventAndCreateAlarms(event);
       break;
 
     default:
@@ -267,7 +249,7 @@ export const handler: Handler = async (
     try {
       switch (event.source) {
         case 'aws.cloudfront':
-          await parseCloudFrontEventAndCreateAlarms(event);
+          await ServiceModules.parseCloudFrontEventAndCreateAlarms(event);
           break;
         case 'aws.ec2':
           log
@@ -293,14 +275,16 @@ export const handler: Handler = async (
                   event.detail.eventName === 'CreateTransitGateway' ||
                   event.detail.eventName === 'DeleteTransitGateway'
                 )
-                  await parseTransitGatewayEventAndCreateAlarms(event);
+                  await ServiceModules.parseTransitGatewayEventAndCreateAlarms(
+                    event,
+                  );
                 break;
               case 'vpn-connection':
                 if (
                   event.detail.eventName === 'CreateVpnConnection' ||
                   event.detail.eventName === 'DeleteVpnConnection'
                 )
-                  await parseVpnEventAndCreateAlarms(event);
+                  await ServiceModules.parseVpnEventAndCreateAlarms(event);
                 break;
               default:
                 log
@@ -323,12 +307,12 @@ export const handler: Handler = async (
             event.detail.eventName === 'CreateLoadBalancer' ||
             event.detail.eventName === 'DeleteLoadBalancer'
           ) {
-            await parseALBEventAndCreateAlarms(event);
+            await ServiceModules.parseALBEventAndCreateAlarms(event);
           } else if (
             event.detail.eventName === 'CreateTargetGroup' ||
             event.detail.eventName === 'DeleteTargetGroup'
           ) {
-            await parseTGEventAndCreateAlarms(event);
+            await ServiceModules.parseTGEventAndCreateAlarms(event);
           } else {
             log
               .error()
@@ -339,7 +323,7 @@ export const handler: Handler = async (
           break;
 
         case 'aws.opensearch':
-          await parseOSEventAndCreateAlarms(event);
+          await ServiceModules.parseOSEventAndCreateAlarms(event);
           break;
 
         case 'aws.rds':
@@ -347,12 +331,12 @@ export const handler: Handler = async (
             event.detail.eventName === 'CreateDBInstance' ||
             event.detail.eventName === 'DeleteDBInstance'
           ) {
-            await parseRDSEventAndCreateAlarms(event);
+            await ServiceModules.parseRDSEventAndCreateAlarms(event);
           } else if (
             event.detail.eventName === 'CreateDBCluster' ||
             event.detail.eventName === 'DeleteDBCluster'
           ) {
-            await parseRDSClusterEventAndCreateAlarms(event);
+            await ServiceModules.parseRDSClusterEventAndCreateAlarms(event);
           } else {
             log.error().msg('Unhandled event name for aws.rds');
             batchItemFailures.push({itemIdentifier: record.messageId});
@@ -361,15 +345,15 @@ export const handler: Handler = async (
           break;
 
         case 'aws.route53resolver':
-          await parseR53ResolverEventAndCreateAlarms(event);
+          await ServiceModules.parseR53ResolverEventAndCreateAlarms(event);
           break;
 
         case 'aws.sqs':
-          await parseSQSEventAndCreateAlarms(event);
+          await ServiceModules.parseSQSEventAndCreateAlarms(event);
           break;
 
         case 'aws.states':
-          await parseSFNEventAndCreateAlarms(event);
+          await ServiceModules.parseSFNEventAndCreateAlarms(event);
           break;
 
         case 'aws.tag':

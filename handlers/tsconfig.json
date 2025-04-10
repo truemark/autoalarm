@@ -15,7 +15,16 @@
     "noImplicitReturns": true,
     "pretty": true,
     "sourceMap": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "paths": {
+      "#handlers/*": ["./src/handlers/*"],
+      "#alarms/*": ["./src/alarm-config/alarms/*"],
+      "#cloudwatch-alarm-utils/*": ["./src/alarm-config/utils/cloudwatch/*"],
+      "#prometheus-alarm-utils/*": ["./src/alarm-config/utils/prometheus/*"],
+      "#stats-factory/*": ["./src/alarm-config/utils/stats-factory/*"],
+      "#service-modules/*": ["./src/service-modules/*"],
+      "#types/*": ["./src/types/*"]
+    }
   },
   "include": ["src"],
   "exclude": ["node_modules"]

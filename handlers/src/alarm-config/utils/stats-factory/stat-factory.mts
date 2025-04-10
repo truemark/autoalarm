@@ -1,4 +1,4 @@
-import { Stats } from './stats.mjs';
+import { Stats } from '#stats-factory/stats.mjs';
 
 /**
  * Provides a centralized, type-safe collection of CloudWatch standard and extended statistics methods for easy

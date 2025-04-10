@@ -3,8 +3,8 @@ import {
   ElasticLoadBalancingV2Client,
 } from '@aws-sdk/client-elastic-load-balancing-v2';
 import * as logging from '@nr1e/logging';
-import {LoadBalancerIdentifiers, Tag} from '../types/module-types.mjs';
-import {AlarmClassification} from '../types/enums.mjs';
+import {LoadBalancerIdentifiers, Tag} from '#types/module-types.mjs';
+import {AlarmClassification} from '#types/enums.mjs';
 import {
   CloudWatchClient,
   DeleteAlarmsCommand,
@@ -16,11 +16,11 @@ import {
   handleAnomalyAlarms,
   handleStaticAlarms,
   getCWAlarmsForInstance,
-} from '../alarm-configs/utils/cloudwatch/alarm-tools.mjs';
+} from '#cloudwatch-alarm-utils/alarm-tools.mjs';
 import {
   AlarmConfigs,
   parseMetricAlarmOptions,
-} from '../alarm-configs/utils/cloudwatch/alarm-config.mjs';
+} from '#cloudwatch-alarm-utils/alarm-config.mjs';
 
 const log: logging.Logger = logging.getLogger('alb-modules');
 const region: string = process.env.AWS_REGION || '';
