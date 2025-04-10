@@ -1204,7 +1204,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
   
-    // 4a) WriteLatency - Anomaly 
+    // 5a) WriteLatency - Anomaly 
     {
       tagKey: 'memory',
       metricName: 'WriteLatency',
