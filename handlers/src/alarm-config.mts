@@ -1154,8 +1154,8 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaultCreate: true,
       anomaly: false,
       defaults: {
-        warningThreshold: 512000000
-        criticalThreshold: 256000000
+        warningThreshold: 512000000,
+        criticalThreshold: 256000000,
         period: 300,
         evaluationPeriods: 3,
         statistic: 'Average',
@@ -1174,8 +1174,8 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaultCreate: true,
       anomaly: true,
       defaults: {
-        warningThreshold: 2
-        criticalThreshold: 4
+        warningThreshold: 2,
+        criticalThreshold: 4,
         period: 300,
         evaluationPeriods: 5,
         statistic: 'Average',
@@ -1185,7 +1185,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
   
-    // 5) WriteLatency - Static
+    // 5) WriteLatency - Static (Disk Type Matters)
     {
       tagKey: 'write-latency',
       metricName: 'WriteLatency',
@@ -1200,6 +1200,25 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         statistic: 'Average',
         dataPointsToAlarm: 2,
         comparisonOperator: 'GreaterThanThreshold',
+        missingDataTreatment: 'ignore',
+      },
+    },
+  
+    // 4a) WriteLatency - Anomaly 
+    {
+      tagKey: 'memory',
+      metricName: 'WriteLatency',
+      metricNamespace: 'AWS/RDS',
+      defaultCreate: true,
+      anomaly: true,
+      defaults: {
+        warningThreshold: 2,
+        criticalThreshold: 4,
+        period: 300,
+        evaluationPeriods: 5,
+        statistic: 'Average',
+        dataPointsToAlarm: 4,
+        comparisonOperator: 'LessThanLowerThreshold',
         missingDataTreatment: 'ignore',
       },
     },
@@ -1261,7 +1280,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
   
-    // 9) DiskQueueDepth - Static  (These should be set by disk type???
+    // 9) DiskQueueDepth - Static  (These should be set by disk type???)
     {
       tagKey: 'disk-queue-depth',
       metricName: 'DiskQueueDepth',
