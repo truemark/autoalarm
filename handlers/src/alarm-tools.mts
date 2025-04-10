@@ -441,7 +441,7 @@ async function handleStaticThresholdWorkflow(
     const alarmInput = {
       AlarmName: alarmName,
       ComparisonOperator:
-        updatedDefaults.comparisonOperator as ComparisonOperator,
+        updatedDefaults.comparisonOperator,
       EvaluationPeriods: updatedDefaults.evaluationPeriods,
       MetricName: config.metricName,
       Namespace: config.metricNamespace,

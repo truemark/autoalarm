@@ -3,12 +3,10 @@ import {
   MetricAlarmOptions,
   MetricAlarmConfigs,
   ValidStatistic,
-  ValidComparisonOperator,
-  ValidComparisonOperatorSchema, StatMethods,
+  StatFactory,
 } from './types.mjs';
-//TODO: I don't think we need to use valibot anymore.
-import * as v from 'valibot';
-import {StandardStatistic} from './enums.mjs';
+import { ComparisonOperator } from '@aws-sdk/client-cloudwatch';
+
 
 export function metricAlarmOptionsToString(value: MetricAlarmOptions): string {
   return (
@@ -94,38 +92,40 @@ function parseStatisticOption(
 ): ValidStatistic {
   // Normalize the input value
   const trimmed: unknown = value.trim().toLowerCase();
-  // Check if the value is a valid and properly formatted standard statistic
-  const standardStat = Object.entries(StandardStatistic).find(
-    ([, stat]) => stat.toLowerCase() === trimmed
-  );
+
+  const sStat: unknown | undefined = Object.keys(
+    StatFactory.Standard,
+  ).find(K => K.toLowerCase() === trimmed)
+    ? K satisfies StatFactory.Standard
+    : undefined;
 
   // parse trimmed value to catch any unormalized values
-  const parts: unknown[] = [...value.trim()];
+  const parts = [...value.trim()];
+  console.log(parts);
   // TODO: grab indices 0 and 1 to check for Extended.
   //  parse through values, filter out any non alphanumeric values
   //  use satisfies to check rebuilt stat with our Valid Statistic and extended stat types
-  //  if newly built statistic matches a type, build it with StatMethods and return it.
+  //  if newly built statistic matches a type, build it with StatFactory and return it.
 
-  return standardStat
-    ? standardStat[1] // if standardStat matches, return the StandardStatistic
-    : trimmed ?
-      trimmed satisfies ValidStatistic //For testing only
+  return sStat
+    ? StatFactory.Standard.standardStat // if standardStat matches, return the StandardStatistic
+    : trimmed
+      ? (trimmed satisfies ValidStatistic) //For testing only
       : defaultValue;
 }
 
 function parseComparisonOperatorOption(
   value: string,
-  defaultValue: ValidComparisonOperator,
-): ValidComparisonOperator {
-  // Try to parse the value using the ValidComparisonOperatorSchema
-  const result = v.safeParse(
-    ValidComparisonOperatorSchema,
-    value.trim().toLowerCase(),
-  );
+  defaultValue: ComparisonOperator,
+): ComparisonOperator {
+  // Normalize the input value
+const trimmed: unknown  = value.trim().toLowerCase();
 
-  // If validation succeeds, return the parsed output therwise return the default value
-  return result.success ? result.output : defaultValue;
+//attempt to match the trimmed value to the valid comparison operator
+
+
 }
+
 
 function parseMissingDataTreatmentOption(
   value: string,
@@ -175,15 +175,18 @@ export function parseMetricAlarmOptions(
         : defaults.evaluationPeriods,
     statistic:
       parts.length > 4
-        ? parseStatisticOption(parts[4], defaults.statistic) satisfies ValidStatistic
-        : defaults.statistic satisfies ValidStatistic,
+        ? (parseStatisticOption(
+            parts[4],
+            defaults.statistic,
+          ) satisfies ValidStatistic)
+        : (defaults.statistic satisfies ValidStatistic),
     dataPointsToAlarm:
       parts.length > 5
         ? parseIntegerOption(parts[5], defaults.dataPointsToAlarm)
         : defaults.dataPointsToAlarm,
     comparisonOperator:
       parts.length > 6
-        ? parseComparisonOperatorOption(parts[6], defaults.comparisonOperator)
+        ? parseComparisonOperatorOption(parts[6], defaults.comparisonOperator) satisfies ComparisonOperator
         : defaults.comparisonOperator,
     missingDataTreatment:
       parts.length > 7
@@ -215,7 +218,7 @@ export const AlarmConfigs: MetricAlarmConfigs = {
         criticalThreshold: null,
         period: 60,
         evaluationPeriods: 2,
-        statistic: "p(89)",
+        statistic: 'p(89)',
         dataPointsToAlarm: 2,
         comparisonOperator: 'GreaterThanThreshold',
         missingDataTreatment: 'ignore',
