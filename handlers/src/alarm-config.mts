@@ -1193,8 +1193,8 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaultCreate: true,
       anomaly: false,
       defaults: {
-        warningThreshold: ##, // e.g. 0.01
-        criticalThreshold: ##, // e.g. 0.05
+        warningThreshold: 0.01,
+        criticalThreshold: 0.05,
         period: 300,
         evaluationPeriods: 3,
         statistic: 'Average',
@@ -1359,7 +1359,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
    //},
    
    ],
-   
+
   // Owned by Harmony
   SNS: [
     // TODO Add alarms and get buy off from team lead on PR
