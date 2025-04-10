@@ -2,7 +2,9 @@
  * this class is a loose mirror of the `aws-cdk-lib` Stats Class
  * This class was created due to substantial overlap between SDK and CDK libs
  * Specifically, Extended statistics in the CDK lib follow a different pattern than in the SDK (Which AutoAlarm uses to create alarms)
- * compatible with AWS CloudWatch's expected values for `ExtendedStatistic` and `StandardStatistic`.
+ * compatible with AWS CloudWatch's expected values for `ExtendedStatistic` and `Statistic`.
+ *
+ * ---
  *
  * @example
  *
@@ -40,6 +42,8 @@
  *   Stats.pr(100, 2000);             // "PR(100:2000)"
  * ```
  *
+ * ---
+ *
  * @see {@link Stats} for reference of origin class
  * @see {@link https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Statistics-definitions.html} for AWS documentation
  * @see {@link https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/Package/-aws-sdk-client-cloudwatch/Interface/PutMetricAlarmCommandInput/} - JS SDK documentation
@@ -73,17 +77,17 @@ export abstract class Stats {
    * Trimmed mean or TM, specified as TM(X%:Y%) or tmXX.
    * If only one argument is given, it defaults to lower 0%.
    */
-  static trimmedMean(p1: number, p2?: number): string {
-    if (p2 === undefined) {
-      if (p1 <= 0 || p1 > 100) {
+  static trimmedMean(p1?: number, p2?: number): string {
+    if (p1 !== undefined && p2 === undefined) {
+      if (p1 <= 0 || p1 >= 100)
         throw new Error(
-          'Trim percentage must be between 0 and 100 (exclusive).',
+          'For single-number TM, p1 must be between 0 and 100 (exclusive).',
         );
-      }
       return `tm${p1}`;
-    } else {
-      this.validateBounds(p1, p2);
+    } else if (p1 !== undefined && p2 !== undefined) {
       return `TM(${p1}%:${p2}%)`;
+    } else {
+      throw new Error('trimmedMean requires 1 or 2 parameters.');
     }
   }
 

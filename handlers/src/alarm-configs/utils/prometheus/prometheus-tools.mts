@@ -16,7 +16,7 @@ import {
   Rule,
   EC2AlarmManagerArray,
   PrometheusAlarmConfigArray,
-} from './types.mjs';
+} from '../../../types/module-types.mjs';
 import {
   EC2getCpuQuery,
   EC2getMemoryQuery,
@@ -27,13 +27,13 @@ import * as aws4 from 'aws4';
 import * as https from 'https';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {defaultProvider} from '@aws-sdk/credential-provider-node';
-import {buildAlarmName} from './alarm-tools.mjs';
-import {AlarmClassification} from './enums.mjs';
+import {buildAlarmName} from '../cloudwatch/alarm-tools.mjs';
+import {AlarmClassification} from '../../../types/enums.mjs';
 import {
   AlarmConfigs,
   parseMetricAlarmOptions,
-} from './alarm-configs/alarm-config.mjs';
-import {MetricAlarmConfig} from './alarm-configs/types.mjs';
+} from '../cloudwatch/alarm-config.mjs';
+import {MetricAlarmConfig} from '../../../types/alarm-config-types.mjs';
 
 const log: logging.Logger = logging.getLogger('ec2-modules');
 const retryStrategy = new ConfiguredRetryStrategy(20);

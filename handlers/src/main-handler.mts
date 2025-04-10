@@ -13,19 +13,19 @@ import {
   fetchInstanceTags,
   liveStates,
   deadStates,
-} from './ec2-modules.mjs';
-import {parseALBEventAndCreateAlarms} from './alb-modules.mjs';
-import {parseTGEventAndCreateAlarms} from './targetgroup-modules.mjs';
-import {parseSQSEventAndCreateAlarms} from './sqs-modules.mjs';
-import {parseOSEventAndCreateAlarms} from './opensearch-modules.mjs';
-import {parseVpnEventAndCreateAlarms} from './vpn-modules.mjs';
-import {parseR53ResolverEventAndCreateAlarms} from './route53-resolver-modules.mjs';
-import {parseTransitGatewayEventAndCreateAlarms} from './transit-gateway-modules.mjs';
-import {parseCloudFrontEventAndCreateAlarms} from './cloudfront-modules.mjs';
-import {parseRDSEventAndCreateAlarms} from './rds-modules.mjs';
-import {parseRDSClusterEventAndCreateAlarms} from './rds-cluster-modules.mjs';
-import {parseSFNEventAndCreateAlarms} from './step-function-modules.mjs';
-import {EC2AlarmManagerArray} from './types.mjs';
+} from './service-modules/ec2-modules.mjs';
+import {parseALBEventAndCreateAlarms} from './service-modules/alb-modules.mjs';
+import {parseTGEventAndCreateAlarms} from './service-modules/targetgroup-modules.mjs';
+import {parseSQSEventAndCreateAlarms} from './service-modules/sqs-modules.mjs';
+import {parseOSEventAndCreateAlarms} from './service-modules/opensearch-modules.mjs';
+import {parseVpnEventAndCreateAlarms} from './service-modules/vpn-modules.mjs';
+import {parseR53ResolverEventAndCreateAlarms} from './service-modules/route53-resolver-modules.mjs';
+import {parseTransitGatewayEventAndCreateAlarms} from './service-modules/transit-gateway-modules.mjs';
+import {parseCloudFrontEventAndCreateAlarms} from './service-modules/cloudfront-modules.mjs';
+import {parseRDSEventAndCreateAlarms} from './service-modules/rds-modules.mjs';
+import {parseRDSClusterEventAndCreateAlarms} from './service-modules/rds-cluster-modules.mjs';
+import {parseSFNEventAndCreateAlarms} from './service-modules/step-function-modules.mjs';
+import {EC2AlarmManagerArray} from './types/module-types.mjs';
 
 // Initialize logging
 const level = process.env.LOG_LEVEL || 'trace';

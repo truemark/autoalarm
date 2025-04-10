@@ -10,10 +10,10 @@ import {
   Statistic,
 } from '@aws-sdk/client-cloudwatch';
 import {ComparisonOperator} from 'aws-cdk-lib/aws-cloudwatch';
-import {MetricAlarmConfig, MetricAlarmOptions} from './alarm-configs/types.mjs';
+import {MetricAlarmConfig, MetricAlarmOptions} from '../../../types/alarm-config-types.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import * as logging from '@nr1e/logging';
-import {AlarmClassification} from './enums.mjs';
+import {AlarmClassification} from '../../../types/enums.mjs';
 
 const region: string = process.env.AWS_REGION || '';
 const retryStrategy = new ConfiguredRetryStrategy(20);
