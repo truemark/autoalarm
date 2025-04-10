@@ -992,27 +992,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
   // Owned by DB Warden
   // These all need to be evaluated as normal cluster level alerts would be AuroraReplicaLag, EngineUpTime, FailoverState, ReaderLag, and WriterLag 
   RDSCluster: [
-    // 1) CPU - Static Only
-    {
-      tagKey: 'cpu',
-      metricName: 'CPUUtilization',
-      metricNamespace: 'AWS/RDS',
-      defaultCreate: false,
-      anomaly: false,
-      defaults: {
-        warningThreshold: 90,
-        criticalThreshold: 95,
-        period: 300,
-        evaluationPeriods: 5,
-        statistic: 'Average',
-        dataPointsToAlarm: 4,
-        comparisonOperator: 'GreaterThanThreshold',
-        missingDataTreatment: 'ignore',
-      },
-    },
-
-    // 2) DatabaseConnections - Anomaly
-
+    // 1) DatabaseConnections - Anomaly
     {
       tagKey: 'db-connections-anomaly',
       metricName: 'DatabaseConnections',
@@ -1030,66 +1010,8 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         missingDataTreatment: 'ignore',
       },
     },
-
-    // 3) DBLoad - Anomaly Only
-    {
-      tagKey: 'dbload-anomaly',
-      metricName: 'DBLoad',
-      metricNamespace: 'AWS/RDS',
-      defaultCreate: true,
-      anomaly: true,
-      defaults: {
-        warningThreshold: 2,
-        criticalThreshold: 7,
-        period: 300,
-        evaluationPeriods: 5,
-        statistic: 'Average',
-        dataPointsToAlarm: 4,
-        comparisonOperator: 'GreaterThanUpperThreshold',
-        missingDataTreatment: 'ignore',
-      },
-    },
-
-    // 4) Deadlocks - Static
-    {
-      tagKey: 'deadlocks',
-      metricName: 'Deadlocks',
-      metricNamespace: 'AWS/RDS',
-      defaultCreate: true,
-      anomaly: false,
-      defaults: {
-        warningThreshold: 0,
-        criticalThreshold: 0,
-        period: 120,
-        evaluationPeriods: 1,
-        statistic: 'Maximum',
-        dataPointsToAlarm: 1,
-        comparisonOperator: 'GreaterThanThreshold',
-        missingDataTreatment: 'ignore',
-      },
-    },
-
-    // 5) FreeableMemory - Static Only
-    {
-      tagKey: 'freeable-memory',
-      metricName: 'FreeableMemory',
-      metricNamespace: 'AWS/RDS',
-      defaultCreate: true,
-      anomaly: false,
-      defaults: {
-        warningThreshold: 2000000000,
-        criticalThreshold: 100000000,
-        period: 300,
-        evaluationPeriods: 3,
-        statistic: 'Average',
-        dataPointsToAlarm: 2,
-        comparisonOperator: 'LessThanThreshold',
-        missingDataTreatment: 'ignore',
-      },
-    },
-
-    // 7) ReplicaLag - Static + Anomaly
-    // This needs to be evaluated as this alarm is being created and there are no replicas.
+  
+    // 2) ReplicaLag - Static
     {
       tagKey: 'replica-lag',
       metricName: 'ReplicaLag',
@@ -1101,12 +1023,14 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         criticalThreshold: 600,
         period: 180,
         evaluationPeriods: 3,
-        statistic: 'Avergae',
+        statistic: 'Average',
         dataPointsToAlarm: 2,
         comparisonOperator: 'GreaterThanThreshold',
         missingDataTreatment: 'ignore',
       },
     },
+  
+    // 3) ReplicaLag - Anomaly
     {
       tagKey: 'replica-lag-anomaly',
       metricName: 'ReplicaLag',
@@ -1124,54 +1048,53 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         missingDataTreatment: 'ignore',
       },
     },
-
-    // 8) SwapUsage - Anomaly Only
+  
+    // 4) FailoverState - Static
     {
-      tagKey: 'swap-usage-anomaly',
-      metricName: 'SwapUsage',
+      tagKey: 'failover-state',
+      metricName: 'FailoverState',
       metricNamespace: 'AWS/RDS',
       defaultCreate: true,
-      anomaly: true,
+      anomaly: false,
       defaults: {
-        warningThreshold: 2,
-        criticalThreshold: 7,
-        period: 300,
-        evaluationPeriods: 5,
-        statistic: 'Avergae',
-        dataPointsToAlarm: 4,
-        comparisonOperator: 'GreaterThanUpperThreshold',
-        missingDataTreatment: 'ignore',
+        warningThreshold: 1,
+        criticalThreshold: 2,
+        period: 60,
+        evaluationPeriods: 1,
+        statistic: 'Maximum',
+        dataPointsToAlarm: 1,
+        comparisonOperator: 'GreaterThanThreshold',
+        missingDataTreatment: 'notBreaching',
       },
     },
-
-    // 9) WriteLatency - Anomaly
-
+  
+    // 5) EngineUptime - Static
     {
-      tagKey: 'write-latency-anomaly',
-      metricName: 'WriteLatency',
+      tagKey: 'engine-uptime',
+      metricName: 'EngineUptime',
       metricNamespace: 'AWS/RDS',
-      defaultCreate: true,
-      anomaly: true,
+      defaultCreate: false,
+      anomaly: false,
       defaults: {
-        warningThreshold: 2,
-        criticalThreshold: 7,
-        period: 300,
-        evaluationPeriods: 5,
-        statistic: 'Average',
-        dataPointsToAlarm: 4,
-        comparisonOperator: 'GreaterThanUpperThreshold',
+        warningThreshold: 300,
+        criticalThreshold: 60,
+        period: 60,
+        evaluationPeriods: 1,
+        statistic: 'Minimum',
+        dataPointsToAlarm: 1,
+        comparisonOperator: 'LessThanThreshold',
         missingDataTreatment: 'ignore',
       },
     },
   ],
 
   RDS: [
-    // 1) CPU - Static Only
+    // 1) CPUUtilization - Static
     {
       tagKey: 'cpu',
       metricName: 'CPUUtilization',
       metricNamespace: 'AWS/RDS',
-      defaultCreate: false,
+      defaultCreate: true,
       anomaly: false,
       defaults: {
         warningThreshold: 90,
@@ -1184,9 +1107,8 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         missingDataTreatment: 'ignore',
       },
     },
-
+  
     // 2) DatabaseConnections - Anomaly
-
     {
       tagKey: 'db-connections-anomaly',
       metricName: 'DatabaseConnections',
@@ -1204,8 +1126,8 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         missingDataTreatment: 'ignore',
       },
     },
-
-    // 3) DBLoad - Anomaly Only
+  
+    // 3) DBLoad - Anomaly
     {
       tagKey: 'dbload-anomaly',
       metricName: 'DBLoad',
@@ -1223,192 +1145,221 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         missingDataTreatment: 'ignore',
       },
     },
-
-    // 4) Deadlocks - Static
+  
+    // 4) FreeableMemory - Static  (Instance size matters)
     {
-      tagKey: 'deadlocks',
-      metricName: 'Deadlocks',
-      metricNamespace: 'AWS/RDS',
-      defaultCreate: true,
-      anomaly: false,
-      defaults: {
-        warningThreshold: 0,
-        criticalThreshold: 0,
-        period: 120,
-        evaluationPeriods: 1,
-        statistic: 'Sum',
-        dataPointsToAlarm: 1,
-        comparisonOperator: 'GreaterThanThreshold',
-        missingDataTreatment: 'ignore',
-      },
-    },
-
-    // 5) FreeableMemory - Static Only
-    {
-      tagKey: 'freeable-memory',
+      tagKey: 'memory',
       metricName: 'FreeableMemory',
       metricNamespace: 'AWS/RDS',
       defaultCreate: true,
       anomaly: false,
       defaults: {
-        warningThreshold: 2000000000,
-        criticalThreshold: 100000000,
+        warningThreshold: 512000000
+        criticalThreshold: 256000000
         period: 300,
         evaluationPeriods: 3,
-        statistic: 'Maximum',
+        statistic: 'Average',
         dataPointsToAlarm: 2,
         comparisonOperator: 'LessThanThreshold',
         missingDataTreatment: 'ignore',
       },
     },
-
-    // 7) ReplicaLag - Static + Anomaly
+  
+  
+    // 4a) FreeableMemory - Anomaly  (Instance size shouldn't matter)
     {
-      tagKey: 'replica-lag',
-      metricName: 'ReplicaLag',
-      metricNamespace: 'AWS/RDS',
-      defaultCreate: true,
-      anomaly: false,
-      defaults: {
-        warningThreshold: 30,
-        criticalThreshold: 600,
-        period: 180,
-        evaluationPeriods: 2,
-        statistic: 'Maximum',
-        dataPointsToAlarm: 1,
-        comparisonOperator: 'GreaterThanThreshold',
-        missingDataTreatment: 'ignore',
-      },
-    },
-    {
-      tagKey: 'replica-lag-anomaly',
-      metricName: 'ReplicaLag',
+      tagKey: 'memory',
+      metricName: 'FreeableMemory',
       metricNamespace: 'AWS/RDS',
       defaultCreate: true,
       anomaly: true,
       defaults: {
-        warningThreshold: 2,
-        criticalThreshold: 7,
+        warningThreshold: 2
+        criticalThreshold: 4
         period: 300,
         evaluationPeriods: 5,
         statistic: 'Average',
         dataPointsToAlarm: 4,
-        comparisonOperator: 'GreaterThanUpperThreshold',
+        comparisonOperator: 'LessThanLowerThreshold',
         missingDataTreatment: 'ignore',
       },
     },
-
-    // 8) SwapUsage - Anomaly Only
+  
+    // 5) WriteLatency - Static
     {
-      tagKey: 'swap-usage-anomaly',
-      metricName: 'SwapUsage',
-      metricNamespace: 'AWS/RDS',
-      defaultCreate: true,
-      anomaly: true,
-      defaults: {
-        warningThreshold: 2,
-        criticalThreshold: 7,
-        period: 300,
-        evaluationPeriods: 5,
-        statistic: 'Maximum',
-        dataPointsToAlarm: 4,
-        comparisonOperator: 'GreaterThanUpperThreshold',
-        missingDataTreatment: 'ignore',
-      },
-    },
-
-    // 9) WriteLatency - Anomaly
-    // Normally only on Aurora Global and Aurora multi-master (MySQL Only)
-
-    {
-      tagKey: 'write-latency-anomaly',
+      tagKey: 'write-latency',
       metricName: 'WriteLatency',
       metricNamespace: 'AWS/RDS',
       defaultCreate: true,
+      anomaly: false,
+      defaults: {
+        warningThreshold: ##, // e.g. 0.01
+        criticalThreshold: ##, // e.g. 0.05
+        period: 300,
+        evaluationPeriods: 3,
+        statistic: 'Average',
+        dataPointsToAlarm: 2,
+        comparisonOperator: 'GreaterThanThreshold',
+        missingDataTreatment: 'ignore',
+      },
+    },
+  
+    // 6) ReadLatency - Static  (Disk Type Matters, ie. gp2, gp3, io1, io2, aurora)
+    {
+      tagKey: 'read-latency',
+      metricName: 'ReadLatency',
+      metricNamespace: 'AWS/RDS',
+      defaultCreate: true,
+      anomaly: false,
+      defaults: {
+        warningThreshold: 0.01,
+        criticalThreshold: 0.02,
+        period: 300,
+        evaluationPeriods: 3,
+        statistic: 'Average',
+        dataPointsToAlarm: 2,
+        comparisonOperator: 'GreaterThanThreshold',
+        missingDataTreatment: 'ignore',
+      },
+    },
+  
+    // 7) SwapUsage - Static
+    {
+      tagKey: 'swap-usage',
+      metricName: 'SwapUsage',
+      metricNamespace: 'AWS/RDS',
+      defaultCreate: true,
+      anomaly: false,
+      defaults: {
+        warningThreshold: 100000000, 
+        criticalThreshold: 256000000, 
+        period: 300,
+        evaluationPeriods: 2,
+        statistic: 'Average',
+        dataPointsToAlarm: 2,
+        comparisonOperator: 'GreaterThanThreshold',
+        missingDataTreatment: 'ignore',
+      },
+    },
+  
+    // 8) DatabaseDeadlocks - Static
+    {
+      tagKey: 'deadlocks',
+      metricName: 'DatabaseDeadlocks',
+      metricNamespace: 'AWS/RDS',
+      defaultCreate: true,
+      anomaly: false,
+      defaults: {
+        warningThreshold: 1,
+        criticalThreshold: 1,
+        period: 300,
+        evaluationPeriods: 1,
+        statistic: 'Sum',
+        dataPointsToAlarm: 1,
+        comparisonOperator: 'GreaterThanThreshold',
+        missingDataTreatment: 'ignore',
+      },
+    },
+  
+    // 9) DiskQueueDepth - Static  (These should be set by disk type???
+    {
+      tagKey: 'disk-queue-depth',
+      metricName: 'DiskQueueDepth',
+      metricNamespace: 'AWS/RDS',
+      defaultCreate: true,
+      anomaly: false,
+      defaults: {
+        warningThreshold: 5, 
+        criticalThreshold: 15, 
+        period: 300,
+        evaluationPeriods: 2,
+        statistic: 'Maximum',
+        dataPointsToAlarm: 2,
+        comparisonOperator: 'GreaterThanThreshold',
+        missingDataTreatment: 'ignore',
+      },
+    },
+  
+    // 10) ReadThroughput - Anomaly
+    {
+      tagKey: 'read-throughput-anomaly',
+      metricName: 'ReadThroughput',
+      metricNamespace: 'AWS/RDS',
+      defaultCreate: false,
       anomaly: true,
       defaults: {
         warningThreshold: 2,
         criticalThreshold: 7,
         period: 300,
-        evaluationPeriods: 5,
+        evaluationPeriods: 3,
         statistic: 'Average',
-        dataPointsToAlarm: 4,
+        dataPointsToAlarm: 2,
         comparisonOperator: 'GreaterThanUpperThreshold',
         missingDataTreatment: 'ignore',
       },
     },
-  ],
-
-  R53ResolverEndpoint: [
+  
+    // 11) WriteThroughput - Anomaly
     {
-      tagKey: 'inbound-query-volume',
-      metricName: 'InboundQueryVolume',
-      metricNamespace: 'AWS/Route53Resolver',
-      defaultCreate: true,
-      anomaly: false,
-      defaults: {
-        warningThreshold: 1500000,
-        criticalThreshold: 2000000,
-        period: 300,
-        evaluationPeriods: 1,
-        statistic: 'Sum',
-        dataPointsToAlarm: 1,
-        comparisonOperator: 'GreaterThanThreshold',
-        missingDataTreatment: 'ignore',
-      },
-    },
-    {
-      tagKey: 'inbound-query-volume-anomaly',
-      metricName: 'InboundQueryVolume',
-      metricNamespace: 'AWS/Route53Resolver',
+      tagKey: 'write-throughput-anomaly',
+      metricName: 'WriteThroughput',
+      metricNamespace: 'AWS/RDS',
       defaultCreate: false,
       anomaly: true,
       defaults: {
-        warningThreshold: null,
-        criticalThreshold: null,
+        warningThreshold: 2,
+        criticalThreshold: 7,
         period: 300,
-        evaluationPeriods: 1,
+        evaluationPeriods: 3,
         statistic: 'Average',
-        dataPointsToAlarm: 1,
+        dataPointsToAlarm: 2,
         comparisonOperator: 'GreaterThanUpperThreshold',
         missingDataTreatment: 'ignore',
       },
     },
-    {
-      tagKey: 'outbound-query-volume',
-      metricName: 'OutboundQueryAggregateVolume',
-      metricNamespace: 'AWS/Route53Resolver',
-      defaultCreate: true,
-      anomaly: false,
-      defaults: {
-        warningThreshold: 1500000,
-        criticalThreshold: 2000000,
-        period: 300,
-        evaluationPeriods: 1,
-        statistic: 'Sum',
-        dataPointsToAlarm: 1,
-        comparisonOperator: 'GreaterThanThreshold',
-        missingDataTreatment: 'ignore',
-      },
+  
+  // 12) DatabaseConnections - Anomaly (Instance Level)
+  {
+    tagKey: 'db-connections-anomaly-instance',
+    metricName: 'DatabaseConnections',
+    metricNamespace: 'AWS/RDS',
+    defaultCreate: true,
+    anomaly: true,
+    defaults: {
+      warningThreshold: 2,  
+      criticalThreshold: 7, 
+      period: 300,          
+      evaluationPeriods: 5,
+      statistic: 'Average',
+      dataPointsToAlarm: 4,
+      comparisonOperator: 'GreaterThanUpperThreshold',
+      missingDataTreatment: 'ignore',
     },
-    {
-      tagKey: 'outbound-query-volume-anomaly',
-      metricName: 'OutboundQueryAggregateVolume',
-      metricNamespace: 'AWS/Route53Resolver',
-      defaultCreate: false,
-      anomaly: true,
-      defaults: {
-        warningThreshold: null,
-        criticalThreshold: null,
-        period: 300,
-        evaluationPeriods: 1,
-        statistic: 'Average',
-        dataPointsToAlarm: 1,
-        comparisonOperator: 'GreaterThanUpperThreshold',
-        missingDataTreatment: 'ignore',
-      },
-    },
-  ],
+  },
+  
+    // 13) VolumeBytesUsed - Static  This would be dependent on storage
+    // const storageGiB = dbInstance.allocatedStorage ?? 100; // fallback if undefined
+    // const bytes = (gib: number) => gib * 1024 ** 3;
+    //{
+    //  tagKey: 'volume-used',
+    //  metricName: 'VolumeBytesUsed',
+    //  metricNamespace: 'AWS/RDS',
+    //  defaultCreate: false,
+    //  anomaly: false,
+    //  defaults: {
+    //    warningThreshold: bytes(storageGiB) * 0.75,
+    //    criticalThreshold: bytes(storageGiB) * 0.90,
+    //    period: 300,
+    //    evaluationPeriods: 2,
+    //    statistic: 'Average',
+    //    dataPointsToAlarm: 2,
+    //    comparisonOperator: 'GreaterThanThreshold',
+    //    missingDataTreatment: 'ignore',
+    // },
+   //},
+   
+   ],
+   
   // Owned by Harmony
   SNS: [
     // TODO Add alarms and get buy off from team lead on PR
