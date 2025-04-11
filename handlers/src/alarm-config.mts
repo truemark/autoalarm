@@ -990,7 +990,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
     // TODO Add alarms and get buy off from team lead on PR
   ],
   // Owned by DB Warden
-  // These all need to be evaluated as normal cluster level alerts would be AuroraReplicaLag, EngineUpTime, FailoverState, ReaderLag, and WriterLag 
+  // These all need to be evaluated as normal cluster level alerts would be AuroraReplicaLag, EngineUpTime, FailoverState, ReaderLag, and WriterLag
   RDSCluster: [
     // 1) DatabaseConnections - Anomaly
     {
@@ -1010,7 +1010,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         missingDataTreatment: 'ignore',
       },
     },
-  
+
     // 2) ReplicaLag - Static
     {
       tagKey: 'replica-lag',
@@ -1029,7 +1029,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         missingDataTreatment: 'ignore',
       },
     },
-  
+
     // 3) ReplicaLag - Anomaly
     {
       tagKey: 'replica-lag-anomaly',
@@ -1048,7 +1048,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         missingDataTreatment: 'ignore',
       },
     },
-  
+
     // 4) FailoverState - Static
     {
       tagKey: 'failover-state',
@@ -1067,7 +1067,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         missingDataTreatment: 'notBreaching',
       },
     },
-  
+
     // 5) EngineUptime - Static
     {
       tagKey: 'engine-uptime',
@@ -1107,7 +1107,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         missingDataTreatment: 'ignore',
       },
     },
-  
+
     // 2) DatabaseConnections - Anomaly
     {
       tagKey: 'db-connections-anomaly',
@@ -1126,7 +1126,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         missingDataTreatment: 'ignore',
       },
     },
-  
+
     // 3) DBLoad - Anomaly
     {
       tagKey: 'dbload-anomaly',
@@ -1145,7 +1145,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         missingDataTreatment: 'ignore',
       },
     },
-  
+
     // 4) FreeableMemory - Static  (Instance size matters)
     {
       tagKey: 'memory',
@@ -1164,8 +1164,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         missingDataTreatment: 'ignore',
       },
     },
-  
-  
+
     // 4a) FreeableMemory - Anomaly  (Instance size shouldn't matter)
     {
       tagKey: 'memory',
@@ -1184,7 +1183,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         missingDataTreatment: 'ignore',
       },
     },
-  
+
     // 5) WriteLatency - Static (Disk Type Matters)  -- Let's discuss these values
     {
       tagKey: 'write-latency',
@@ -1194,7 +1193,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       anomaly: false,
       defaults: {
         warningThreshold: 0.5, //0.01
-        criticalThreshold: 1.0,  //0.05
+        criticalThreshold: 1.0, //0.05
         period: 300,
         evaluationPeriods: 3,
         statistic: 'Average',
@@ -1203,8 +1202,8 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         missingDataTreatment: 'ignore',
       },
     },
-  
-    // 5a) WriteLatency - Anomaly 
+
+    // 5a) WriteLatency - Anomaly
     {
       tagKey: 'memory',
       metricName: 'WriteLatency',
@@ -1222,7 +1221,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         missingDataTreatment: 'ignore',
       },
     },
-  
+
     // 6) ReadLatency - Static  (Disk Type Matters, ie. gp2, gp3, io1, io2, aurora)  --Lets discuss these threshold values
     {
       tagKey: 'read-latency',
@@ -1231,7 +1230,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaultCreate: true,
       anomaly: false,
       defaults: {
-        warningThreshold: 1.0,  //0.01
+        warningThreshold: 1.0, //0.01
         criticalThreshold: 2.0, //0.02
         period: 300,
         evaluationPeriods: 3,
@@ -1241,7 +1240,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         missingDataTreatment: 'ignore',
       },
     },
-  
+
     // 7) SwapUsage - Static
     {
       tagKey: 'swap-usage',
@@ -1250,8 +1249,8 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaultCreate: true,
       anomaly: false,
       defaults: {
-        warningThreshold: 100000000, 
-        criticalThreshold: 256000000, 
+        warningThreshold: 100000000,
+        criticalThreshold: 256000000,
         period: 300,
         evaluationPeriods: 3,
         statistic: 'Average',
@@ -1260,7 +1259,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         missingDataTreatment: 'ignore',
       },
     },
-  
+
     // 8) DatabaseDeadlocks - Static
     {
       tagKey: 'deadlocks',
@@ -1279,7 +1278,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         missingDataTreatment: 'ignore',
       },
     },
-  
+
     // 9) DiskQueueDepth - Static  (These should be set by disk type???)
     {
       tagKey: 'disk-queue-depth',
@@ -1288,8 +1287,8 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaultCreate: true,
       anomaly: false,
       defaults: {
-        warningThreshold: 5, 
-        criticalThreshold: 15, 
+        warningThreshold: 5,
+        criticalThreshold: 15,
         period: 300,
         evaluationPeriods: 3,
         statistic: 'Maximum',
@@ -1298,7 +1297,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         missingDataTreatment: 'ignore',
       },
     },
-  
+
     // 10) ReadThroughput - Anomaly
     {
       tagKey: 'read-throughput-anomaly',
@@ -1317,7 +1316,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         missingDataTreatment: 'ignore',
       },
     },
-  
+
     // 11) WriteThroughput - Anomaly
     {
       tagKey: 'write-throughput-anomaly',
@@ -1336,26 +1335,26 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         missingDataTreatment: 'ignore',
       },
     },
-  
-  // 12) DatabaseConnections - Anomaly (Instance Level)
-  {
-    tagKey: 'db-connections-anomaly-instance',
-    metricName: 'DatabaseConnections',
-    metricNamespace: 'AWS/RDS',
-    defaultCreate: true,
-    anomaly: true,
-    defaults: {
-      warningThreshold: 2,  
-      criticalThreshold: 7, 
-      period: 300,          
-      evaluationPeriods: 5,
-      statistic: 'Average',
-      dataPointsToAlarm: 4,
-      comparisonOperator: 'GreaterThanUpperThreshold',
-      missingDataTreatment: 'ignore',
+
+    // 12) DatabaseConnections - Anomaly (Instance Level)
+    {
+      tagKey: 'db-connections-anomaly-instance',
+      metricName: 'DatabaseConnections',
+      metricNamespace: 'AWS/RDS',
+      defaultCreate: true,
+      anomaly: true,
+      defaults: {
+        warningThreshold: 2,
+        criticalThreshold: 7,
+        period: 300,
+        evaluationPeriods: 5,
+        statistic: 'Average',
+        dataPointsToAlarm: 4,
+        comparisonOperator: 'GreaterThanUpperThreshold',
+        missingDataTreatment: 'ignore',
+      },
     },
-  },
-  
+
     // 13) VolumeBytesUsed - Static  This would be dependent on storage
     // const storageGiB = dbInstance.allocatedStorage ?? 100; // fallback if undefined
     // const bytes = (gib: number) => gib * 1024 ** 3;
@@ -1375,9 +1374,8 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
     //    comparisonOperator: 'GreaterThanThreshold',
     //    missingDataTreatment: 'ignore',
     // },
-   //},
-   
-   ],
+    //},
+  ],
 
   // Owned by Harmony
   SNS: [
