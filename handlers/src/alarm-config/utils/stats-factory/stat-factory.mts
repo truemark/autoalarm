@@ -69,11 +69,6 @@ export const StatFactory = {
     p: (percentile: number) => Stats.p(percentile),
 
     /**
-     * Alias for `p`.
-     */
-    percentile: (percentile: number) => Stats.percentile(percentile),
-
-    /**
      * Trimmed mean statistic. Removes extreme data points outside specified percentile bounds.
      *
      * Accepts one or two parameters:
@@ -87,11 +82,6 @@ export const StatFactory = {
      * ```
      */
     tm: (p1: number, p2?: number) => Stats.tm(p1, p2),
-
-    /**
-     * Alias for `tm`.
-     */
-    trimmedMean: (p1: number, p2?: number) => Stats.trimmedMean(p1, p2),
 
     /**
      * Winsorized mean statistic. Values beyond the percentile bounds are replaced with
@@ -108,11 +98,6 @@ export const StatFactory = {
     wm: (p1: number, p2?: number) => Stats.wm(p1, p2),
 
     /**
-     * Alias for `wm`.
-     */
-    winsorizedMean: (p1: number, p2?: number) => Stats.winsorizedMean(p1, p2),
-
-    /**
      * Trimmed count statistic. Counts number of data points within specified percentiles.
      *
      * @example
@@ -122,11 +107,6 @@ export const StatFactory = {
      * ```
      */
     tc: (p1: number, p2?: number) => Stats.tc(p1, p2),
-
-    /**
-     * Alias for `tc`.
-     */
-    trimmedCount: (p1: number, p2?: number) => Stats.trimmedCount(p1, p2),
 
     /**
      * Trimmed sum statistic. Sum of data points within given percentile bounds.
@@ -139,10 +119,6 @@ export const StatFactory = {
      */
     ts: (p1: number, p2?: number) => Stats.ts(p1, p2),
 
-    /**
-     * Alias for `ts`.
-     */
-    trimmedSum: (p1: number, p2?: number) => Stats.trimmedSum(p1, p2),
 
     /**
      * Percentile rank statistic. Reports percentage of data points falling within absolute-value bounds.
@@ -159,9 +135,7 @@ export const StatFactory = {
      */
     pr: (v1: number, v2?: number) => Stats.pr(v1, v2),
 
-    /**
-     * Alias for `pr`.
-     */
-    percentileRank: (v1: number, v2?: number) => Stats.percentileRank(v1, v2),
   },
 } as const;
+
+

@@ -1,18 +1,31 @@
 import {TreatMissingData} from 'aws-cdk-lib/aws-cloudwatch';
-import {ComparisonOperator, MetricAlarm, Statistic} from '@aws-sdk/client-cloudwatch';
+import {
+  ComparisonOperator,
+  MetricAlarm,
+  Statistic,
+} from '@aws-sdk/client-cloudwatch';
+import {StatFactory} from "#stats-factory/stat-factory.mjs";
 
 //=============================================================================
 // Statistic Typing
 //=============================================================================
-//
-//----------------------------------------\Extended Statistic Helper Types/-------------------------------------------//
+
+/**
+ * Type representing valid percentile statistics string literals.
+ */
 type PercentileStat = `p${number}`;
 
+/**
+ * Type representing valid percentile rank statistics string literals.
+ */
 type PercentileRankStat =
   | `PR(${number}:${number})`
   | `PR(:${number})`
   | `PR(${number}:)`;
 
+/**
+ * Type representing valid trimmed mean statistics string literals.
+ */
 type TrimmedMeanStat =
   | `tm${number}`
   | `TM(${number}%:${number}%)`
@@ -22,6 +35,9 @@ type TrimmedMeanStat =
   | `TM(:${number})`
   | `TM(${number}:)`;
 
+/**
+ * Type representing valid winsorized mean statistics string literals.
+ */
 type WinsorizedMeanStat =
   | `wm${number}`
   | `WM(${number}%:${number}%)`
@@ -31,6 +47,9 @@ type WinsorizedMeanStat =
   | `WM(:${number})`
   | `WM(${number}:)`;
 
+/**
+ * Type representing valid trimmed count statistics string literals.
+ */
 type TrimmedCountStat =
   | `tc${number}`
   | `TC(${number}%:${number}%)`
@@ -40,6 +59,9 @@ type TrimmedCountStat =
   | `TC(:${number})`
   | `TC(${number}:)`;
 
+/**
+ * Type representing valid trimmed sum statistics string literals.
+ */
 type TrimmedSumStat =
   | `ts${number}`
   | `TS(${number}%:${number}%)`
@@ -49,8 +71,21 @@ type TrimmedSumStat =
   | `TS(:${number})`
   | `TS(${number}:)`;
 
+/**
+ * Type representing valid interquartile mean statistics string literals.
+ */
 type IQMStat = 'IQM';
-//----------------------------------------\Extended Statistic Helper Types - END/-------------------------------------------//
+
+/**
+ * Type representing valid extended statistics string literals.
+ */
+export type ValidExtendedStatKey = keyof typeof StatFactory.Extended
+
+/**
+ * Type representing valid standard statistics string literals.
+ */
+export type StandardStatKey = keyof typeof StatFactory.Standard
+
 
 /**
  * Represents valid string-format patterns for AWS CloudWatch Extended Statistics.
@@ -60,6 +95,7 @@ type IQMStat = 'IQM';
  *
  * Includes the following extended statistic patterns:
  *
+ * - Interquartile Mean (`IQM`): Mean of the middle 50% of data points.
  * - Percentiles (`p90`): Simple percentile-based statistics.
  * - Trimmed Mean (`tm90`, `TM(10%:90%)`): Statistical average computed by trimming outlier data points beyond specified percentile bounds.
  * - Winsorized Mean (`wm90`, `WM(10%:90%)`): Modified average where data outside of bounds are clamped, not discarded.
@@ -109,7 +145,7 @@ export type ValidExtendedStat =
  * @see {@link StatFactory.Standard} Object containing the standard statistic constants
  *
  */
-export type StandardStat = Statistic; // "SampleCount" | "Average" | "Sum" | "Minimum" | "Maximum"
+export type ValidStandardStat = Statistic; // "SampleCount" | "Average" | "Sum" | "Minimum" | "Maximum"
 
 /**
  * Represents all valid AWS CloudWatch statistics that can be used when interacting with AWS CloudWatch APIs.
@@ -127,7 +163,8 @@ export type StandardStat = Statistic; // "SampleCount" | "Average" | "Sum" | "Mi
  *   Simple percentile metrics indicating relative standing in the dataset.
  *   - Example: `"p90"` (90th percentile, 90% of data points are lower)
  *
- * - `"IQM"` - Interquartile Mean: trimmed mean calculated from the middle 50% of observed data points; equivalent to `TM(25%:75%)`.
+ * - **IQM**
+ *   - Interquartile Mean: trimmed mean calculated from the middle 50% of observed data points; equivalent to `TM(25%:75%)`.
  *
  * - **Trimmed Mean (`tm` and `TM`)**
  *   Mean of data points within defined percent-based or numeric boundaries.
@@ -187,12 +224,12 @@ export type StandardStat = Statistic; // "SampleCount" | "Average" | "Sum" | "Mi
  * ---
  *
  * @see {@link StatFactory} Object containing methods to generate statistic strings
- * @see {@link StandardStat} Type for standard statistics
+ * @see {@link ValidStandardStat} Type for standard statistics
  * @see {@link ValidExtendedStat} Type for extended statistics
  * @see {@link https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Statistics-definitions.html} AWS
  * definitions and documentation for statistics
  */
-export type ValidStatistic = StandardStat | ValidExtendedStat;
+export type ValidStatistic = ValidStandardStat | ValidExtendedStat;
 
 //=============================================================================
 // Missing Data Treatment Typing
@@ -227,7 +264,8 @@ export type ValidStatistic = StandardStat | ValidExtendedStat;
  * @see {@link https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.aws_cloudwatch.TreatMissingData.html}
  * @see {@link https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html}
  */
-export type MissingDataTreatment = TreatMissingData[keyof TreatMissingData] & MetricAlarm['TreatMissingData'];
+export type MissingDataTreatment = TreatMissingData[keyof TreatMissingData] &
+  MetricAlarm['TreatMissingData'];
 
 //=============================================================================
 // Metric Alarm Options and Config Interfaces
@@ -376,5 +414,3 @@ export interface MetricAlarmConfig {
 
 export interface MetricAlarmConfigs
   extends Record<string, MetricAlarmConfig[]> {}
-
-

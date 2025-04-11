@@ -15,9 +15,10 @@
  * Stats.SUM;         // "Sum"
  * Stats.MINIMUM;     // "Minimum"
  * Stats.MAXIMUM;     // "Maximum"
- * Stats.IQM;        // "IQM"
  *
  * // Extended Statistics (both long and short forms of stats supported and can be used interchangeably for both single and double value function calls):
+ *
+ *   Stats.IQM;        // "IQM"
  *
  * // Simple percentiles
  *   Stats.percentile(90); // "p90"
@@ -54,12 +55,14 @@ export abstract class Stats {
   static readonly SUM = 'Sum';
   static readonly MINIMUM = 'Minimum';
   static readonly MAXIMUM = 'Maximum';
-  static readonly IQM = 'IQM';
+  static iqm(): string {
+    return 'IQM';
+  }
 
   /**
    * Percentiles are specified as pXX, e.g., "p90" for 90th percentile.
    */
-  static percentile(percentile: number): string {
+  static p(percentile: number): string {
     if (percentile <= 0 || percentile > 100) {
       throw new Error('Percentile must be between 0 and 100 (exclusive).');
     }
@@ -67,17 +70,10 @@ export abstract class Stats {
   }
 
   /**
-   * Alias for percentile method.
-   */
-  static p(percentile: number): string {
-    return this.percentile(percentile);
-  }
-
-  /**
    * Trimmed mean or TM, specified as TM(X%:Y%) or tmXX.
    * If only one argument is given, it defaults to lower 0%.
    */
-  static trimmedMean(p1?: number, p2?: number): string {
+  static tm(p1?: number, p2?: number): string {
     if (p1 !== undefined && p2 === undefined) {
       if (p1 <= 0 || p1 >= 100)
         throw new Error(
@@ -92,17 +88,10 @@ export abstract class Stats {
   }
 
   /**
-   * Alias for trimmedMean method.
-   */
-  static tm(p1: number, p2?: number): string {
-    return this.trimmedMean(p1, p2);
-  }
-
-  /**
    * Winsorized mean or WM, uses format WM(X%:Y%) or wmXX.
    * If only one argument is given, it defaults to lower 0%.
    */
-  static winsorizedMean(p1: number, p2?: number): string {
+  static wm(p1: number, p2?: number): string {
     if (p2 === undefined) {
       if (p1 <= 0 || p1 > 100) {
         throw new Error(
@@ -117,17 +106,10 @@ export abstract class Stats {
   }
 
   /**
-   * Alias for winsorizedMean method.
-   */
-  static wm(p1: number, p2?: number): string {
-    return this.winsorizedMean(p1, p2);
-  }
-
-  /**
    * Trimmed count or TC, uses format TC(X%:Y%) or tcXX.
    * If only one argument is given, it defaults to lower 0%.
    */
-  static trimmedCount(p1: number, p2?: number): string {
+  static tc(p1: number, p2?: number): string {
     if (p2 === undefined) {
       if (p1 <= 0 || p1 > 100) {
         throw new Error(
@@ -142,17 +124,10 @@ export abstract class Stats {
   }
 
   /**
-   * Alias for trimmedCount method.
-   */
-  static tc(p1: number, p2?: number): string {
-    return this.trimmedCount(p1, p2);
-  }
-
-  /**
    * Trimmed sum or TS, uses format TS(X%:Y%) or tsXX.
    * If only one argument is given, it defaults to lower 0%.
    */
-  static trimmedSum(p1: number, p2?: number): string {
+  static ts(p1: number, p2?: number): string {
     if (p2 === undefined) {
       if (p1 <= 0 || p1 > 100) {
         throw new Error(
@@ -167,17 +142,10 @@ export abstract class Stats {
   }
 
   /**
-   * Alias for trimmedSum method.
-   */
-  static ts(p1: number, p2?: number): string {
-    return this.trimmedSum(p1, p2);
-  }
-
-  /**
    * Percentile Rank or PR, specified with absolute values: PR(n:m).
    * Single number returns PR(0:v1).
    */
-  static percentileRank(v1: number, v2?: number): string {
+  static pr(v1: number, v2?: number): string {
     if (v2 === undefined) {
       return `PR(0:${v1})`;
     } else {
@@ -188,13 +156,6 @@ export abstract class Stats {
       }
       return `PR(${v1}:${v2})`;
     }
-  }
-
-  /**
-   * Alias for percentileRank method.
-   */
-  static pr(v1: number, v2?: number): string {
-    return this.percentileRank(v1, v2);
   }
 
   /**

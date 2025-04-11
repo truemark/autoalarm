@@ -3,10 +3,13 @@ import {
   MetricAlarmOptions,
   MetricAlarmConfigs,
   ValidStatistic,
-} from '#types/alarm-config-types.mjs'
-import { StatFactory } from '#stats-factory/stat-factory.mjs';
-import { ComparisonOperator } from '@aws-sdk/client-cloudwatch';
-
+  ValidExtendedStat,
+  ValidExtendedStatKey,
+  ValidStandardStat,
+  StandardStatKey,
+} from '#types/alarm-config-types.mjs';
+import {StatFactory} from '#stats-factory/stat-factory.mjs';
+import {ComparisonOperator} from '@aws-sdk/client-cloudwatch';
 
 export function metricAlarmOptionsToString(value: MetricAlarmOptions): string {
   return (
@@ -62,56 +65,154 @@ function parseIntegerOption(value: string, defaultValue: number): number {
   return parsedValue;
 }
 
-function parseStatisticOption2(
-  value: ValidStatistic,
-  defaultValue: ValidStatistic,
-): string {
-  const regexp = /^p.*|^tm.*|^tc.*|^ts.*|^wm.*|^iqm$/;
-  const statistics = ['SampleCount', 'Average', 'Sum', 'Minimum', 'Maximum'];
-  const statisticsRecord: Record<string, string> = {};
-  for (const statistic of statistics) {
-    statisticsRecord[statistic.toLowerCase()] = statistic;
-  }
-  const trimmed: string = value.trim().toLowerCase();
+//function parseStatisticOption2(
+//  value: ValidStatistic,
+//  defaultValue: ValidStatistic,
+//): string {
+//  const regexp = /^p.*|^tm.*|^tc.*|^ts.*|^wm.*|^iqm$/;
+//  const statistics = ['SampleCount', 'Average', 'Sum', 'Minimum', 'Maximum'];
+//  const statisticsRecord: Record<string, string> = {};
+//  for (const statistic of statistics) {
+//    statisticsRecord[statistic.toLowerCase()] = statistic;
+//  }
+//  const trimmed: string = value.trim().toLowerCase();
+//
+//  if (trimmed === '') {
+//    return defaultValue;
+//  }
+//  if (statisticsRecord[trimmed]) {
+//    return statisticsRecord[trimmed];
+//  }
+//  if (trimmed.match(regexp)) {
+//    return trimmed;
+//  }
+//  return defaultValue;
+//}
 
-  if (trimmed === '') {
-    return defaultValue;
+/**
+ * Helper unction to parse an  Extended statistic option from a string value.
+ * Used in {@link parseStatisticOption}
+ * @note statExpression is passed in trimmed and toLowerCase from parseStatisticOption
+ * @param  - The string value representing the statistic.
+ * @returns A ValidExtendedStat via StatFactory.Extended build methods or undefined.
+ */
+function extendedStatsBuilder(
+  statExpression: string,
+): ValidExtendedStat | undefined {
+  /**Quick Check to see if the passed value is IQM as this has no parameters and is an easy return*/
+  if (statExpression === 'iqm') {
+    return StatFactory.Extended.iqm; //Build typesafe IQM statistic
   }
-  if (statisticsRecord[trimmed]) {
-    return statisticsRecord[trimmed];
+
+  /**
+   * Quickly grab Extended Stat prefix which should match with a valid StatFactory method see {@link StatFactory.Extended}
+   * Check for p: percentile stat as this is the only single letter prefix - Everything else is two letters.
+   */
+  const statPrefix =
+    statExpression[0] === 'p'
+      ? statExpression[0]
+      : statExpression.substring(0, 2);
+
+  /**
+   * Early validation that statPrefix === keyof StatFactory.Extended
+   * If we can't match a key in StatFactory.Extended, early return undefined
+   */
+  if (
+    !Object.keys(StatFactory.Extended).some(
+      (key) => key.toLowerCase() === statPrefix,
+    )
+  ) {
+    return undefined;
   }
-  if (trimmed.match(regexp)) {
-    return trimmed;
+
+  /**
+   * Extract parameters from string for StatFactory.Extended methods used later to build a ValidExtendedStat
+   *  - Split off prefix (eg "p90" to "90", tm(90:100) to "90:100")
+   *  - Remove parentheses and percent signs to get raw number values if they exist.
+   *  - Split the parameters by ':' or ',', and validate valid integer values in the string array
+   */
+  const params = statExpression
+    .substring(statPrefix.length)
+    .replace(/[()%]/g, '') // Remove parenthesis and percent signs
+    .split(/[,:]+/) // Split the parameters by ':' or ','
+    .map((s) => Number(s)); // validate valid integer values in the string array. If not, values are isNaN
+
+  // Validate that params is not empty no more than two values and does not contain isNaN values. If so return undefined
+  if (params.length === 0 || params.length > 2 || params.some(isNaN)) {
+    return undefined;
   }
-  return defaultValue;
+
+  // At this point, we have a valid prefix and integer parameters. Try to build the extended statistic
+  try {
+    // Use StatFactory to build and return a typesafe Extended Statistic
+    // Let StatFactory handle the validation of the parameters and errors
+    return StatFactory.Extended[statPrefix as ValidExtendedStatKey](...params);
+  } catch (error) {
+    // If an error occurs during building, return undefined
+    return undefined;
+  }
 }
 
+/**
+ * Helper function to build a standard statistic from a string expression
+ * Used in {@link parseStatisticOption}
+ * @note statExpression is passed in trimmed and toLowerCase from parseStatisticOption
+ * @param statExpression
+ * @returns ValidStandardStat via StatFactory.Standard build methods or  undefined
+ */
+function standardStatsBuilder(
+  statExpression: string,
+): ValidStandardStat | undefined {
+  // Locate the standard statistic key in the StatFactory.Standard object if it exists
+  const standardStatKey = Object.keys(StatFactory.Standard).find(
+    (K) => K.toLowerCase() === statExpression,
+  );
+
+  // Use StatFactory to build and return a typesafe Standard Statistic
+  if (standardStatKey) {
+    return StatFactory.Standard[standardStatKey as StandardStatKey];
+  }
+
+  // If the standard statistic key is not found, return undefined
+  return undefined;
+}
+
+/**
+ * Main Statistic parsing function that handles both standard and extended statistics.
+ *  - First checks if the value is a standard statistic:
+ *  - If so, it builds a ValidStandardStat using the standardStatsBuilder function via StatFactory.Standard methods
+ *  - If not, it tries to build a ValidExtendedStat {@link ValidExtendedStat} using the extendedStatsBuilder function via
+ *    StatFactory.Extended methods
+ *  - If neither works, it returns the default value.
+ * @param  - The string value representing the statistic.
+ * @param defaultValue - The default value to return if parsing fails.
+ * @returns A ValidStatistic object representing the parsed statistic.
+ */
 function parseStatisticOption(
   value: string,
   defaultValue: ValidStatistic,
 ): ValidStatistic {
   // Normalize the input value
-  const trimmed: unknown = value.trim().toLowerCase();
+  const trimmed = value.trim().toLowerCase();
 
-  const sStat: unknown | undefined = Object.keys(
-    StatFactory.Standard,
-  ).find(K => K.toLowerCase() === trimmed)
-    ? K satisfies StatFactory.Standard
-    : undefined;
+  // Check if it's a standard stat first
+  if (
+    Object.keys(StatFactory.Standard).some((k) => k.toLowerCase() === trimmed)
+  ) {
+    const standardStat = standardStatsBuilder(trimmed);
+    if (standardStat) {
+      return standardStat; //return a typesafe Standard Statistic from StatFactory.Standard key values
+    }
+  }
 
-  // parse trimmed value to catch any unormalized values
-  const parts = [...value.trim()];
-  console.log(parts);
-  // TODO: grab indices 0 and 1 to check for Extended.
-  //  parse through values, filter out any non alphanumeric values
-  //  use satisfies to check rebuilt stat with our Valid Statistic and extended stat types
-  //  if newly built statistic matches a type, build it with StatFactory and return it.
+  // If not a valid standard stat, try extended stat
+  const extendedStat = extendedStatsBuilder(trimmed);
+  if (extendedStat) {
+    return extendedStat; //return a typesafe Extended Statistic from StatFactory.Extended methods
+  }
 
-  return sStat
-    ? StatFactory.Standard.standardStat // if standardStat matches, return the StandardStatistic
-    : trimmed
-      ? (trimmed satisfies ValidStatistic) //For testing only
-      : defaultValue;
+  // If neither worked, return the default value
+  return defaultValue;
 }
 
 function parseComparisonOperatorOption(
@@ -119,13 +220,21 @@ function parseComparisonOperatorOption(
   defaultValue: ComparisonOperator,
 ): ComparisonOperator {
   // Normalize the input value
-const trimmed: unknown  = value.trim().toLowerCase();
+  const trimmed: string = value.trim().toLowerCase();
 
-//attempt to match the trimmed value to the valid comparison operator
+  // Check if it's a valid comparison operator
+  const validOperator = Object.keys(ComparisonOperator).find(
+    (operator) => operator.toLowerCase() === trimmed,
+  );
 
+  // If it's a valid operator, return it
+  if (validOperator) {
+    return validOperator as ComparisonOperator;
+  }
 
+  // If not a valid comparison operator, return the default value
+  return defaultValue;
 }
-
 
 function parseMissingDataTreatmentOption(
   value: string,
@@ -186,15 +295,18 @@ export function parseMetricAlarmOptions(
         : defaults.dataPointsToAlarm,
     comparisonOperator:
       parts.length > 6
-        ? parseComparisonOperatorOption(parts[6], defaults.comparisonOperator) satisfies ComparisonOperator
-        : defaults.comparisonOperator satisfies ComparisonOperator,
+        ? (parseComparisonOperatorOption(
+            parts[6],
+            defaults.comparisonOperator,
+          ) satisfies ComparisonOperator)
+        : (defaults.comparisonOperator satisfies ComparisonOperator),
     missingDataTreatment:
       parts.length > 7
-        ? parseMissingDataTreatmentOption(
+        ? (parseMissingDataTreatmentOption(
             parts[7],
             defaults.missingDataTreatment,
-          ) satisfies MissingDataTreatment
-        : defaults.missingDataTreatment satisfies MissingDataTreatment,
+          ) satisfies MissingDataTreatment)
+        : (defaults.missingDataTreatment satisfies MissingDataTreatment),
   };
 }
 
