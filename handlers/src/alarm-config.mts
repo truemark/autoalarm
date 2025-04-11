@@ -1175,7 +1175,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       anomaly: true,
       defaults: {
         warningThreshold: 2,
-        criticalThreshold: 4,
+        criticalThreshold: 7,
         period: 300,
         evaluationPeriods: 5,
         statistic: 'Average',
@@ -1185,7 +1185,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
   
-    // 5) WriteLatency - Static (Disk Type Matters)
+    // 5) WriteLatency - Static (Disk Type Matters)  -- Let's discuss these values
     {
       tagKey: 'write-latency',
       metricName: 'WriteLatency',
@@ -1193,8 +1193,8 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaultCreate: true,
       anomaly: false,
       defaults: {
-        warningThreshold: 0.01,
-        criticalThreshold: 0.05,
+        warningThreshold: 0.5, //0.01
+        criticalThreshold: 1.0,  //0.05
         period: 300,
         evaluationPeriods: 3,
         statistic: 'Average',
@@ -1223,7 +1223,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
   
-    // 6) ReadLatency - Static  (Disk Type Matters, ie. gp2, gp3, io1, io2, aurora)
+    // 6) ReadLatency - Static  (Disk Type Matters, ie. gp2, gp3, io1, io2, aurora)  --Lets discuss these threshold values
     {
       tagKey: 'read-latency',
       metricName: 'ReadLatency',
@@ -1231,8 +1231,8 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       defaultCreate: true,
       anomaly: false,
       defaults: {
-        warningThreshold: 0.01,
-        criticalThreshold: 0.02,
+        warningThreshold: 1.0,  //0.01
+        criticalThreshold: 2.0, //0.02
         period: 300,
         evaluationPeriods: 3,
         statistic: 'Average',
@@ -1253,7 +1253,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         warningThreshold: 100000000, 
         criticalThreshold: 256000000, 
         period: 300,
-        evaluationPeriods: 2,
+        evaluationPeriods: 3,
         statistic: 'Average',
         dataPointsToAlarm: 2,
         comparisonOperator: 'GreaterThanThreshold',
@@ -1291,7 +1291,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         warningThreshold: 5, 
         criticalThreshold: 15, 
         period: 300,
-        evaluationPeriods: 2,
+        evaluationPeriods: 3,
         statistic: 'Maximum',
         dataPointsToAlarm: 2,
         comparisonOperator: 'GreaterThanThreshold',
@@ -1310,9 +1310,9 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         warningThreshold: 2,
         criticalThreshold: 7,
         period: 300,
-        evaluationPeriods: 3,
+        evaluationPeriods: 5,
         statistic: 'Average',
-        dataPointsToAlarm: 2,
+        dataPointsToAlarm: 4,
         comparisonOperator: 'GreaterThanUpperThreshold',
         missingDataTreatment: 'ignore',
       },
@@ -1329,9 +1329,9 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         warningThreshold: 2,
         criticalThreshold: 7,
         period: 300,
-        evaluationPeriods: 3,
+        evaluationPeriods: 5,
         statistic: 'Average',
-        dataPointsToAlarm: 2,
+        dataPointsToAlarm: 4,
         comparisonOperator: 'GreaterThanUpperThreshold',
         missingDataTreatment: 'ignore',
       },
