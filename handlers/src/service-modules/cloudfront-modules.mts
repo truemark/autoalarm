@@ -17,10 +17,8 @@ import {
   CloudWatchClient,
   DeleteAlarmsCommand,
 } from '@aws-sdk/client-cloudwatch';
-import {
-  AlarmConfigs,
-  parseMetricAlarmOptions,
-} from '#cloudwatch-alarm-utils/alarm-config.mjs';
+import {parseMetricAlarmOptions} from '#cloudwatch-alarm-utils/alarm-config.mjs';
+import {AlarmConfigs} from '#alarms/_index.mjs';
 
 const log: logging.Logger = logging.getLogger('cloudfront-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -35,7 +33,7 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   retryStrategy: retryStrategy,
 });
 
-const metricConfigs = AlarmConfigs['CloudFront'];
+const metricConfigs = AlarmConfigs.CLOUDFRONT;
 
 export async function fetchCloudFrontTags(
   distributionArn: string,

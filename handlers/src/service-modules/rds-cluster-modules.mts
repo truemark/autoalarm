@@ -14,10 +14,9 @@ import {
   CloudWatchClient,
   DeleteAlarmsCommand,
 } from '@aws-sdk/client-cloudwatch';
-import {
-  AlarmConfigs,
-  parseMetricAlarmOptions,
-} from '#cloudwatch-alarm-utils/alarm-config.mjs';
+import {parseMetricAlarmOptions} from '#cloudwatch-alarm-utils/alarm-config.mjs';
+
+import {AlarmConfigs} from '#alarms/_index.mjs';
 
 const log: logging.Logger = logging.getLogger('rds-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -31,7 +30,7 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   retryStrategy: retryStrategy,
 });
 
-const metricConfigs = AlarmConfigs['RDSCluster'];
+const metricConfigs = AlarmConfigs.RDS_CLUSTER;
 
 export async function fetchRDSClusterTags(
   dbClusterId: string,

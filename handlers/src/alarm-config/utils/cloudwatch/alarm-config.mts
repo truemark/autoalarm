@@ -1,7 +1,6 @@
 import {
   MissingDataTreatment,
   MetricAlarmOptions,
-  MetricAlarmConfigs,
   ValidStatistic,
   ValidExtendedStat,
   ValidStandardStat,
@@ -236,5 +235,3 @@ export function parseMetricAlarmOptions(
         : (defaults.missingDataTreatment satisfies MissingDataTreatment),
   };
 }
-
-export const AlarmConfigs: MetricAlarmConfigs = {};

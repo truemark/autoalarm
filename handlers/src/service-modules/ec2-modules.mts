@@ -21,10 +21,8 @@ import {
   handleStaticAlarms,
   massDeleteAlarms,
 } from '#cloudwatch-alarm-utils/alarm-tools.mjs';
-import {
-  AlarmConfigs,
-  parseMetricAlarmOptions,
-} from '#cloudwatch-alarm-utils/alarm-config.mjs';
+import {parseMetricAlarmOptions} from '#cloudwatch-alarm-utils/alarm-config.mjs';
+import {AlarmConfigs} from '#alarms/_index.mjs';
 import {
   batchPromRulesDeletion,
   batchUpdatePromRules,
@@ -300,7 +298,7 @@ async function checkAndManageStatusAlarm(instanceId: string, tags: Tag) {
   }
 }
 
-const metricConfigs = AlarmConfigs['EC2'];
+const metricConfigs = AlarmConfigs.EC2;
 
 export async function fetchInstanceTags(
   instanceId: string,
