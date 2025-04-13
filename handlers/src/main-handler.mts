@@ -42,8 +42,10 @@ async function processEC2Event(events: any[]): Promise<void> {
         state: state,
       });
     } else if (
-      (ServiceModules.EC2.deadStates.has(state) && tags['autoalarm:enabled'] === 'false') ||
-      (tags['autoalarm:enabled'] === 'true' && ServiceModules.EC2.deadStates.has(state)) ||
+      (ServiceModules.EC2.deadStates.has(state) &&
+        tags['autoalarm:enabled'] === 'false') ||
+      (tags['autoalarm:enabled'] === 'true' &&
+        ServiceModules.EC2.deadStates.has(state)) ||
       !tags['autoalarm:enabled']
     ) {
       inactiveInstancesInfoArray.push({
@@ -55,12 +57,16 @@ async function processEC2Event(events: any[]): Promise<void> {
     // checking our liveStates set to see if the instance is in a state that we should be managing alarms for.
     // we are iterating over the AlarmClassification enum to manage alarms for each classification: 'Critical'|'Warning'.
     if (activeInstancesInfoArray.length > 0) {
-      await ServiceModules.EC2.manageActiveEC2InstanceAlarms(activeInstancesInfoArray);
+      await ServiceModules.EC2.manageActiveEC2InstanceAlarms(
+        activeInstancesInfoArray,
+      );
     }
 
     // If the instance is in a state that we should not be managing alarms for, we will remove the alarms.
     if (inactiveInstancesInfoArray.length > 0) {
-      await ServiceModules.EC2.manageInactiveInstanceAlarms(inactiveInstancesInfoArray);
+      await ServiceModules.EC2.manageInactiveInstanceAlarms(
+        inactiveInstancesInfoArray,
+      );
     }
   }
 }
@@ -71,7 +77,8 @@ async function processEC2TagEvent(events: any[]) {
   const activeInstancesInfoArray: EC2AlarmManagerArray = [];
   const inactiveInstancesInfoArray: EC2AlarmManagerArray = [];
   for (const event of events) {
-    const {instanceId, state} = await ServiceModules.EC2.getEC2IdAndState(event);
+    const {instanceId, state} =
+      await ServiceModules.EC2.getEC2IdAndState(event);
     const tags = await ServiceModules.EC2.fetchInstanceTags(instanceId);
     if (tags['autoalarm:enabled'] === 'false') {
       inactiveInstancesInfoArray.push({
@@ -118,7 +125,9 @@ async function processEC2TagEvent(events: any[]) {
 
   if (activeInstancesInfoArray.length > 0) {
     try {
-      await ServiceModules.EC2.manageActiveEC2InstanceAlarms(activeInstancesInfoArray);
+      await ServiceModules.EC2.manageActiveEC2InstanceAlarms(
+        activeInstancesInfoArray,
+      );
     } catch (error) {
       log.error().err(error).msg('Error managing active EC2 instance alarms');
       throw new Error('Error managing active EC2 instance alarms');
@@ -127,7 +136,9 @@ async function processEC2TagEvent(events: any[]) {
 
   if (inactiveInstancesInfoArray.length > 0) {
     try {
-      await ServiceModules.EC2.manageInactiveInstanceAlarms(inactiveInstancesInfoArray);
+      await ServiceModules.EC2.manageInactiveInstanceAlarms(
+        inactiveInstancesInfoArray,
+      );
     } catch (error) {
       log.error().err(error).msg('Error managing inactive EC2 instance alarms');
       throw new Error('Error managing inactive EC2 instance alarms');

@@ -30,7 +30,10 @@ import {
   batchUpdatePromRules,
   queryPrometheusForService,
 } from '#prometheus-alarm-utils/prometheus-tools.mjs';
-import {MetricAlarmConfig, MetricAlarmOptions} from '#types/alarm-config-types.mjs'
+import {
+  MetricAlarmConfig,
+  MetricAlarmOptions,
+} from '#types/alarm-config-types.mjs';
 
 const log: logging.Logger = logging.getLogger('ec2-modules');
 export const prometheusWorkspaceId: string =

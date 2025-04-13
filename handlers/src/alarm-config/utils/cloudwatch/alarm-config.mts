@@ -9,8 +9,10 @@ import {
 import * as v from 'valibot';
 import {TreatMissingData} from 'aws-cdk-lib/aws-cloudwatch';
 import {ComparisonOperator, Statistic} from '@aws-sdk/client-cloudwatch';
-import {rangePatternSchema, singleValSchema} from "#cloudwatch-alarm-utils/valibot-schemas.mjs";
-
+import {
+  rangePatternSchema,
+  singleValSchema,
+} from '#cloudwatch-alarm-utils/valibot-schemas.mjs';
 
 export function metricAlarmOptionsToString(value: MetricAlarmOptions): string {
   return (
@@ -66,8 +68,6 @@ function parseIntegerOption(value: string, defaultValue: number): number {
   return parsedValue;
 }
 
-
-
 export function parseStatisticOption(
   value: string,
   defaultValue: ValidStatistic,
@@ -103,22 +103,52 @@ export function parseStatisticOption(
    * Use trimmed value to catch any case issues with letter casing and then use valibot to check for simple percentile stats
    * such as (p10, tm10, tc10, ts25, wm76 etc.) via the {@link singleValSchema}.
    */
-   if (v.safeParse(singleValSchema, trimmed).success) {
+  if (v.safeParse(singleValSchema, trimmed).success) {
     return trimmed as ValidExtendedStat;
-   }
+  }
 
   /**
    * If singleValSchema fails we know it isn't a simple percentile. We know that these types of stats start with two
    * capital chars so let's take our value and coerce the first two chars to uppercase just to ensure we give the
    * value the best shot of matching a valid extended statistic.
    */
-  const coercedValue = value.substring(0, 2).toUpperCase() + value.substring(2);
+  const coercedValue =
+    trimmed.substring(0, 2).toUpperCase() + trimmed.substring(2);
 
   /**
    * Now we can use valibot to check for the extended statistics via the {@link rangePatternSchema}.
    */
-  if (v.safeParse(rangePatternSchema, coercedValue).success) {
-    return coercedValue as ValidExtendedStat;
+  //if (v.safeParse(rangePatternSchema, coercedValue).success) {
+  //  return coercedValue as ValidExtendedStat;
+  //}
+
+  const validation = v.safeParse(rangePatternSchema, coercedValue);
+  if (validation) {
+    if (validation.success) {
+      console.log('Input value:', value);
+      console.log('Coerced value:', coercedValue);
+      console.log(validation.output);
+      console.log(
+        'Range content:',
+        coercedValue.substring(
+          coercedValue.indexOf('(') + 1,
+          coercedValue.lastIndexOf(')'),
+        ),
+      );
+      return coercedValue as ValidExtendedStat;
+    } else {
+      console.error('Validation failed:', validation.issues);
+      console.log('Input value:', value);
+      console.log('Coerced value:', coercedValue);
+      console.log(validation.output);
+      console.log(
+        'Range content:',
+        coercedValue.substring(
+          coercedValue.indexOf('(') + 1,
+          coercedValue.lastIndexOf(')'),
+        ),
+      );
+    }
   }
 
   // If we reach here, it means the value is sadly not a valid statistic... Fallback to default value

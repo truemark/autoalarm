@@ -53,7 +53,7 @@ import {_STEP_FUNCTION} from '#alarms/step-function-configs.mjs';
 import {_TARGET_GROUP} from '#alarms/target-group-configs.mjs';
 import {_TRANSIT_GATEWAY} from '#alarms/transit-gateway-configs.mjs';
 import {_VPN} from '#alarms/vpn-configs.mjs';
-import {MetricAlarmConfigs} from "#types/alarm-config-types.mjs";
+import {MetricAlarmConfigs} from '#types/alarm-config-types.mjs';
 
 // Create a single object to export all alarm configurations
 export const AlarmConfigs: MetricAlarmConfigs = {
@@ -69,4 +69,4 @@ export const AlarmConfigs: MetricAlarmConfigs = {
   TARGET_GROUP: [..._TARGET_GROUP],
   TRANSIT_GATEWAY: [..._TRANSIT_GATEWAY],
   VPN: [..._VPN],
-} as const
+} as const;

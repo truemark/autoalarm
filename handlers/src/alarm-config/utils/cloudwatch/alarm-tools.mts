@@ -10,7 +10,10 @@ import {
   Statistic,
 } from '@aws-sdk/client-cloudwatch';
 import {ComparisonOperator} from 'aws-cdk-lib/aws-cloudwatch';
-import {MetricAlarmConfig, MetricAlarmOptions} from '#types/alarm-config-types.mjs';
+import {
+  MetricAlarmConfig,
+  MetricAlarmOptions,
+} from '#types/alarm-config-types.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import * as logging from '@nr1e/logging';
 import {AlarmClassification} from '#types/enums.mjs';
@@ -440,15 +443,24 @@ async function handleStaticThresholdWorkflow(
   try {
     const alarmInput = {
       AlarmName: alarmName,
-      ComparisonOperator:
-        updatedDefaults.comparisonOperator,
+      ComparisonOperator: updatedDefaults.comparisonOperator,
       EvaluationPeriods: updatedDefaults.evaluationPeriods,
       MetricName: config.metricName,
       Namespace: config.metricNamespace,
       Period: updatedDefaults.period,
-      ...(['p', 'tm', 'tc', 'ts', 'wm', 'iqm'].some((prefix) =>
-        updatedDefaults.statistic.startsWith(prefix),
-      )
+      ...([
+        'p',
+        'tm',
+        'tc',
+        'ts',
+        'wm',
+        'IQM',
+        'WM',
+        'PR',
+        'TC',
+        'TM',
+        'TS',
+      ].some((prefix) => updatedDefaults.statistic!.startsWith(prefix))
         ? {ExtendedStatistic: updatedDefaults.statistic}
         : {Statistic: updatedDefaults.statistic as Statistic}),
       Threshold: threshold,

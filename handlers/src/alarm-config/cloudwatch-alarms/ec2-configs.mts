@@ -71,7 +71,6 @@ import {MetricAlarmConfig} from '#types/alarm-config-types.mjs';
 import {ComparisonOperator} from '@aws-sdk/client-cloudwatch';
 import {TreatMissingData} from 'aws-cdk-lib/aws-cloudwatch';
 
-
 /**
  * _EC2 alarm configuration definitions.
  * Implements the {@link MetricAlarmConfig} interface.

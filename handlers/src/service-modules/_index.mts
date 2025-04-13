@@ -87,7 +87,7 @@ export const ServiceModules = {
     getEC2IdAndState,
     fetchInstanceTags,
     liveStates,
-    deadStates
+    deadStates,
   },
   parseALBEventAndCreateAlarms,
   parseCloudFrontEventAndCreateAlarms,
@@ -99,5 +99,5 @@ export const ServiceModules = {
   parseSFNEventAndCreateAlarms,
   parseTGEventAndCreateAlarms,
   parseTransitGatewayEventAndCreateAlarms,
-  parseVpnEventAndCreateAlarms
+  parseVpnEventAndCreateAlarms,
 };

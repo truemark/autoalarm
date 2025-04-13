@@ -125,20 +125,26 @@ export const _[SERVICE_NAME]: MetricAlarmConfig[] = [
  `;
 
 function toKebabCase(input: string): string {
-  return input
-    .toLowerCase()
-    // Replace underscores and spaces with hyphens
-    .replace(/[_\s]/g, '-')
-    // Insert hyphens between camelCase boundaries
-    .replace(/([a-z])([A-Z])/g, '$1-$2')
-    .toLowerCase()
-    // Clean up any double hyphens that might have been created
-    .replace(/-+/g, '-');
+  return (
+    input
+      .toLowerCase()
+      // Replace underscores and spaces with hyphens
+      .replace(/[_\s]/g, '-')
+      // Insert hyphens between camelCase boundaries
+      .replace(/([a-z])([A-Z])/g, '$1-$2')
+      .toLowerCase()
+      // Clean up any double hyphens that might have been created
+      .replace(/-+/g, '-')
+  );
 }
 
 // Function to update the barrel file with a new service in alphabetical order
-function updateBarrelFile(upperServiceName: string, kebabServiceName: string): void {
-  const barrelFilePath = './handlers/src/alarm-config/cloudwatch-alarms/_index.mts';
+function updateBarrelFile(
+  upperServiceName: string,
+  kebabServiceName: string,
+): void {
+  const barrelFilePath =
+    './handlers/src/alarm-config/cloudwatch-alarms/_index.mts';
 
   try {
     // Read the current barrel file
@@ -146,18 +152,33 @@ function updateBarrelFile(upperServiceName: string, kebabServiceName: string): v
 
     // Check if this service is already in the barrel file
     if (barrelContent.includes(`_${upperServiceName}`)) {
-      console.log(`Service ${upperServiceName} is already in the barrel file. No update needed.`);
+      console.log(
+        `Service ${upperServiceName} is already in the barrel file. No update needed.`,
+      );
       return;
     }
 
     // Split the file into sections
-    const docSection = barrelContent.substring(barrelContent.indexOf('/**'), barrelContent.indexOf('\n',barrelContent.indexOf('*/'))+ 1);
-    const importsEndIndex = barrelContent.indexOf('import {MetricAlarmConfigs}');
-    const metricImportLine = barrelContent.substring(importsEndIndex, barrelContent.indexOf('\n', importsEndIndex) + 1);
+    const docSection = barrelContent.substring(
+      barrelContent.indexOf('/**'),
+      barrelContent.indexOf('\n', barrelContent.indexOf('*/')) + 1,
+    );
+    const importsEndIndex = barrelContent.indexOf(
+      'import {MetricAlarmConfigs}',
+    );
+    const metricImportLine = barrelContent.substring(
+      importsEndIndex,
+      barrelContent.indexOf('\n', importsEndIndex) + 1,
+    );
 
     // Extract all import statements
-    const importSection = barrelContent.substring(barrelContent.indexOf('import {_'), importsEndIndex);
-    const importLines = importSection.split('\n').filter(line => line.trim().length > 0);
+    const importSection = barrelContent.substring(
+      barrelContent.indexOf('import {_'),
+      importsEndIndex,
+    );
+    const importLines = importSection
+      .split('\n')
+      .filter((line) => line.trim().length > 0);
 
     // Create the new import statement
     const newImportStatement = `import {_${upperServiceName}} from '#alarms/${kebabServiceName}-configs.mjs';`;
@@ -169,15 +190,23 @@ function updateBarrelFile(upperServiceName: string, kebabServiceName: string): v
     importLines.sort();
 
     // Extract the AlarmConfigs object
-    const configObjectStart = barrelContent.indexOf('export const AlarmConfigs');
-    const configObjectEnd = barrelContent.indexOf('} as const', configObjectStart);
+    const configObjectStart = barrelContent.indexOf(
+      'export const AlarmConfigs',
+    );
+    const configObjectEnd = barrelContent.indexOf(
+      '} as const',
+      configObjectStart,
+    );
 
     // Extract existing entries
-    const configObjectContent = barrelContent.substring(configObjectStart, configObjectEnd);
+    const configObjectContent = barrelContent.substring(
+      configObjectStart,
+      configObjectEnd,
+    );
     const configEntryLines = configObjectContent
       .split('\n')
       .slice(1) // Skip the first line which is the declaration
-      .filter(line => line.trim().length > 0 && line.includes(':'));
+      .filter((line) => line.trim().length > 0 && line.includes(':'));
 
     // Add the new entry
     const newConfigEntry = `  ${upperServiceName}: [..._${upperServiceName}],`;
@@ -193,7 +222,9 @@ function updateBarrelFile(upperServiceName: string, kebabServiceName: string): v
       '\n} as const';
 
     // Get the remainder of the file (if any)
-    const remainder = barrelContent.substring(barrelContent.indexOf('} as const') + 10);
+    const remainder = barrelContent.substring(
+      barrelContent.indexOf('} as const') + 10,
+    );
 
     // Build the new file content
     const newContent =
@@ -208,8 +239,9 @@ function updateBarrelFile(upperServiceName: string, kebabServiceName: string): v
 
     // Write the updated barrel file
     fs.writeFileSync(barrelFilePath, newContent);
-    console.log(`Updated barrel file with ${upperServiceName} alarm configs in alphabetical order`);
-
+    console.log(
+      `Updated barrel file with ${upperServiceName} alarm configs in alphabetical order`,
+    );
   } catch (error) {
     console.error(`Error updating barrel file: ${error}`);
   }
@@ -218,8 +250,7 @@ function updateBarrelFile(upperServiceName: string, kebabServiceName: string): v
 // Function to create a file with the template
 function createTemplateFile(serviceName: string, teamName: string): void {
   // Format service name for different uses
-  const upperServiceName = serviceName.toUpperCase()
-    .replace(/-/g, '_');
+  const upperServiceName = serviceName.toUpperCase().replace(/-/g, '_');
   const kebabServiceName = toKebabCase(serviceName);
   const upperTeamName = teamName.toUpperCase();
 
@@ -228,7 +259,7 @@ function createTemplateFile(serviceName: string, teamName: string): void {
     // Replace File creation instructions
     ALARM_CONFIG_TEMPLATE.replace(/\[SERVICE_NAME\]/g, upperServiceName)
       .replace(/\[service-name\]/g, kebabServiceName)
-      .replace(/\[TEAM_NAME\]/g, upperTeamName)
+      .replace(/\[TEAM_NAME\]/g, upperTeamName);
 
   // Create file name
   const fileName = `${kebabServiceName}-configs.mts`;
@@ -246,12 +277,14 @@ function createTemplateFile(serviceName: string, teamName: string): void {
   // Create the directory if it doesn't exist
   const dirPath = path.dirname(filePath);
   if (!fs.existsSync(dirPath)) {
-    fs.mkdirSync(dirPath, { recursive: true });
+    fs.mkdirSync(dirPath, {recursive: true});
   }
 
   // Write the file
   fs.writeFileSync(filePath, fileContent);
-  console.log(`Created ${fileName} with template for ${upperServiceName} alarms in ${filePath}`);
+  console.log(
+    `Created ${fileName} with template for ${upperServiceName} alarms in ${filePath}`,
+  );
 
   // Now update the barrel file
   updateBarrelFile(upperServiceName, kebabServiceName);
@@ -279,7 +312,7 @@ if (args.length >= 2) {
     (teamName) => {
       createTemplateFile(serviceName, teamName);
       rl.close();
-    }
+    },
   );
 } else {
   // Prompt for input
@@ -296,4 +329,3 @@ if (args.length >= 2) {
     },
   );
 }
-
