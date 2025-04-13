@@ -18,10 +18,9 @@
     "skipLibCheck": true,
     "paths": {
       "#handlers/*": ["./src/handlers/*"],
-      "#alarms/*": ["./src/alarm-config/alarms/*"],
+      "#alarms/*": ["./src/alarm-config/cloudwatch-alarms/*"],
       "#cloudwatch-alarm-utils/*": ["./src/alarm-config/utils/cloudwatch/*"],
       "#prometheus-alarm-utils/*": ["./src/alarm-config/utils/prometheus/*"],
-      "#stats-factory/*": ["./src/alarm-config/utils/stats-factory/*"],
       "#service-modules/*": ["./src/service-modules/*"],
       "#types/*": ["./src/types/*"]
     }

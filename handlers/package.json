@@ -1,6 +1,26 @@
 {
   "name": "autoalarm-handlers",
   "type": "module",
+  "imports": {
+    "#handlers/*": [
+      "./src/handlers/*"
+    ],
+    "#alarms/*": [
+      "./src/alarm-config/cloudwatch-alarms/*"
+    ],
+    "#cloudwatch-alarm-utils/*": [
+      "./src/alarm-config/utils/cloudwatch/*"
+    ],
+    "#prometheus-alarm-utils/*": [
+      "./src/alarm-config/utils/prometheus/*"
+    ],
+    "#service-modules/*": [
+      "./src/service-modules/*"
+    ],
+    "#types/*": [
+      "./src/types/*"
+    ]
+  },
   "scripts": {
     "prebuild": "prettier --check . && eslint .",
     "build": "tsc",

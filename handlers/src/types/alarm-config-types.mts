@@ -4,94 +4,14 @@ import {
   MetricAlarm,
   Statistic,
 } from '@aws-sdk/client-cloudwatch';
-import {StatFactory} from "#stats-factory/stat-factory.mjs";
 
 //=============================================================================
 // Statistic Typing
 //=============================================================================
-
-/**
- * Type representing valid percentile statistics string literals.
- */
-type PercentileStat = `p${number}`;
-
-/**
- * Type representing valid percentile rank statistics string literals.
- */
-type PercentileRankStat =
-  | `PR(${number}:${number})`
-  | `PR(:${number})`
-  | `PR(${number}:)`;
-
-/**
- * Type representing valid trimmed mean statistics string literals.
- */
-type TrimmedMeanStat =
-  | `tm${number}`
-  | `TM(${number}%:${number}%)`
-  | `TM(:${number}%)`
-  | `TM(${number}%:)`
-  | `TM(${number}:${number})`
-  | `TM(:${number})`
-  | `TM(${number}:)`;
-
-/**
- * Type representing valid winsorized mean statistics string literals.
- */
-type WinsorizedMeanStat =
-  | `wm${number}`
-  | `WM(${number}%:${number}%)`
-  | `WM(:${number}%)`
-  | `WM(${number}%:)`
-  | `WM(${number}:${number})`
-  | `WM(:${number})`
-  | `WM(${number}:)`;
-
-/**
- * Type representing valid trimmed count statistics string literals.
- */
-type TrimmedCountStat =
-  | `tc${number}`
-  | `TC(${number}%:${number}%)`
-  | `TC(:${number}%)`
-  | `TC(${number}%:)`
-  | `TC(${number}:${number})`
-  | `TC(:${number})`
-  | `TC(${number}:)`;
-
-/**
- * Type representing valid trimmed sum statistics string literals.
- */
-type TrimmedSumStat =
-  | `ts${number}`
-  | `TS(${number}%:${number}%)`
-  | `TS(:${number}%)`
-  | `TS(${number}%:)`
-  | `TS(${number}:${number})`
-  | `TS(:${number})`
-  | `TS(${number}:)`;
-
-/**
- * Type representing valid interquartile mean statistics string literals.
- */
-type IQMStat = 'IQM';
-
-/**
- * Type representing valid extended statistics string literals.
- */
-export type ValidExtendedStatKey = keyof typeof StatFactory.Extended
-
-/**
- * Type representing valid standard statistics string literals.
- */
-export type StandardStatKey = keyof typeof StatFactory.Standard
-
-
 /**
  * Represents valid string-format patterns for AWS CloudWatch Extended Statistics.
  *
  * Ensures type-safety when specifying CloudWatch's extended statistic identifiers.
- * Includes formatting patterns derived directly from {@link StatFactory.Extended}.
  *
  * Includes the following extended statistic patterns:
  *
@@ -103,33 +23,14 @@ export type StandardStatKey = keyof typeof StatFactory.Standard
  * - Trimmed Sum (`ts90`, `TS(10%:90%)`): Sum of values within boarders after data trimming.
  * - Percentile Rank (`PR(100:2000)`): Percentage of total data points falling between specified absolute numeric bounds.
  *
- * @example
- *
- * ```typescript
- * const validPercentile: ValidExtendedStat = 'p90';        // valid
- * const validTrimMean: ValidExtendedStat = 'tm95';         // valid
- * const validTrimMeanRange: ValidExtendedStat = 'TM(5%:95%)'; // valid
- * const validPercentileRank: ValidExtendedStat = 'PR(0:300)';  // valid
- * const invalidStat: ValidExtendedStat = 'unknownStat';    // Error: invalid statistic pattern
- * ```
- *
  * @remarks
  *
  * This type encourages correct usage by limiting valid statistics strings.
  * For statically typed pattern suggestions and validation, rely on IDE autocomplete.
  *
- * @see {@link StatFactory} - Reference object for generating CloudWatch statistic strings.
- * @see {@link Stats} - Base utility class for generating AWS-compatible statistical formats.
  * @see {@link https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Statistics-definitions.html}
  */
-export type ValidExtendedStat =
-  | IQMStat
-  | PercentileStat
-  | PercentileRankStat
-  | TrimmedMeanStat
-  | WinsorizedMeanStat
-  | TrimmedCountStat
-  | TrimmedSumStat;
+export type ValidExtendedStat = string | undefined;
 
 /**
  * Type representing valid standard CloudWatch statistics string literals.
@@ -142,7 +43,6 @@ export type ValidExtendedStat =
  * const invalidStat: StandardStat = "p(90)"; // Type error - extended statistic
  *
  * @see {@link Statistic} AWS type for standard statistics
- * @see {@link StatFactory.Standard} Object containing the standard statistic constants
  *
  */
 export type ValidStandardStat = Statistic; // "SampleCount" | "Average" | "Sum" | "Minimum" | "Maximum"
@@ -198,24 +98,6 @@ export type ValidStandardStat = Statistic; // "SampleCount" | "Average" | "Sum" 
  *
  * ---
  *
- * **Usage:**
- *
- * Generate standard statistics directly from `StatFactory.Standard`:
- * ```typescript
- * const avgStat = Stats.AVERAGE;     // "Average"
- * const maxStat = Stats.MAXIMUM;     // "Maximum"
- * ```
- *
- * Generate extended statistics using provided helper methods in `StatFactory.Extended`:
- * ```typescript
- * const p90 = Stats.p(90);                          // "p90"
- * const trimmedMean = Stats.tm(10, 90);             // "TM(10%:90%)"
- * const winsorizedMean = Stats.wm(95);              // "wm95"
- * const percentileRank = Stats.pr(100, 2000);       // "PR(100:2000)"
- * ```
- *
- * ---
- *
  * **Important**:
  * When calling AWS CloudWatch APIs (such as `PutMetricAlarm`) and specifying a `MetricName`,
  * you must specify either a standard `Statistic` (such as `"Average"`) or an `ExtendedStatistic`
@@ -223,9 +105,7 @@ export type ValidStandardStat = Statistic; // "SampleCount" | "Average" | "Sum" 
  *
  * ---
  *
- * @see {@link StatFactory} Object containing methods to generate statistic strings
  * @see {@link ValidStandardStat} Type for standard statistics
- * @see {@link ValidExtendedStat} Type for extended statistics
  * @see {@link https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Statistics-definitions.html} AWS
  * definitions and documentation for statistics
  */
@@ -237,9 +117,6 @@ export type ValidStatistic = ValidStandardStat | ValidExtendedStat;
 
 /**
  * Specifies how CloudWatch handles missing data points when evaluating an alarm.
- * Union between `TreatMissingData` enum and `MetricAlarm` interface property. To ensure
- * That the value is strongly typed and is never undefined while type matching for
- * `PutMetricAlarmsCommand` from AWS SDK Cloudwatch Client.
  *
  * ---
  *
@@ -265,6 +142,13 @@ export type ValidStatistic = ValidStandardStat | ValidExtendedStat;
  * @see {@link https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html}
  */
 export type MissingDataTreatment = TreatMissingData[keyof TreatMissingData] &
+  /**
+   * This is the interface required fo CW alarms. However, it is typed as 'string | undefined' in the SDK
+   * while the TreatMissingData enum is a union of string literals. This union allows us to match
+   * the MetricAlarm interface (requiring a union with undefined) while ensuring that our missing data treatment is
+   * always a valid value and not undefined. This allows us to satisfy calls to create or update alarms with our
+   * alarm configs
+   */
   MetricAlarm['TreatMissingData'];
 
 //=============================================================================
@@ -302,15 +186,7 @@ export interface MetricAlarmOptions {
   dataPointsToAlarm: number;
   /**
    * Valid Cloudwatch Alarm statistics see {@link ValidStatistic} for all valid statistic values
-   * @use {@link StatFactory.Standard} for standard statistics
-   * @use {@link StatFactory.Extended} for extended statistics
    *
-   * @usage
-   * ```typescript
-   * statistic: StatFactory.Standard.average; // "Average"
-   * statistic: StatFactory.Extended.p(90); // "p(90)"
-   * statistic: StatFactory.Extended.tm(10,90); // "tm(10,90)"
-   * ```
    */
   statistic: ValidStatistic;
   /**
