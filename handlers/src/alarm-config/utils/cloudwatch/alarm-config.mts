@@ -10,7 +10,7 @@ import {TreatMissingData} from 'aws-cdk-lib/aws-cloudwatch';
 import {ComparisonOperator, Statistic} from '@aws-sdk/client-cloudwatch';
 import {
   rangePatternSchema,
-  singleValSchema,
+  singleValSchema, validExtendedStatSchema,
 } from '#cloudwatch-alarm-utils/valibot-schemas.mjs';
 
 export function metricAlarmOptionsToString(value: MetricAlarmOptions): string {
@@ -79,15 +79,23 @@ export function parseStatisticOption(
     return 'IQM' as ValidExtendedStat;
   }
 
-  // Filter for Standard Statistic using AWS' Statistic enum
-  const standardStat = Object.values(Statistic).filter(
-    (value) => value.toLowerCase() === trimmed,
+  // Try to find matching Standard Statistic
+  const validStandardStat = Object.values(Statistic).find(
+      (value) => value.toLowerCase() === trimmed
   );
 
-  // Return valid standard statistic if found
-  if (standardStat.length > 0) {
-    return standardStat[0] as ValidStandardStat;
+// Return valid standard statistic if found, otherwise continue execution
+  if (validStandardStat) {
+    return validStandardStat as ValidStandardStat;
   }
+
+  // Try to do an initial check for all valid extended statistics types:
+  const validExtendedStat = v.safeParse(validExtendedStatSchema, value)
+
+
+    if (validExtendedStat.success) {
+        return value as ValidExtendedStat;
+    }
 
   /**
    * Here we want to be thoughtful about creating a resilient validation flow to try and normalize the value

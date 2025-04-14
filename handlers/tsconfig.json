@@ -16,14 +16,6 @@
     "pretty": true,
     "sourceMap": true,
     "skipLibCheck": true,
-    "paths": {
-      "#handlers/*": ["./src/handlers/*"],
-      "#alarms/*": ["./src/alarm-config/cloudwatch-alarms/*"],
-      "#cloudwatch-alarm-utils/*": ["./src/alarm-config/utils/cloudwatch/*"],
-      "#prometheus-alarm-utils/*": ["./src/alarm-config/utils/prometheus/*"],
-      "#service-modules/*": ["./src/service-modules/*"],
-      "#types/*": ["./src/types/*"]
-    }
   },
   "include": ["src"],
   "exclude": ["node_modules"]

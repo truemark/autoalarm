@@ -3,8 +3,7 @@ import {
   ElasticLoadBalancingV2Client,
 } from '@aws-sdk/client-elastic-load-balancing-v2';
 import * as logging from '@nr1e/logging';
-import {LoadBalancerIdentifiers, Tag} from '#types/module-types.mjs';
-import {AlarmClassification} from '#types/enums.mjs';
+import {LoadBalancerIdentifiers, Tag, AlarmClassification} from '../types/index.mjs';
 import {
   CloudWatchClient,
   DeleteAlarmsCommand,

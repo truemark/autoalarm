@@ -16,14 +16,14 @@ import {
   Rule,
   EC2AlarmManagerArray,
   PrometheusAlarmConfigArray,
-} from '#types/module-types.mjs';
+} from '../../../types/index.mjs';
 import {
   EC2getCpuQuery,
   EC2getMemoryQuery,
   EC2getStorageQuery,
 } from '#prometheus-alarm-utils/prometheus-queries.mjs';
 import * as yaml from 'js-yaml';
-import * as aws4 from 'aws4';
+import * as aws4 from 'aws4'; // TODO: This package is deprecated. Refactor.
 import * as https from 'https';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {defaultProvider} from '@aws-sdk/credential-provider-node';
