@@ -23,7 +23,6 @@ import {
  */
 export type ValidExtendedStat = string | undefined;
 
-
 /**
  * **Important**:
  * When calling AWS CloudWatch APIs (such as `PutMetricAlarm`) and specifying a `MetricName`,
@@ -52,7 +51,8 @@ export type ValidStatistic = Statistic | ValidExtendedStat;
  * @see {@link TreatMissingData}
  * @see {@link MetricAlarm} - AWS SDK interface used for creating alarms - `TreatMissingData` property
  */
-export type MissingDataTreatment = TreatMissingData[keyof TreatMissingData] & MetricAlarm['TreatMissingData'];
+export type MissingDataTreatment = TreatMissingData[keyof TreatMissingData] &
+  MetricAlarm['TreatMissingData'];
 
 //=============================================================================
 // Metric Alarm Options and Config Interfaces
@@ -154,4 +154,3 @@ export interface MetricAlarmConfig {
    */
   defaults: MetricAlarmOptions;
 }
-

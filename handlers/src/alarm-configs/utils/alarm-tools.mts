@@ -13,10 +13,10 @@ import {ComparisonOperator} from 'aws-cdk-lib/aws-cloudwatch';
 import {
   MetricAlarmConfig,
   MetricAlarmOptions,
-} from '#types/alarm-config-types.mjs';
+  AlarmClassification,
+} from '../../types/index.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import * as logging from '@nr1e/logging';
-import {AlarmClassification} from '#types/enums.mjs';
 
 const region: string = process.env.AWS_REGION || '';
 const retryStrategy = new ConfiguredRetryStrategy(20);
@@ -306,6 +306,7 @@ async function handleAnomalyDetectionWorkflow(
   }
 }
 
+//TODO: Confirm that we do not need to differentiate between Standard Statistics and Extended Statistics
 export async function handleAnomalyAlarms(
   config: MetricAlarmConfig,
   service: string,

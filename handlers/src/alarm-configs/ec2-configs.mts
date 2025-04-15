@@ -11,7 +11,7 @@
  * @Owners HARMONY-DEVOPS
  */
 
-import {MetricAlarmConfig} from '../../types/index.mjs';
+import {MetricAlarmConfig} from '../types/index.mjs';
 import {ComparisonOperator} from '@aws-sdk/client-cloudwatch';
 import {TreatMissingData} from 'aws-cdk-lib/aws-cloudwatch';
 

@@ -3,7 +3,11 @@ import {
   ElasticLoadBalancingV2Client,
 } from '@aws-sdk/client-elastic-load-balancing-v2';
 import * as logging from '@nr1e/logging';
-import {LoadBalancerIdentifiers, Tag, AlarmClassification} from '../types/index.mjs';
+import {
+  LoadBalancerIdentifiers,
+  Tag,
+  AlarmClassification,
+} from '../types/index.mjs';
 import {
   CloudWatchClient,
   DeleteAlarmsCommand,
@@ -15,9 +19,9 @@ import {
   handleAnomalyAlarms,
   handleStaticAlarms,
   getCWAlarmsForInstance,
-} from '#cloudwatch-alarm-utils/alarm-tools.mjs';
-import {parseMetricAlarmOptions} from '#cloudwatch-alarm-utils/alarm-config.mjs';
-import {AlarmConfigs} from '#alarms/_index.mjs';
+  parseMetricAlarmOptions,
+} from '../alarm-configs/utils/index.mjs';
+import {ALB_CONFIGS} from '../alarm-configs/index.mjs';
 
 const log: logging.Logger = logging.getLogger('alb-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -32,7 +36,7 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   retryStrategy: retryStrategy,
 });
 
-const metricConfigs = AlarmConfigs.ALB;
+const metricConfigs = ALB_CONFIGS;
 
 export async function fetchALBTags(loadBalancerArn: string): Promise<Tag> {
   try {
@@ -120,7 +124,9 @@ async function checkAndManageALBStatusAlarms(
           [{Name: 'LoadBalancer', Value: loadBalancerName}],
           updatedDefaults,
         );
-        anomalyAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
+        anomalyAlarms.forEach((alarmName: string) =>
+          alarmsToKeep.add(alarmName),
+        );
       } else {
         log
           .info()
@@ -134,7 +140,9 @@ async function checkAndManageALBStatusAlarms(
           [{Name: 'LoadBalancer', Value: loadBalancerName}],
           updatedDefaults,
         );
-        staticAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
+        staticAlarms.forEach((alarmName: string) =>
+          alarmsToKeep.add(alarmName),
+        );
       }
     } else {
       log
@@ -160,7 +168,7 @@ async function checkAndManageALBStatusAlarms(
   // Delete alarms that are not in the alarmsToKeep set
   const existingAlarms = await getCWAlarmsForInstance('ALB', loadBalancerName);
   const alarmsToDelete = existingAlarms.filter(
-    (alarm) => !alarmsToKeep.has(alarm),
+    (alarm: string) => !alarmsToKeep.has(alarm),
   );
 
   log

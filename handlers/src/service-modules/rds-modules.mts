@@ -1,21 +1,20 @@
 import {RDSClient, DescribeDBInstancesCommand} from '@aws-sdk/client-rds';
 import * as logging from '@nr1e/logging';
-import {Tag} from '#types/module-types.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
-import {AlarmClassification} from '#types/enums.mjs';
+import {AlarmClassification, Tag} from '../types/index.mjs';
 import {
   getCWAlarmsForInstance,
   deleteExistingAlarms,
   buildAlarmName,
   handleAnomalyAlarms,
   handleStaticAlarms,
-} from '#cloudwatch-alarm-utils/alarm-tools.mjs';
+  parseMetricAlarmOptions,
+} from '../alarm-configs/utils/index.mjs';
 import {
   CloudWatchClient,
   DeleteAlarmsCommand,
 } from '@aws-sdk/client-cloudwatch';
-import {parseMetricAlarmOptions} from '#cloudwatch-alarm-utils/alarm-config.mjs';
-import {AlarmConfigs} from '#alarms/_index.mjs';
+import {RDS_CONFIGS} from '../alarm-configs/index.mjs';
 
 const log: logging.Logger = logging.getLogger('rds-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -29,7 +28,7 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   retryStrategy: retryStrategy,
 });
 
-const metricConfigs = AlarmConfigs.RDS;
+const metricConfigs = RDS_CONFIGS;
 
 export async function fetchRDSTags(
   dbInstanceId: string,

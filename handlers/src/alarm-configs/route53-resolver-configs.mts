@@ -1,7 +1,7 @@
 /**
- * @fileoverview CLOUDFRONT alarm configuration definitions.
+ * @fileoverview ROUTE53_RESOLVER alarm configuration definitions.
  *
- * This file contains the default configurations for all supported CLOUDFRONT CloudWatch alarms managed by AutoAlarm.
+ * This file contains the default configurations for all supported ROUTE53_RESOLVER CloudWatch alarms managed by AutoAlarm.
  *
  * @requires
  * - Approval from Owners Team lead and consultation before adding new alarms
@@ -10,37 +10,37 @@
  * @Owners HARMONY-DEVOPS
  */
 
-import {MetricAlarmConfig} from '../../types/index.mjs';
+import {MetricAlarmConfig} from '../types/index.mjs';
 import {ComparisonOperator} from '@aws-sdk/client-cloudwatch';
 import {TreatMissingData} from 'aws-cdk-lib/aws-cloudwatch';
 
 /**
- * _CLOUDFRONT alarm configuration definitions.
+ * _ROUTE53_RESOLVER alarm configuration definitions.
  * Implements the {@link MetricAlarmConfig} interface.
  * Used to map a tag key to a CloudWatch metric name and namespace to default alarm configurations {@link MetricAlarmOptions}.
  */
-export const CLOUDFRONT_CONFIGS: MetricAlarmConfig[] = [
+export const ROUTE53_RESOLVER_CONFIGS: MetricAlarmConfig[] = [
   {
-    tagKey: '4xx-errors',
-    metricName: '4xxErrorRate',
-    metricNamespace: 'AWS/CloudFront',
+    tagKey: 'inbound-query-volume',
+    metricName: 'InboundQueryVolume',
+    metricNamespace: 'AWS/Route53Resolver',
     defaultCreate: true,
     anomaly: false,
     defaults: {
-      warningThreshold: 5, // Adjust threshold based on your needs
-      criticalThreshold: 10, // Adjust threshold based on your needs
+      warningThreshold: 1500000,
+      criticalThreshold: 2000000,
       period: 300,
       evaluationPeriods: 1,
-      statistic: 'Average',
+      statistic: 'Sum',
       dataPointsToAlarm: 1,
       comparisonOperator: ComparisonOperator.GreaterThanThreshold,
       missingDataTreatment: TreatMissingData.IGNORE,
     },
   },
   {
-    tagKey: '4xx-errors-anomaly',
-    metricName: '4xxErrorRate',
-    metricNamespace: 'AWS/CloudFront',
+    tagKey: 'inbound-query-volume-anomaly',
+    metricName: 'InboundQueryVolume',
+    metricNamespace: 'AWS/Route53Resolver',
     defaultCreate: false,
     anomaly: true,
     defaults: {
@@ -55,26 +55,26 @@ export const CLOUDFRONT_CONFIGS: MetricAlarmConfig[] = [
     },
   },
   {
-    tagKey: '5xx-errors',
-    metricName: '5xxErrorRate',
-    metricNamespace: 'AWS/CloudFront',
+    tagKey: 'outbound-query-volume',
+    metricName: 'OutboundQueryAggregateVolume',
+    metricNamespace: 'AWS/Route53Resolver',
     defaultCreate: true,
     anomaly: false,
     defaults: {
-      warningThreshold: 1,
-      criticalThreshold: 5,
+      warningThreshold: 1500000,
+      criticalThreshold: 2000000,
       period: 300,
       evaluationPeriods: 1,
-      statistic: 'Average',
+      statistic: 'Sum',
       dataPointsToAlarm: 1,
       comparisonOperator: 'GreaterThanThreshold',
       missingDataTreatment: 'ignore',
     },
   },
   {
-    tagKey: '5xx-errors-anomaly',
-    metricName: '5xxErrorRate',
-    metricNamespace: 'AWS/CloudFront',
+    tagKey: 'outbound-query-volume-anomaly',
+    metricName: 'OutboundQueryAggregateVolume',
+    metricNamespace: 'AWS/Route53Resolver',
     defaultCreate: false,
     anomaly: true,
     defaults: {

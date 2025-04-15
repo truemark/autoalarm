@@ -3,22 +3,21 @@ import {
   ListTagsForResourceCommand,
 } from '@aws-sdk/client-cloudfront';
 import * as logging from '@nr1e/logging';
-import {Tag} from '#types/module-types.mjs';
+import {Tag, AlarmClassification} from '../types/index.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
-import {AlarmClassification} from '#types/enums.mjs';
 import {
   getCWAlarmsForInstance,
   deleteExistingAlarms,
   buildAlarmName,
   handleAnomalyAlarms,
   handleStaticAlarms,
-} from '#cloudwatch-alarm-utils/alarm-tools.mjs';
+  parseMetricAlarmOptions,
+} from '../alarm-configs/utils/index.mjs';
 import {
   CloudWatchClient,
   DeleteAlarmsCommand,
 } from '@aws-sdk/client-cloudwatch';
-import {parseMetricAlarmOptions} from '#cloudwatch-alarm-utils/alarm-config.mjs';
-import {AlarmConfigs} from '#alarms/_index.mjs';
+import {CLOUDFRONT_CONFIGS} from '../alarm-configs/index.mjs';
 
 const log: logging.Logger = logging.getLogger('cloudfront-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -33,7 +32,7 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   retryStrategy: retryStrategy,
 });
 
-const metricConfigs = AlarmConfigs.CLOUDFRONT;
+const metricConfigs = CLOUDFRONT_CONFIGS;
 
 export async function fetchCloudFrontTags(
   distributionArn: string,

@@ -3,15 +3,15 @@ import {
   MetricAlarmOptions,
   ValidStatistic,
   ValidExtendedStat,
-  ValidStandardStat,
-} from '#types/alarm-config-types.mjs';
-import * as v from 'valibot';
+} from '../../types/index.mjs';
+import {safeParse} from 'valibot';
 import {TreatMissingData} from 'aws-cdk-lib/aws-cloudwatch';
 import {ComparisonOperator, Statistic} from '@aws-sdk/client-cloudwatch';
 import {
   rangePatternSchema,
-  singleValSchema, validExtendedStatSchema,
-} from '#cloudwatch-alarm-utils/valibot-schemas.mjs';
+  singleValSchema,
+  validExtendedStatSchema,
+} from './index.mjs';
 
 export function metricAlarmOptionsToString(value: MetricAlarmOptions): string {
   return (
@@ -81,21 +81,20 @@ export function parseStatisticOption(
 
   // Try to find matching Standard Statistic
   const validStandardStat = Object.values(Statistic).find(
-      (value) => value.toLowerCase() === trimmed
+    (value) => value.toLowerCase() === trimmed,
   );
 
-// Return valid standard statistic if found, otherwise continue execution
+  // Return valid standard statistic if found, otherwise continue execution
   if (validStandardStat) {
-    return validStandardStat as ValidStandardStat;
+    return validStandardStat as Statistic;
   }
 
   // Try to do an initial check for all valid extended statistics types:
-  const validExtendedStat = v.safeParse(validExtendedStatSchema, value)
+  const validExtendedStat = safeParse(validExtendedStatSchema, value);
 
-
-    if (validExtendedStat.success) {
-        return value as ValidExtendedStat;
-    }
+  if (validExtendedStat.success) {
+    return value as ValidExtendedStat;
+  }
 
   /**
    * Here we want to be thoughtful about creating a resilient validation flow to try and normalize the value
@@ -110,7 +109,7 @@ export function parseStatisticOption(
    * Use trimmed value to catch any case issues with letter casing and then use valibot to check for simple percentile stats
    * such as (p10, tm10, tc10, ts25, wm76 etc.) via the {@link singleValSchema}.
    */
-  if (v.safeParse(singleValSchema, trimmed).success) {
+  if (safeParse(singleValSchema, trimmed).success) {
     return trimmed as ValidExtendedStat;
   }
 
@@ -125,11 +124,11 @@ export function parseStatisticOption(
   /**
    * Now we can use valibot to check for the extended statistics via the {@link rangePatternSchema}.
    */
-  //if (v.safeParse(rangePatternSchema, coercedValue).success) {
+  //if (safeParse(rangePatternSchema, coercedValue).success) {
   //  return coercedValue as ValidExtendedStat;
   //}
 
-  const validation = v.safeParse(rangePatternSchema, coercedValue);
+  const validation = safeParse(rangePatternSchema, coercedValue);
   if (validation) {
     if (validation.success) {
       console.log('Input value:', value);

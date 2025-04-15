@@ -1,7 +1,7 @@
 /**
- * @fileoverview TARGET_GROUP alarm configuration definitions.
+ * @fileoverview ALB alarm configuration definitions.
  *
- * This file contains the default configurations for all supported TARGET_GROUP CloudWatch alarms managed by AutoAlarm.
+ * This file contains the default configurations for all supported ALB CloudWatch alarms managed by AutoAlarm.
  *
  * @requires
  * - Approval from Owners Team lead and consultation before adding new alarms
@@ -10,17 +10,16 @@
  * @Owners HARMONY-DEVOPS
  */
 
-import {MetricAlarmConfig} from '../../types/index.mjs';
+import {MetricAlarmConfig} from '../types/index.mjs';
 import {ComparisonOperator} from '@aws-sdk/client-cloudwatch';
 import {TreatMissingData} from 'aws-cdk-lib/aws-cloudwatch';
 
-
 /**
- * _TARGET_GROUP alarm configuration definitions.
+ * _ALB alarm configuration definitions.
  * Implements the {@link MetricAlarmConfig} interface.
  * Used to map a tag key to a CloudWatch metric name and namespace to default alarm configurations {@link MetricAlarmOptions}.
  */
-export const TARGET_GROUP_CONFIGS: MetricAlarmConfig[] = [
+export const ALB_CONFIGS: MetricAlarmConfig[] = [
   {
     tagKey: '4xx-count',
     metricName: 'HTTPCode_Target_4XX_Count',
@@ -32,8 +31,8 @@ export const TARGET_GROUP_CONFIGS: MetricAlarmConfig[] = [
       criticalThreshold: null,
       period: 60,
       evaluationPeriods: 2,
-      statistic: 'Sum',
-      dataPointsToAlarm: 1,
+      statistic: 'p89',
+      dataPointsToAlarm: 2,
       comparisonOperator: ComparisonOperator.GreaterThanThreshold,
       missingDataTreatment: TreatMissingData.IGNORE,
     },
@@ -45,10 +44,10 @@ export const TARGET_GROUP_CONFIGS: MetricAlarmConfig[] = [
     defaultCreate: false,
     anomaly: true,
     defaults: {
-      warningThreshold: null,
-      criticalThreshold: null,
-      period: 60,
-      evaluationPeriods: 2,
+      warningThreshold: 2,
+      criticalThreshold: 5,
+      period: 300,
+      evaluationPeriods: 1,
       statistic: 'Average',
       dataPointsToAlarm: 1,
       comparisonOperator: 'GreaterThanUpperThreshold',
@@ -67,7 +66,7 @@ export const TARGET_GROUP_CONFIGS: MetricAlarmConfig[] = [
       period: 60,
       evaluationPeriods: 2,
       statistic: 'Sum',
-      dataPointsToAlarm: 1,
+      dataPointsToAlarm: 2,
       comparisonOperator: 'GreaterThanThreshold',
       missingDataTreatment: 'ignore',
     },
@@ -77,41 +76,6 @@ export const TARGET_GROUP_CONFIGS: MetricAlarmConfig[] = [
     metricName: 'HTTPCode_Target_5XX_Count',
     metricNamespace: 'AWS/ApplicationELB',
     defaultCreate: true,
-    anomaly: true,
-    defaults: {
-      // TODO Fix thresholds
-      warningThreshold: 3,
-      criticalThreshold: 6,
-      period: 60,
-      evaluationPeriods: 2,
-      statistic: 'Average',
-      dataPointsToAlarm: 1,
-      comparisonOperator: 'GreaterThanUpperThreshold',
-      missingDataTreatment: 'ignore',
-    },
-  },
-  {
-    tagKey: 'response-time',
-    metricName: 'TargetResponseTime',
-    metricNamespace: 'AWS/ApplicationELB',
-    defaultCreate: false,
-    anomaly: false,
-    defaults: {
-      warningThreshold: 3,
-      criticalThreshold: 5,
-      period: 60,
-      evaluationPeriods: 2,
-      statistic: 'p90',
-      dataPointsToAlarm: 2,
-      comparisonOperator: 'GreaterThanThreshold',
-      missingDataTreatment: 'ignore',
-    },
-  },
-  {
-    tagKey: 'response-time-anomaly',
-    metricName: 'TargetResponseTime',
-    metricNamespace: 'AWS/ApplicationELB',
-    defaultCreate: false,
     anomaly: true,
     defaults: {
       warningThreshold: 2,
@@ -125,21 +89,38 @@ export const TARGET_GROUP_CONFIGS: MetricAlarmConfig[] = [
     },
   },
   {
-    tagKey: 'unhealthy-host-count',
-    metricName: 'UnHealthyHostCount',
+    tagKey: 'request-count',
+    metricName: 'RequestCount',
     metricNamespace: 'AWS/ApplicationELB',
-    defaultCreate: true,
+    defaultCreate: false,
     anomaly: false,
     defaults: {
       warningThreshold: null,
-      criticalThreshold: 1,
+      criticalThreshold: null,
       period: 60,
       evaluationPeriods: 2,
-      statistic: 'Maximum',
+      statistic: 'Sum',
       dataPointsToAlarm: 2,
       comparisonOperator: 'GreaterThanThreshold',
       missingDataTreatment: 'ignore',
     },
   },
-  // add more as needed
+  {
+    tagKey: 'request-count-anomaly',
+    metricName: 'RequestCount',
+    metricNamespace: 'AWS/ApplicationELB',
+    defaultCreate: false,
+    anomaly: true,
+    defaults: {
+      warningThreshold: 3,
+      criticalThreshold: 5,
+      period: 300,
+      evaluationPeriods: 2,
+      statistic: 'tm90',
+      dataPointsToAlarm: 2,
+      comparisonOperator: 'GreaterThanUpperThreshold',
+      missingDataTreatment: 'ignore',
+    },
+  },
+  //TODO: Add Target response times
 ] as const;

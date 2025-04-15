@@ -1,4 +1,4 @@
- /**
+/**
  * @fileoverview RDS alarm configuration definitions.
  *
  * This file contains the default configurations for all supported RDS CloudWatch alarms managed by AutoAlarm.
@@ -10,7 +10,7 @@
  * @Owners DB WARDEN
  */
 
-import {MetricAlarmConfig} from '../../types/index.mjs';
+import {MetricAlarmConfig} from '../types/index.mjs';
 import {ComparisonOperator} from '@aws-sdk/client-cloudwatch';
 import {TreatMissingData} from 'aws-cdk-lib/aws-cloudwatch';
 
@@ -191,4 +191,4 @@ export const RDS_CONFIGS: MetricAlarmConfig[] = [
     },
   },
   // add more as needed
-] as const ;
+] as const;

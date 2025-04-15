@@ -1,13 +1,13 @@
-import * as v from 'valibot';
+import {string, check, union, pipe, regex} from 'valibot';
 
 // Validate single percentage, lowercase values with extended statistics.
-export const singleValSchema = v.pipe(
-  v.string(),
-  v.regex(/^(p|tm|tc|ts|wm)[1-9][0-9]?$/),
+export const singleValSchema = pipe(
+  string(),
+  regex(/^(p|tm|tc|ts|wm)[1-9][0-9]?$/),
 );
 
 // Prefix validation schema
-export const prefixSchema = v.check(
+export const prefixSchema = check(
   (value: string) => {
     const prefix = value.substring(0, 2);
     return /^(TM|WM|PR|TC|TS)$/.test(prefix);
@@ -17,7 +17,7 @@ export const prefixSchema = v.check(
 );
 
 // Overall format validation schema
-export const formatSchema = v.check(
+export const formatSchema = check(
   (value: string) => {
     return /^(TM|WM|PR|TC|TS)\([^)]*:[^)]*\)$/.test(value);
   },
@@ -26,7 +26,7 @@ export const formatSchema = v.check(
 );
 
 // Range parts validation schema
-export const rangePartsSchema = v.check(
+export const rangePartsSchema = check(
   (value: string) => {
     const rangeContent = value.substring(
       value.indexOf('(') + 1,
@@ -41,7 +41,7 @@ export const rangePartsSchema = v.check(
 );
 
 // Range values validation schema
-export const rangeValuesSchema = v.check(
+export const rangeValuesSchema = check(
   (value: string) => {
     const rangeContent = value.substring(
       value.indexOf('(') + 1,
@@ -78,7 +78,7 @@ export const rangeValuesSchema = v.check(
 );
 
 // Value type matching validation schema
-export const valueTypeSchema = v.check(
+export const valueTypeSchema = check(
   (value: string) => {
     const rangeContent = value.substring(
       value.indexOf('(') + 1,
@@ -100,8 +100,8 @@ export const valueTypeSchema = v.check(
 );
 
 // Compose all schemas together into the final range pattern schema
-export const rangePatternSchema = v.pipe(
-  v.string(),
+export const rangePatternSchema = pipe(
+  string(),
   prefixSchema,
   formatSchema,
   rangePartsSchema,
@@ -109,7 +109,7 @@ export const rangePatternSchema = v.pipe(
   valueTypeSchema,
 );
 
-export const validExtendedStatSchema = v.union([
+export const validExtendedStatSchema = union([
   singleValSchema,
-  rangePatternSchema
+  rangePatternSchema,
 ]);

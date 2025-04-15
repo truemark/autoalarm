@@ -1,21 +1,20 @@
 import {EC2Client, DescribeTagsCommand} from '@aws-sdk/client-ec2';
 import * as logging from '@nr1e/logging';
-import {Tag} from '#types/module-types.mjs';
-import {ConfiguredRetryStrategy} from '@smithy/util-retry';
-import {AlarmClassification} from '#types/enums.mjs';
-import {
-  getCWAlarmsForInstance,
-  deleteExistingAlarms,
-  buildAlarmName,
-  handleAnomalyAlarms,
-  handleStaticAlarms,
-} from '#cloudwatch-alarm-utils/alarm-tools.mjs';
+import {AlarmClassification, Tag} from '../types/index.mjs';
 import {
   CloudWatchClient,
   DeleteAlarmsCommand,
 } from '@aws-sdk/client-cloudwatch';
-import {parseMetricAlarmOptions} from '#cloudwatch-alarm-utils/alarm-config.mjs';
-import {AlarmConfigs} from '#alarms/_index.mjs';
+import {ConfiguredRetryStrategy} from '@smithy/util-retry';
+import {
+  deleteExistingAlarms,
+  buildAlarmName,
+  handleAnomalyAlarms,
+  handleStaticAlarms,
+  getCWAlarmsForInstance,
+  parseMetricAlarmOptions,
+} from '../alarm-configs/utils/index.mjs';
+import {VPN_CONFIGS} from '../alarm-configs/index.mjs';
 
 const log: logging.Logger = logging.getLogger('vpn-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -29,7 +28,7 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   retryStrategy: retryStrategy,
 });
 
-const metricConfigs = AlarmConfigs.VPN;
+const metricConfigs = VPN_CONFIGS;
 
 export async function fetchVpnTags(
   vpnId: string,

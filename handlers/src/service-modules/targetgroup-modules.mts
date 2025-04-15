@@ -5,23 +5,22 @@ import {
   DescribeTargetGroupsCommandOutput,
 } from '@aws-sdk/client-elastic-load-balancing-v2';
 import * as logging from '@nr1e/logging';
-import {Tag} from '#types/module-types.mjs';
-import {ConfiguredRetryStrategy} from '@smithy/util-retry';
+import {AlarmClassification, Tag} from '../types/index.mjs';
 import {
   CloudWatchClient,
   DeleteAlarmsCommand,
 } from '@aws-sdk/client-cloudwatch';
-import {AlarmClassification} from '#types/enums.mjs';
+import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
   deleteExistingAlarms,
   buildAlarmName,
   handleAnomalyAlarms,
   handleStaticAlarms,
   getCWAlarmsForInstance,
-} from '#cloudwatch-alarm-utils/alarm-tools.mjs';
+  parseMetricAlarmOptions,
+} from '../alarm-configs/utils/index.mjs';
 import * as arnparser from '@aws-sdk/util-arn-parser';
-import {parseMetricAlarmOptions} from '#cloudwatch-alarm-utils/alarm-config.mjs';
-import {AlarmConfigs} from '#alarms/_index.mjs';
+import {TARGET_GROUP_CONFIGS} from '../alarm-configs/index.mjs';
 
 const log: logging.Logger = logging.getLogger('targetgroup-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -36,7 +35,7 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   retryStrategy: retryStrategy,
 });
 
-const metricConfigs = AlarmConfigs.TARGET_GROUP;
+const metricConfigs = TARGET_GROUP_CONFIGS;
 
 export async function fetchTGTags(targetGroupArn: string): Promise<Tag> {
   try {
