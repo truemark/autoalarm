@@ -1,4 +1,14 @@
 # AutoAlarm Changelog
+## v1.12.1
+
+### Added:
+- Added additional support for RDS and RDS Cluster alarms. 
+
+### Fixed:
+- Fixed SQS queue visability timeout to match lambda timeout which is required by CDK.
+- Fixed a missing parameter in PutMetricAlarmCommandInput to allow configuration of data  points to alarm
+
+
 ## v1.11.0
 
 ### Added:
