@@ -5,6 +5,8 @@ import {
 } from './alarm-config.mjs';
 import {Statistic} from '@aws-sdk/client-cloudwatch';
 
+// Use the following to run test individually: npx vitest run ./alarm-configs/utils/alarm-config.test.mts
+
 //test('metricAlarmOptionsToString', async () => {
 //  expect(
 //    metricAlarmOptionsToString({
