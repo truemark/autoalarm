@@ -7,6 +7,18 @@ import {safeParse} from 'valibot';
 import {TreatMissingData} from 'aws-cdk-lib/aws-cloudwatch';
 import {ComparisonOperator} from '@aws-sdk/client-cloudwatch';
 import {validStatSchema} from './valibot-schemas.mjs';
+import * as logging from '@nr1e/logging';
+
+// Initialize logging
+const level = process.env.LOG_LEVEL || 'trace';
+if (!logging.isLevel(level)) {
+  throw new Error(`Invalid log level: ${level}`);
+}
+const log = logging.initialize({
+  svc: 'AutoAlarm',
+  name: 'alarm-config',
+  level,
+});
 
 export function metricAlarmOptionsToString(value: MetricAlarmOptions): string {
   return (
@@ -67,7 +79,12 @@ export function parseStatisticOption(
   defaultValue: ValidStatistic,
 ): ValidStatistic {
   // Base formatting normalization for validating statistics
-  const trim = exp.trim().toLowerCase();
+  let trim = exp.trim().toLowerCase();
+  trim === 'iqm'
+    ? (trim = 'IQM') // Account for IQM as all caps and single word expression
+    : trim === 'samplecount'
+      ? (trim = 'SampleCount') // Account for SampleCount with CamelCase
+      : exp.trim().toLowerCase();
 
   // Normalize Value to match the various expected Valid Statistics values
   const statVariants = [
@@ -85,10 +102,23 @@ export function parseStatisticOption(
     },
   ];
 
-  /** V alibot validation for the statistic value  {@link validStatSchema} */
-  const match = statVariants.find(
-    (p) => safeParse(validStatSchema, p.value).success,
-  );
+  /** Valibot validation for the statistic value  {@link validStatSchema} */
+  const match = statVariants.find((p) => {
+    // If the value is a valid statistic, return it. Otherwise, log the Valibot error and return false
+    const result = safeParse(validStatSchema, p.value as string);
+    if (!result.success) {
+      log
+        .warn()
+        .str('Function', 'parseStatisticOption')
+        .str('Input', exp)
+        .str('Pattern', p.pattern)
+        .str('CoercedValue', p.value)
+        .obj('ValibotError', result.issues)
+        .msg('Valibot Validation Failed');
+      return false;
+    }
+    return true; // Return true if the value is valid
+  });
 
   // If a match is found, return the value, otherwise return the default value
   return match ? (match.value as ValidStatistic) : defaultValue;

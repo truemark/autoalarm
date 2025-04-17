@@ -1,4 +1,4 @@
-import {string, check, pipe, regex} from 'valibot';
+import {string, check, pipe, regex, union} from 'valibot';
 import {Statistic} from '@aws-sdk/client-cloudwatch';
 
 /*****************************************************
@@ -52,7 +52,11 @@ const rangePatternSchema = pipe(
         value.lastIndexOf(')'),
       );
 
-      // Split the range content into start and end parts
+      // Split the range content into start and end parts and return false if parts > 3
+      const parts = rangeContent.split(':');
+      if (parts.length > 2) return false;
+
+      // Extract the start and end parts of the range
       const [start, end] = rangeContent.split(':');
 
       // Check if the value is a valid number, percentage or ''
@@ -85,13 +89,13 @@ const rangePatternSchema = pipe(
   ),
 );
 
-// Compose all schemas together into the final Schema to match all valid statistics
-export const validStatSchema = pipe(
-  string(),
+// Union Schema to match all valid statistics (standardStatSchema | (singleValSchema | rangePatternSchema))
+export const validStatSchema = union([
+  // Standard Statistics
   standardStatSchema,
-  singleValSchema,
-  rangePatternSchema,
-);
+  // Extended Statistics
+  union([singleValSchema, rangePatternSchema]),
+]);
 
 /*****************************************************
  *                  TBD SCHEMAS
