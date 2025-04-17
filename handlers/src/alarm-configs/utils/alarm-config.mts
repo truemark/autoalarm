@@ -2,16 +2,11 @@ import {
   MissingDataTreatment,
   MetricAlarmOptions,
   ValidStatistic,
-  ValidExtendedStat,
 } from '../../types/index.mjs';
 import {safeParse} from 'valibot';
 import {TreatMissingData} from 'aws-cdk-lib/aws-cloudwatch';
-import {ComparisonOperator, Statistic} from '@aws-sdk/client-cloudwatch';
-import {
-  rangePatternSchema,
-  singleValSchema,
-  validExtendedStatSchema,
-} from './index.mjs';
+import {ComparisonOperator} from '@aws-sdk/client-cloudwatch';
+import {validStatSchema} from './valibot-schemas.mjs';
 
 export function metricAlarmOptionsToString(value: MetricAlarmOptions): string {
   return (
@@ -68,97 +63,35 @@ function parseIntegerOption(value: string, defaultValue: number): number {
 }
 
 export function parseStatisticOption(
-  value: string,
+  exp: string,
   defaultValue: ValidStatistic,
 ): ValidStatistic {
-  // Normalize the value to lowercase and trim whitespace
-  const trimmed = value.trim().toLowerCase();
+  // Base formatting normalization for validating statistics
+  const trim = exp.trim().toLowerCase();
 
-  // Easy check for IQM which has no following parameters
-  if (trimmed === 'iqm') {
-    return 'IQM' as ValidExtendedStat;
-  }
+  // Normalize Value to match the various expected Valid Statistics values
+  const statVariants = [
+    {
+      pattern: 'Standard',
+      value: trim.charAt(0).toUpperCase() + trim.slice(1), // e.g., "Average" "Maximum" "Minimum" "SampleCount" "Sum"
+    },
+    {
+      pattern: 'ExtShort',
+      value: trim, // e.g., "p1", "tm22", "tc3", "ts4", "wm59", "IQM"
+    },
+    {
+      pattern: 'ExtRange',
+      value: trim.substring(0, 2).toUpperCase() + trim.substring(2), // e.g., "TM(12%:55%)", "WM(:24)", "TC(44:76)"
+    },
+  ];
 
-  // Try to find matching Standard Statistic
-  const validStandardStat = Object.values(Statistic).find(
-    (value) => value.toLowerCase() === trimmed,
+  /** V alibot validation for the statistic value  {@link validStatSchema} */
+  const match = statVariants.find(
+    (p) => safeParse(validStatSchema, p.value).success,
   );
 
-  // Return valid standard statistic if found, otherwise continue execution
-  if (validStandardStat) {
-    return validStandardStat as Statistic;
-  }
-
-  // Try to do an initial check for all valid extended statistics types:
-  const validExtendedStat = safeParse(validExtendedStatSchema, value);
-
-  if (validExtendedStat.success) {
-    return value as ValidExtendedStat;
-  }
-
-  /**
-   * Here we want to be thoughtful about creating a resilient validation flow to try and normalize the value
-   * if we can to match a valid extended statistic. There are lowercase and upper case variants with absolute values
-   * and percentage values. We can perform simple prefix checks and vlaue checks to catch issues that might cause the
-   * validation step to fail.
-   * @see {@link https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/Package/-aws-sdk-client-cloudwatch/Interface/PutMetricAlarmCommandInput/}
-   * @see {@link https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Statistics-definitions.html}
-   */
-
-  /**
-   * Use trimmed value to catch any case issues with letter casing and then use valibot to check for simple percentile stats
-   * such as (p10, tm10, tc10, ts25, wm76 etc.) via the {@link singleValSchema}.
-   */
-  if (safeParse(singleValSchema, trimmed).success) {
-    return trimmed as ValidExtendedStat;
-  }
-
-  /**
-   * If singleValSchema fails we know it isn't a simple percentile. We know that these types of stats start with two
-   * capital chars so let's take our value and coerce the first two chars to uppercase just to ensure we give the
-   * value the best shot of matching a valid extended statistic.
-   */
-  const coercedValue =
-    trimmed.substring(0, 2).toUpperCase() + trimmed.substring(2);
-
-  /**
-   * Now we can use valibot to check for the extended statistics via the {@link rangePatternSchema}.
-   */
-  //if (safeParse(rangePatternSchema, coercedValue).success) {
-  //  return coercedValue as ValidExtendedStat;
-  //}
-
-  const validation = safeParse(rangePatternSchema, coercedValue);
-  if (validation) {
-    if (validation.success) {
-      console.log('Input value:', value);
-      console.log('Coerced value:', coercedValue);
-      console.log(validation.output);
-      console.log(
-        'Range content:',
-        coercedValue.substring(
-          coercedValue.indexOf('(') + 1,
-          coercedValue.lastIndexOf(')'),
-        ),
-      );
-      return coercedValue as ValidExtendedStat;
-    } else {
-      console.error('Validation failed:', validation.issues);
-      console.log('Input value:', value);
-      console.log('Coerced value:', coercedValue);
-      console.log(validation.output);
-      console.log(
-        'Range content:',
-        coercedValue.substring(
-          coercedValue.indexOf('(') + 1,
-          coercedValue.lastIndexOf(')'),
-        ),
-      );
-    }
-  }
-
-  // If we reach here, it means the value is sadly not a valid statistic... Fallback to default value
-  return defaultValue as ValidStatistic;
+  // If a match is found, return the value, otherwise return the default value
+  return match ? (match.value as ValidStatistic) : defaultValue;
 }
 
 function parseComparisonOperatorOption(

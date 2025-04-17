@@ -2,16 +2,6 @@
  * Barrel file to export all alarm configuration tool modules.
  */
 export {
-  singleValSchema,
-  formatSchema,
-  rangePartsSchema,
-  rangeValuesSchema,
-  prefixSchema,
-  valueTypeSchema,
-  rangePatternSchema,
-  validExtendedStatSchema,
-} from './valibot-schemas.mjs';
-export {
   metricAlarmOptionsToString,
   parseStatisticOption,
   parseMetricAlarmOptions,

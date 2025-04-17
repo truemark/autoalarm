@@ -1,115 +1,98 @@
-import {string, check, union, pipe, regex} from 'valibot';
+import {string, check, pipe, regex} from 'valibot';
+import {Statistic} from '@aws-sdk/client-cloudwatch';
 
-// Validate single percentage, lowercase values with extended statistics.
-export const singleValSchema = pipe(
+/*****************************************************
+ *                  STATISTICS SCHEMAS
+ *****************************************************/
+
+// Validate a Standard Statistic (e.g., "Average" "Maximum" "Minimum" "SampleCount" "Sum")
+const standardStatSchema = pipe(
   string(),
-  regex(/^(p|tm|tc|ts|wm)[1-9][0-9]?$/),
+  check(
+    (value: string) => {
+      // Check if the value is a valid standard statistic
+      const validStandardStat = Object.values(Statistic).find(
+        (stat) => stat === value,
+      );
+
+      // Fail the validation if no match is found
+      return !!validStandardStat;
+    },
+    (value) =>
+      `Invalid statistic "${JSON.stringify(value)}" - Must be one of ${Object.values(Statistic).join(', ')}`,
+  ),
 );
 
-// Prefix validation schema
-export const prefixSchema = check(
-  (value: string) => {
-    const prefix = value.substring(0, 2);
-    return /^(TM|WM|PR|TC|TS)$/.test(prefix);
-  },
-  (value) =>
-    `Invalid prefix: "${JSON.stringify(value)}" - Must be one of TM, WM, PR, TC, or TS`,
-);
-
-// Overall format validation schema
-export const formatSchema = check(
-  (value: string) => {
-    return /^(TM|WM|PR|TC|TS)\([^)]*:[^)]*\)$/.test(value);
-  },
-  (value) =>
-    `Invalid format: "${JSON.stringify(value)}" - Must follow pattern PREFIX(start:end) with parentheses and colon`,
-);
-
-// Range parts validation schema
-export const rangePartsSchema = check(
-  (value: string) => {
-    const rangeContent = value.substring(
-      value.indexOf('(') + 1,
-      value.lastIndexOf(')'),
-    );
-
-    const parts = rangeContent.split(':');
-    return parts.length === 2;
-  },
-  (value) =>
-    `Invalid range format in "${JSON.stringify(value)}" - Must contain exactly one colon separator with values enclosed in paranthesis.`,
-);
-
-// Range values validation schema
-export const rangeValuesSchema = check(
-  (value: string) => {
-    const rangeContent = value.substring(
-      value.indexOf('(') + 1,
-      value.lastIndexOf(')'),
-    );
-
-    const parts = rangeContent.split(':');
-    const [start, end] = parts;
-
-    /**
-     * Helper function to validate each part of the range
-     *
-     * @param {string} part - The range value to validate (either start or end)
-     * @returns {boolean} - Whether the part is valid
-     */
-    const isValidPart = (part: string): boolean => {
-      // Empty parts are valid (e.g., TM(:90%) or TM(10%:))
-      if (part === '') return true;
-
-      // Check if the part ends with a % sign (percentage format)
-      if (/%$/.test(part)) {
-        // Validate percentage values (must be between 0% and 99.9%)
-        return /^([0-9]{1,2}(\.[0-9])?|99\.9)%$/.test(part);
-      }
-
-      // For non-percentage values, validate as positive numbers
-      return /^\d+(\.\d+)?$/.test(part);
-    };
-
-    return isValidPart(start) && isValidPart(end);
-  },
-  (value) =>
-    `Invalid range values in "${JSON.stringify(value)}" - Values must be valid numbers or percentages`,
-);
-
-// Value type matching validation schema
-export const valueTypeSchema = check(
-  (value: string) => {
-    const rangeContent = value.substring(
-      value.indexOf('(') + 1,
-      value.lastIndexOf(')'),
-    );
-
-    const parts = rangeContent.split(':');
-    const [start, end] = parts;
-
-    // Check for mixed value types (one percentage, one absolute)
-    //TODO: Need to validate that values aren't 0/0.0 both here and in the pattern below.
-    return !(
-      (/%$/.test(start) && !/%$/.test(end) && end !== '') ||
-      (/%$/.test(end) && !/%$/.test(start) && start !== '')
-    );
-  },
-  (value) =>
-    `Mismatched range values in "${JSON.stringify(value)}" - Cannot mix percentage and absolute values`,
-);
-
-// Compose all schemas together into the final range pattern schema
-export const rangePatternSchema = pipe(
+// Validate all <=3 char length extended stats (e.g., "p1" "tm22" "tc3" "ts4" "wm59", "IQM")
+const singleValSchema = pipe(
   string(),
-  prefixSchema,
-  formatSchema,
-  rangePartsSchema,
-  rangeValuesSchema,
-  valueTypeSchema,
+  regex(/^IQM$|(p|tm|tc|ts|wm)[1-9][0-9]?$/),
 );
 
-export const validExtendedStatSchema = union([
+// Combined Range and Value-Type Validation
+const rangePatternSchema = pipe(
+  string(),
+  check(
+    (value: string) => {
+      // Regexes
+      const validRange = /^(TM|WM|PR|TC|TS)\([^)]*:[^)]*\)$/;
+      const allZero = /^0(\.0+)?$/;
+      const validPercent = /^([0-9]{1,2}(\.[0-9])?|99\.9)%$/;
+      const validNumber = /^\d+(\.\d+)?$/;
+
+      // Check if the value (e.g., "TM(0:0)") is a valid range and early failure if it is not
+      if (!validRange.test(value)) return false;
+
+      // Check if the value is a valid number or percentage
+      if (validNumber.test(value) || validPercent.test(value)) return false;
+
+      // Extract the extended Statistic expression from the value
+      const rangeContent = value.substring(
+        value.indexOf('(') + 1,
+        value.lastIndexOf(')'),
+      );
+
+      // Split the range content into start and end parts
+      const [start, end] = rangeContent.split(':');
+
+      // Check if the value is a valid number, percentage or ''
+      const isValidExpression = [start, end].every(
+        (part) =>
+          part === '' || validNumber.test(part) || validPercent.test(part),
+      );
+
+      // Check that both start and end parts are not empty
+      const isEmpty = [start, end].every((part) => part === '');
+
+      // Check if both parts are not all zeroes.
+      const isAllZero = [start, end].every((part) => allZero.test(part));
+
+      // Checks for unbounded ranges (e.g., TM(22:) or TM(:33%)) - Valid
+      const isUnbounded =
+        (start === '' && !isEmpty) || (end === '' && !isEmpty);
+
+      // Check if both parts are a mix of percentage and absolute values
+      const isMixed =
+        !isUnbounded && validPercent.test(start) !== validPercent.test(end);
+
+      // check all conditions above and return true if valid regex.
+      return isValidExpression && !(isEmpty || isAllZero || isMixed);
+    },
+    (value) =>
+      `Invalid or mismatched range values in "${JSON.stringify(value)}": Must follow pattern PREFIX(start:end) with 
+    parentheses and colon in addition to valid numbers or percentages, not both zero/empty, and not a mix of 
+    absolute & percent.`,
+  ),
+);
+
+// Compose all schemas together into the final Schema to match all valid statistics
+export const validStatSchema = pipe(
+  string(),
+  standardStatSchema,
   singleValSchema,
   rangePatternSchema,
-]);
+);
+
+/*****************************************************
+ *                  TBD SCHEMAS
+ *****************************************************/
