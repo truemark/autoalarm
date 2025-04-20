@@ -358,6 +358,7 @@ export class EventRules extends Construct {
               'autoalarm:replica-lag',
               'autoalarm:replica-lag-anomaly',
               'autoalarm:failover-state',
+              'autoalarm:swap-usage-anomaly',
             ],
           },
         },
