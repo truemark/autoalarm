@@ -6,24 +6,24 @@ import {
 import {Statistic} from '@aws-sdk/client-cloudwatch';
 
 // Use the following to run test individually: npx vitest run ./alarm-configs/utils/alarm-config.test.mts
+/*
+test('metricAlarmOptionsToString', async () => {
+  expect(
+    metricAlarmOptionsToString({
+      warningThreshold: 1,
+      criticalThreshold: 2,
+      period: 2,
+      evaluationPeriods: 3,
+      statistic: 'Average',
+      dataPointsToAlarm: 4,
+      missingDataTreatment: 'missing',
+      comparisonOperator: 'GreaterThanOrEqualToThreshold',
+    }),
+  ).toBe('1/2/2/3/Average/4/GreaterThanOrEqualToThreshold/missing');
+  // TODO Add more tests
+});
 
-//test('metricAlarmOptionsToString', async () => {
-//  expect(
-//    metricAlarmOptionsToString({
-//      warningThreshold: 1,
-//      criticalThreshold: 2,
-//      period: 2,
-//      evaluationPeriods: 3,
-//      statistic: 'Average',
-//      dataPointsToAlarm: 4,
-//      missingDataTreatment: 'missing',
-//      comparisonOperator: 'GreaterThanOrEqualToThreshold',
-//    }),
-//  ).toBe('1/2/2/3/Average/4/GreaterThanOrEqualToThreshold/missing');
-//  // TODO Add more tests
-//});
 
-/**
 test('parseMetricAlarmOptions', async () => {
   // TODO Add tests
 });
