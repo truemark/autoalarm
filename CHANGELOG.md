@@ -3,6 +3,7 @@
 
 ### Added:
 - Added additional support for RDS and RDS Cluster alarms. 
+- Added Tag keys for new DB alarm configs
 
 ### Fixed:
 - Fixed SQS queue visability timeout to match lambda timeout which is required by CDK.
