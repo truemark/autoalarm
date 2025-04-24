@@ -6,7 +6,9 @@ import {
   MetricAlarm,
   MetricDataQuery,
   PutAnomalyDetectorCommand,
+  PutAnomalyDetectorCommandInput,
   PutMetricAlarmCommand,
+  PutMetricAlarmCommandInput,
   Statistic,
 } from '@aws-sdk/client-cloudwatch';
 import {MetricAlarmConfig, MetricAlarmOptions} from './alarm-config.mjs';
@@ -221,7 +223,7 @@ async function handleAnomalyDetectionWorkflow(
     .msg('Handling anomaly detection alarm workflow');
 
   try {
-    const anomalyDetectorInput = {
+    const anomalyDetectorInput: PutAnomalyDetectorCommandInput = {
       Namespace: config.metricNamespace,
       MetricName: config.metricName,
       Dimensions: [...dimensions],
@@ -436,10 +438,11 @@ async function handleStaticThresholdWorkflow(
     .msg('Handling static threshold alarm workflow');
 
   try {
-    const alarmInput = {
+    const alarmInput: PutMetricAlarmCommandInput = {
       AlarmName: alarmName,
       ComparisonOperator: updatedDefaults.comparisonOperator,
       EvaluationPeriods: updatedDefaults.evaluationPeriods,
+      DatapointsToAlarm: updatedDefaults.dataPointsToAlarm,
       MetricName: config.metricName,
       Namespace: config.metricNamespace,
       Period: updatedDefaults.period,
