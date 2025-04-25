@@ -71,7 +71,7 @@ export class AutoAlarm extends Construct {
         fifo: true,
         contentBasedDeduplication: true,
         retentionPeriod: Duration.days(14),
-        visibilityTimeout: Duration.seconds(120),
+        visibilityTimeout: Duration.seconds(900),
         deadLetterQueue: {queue: dlq, maxReceiveCount: 3},
       },
     );

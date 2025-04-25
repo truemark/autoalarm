@@ -68,7 +68,7 @@ const rangePatternSchema = pipe(
       // Check that both start and end parts are not empty
       const isEmpty = [start, end].every((part) => part === '');
 
-      // Check if both parts are not all zeroes.
+      // Check if both parts are not all zeroes. Double undefined values checked by isEmpty.
       const isAllZero = [start, end].every((part) => allZero.test(part));
 
       // Checks for unbounded ranges (e.g., TM(22:) or TM(:33%)) - Valid

@@ -20,27 +20,7 @@ import {TreatMissingData} from 'aws-cdk-lib/aws-cloudwatch';
  * Used to map a tag key to a CloudWatch metric name and namespace to default alarm configurations {@link MetricAlarmOptions}.
  */
 export const RDS_CLUSTER_CONFIGS: MetricAlarmConfig[] = [
-  // 1) CPU - Static Only
-  {
-    tagKey: 'cpu',
-    metricName: 'CPUUtilization',
-    metricNamespace: 'AWS/RDS',
-    defaultCreate: false,
-    anomaly: false,
-    defaults: {
-      warningThreshold: 90,
-      criticalThreshold: 95,
-      period: 600,
-      evaluationPeriods: 1,
-      statistic: 'Maximum',
-      dataPointsToAlarm: 1,
-      comparisonOperator: ComparisonOperator.GreaterThanThreshold,
-      missingDataTreatment: TreatMissingData.IGNORE,
-    },
-  },
-
-  // 2) DatabaseConnections - Anomaly
-
+  // 1) DatabaseConnections - Anomaly
   {
     tagKey: 'db-connections-anomaly',
     metricName: 'DatabaseConnections',
@@ -49,91 +29,36 @@ export const RDS_CLUSTER_CONFIGS: MetricAlarmConfig[] = [
     anomaly: true,
     defaults: {
       warningThreshold: 2,
-      criticalThreshold: 5,
-      period: 600,
-      evaluationPeriods: 5,
-      statistic: 'Average',
-      dataPointsToAlarm: 5,
-      comparisonOperator: 'GreaterThanUpperThreshold',
-      missingDataTreatment: 'ignore',
-    },
-  },
-
-  // 3) DBLoad - Anomaly Only
-  {
-    tagKey: 'dbload-anomaly',
-    metricName: 'DBLoad',
-    metricNamespace: 'AWS/RDS',
-    defaultCreate: true,
-    anomaly: true,
-    defaults: {
-      warningThreshold: 2,
-      criticalThreshold: 5,
-      period: 300,
-      evaluationPeriods: 1,
+      criticalThreshold: 4,
+      period: 60,
+      evaluationPeriods: 15,
       statistic: 'Maximum',
-      dataPointsToAlarm: 1,
-      comparisonOperator: 'GreaterThanUpperThreshold',
-      missingDataTreatment: 'ignore',
+      dataPointsToAlarm: 12,
+      comparisonOperator: ComparisonOperator.GreaterThanUpperThreshold,
+      missingDataTreatment: TreatMissingData.IGNORE,
     },
   },
 
-  // 4) Deadlocks - Static
-  {
-    tagKey: 'deadlocks',
-    metricName: 'Deadlocks',
-    metricNamespace: 'AWS/RDS',
-    defaultCreate: true,
-    anomaly: false,
-    defaults: {
-      warningThreshold: 0,
-      criticalThreshold: 0,
-      period: 120,
-      evaluationPeriods: 1,
-      statistic: 'Sum',
-      dataPointsToAlarm: 1,
-      comparisonOperator: 'GreaterThanThreshold',
-      missingDataTreatment: 'ignore',
-    },
-  },
-
-  // 5) FreeableMemory - Static Only
-  {
-    tagKey: 'freeable-memory',
-    metricName: 'FreeableMemory',
-    metricNamespace: 'AWS/RDS',
-    defaultCreate: true,
-    anomaly: false,
-    defaults: {
-      warningThreshold: 2000000000,
-      criticalThreshold: 100000000,
-      period: 120,
-      evaluationPeriods: 2,
-      statistic: 'Maximum',
-      dataPointsToAlarm: 2,
-      comparisonOperator: 'LessThanThreshold',
-      missingDataTreatment: 'ignore',
-    },
-  },
-
-  // 7) ReplicaLag - Static + Anomaly
+  // 2) ReplicaLag - Static
   {
     tagKey: 'replica-lag',
     metricName: 'ReplicaLag',
     metricNamespace: 'AWS/RDS',
-    defaultCreate: true,
+    defaultCreate: false,
     anomaly: false,
     defaults: {
-      warningThreshold: 60,
-      criticalThreshold: 300,
-      period: 120,
-      evaluationPeriods: 1,
+      warningThreshold: 30,
+      criticalThreshold: 600,
+      period: 60,
+      evaluationPeriods: 15,
       statistic: 'Maximum',
-      dataPointsToAlarm: 1,
+      dataPointsToAlarm: 12,
       comparisonOperator: 'GreaterThanThreshold',
       missingDataTreatment: 'ignore',
     },
   },
+
+  // 3) ReplicaLag - Anomaly
   {
     tagKey: 'replica-lag-anomaly',
     metricName: 'ReplicaLag',
@@ -142,52 +67,32 @@ export const RDS_CLUSTER_CONFIGS: MetricAlarmConfig[] = [
     anomaly: true,
     defaults: {
       warningThreshold: 2,
-      criticalThreshold: 5,
-      period: 120,
-      evaluationPeriods: 1,
-      statistic: 'Average',
-      dataPointsToAlarm: 1,
+      criticalThreshold: 4,
+      period: 60,
+      evaluationPeriods: 20,
+      statistic: 'Maximum',
+      dataPointsToAlarm: 16,
       comparisonOperator: 'GreaterThanUpperThreshold',
       missingDataTreatment: 'ignore',
     },
   },
 
-  // 8) SwapUsage - Anomaly Only
+  // 4) FailoverState - Static
   {
-    tagKey: 'swap-usage-anomaly',
-    metricName: 'SwapUsage',
+    tagKey: 'failover-state',
+    metricName: 'FailoverState',
     metricNamespace: 'AWS/RDS',
-    defaultCreate: true,
-    anomaly: true,
+    defaultCreate: false,
+    anomaly: false,
     defaults: {
-      warningThreshold: 2,
-      criticalThreshold: 5,
-      period: 120,
+      warningThreshold: 0,
+      criticalThreshold: 1,
+      period: 60,
       evaluationPeriods: 1,
       statistic: 'Maximum',
       dataPointsToAlarm: 1,
-      comparisonOperator: 'GreaterThanUpperThreshold',
-      missingDataTreatment: 'ignore',
-    },
-  },
-
-  // 9) WriteLatency - Anomaly
-
-  {
-    tagKey: 'write-latency-anomaly',
-    metricName: 'WriteLatency',
-    metricNamespace: 'AWS/RDS',
-    defaultCreate: true,
-    anomaly: true,
-    defaults: {
-      warningThreshold: 5,
-      criticalThreshold: 9,
-      period: 300,
-      evaluationPeriods: 2,
-      statistic: 'Average',
-      dataPointsToAlarm: 2,
-      comparisonOperator: 'GreaterThanUpperThreshold',
-      missingDataTreatment: 'ignore',
+      comparisonOperator: 'GreaterThanThreshold',
+      missingDataTreatment: 'notBreaching',
     },
   },
   // add more as needed
