@@ -6,7 +6,11 @@ import {
 import {safeParse} from 'valibot';
 import {TreatMissingData} from 'aws-cdk-lib/aws-cloudwatch';
 import {ComparisonOperator} from '@aws-sdk/client-cloudwatch';
-import {validStatSchema} from './valibot-schemas.mjs';
+import {
+  rangePatternSchema,
+  singleValSchema,
+  standardStatSchema,
+} from './valibot-schemas.mjs';
 import * as logging from '@nr1e/logging';
 
 // Initialize logging
@@ -86,38 +90,40 @@ export function parseStatisticOption(
       ? (trim = 'SampleCount') // Account for SampleCount with CamelCase
       : exp.trim().toLowerCase();
 
+  // Early return if we match IQM or SampleCount
+  if (trim === 'IQM' || trim === 'SampleCount') return trim as ValidStatistic;
+
   // Normalize Value to match the various expected Valid Statistics values
   const statVariants = [
     {
-      pattern: 'Standard',
-      value: trim.charAt(0).toUpperCase() + trim.slice(1), // e.g., "Average" "Maximum" "Minimum" "SampleCount" "Sum"
+      schema: standardStatSchema,
+      value: trim.charAt(0).toUpperCase() + trim.slice(1), // e.g., "Average" "Maximum" "Minimum" "Sum"
     },
     {
-      pattern: 'ExtShort',
-      value: trim, // e.g., "p1", "tm22", "tc3", "ts4", "wm59", "IQM"
+      schema: singleValSchema,
+      value: trim, // e.g., "p1", "tm22", "tc3", "ts4", "wm59"
     },
     {
-      pattern: 'ExtRange',
-      value: trim.substring(0, 2).toUpperCase() + trim.substring(2), // e.g., "TM(12%:55%)", "WM(:24)", "TC(44:76)"
+      schema: rangePatternSchema,
+      value: trim.substring(0, 2).toUpperCase() + trim.substring(2), // e.g., "TM12:55", "WM(:24)", "TC44:76"
     },
   ];
 
-  /** Valibot validation for the statistic value  {@link validStatSchema} */
-  const match = statVariants.find((p) => {
-    // If the value is a valid statistic, return it. Otherwise, log the Valibot error and return false
-    const result = safeParse(validStatSchema, p.value as string);
+  // Valibot validation for each variant in statVariants
+  const match = statVariants.find((v) => {
+    const result = safeParse(v.schema, v.value as string);
     if (!result.success) {
       log
         .warn()
         .str('Function', 'parseStatisticOption')
         .str('Input', exp)
-        .str('Pattern', p.pattern)
-        .str('CoercedValue', p.value)
+        .str('CoercedValue', v.value)
         .obj('ValibotError', result.issues)
+        .obj('ValibotResult', result.output as object)
         .msg('Valibot Validation Failed');
       return false;
     }
-    return true; // Return true if the value is valid
+    return true;
   });
 
   // If a match is found, return the value, otherwise return the default value
