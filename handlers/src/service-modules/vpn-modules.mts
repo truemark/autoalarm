@@ -191,7 +191,6 @@ export async function manageInactiveVpnAlarms(vpnId: string): Promise<void> {
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function parseVpnEventAndCreateAlarms(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   event: any,
