@@ -11,8 +11,6 @@ import {
 } from '@aws-sdk/client-cloudwatch';
 import * as logging from '@nr1e/logging';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
-import {ValidInstanceState} from './enums.mjs';
-import {PathMetrics, Tag, EC2AlarmManagerArray} from './types.mjs';
 import {
   deleteAlarm,
   doesAlarmExist,
@@ -20,18 +18,20 @@ import {
   handleAnomalyAlarms,
   handleStaticAlarms,
   massDeleteAlarms,
-} from './alarm-tools.mjs';
-import {
-  MetricAlarmConfig,
-  MetricAlarmConfigs,
-  MetricAlarmOptions,
-  parseMetricAlarmOptions,
-} from './alarm-config.mjs';
-import {
   batchPromRulesDeletion,
   batchUpdatePromRules,
   queryPrometheusForService,
-} from './prometheus-tools.mjs';
+  parseMetricAlarmOptions,
+} from '../alarm-configs/utils/index.mjs';
+import {EC2_CONFIGS} from '../alarm-configs/index.mjs';
+import {
+  MetricAlarmConfig,
+  MetricAlarmOptions,
+  PathMetrics,
+  Tag,
+  EC2AlarmManagerArray,
+  ValidInstanceState,
+} from '../types/index.mjs';
 
 const log: logging.Logger = logging.getLogger('ec2-modules');
 export const prometheusWorkspaceId: string =
@@ -298,7 +298,7 @@ async function checkAndManageStatusAlarm(instanceId: string, tags: Tag) {
   }
 }
 
-const metricConfigs = MetricAlarmConfigs['EC2'];
+const metricConfigs = EC2_CONFIGS;
 
 export async function fetchInstanceTags(
   instanceId: string,

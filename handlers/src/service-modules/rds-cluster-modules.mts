@@ -1,20 +1,20 @@
 import {RDSClient, DescribeDBClustersCommand} from '@aws-sdk/client-rds';
 import * as logging from '@nr1e/logging';
-import {Tag} from './types.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
-import {AlarmClassification} from './enums.mjs';
+import {AlarmClassification, Tag} from '../types/index.mjs';
 import {
   getCWAlarmsForInstance,
   deleteExistingAlarms,
   buildAlarmName,
   handleAnomalyAlarms,
   handleStaticAlarms,
-} from './alarm-tools.mjs';
+  parseMetricAlarmOptions,
+} from '../alarm-configs/utils/index.mjs';
 import {
   CloudWatchClient,
   DeleteAlarmsCommand,
 } from '@aws-sdk/client-cloudwatch';
-import {MetricAlarmConfigs, parseMetricAlarmOptions} from './alarm-config.mjs';
+import {RDS_CLUSTER_CONFIGS} from '../alarm-configs/index.mjs';
 
 const log: logging.Logger = logging.getLogger('rds-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -28,7 +28,7 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   retryStrategy: retryStrategy,
 });
 
-const metricConfigs = MetricAlarmConfigs['RDSCluster'];
+const metricConfigs = RDS_CLUSTER_CONFIGS;
 
 export async function fetchRDSClusterTags(
   dbClusterId: string,
