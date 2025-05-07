@@ -283,6 +283,50 @@ function findRDSClusterArn(eventObj: Record<string, any>): string {
   return arn;
 }
 
+
+// On occasion AWS will splice the arn with the resource ID. If this happens, we need to remap the arn from the resource ID.
+function getARNFromResourceId(arn: string): string {
+  if (!arn.includes('cluster:cluster-')) return arn;
+
+  log
+    .warn()
+    .str('function', 'getARNFromResourceId')
+    .str('Received ARN', arn)
+    .msg(
+      'ARN is malformed and uses resource ID. Attempting to map ARN from resource ID',
+    );
+
+  const command = new DescribeDBClustersCommand({
+    Filters: [
+      {
+        Name: arn.split(':').at(-1), // grab the last index which is the resource ID
+        Values: ['db-cluster-resource-id'],
+      },
+    ],
+  });
+
+  try {
+    const response = await rdsClient.send(command);
+
+    // Check if any clusters were found
+    if (response.DBClusters && response.DBClusters.length > 0) {
+      // Return the ARN from the first matching cluster
+      return response.DBClusters[0].DBClusterArn!;
+    } else {
+      log
+        .info()
+        .str('function', 'getARNFromResourceId')
+        .str('resourceId', arn)
+        .str('resourceID', arn.split(':').at(-1))
+        .msg('No DB cluster found with the provided resource ID');
+      throw new Error(`No DB cluster found with resource ID: ${resourceId}`);
+    }
+  } catch (error) {
+    console.error('Error retrieving DB cluster ARN:', error);
+    throw error;
+  }
+}
+
 export async function parseRDSClusterEventAndCreateAlarms(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   event: Record<string, any>,
