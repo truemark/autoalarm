@@ -21,6 +21,7 @@
     "clean-cdk-lib": "cd cdk/lib ; find . -type f \\( -name '*.d.ts' -o -name '*.js' \\) -delete",
     "clean-cdk-bin": "cd cdk/bin ; find . -type f \\( -name '*.d.ts' -o -name '*.js' \\) -delete",
     "clean": "concurrently \"pnpm:clean-handlers\" \"pnpm:clean-cdk-lib\" \"pnpm:clean-cdk-bin\" -c blue,green,yellow",
+    "create-cw-configs": "tsx handlers/src/alarm-configs/cloudwatch-alarms/_template-configs.mts",
     "watch-cdk": "cd cdk && cdk watch",
     "deploy-cdk": "cd cdk && cdk deploy",
     "destroy-cdk": "cd cdk && cdk destroy",
@@ -28,7 +29,9 @@
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
-    "prettier": "^3.5.0"
+    "prettier": "^3.5.0",
+    "tsx": "^4.19.3",
+    "valibot": "^1.0.0"
   },
   "dependencies": {
     "@aws-sdk/credential-provider-node": "^3.744.0",

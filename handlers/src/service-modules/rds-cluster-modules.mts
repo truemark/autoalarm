@@ -1,20 +1,20 @@
 import {RDSClient, DescribeDBClustersCommand} from '@aws-sdk/client-rds';
 import * as logging from '@nr1e/logging';
-import {Tag} from './types.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
-import {AlarmClassification} from './enums.mjs';
+import {AlarmClassification, Tag} from '../types/index.mjs';
 import {
   getCWAlarmsForInstance,
   deleteExistingAlarms,
   buildAlarmName,
   handleAnomalyAlarms,
   handleStaticAlarms,
-} from './alarm-tools.mjs';
+  parseMetricAlarmOptions,
+} from '../alarm-configs/utils/index.mjs';
 import {
   CloudWatchClient,
   DeleteAlarmsCommand,
 } from '@aws-sdk/client-cloudwatch';
-import {MetricAlarmConfigs, parseMetricAlarmOptions} from './alarm-config.mjs';
+import {RDS_CLUSTER_CONFIGS} from '../alarm-configs/index.mjs';
 
 const log: logging.Logger = logging.getLogger('rds-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -28,7 +28,7 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   retryStrategy: retryStrategy,
 });
 
-const metricConfigs = MetricAlarmConfigs['RDSCluster'];
+const metricConfigs = RDS_CLUSTER_CONFIGS;
 
 export async function fetchRDSClusterTags(
   dbClusterId: string,
@@ -283,6 +283,55 @@ function findRDSClusterArn(eventObj: Record<string, any>): string {
   return arn;
 }
 
+// On occasion AWS will splice the arn with the resource ID. If this happens, we need to remap the arn from the resource ID.
+async function getARNFromResourceId(arn: string) {
+  if (!arn.includes('cluster:cluster-')) return arn;
+
+  const resourceId = arn.split(':').at(-1); // grab the last index which is the resource ID
+
+  log
+    .warn()
+    .str('function', 'getARNFromResourceId')
+    .str('Received ARN', arn)
+    .msg(
+      'ARN is malformed and uses resource ID. Attempting to map ARN from resource ID',
+    );
+
+  const command = new DescribeDBClustersCommand({
+    Filters: [
+      {
+        Name: 'db-cluster-resource-id', // grab the last index which is the resource ID
+        Values: [`${resourceId}`],
+      },
+    ],
+  });
+
+  try {
+    const response = await rdsClient.send(command);
+    // Check if any clusters were found
+    if (response.DBClusters && response.DBClusters.length > 0) {
+      // Return the ARN from the first matching cluster
+      return response.DBClusters[0].DBClusterArn!;
+    } else {
+      log
+        .info()
+        .str('function', 'getARNFromResourceId')
+        .str('resourceId', arn)
+        .str('resourceID', arn.split(':').at(-1))
+        .msg('No DB cluster found with the provided resource ID');
+      throw new Error(`No DB cluster found with resource ID: ${resourceId}`);
+    }
+  } catch (error) {
+    log
+      .error()
+      .str('function', 'getARNFromResourceId')
+      .err(error)
+      .str('resourceId', resourceId)
+      .msg('Error fetching DB cluster ARN from resource ID');
+    throw error;
+  }
+}
+
 export async function parseRDSClusterEventAndCreateAlarms(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   event: Record<string, any>,
@@ -293,13 +342,15 @@ export async function parseRDSClusterEventAndCreateAlarms(
   tags: Record<string, string>;
 } | void> {
   let dbClusterId: string = '';
-  let dbClusterArn: string | Error = '';
   let eventType: string = '';
   let tags: Record<string, string> = {};
 
+  // get arn from event and remap ARN if arn is malformed and contains resource ID
+  const eventArn = findRDSClusterArn(event);
+  const dbClusterArn = await getARNFromResourceId(eventArn);
+
   switch (event['detail-type']) {
     case 'Tag Change on Resource':
-      dbClusterArn = findRDSClusterArn(event);
       if (!dbClusterArn) {
         log
           .error()
@@ -340,7 +391,6 @@ export async function parseRDSClusterEventAndCreateAlarms(
     case 'AWS API Call via CloudTrail':
       switch (event.detail.eventName) {
         case 'CreateDBCluster':
-          dbClusterArn = findRDSClusterArn(event);
           if (!dbClusterArn) {
             log
               .error()
@@ -379,7 +429,6 @@ export async function parseRDSClusterEventAndCreateAlarms(
           break;
 
         case 'DeleteDBCluster':
-          dbClusterArn = findRDSClusterArn(event);
           if (!dbClusterArn) {
             log
               .error()

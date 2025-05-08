@@ -1,20 +1,20 @@
 import {SQSClient, ListQueueTagsCommand} from '@aws-sdk/client-sqs';
 import * as logging from '@nr1e/logging';
-import {Tag} from './types.mjs';
-import {AlarmClassification} from './enums.mjs';
-import {ConfiguredRetryStrategy} from '@smithy/util-retry';
-import {
-  getCWAlarmsForInstance,
-  deleteExistingAlarms,
-  buildAlarmName,
-  handleAnomalyAlarms,
-  handleStaticAlarms,
-} from './alarm-tools.mjs';
+import {AlarmClassification, Tag} from '../types/index.mjs';
 import {
   CloudWatchClient,
   DeleteAlarmsCommand,
 } from '@aws-sdk/client-cloudwatch';
-import {MetricAlarmConfigs, parseMetricAlarmOptions} from './alarm-config.mjs';
+import {ConfiguredRetryStrategy} from '@smithy/util-retry';
+import {
+  deleteExistingAlarms,
+  buildAlarmName,
+  handleAnomalyAlarms,
+  handleStaticAlarms,
+  getCWAlarmsForInstance,
+  parseMetricAlarmOptions,
+} from '../alarm-configs/utils/index.mjs';
+import {SQS_CONFIGS} from '../alarm-configs/index.mjs';
 
 const log: logging.Logger = logging.getLogger('sqs-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -28,7 +28,7 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   retryStrategy: retryStrategy,
 });
 
-const metricConfigs = MetricAlarmConfigs['SQS'];
+const metricConfigs = SQS_CONFIGS;
 
 export async function fetchSQSTags(queueUrl: string): Promise<Tag> {
   try {

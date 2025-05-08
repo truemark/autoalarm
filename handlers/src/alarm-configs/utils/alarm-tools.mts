@@ -6,13 +6,19 @@ import {
   MetricAlarm,
   MetricDataQuery,
   PutAnomalyDetectorCommand,
+  PutAnomalyDetectorCommandInput,
   PutMetricAlarmCommand,
+  PutMetricAlarmCommandInput,
   Statistic,
 } from '@aws-sdk/client-cloudwatch';
-import {MetricAlarmConfig, MetricAlarmOptions} from './alarm-config.mjs';
+import {ComparisonOperator} from 'aws-cdk-lib/aws-cloudwatch';
+import {
+  MetricAlarmConfig,
+  MetricAlarmOptions,
+  AlarmClassification,
+} from '../../types/index.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import * as logging from '@nr1e/logging';
-import {AlarmClassification} from './enums.mjs';
 
 const region: string = process.env.AWS_REGION || '';
 const retryStrategy = new ConfiguredRetryStrategy(20);
@@ -145,14 +151,14 @@ export function buildAlarmName(
   service: string,
   serviceIdentifier: string,
   classification: AlarmClassification,
-  alarmVarient: 'anomaly' | 'static',
+  alarmVariant: 'anomaly' | 'static',
   storagePath?: string,
 ) {
   if (storagePath) {
     const alarmName =
-      alarmVarient === 'anomaly'
-        ? `AutoAlarm-${service}-${serviceIdentifier}-${config.metricName}-${storagePath}-anomaly-${classification}`
-        : `AutoAlarm-${service}-${serviceIdentifier}-${config.metricName}-${storagePath}-${classification}`;
+      alarmVariant === 'anomaly'
+        ? `AutoAlarm-${service.toUpperCase()}-${serviceIdentifier}-${config.metricName}-${storagePath}-anomaly-${classification}`
+        : `AutoAlarm-${service.toUpperCase()}-${serviceIdentifier}-${config.metricName}-${storagePath}-${classification}`;
     log
       .info()
       .str('function', 'buildAlarmName')
@@ -161,9 +167,9 @@ export function buildAlarmName(
     return alarmName;
   } else {
     const alarmName =
-      alarmVarient === 'anomaly'
-        ? `AutoAlarm-${service}-${serviceIdentifier}-${config.metricName}-anomaly-${classification}`
-        : `AutoAlarm-${service}-${serviceIdentifier}-${config.metricName}-${classification}`;
+      alarmVariant === 'anomaly'
+        ? `AutoAlarm-${service.toUpperCase()}-${serviceIdentifier}-${config.metricName}-anomaly-${classification}`
+        : `AutoAlarm-${service.toUpperCase()}-${serviceIdentifier}-${config.metricName}-${classification}`;
     log
       .info()
       .str('function', 'buildAlarmName')
@@ -221,7 +227,7 @@ async function handleAnomalyDetectionWorkflow(
     .msg('Handling anomaly detection alarm workflow');
 
   try {
-    const anomalyDetectorInput = {
+    const anomalyDetectorInput: PutAnomalyDetectorCommandInput = {
       Namespace: config.metricNamespace,
       MetricName: config.metricName,
       Dimensions: [...dimensions],
@@ -265,7 +271,8 @@ async function handleAnomalyDetectionWorkflow(
 
     const alarmInput = {
       AlarmName: alarmName,
-      ComparisonOperator: updatedDefaults.comparisonOperator,
+      ComparisonOperator:
+        updatedDefaults.comparisonOperator as ComparisonOperator,
       EvaluationPeriods: updatedDefaults.evaluationPeriods,
       Metrics: metrics,
       ThresholdMetricId: 'anomalyDetectionBand',
@@ -301,6 +308,7 @@ async function handleAnomalyDetectionWorkflow(
   }
 }
 
+//TODO: Confirm that we do not need to differentiate between Standard Statistics and Extended Statistics
 export async function handleAnomalyAlarms(
   config: MetricAlarmConfig,
   service: string,
@@ -436,16 +444,27 @@ async function handleStaticThresholdWorkflow(
     .msg('Handling static threshold alarm workflow');
 
   try {
-    const alarmInput = {
+    const alarmInput: PutMetricAlarmCommandInput = {
       AlarmName: alarmName,
       ComparisonOperator: updatedDefaults.comparisonOperator,
       EvaluationPeriods: updatedDefaults.evaluationPeriods,
+      DatapointsToAlarm: updatedDefaults.dataPointsToAlarm,
       MetricName: config.metricName,
       Namespace: config.metricNamespace,
       Period: updatedDefaults.period,
-      ...(['p', 'tm', 'tc', 'ts', 'wm', 'iqm'].some((prefix) =>
-        updatedDefaults.statistic.startsWith(prefix),
-      )
+      ...([
+        'p',
+        'tm',
+        'tc',
+        'ts',
+        'wm',
+        'IQM',
+        'WM',
+        'PR',
+        'TC',
+        'TM',
+        'TS',
+      ].some((prefix) => updatedDefaults.statistic!.startsWith(prefix))
         ? {ExtendedStatistic: updatedDefaults.statistic}
         : {Statistic: updatedDefaults.statistic as Statistic}),
       Threshold: threshold,

@@ -1,39 +1,35 @@
 import * as logging from '@nr1e/logging';
 import {
   AmpClient,
-  ListRuleGroupsNamespacesCommand,
-  DescribeRuleGroupsNamespaceCommand,
   CreateRuleGroupsNamespaceCommand,
-  PutRuleGroupsNamespaceCommand,
-  RuleGroupsNamespaceSummary,
   DeleteRuleGroupsNamespaceCommand,
+  DescribeRuleGroupsNamespaceCommand,
   DescribeWorkspaceCommand,
   DescribeWorkspaceCommandInput,
+  ListRuleGroupsNamespacesCommand,
+  PutRuleGroupsNamespaceCommand,
+  RuleGroupsNamespaceSummary,
 } from '@aws-sdk/client-amp';
 import {
-  RuleGroup,
-  NamespaceDetails,
-  Rule,
+  AlarmClassification,
+  AMPRule,
   EC2AlarmManagerArray,
+  NamespaceDetails,
   PrometheusAlarmConfigArray,
-} from './types.mjs';
+  RuleGroup,
+} from '../../types/index.mjs';
 import {
   EC2getCpuQuery,
   EC2getMemoryQuery,
   EC2getStorageQuery,
-} from './prometheus-queries.mjs';
+} from './index.mjs';
 import * as yaml from 'js-yaml';
-import * as aws4 from 'aws4';
+import * as aws4 from 'aws4'; // TODO: This package is deprecated. Refactor.
 import * as https from 'https';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {defaultProvider} from '@aws-sdk/credential-provider-node';
-import {buildAlarmName} from './alarm-tools.mjs';
-import {AlarmClassification} from './enums.mjs';
-import {
-  MetricAlarmConfig,
-  MetricAlarmConfigs,
-  parseMetricAlarmOptions,
-} from './alarm-config.mjs';
+import {buildAlarmName, parseMetricAlarmOptions} from './index.mjs';
+import * as AlarmConfigs from '../index.mjs';
 
 const log: logging.Logger = logging.getLogger('ec2-modules');
 const retryStrategy = new ConfiguredRetryStrategy(20);
@@ -158,17 +154,15 @@ export async function batchPromRulesDeletion(
 /**
  * Get alarm configurations for Prometheus alarms for EC2 instances based on their tags and metric configurations.
  * @param ec2AlarmManagerArray - Array of EC2 instances with state and tags.
- * @param service - The service name: 'EC2', 'ECS', 'EKS', 'RDS', etc. These correspond with service names in the MetricAlarmConfigs object from alarm-config.mts.
+ * @param service - The service name: 'EC2', 'ECS', 'EKS', 'RDS', etc. These correspond with service names in the AlarmConfigs object from alarm-config.mts.
  * @returns Array of Prometheus alarm configurations.
  */
+//TODO: Update this to use the correct service configs as more services are added to Prometheus
 async function getPromAlarmConfigs(
   ec2AlarmManagerArray: EC2AlarmManagerArray,
   service: string,
 ): Promise<PrometheusAlarmConfigArray> {
   const configs: PrometheusAlarmConfigArray = [];
-  const metricConfigs: MetricAlarmConfig[] =
-    MetricAlarmConfigs[service.toUpperCase()];
-
   // Loop through each instance in the ec2AlarmManagerArray
   for (const {instanceID, tags, ec2Metadata} of ec2AlarmManagerArray) {
     const platform = ec2Metadata?.platform ?? '';
@@ -186,7 +180,7 @@ async function getPromAlarmConfigs(
     const escapedPrivateIp = privateIP.replace(/\./g, '\\\\.');
 
     // Loop through each metric configuration
-    for (const config of metricConfigs) {
+    for (const config of AlarmConfigs.EC2_CONFIGS) {
       log
         .info()
         .str('function', 'getPromAlarmConfigs')
@@ -952,7 +946,7 @@ export async function managePromNamespaceAlarms(
   for (const config of alarmConfigs) {
     // Find the index of the existing rule with the same name
     const existingRuleIndex = ruleGroup.rules.findIndex(
-      (rule): rule is Rule => rule.alert === config.alarmName,
+      (rule): rule is AMPRule => rule.alert === config.alarmName,
     );
 
     if (existingRuleIndex !== -1) {
@@ -969,7 +963,7 @@ export async function managePromNamespaceAlarms(
           .str('ruleGroupName', ruleGroupName)
           .str('alarmName', config.alarmName)
           .msg(
-            'Rule exists but expression or duration has changed. Updating the rule.',
+            'AMPRule exists but expression or duration has changed. Updating the rule.',
           );
 
         // Update existing rule's expression and duration
@@ -985,7 +979,7 @@ export async function managePromNamespaceAlarms(
           .str('namespace', namespace)
           .str('ruleGroupName', ruleGroupName)
           .str('alarmName', config.alarmName)
-          .msg('Rule exists and is identical. No update needed.');
+          .msg('AMPRule exists and is identical. No update needed.');
       }
     } else {
       // If the rule does not exist, add a new rule to the rule group
@@ -995,7 +989,7 @@ export async function managePromNamespaceAlarms(
         .str('namespace', namespace)
         .str('ruleGroupName', ruleGroupName)
         .str('alarmName', config.alarmName)
-        .msg('Rule does not exist. Adding new rule to the rule group.');
+        .msg('AMPRule does not exist. Adding new rule to the rule group.');
       ruleGroup.rules.push({
         alert: config.alarmName,
         expr: config.alarmQuery,
@@ -1086,7 +1080,7 @@ export async function deletePromRulesForService(
         .info()
         .str('function', 'deletePromRulesForService')
         .str('ruleGroupName', ruleGroupName)
-        .msg('Prometheus Rule group not found, nothing to delete');
+        .msg('Prometheus AMPRule group not found, nothing to delete');
       return;
     }
 
