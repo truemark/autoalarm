@@ -151,14 +151,14 @@ export function buildAlarmName(
   service: string,
   serviceIdentifier: string,
   classification: AlarmClassification,
-  alarmVarient: 'anomaly' | 'static',
+  alarmVariant: 'anomaly' | 'static',
   storagePath?: string,
 ) {
   if (storagePath) {
     const alarmName =
-      alarmVarient === 'anomaly'
-        ? `AutoAlarm-${service}-${serviceIdentifier}-${config.metricName}-${storagePath}-anomaly-${classification}`
-        : `AutoAlarm-${service}-${serviceIdentifier}-${config.metricName}-${storagePath}-${classification}`;
+      alarmVariant === 'anomaly'
+        ? `AutoAlarm-${service.toUpperCase()}-${serviceIdentifier}-${config.metricName}-${storagePath}-anomaly-${classification}`
+        : `AutoAlarm-${service.toUpperCase()}-${serviceIdentifier}-${config.metricName}-${storagePath}-${classification}`;
     log
       .info()
       .str('function', 'buildAlarmName')
@@ -167,9 +167,9 @@ export function buildAlarmName(
     return alarmName;
   } else {
     const alarmName =
-      alarmVarient === 'anomaly'
-        ? `AutoAlarm-${service}-${serviceIdentifier}-${config.metricName}-anomaly-${classification}`
-        : `AutoAlarm-${service}-${serviceIdentifier}-${config.metricName}-${classification}`;
+      alarmVariant === 'anomaly'
+        ? `AutoAlarm-${service.toUpperCase()}-${serviceIdentifier}-${config.metricName}-anomaly-${classification}`
+        : `AutoAlarm-${service.toUpperCase()}-${serviceIdentifier}-${config.metricName}-${classification}`;
     log
       .info()
       .str('function', 'buildAlarmName')
