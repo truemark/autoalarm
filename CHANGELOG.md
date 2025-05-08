@@ -1,4 +1,22 @@
 # AutoAlarm Changelog
+
+## v1.13.1
+### Added:
+- Validation for Statistics using valibot to ensure that only valid statistics are used in the alarm configuration (issue 135).
+
+### Changed:
+- Significant structural refactors for the project to improve maintainability (issue-144). 
+- Refactored alarm-configs.mts to only contain utilities used to parse tags and alarm configurations.
+- Segregated and split off alarm configs into their own files for each service to improved. 
+- AutoAlarm's new structure includes barrel exports in index.mts files for alarm configs, alarm utils, types and 
+service modules to simplify imports and improve implementation across the project.
+
+### Fixed:
+- Fixed a bug in RDS Cluster Module where the ARN from the sqs payload contained the Cluster Resource ID instead of a valid ARN
+by adding logic to remap the ARN from the cluster resource ID (issue 151).
+- Fixed a bug where extended statistics were not being properly parsed in tag values (issue 146).
+
+
 ## v1.12.1
 
 ### Added:
@@ -6,7 +24,7 @@
 - Added Tag keys for new DB alarm configs
 
 ### Fixed:
-- Fixed SQS queue visability timeout to match lambda timeout which is required by CDK.
+- Fixed SQS queue visibility timeout to match lambda timeout which is required by CDK.
 - Fixed a missing parameter in PutMetricAlarmCommandInput to allow configuration of data  points to alarm
 
 
