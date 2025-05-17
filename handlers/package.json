@@ -26,6 +26,7 @@
     "@aws-sdk/client-sesv2": "^3.800.0",
     "@aws-sdk/client-sfn": "^3.799.0",
     "@aws-sdk/client-sqs": "^3.799.0",
+    "@aws-sdk/client-ssm": "^3.808.0",
     "@aws-sdk/credential-provider-node": "^3.799.0",
     "@aws-sdk/lib-dynamodb": "^3.799.0",
     "@aws-sdk/s3-request-presigner": "^3.800.0",
