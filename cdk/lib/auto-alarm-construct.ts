@@ -1,3 +1,6 @@
+/**
+ * TODO: Build DyunamoDB table to store alarm state
+ */
 import {Construct} from 'constructs';
 import {AutoAlarm} from './main-function-subsconstruct';
 import {ReAlarmProducer} from './realarm-producer-subconstruct';
@@ -5,7 +8,6 @@ import {ReAlarmConsumer} from './realarm-consumer-subconstruct';
 import {Stack} from 'aws-cdk-lib';
 import {ReAlarmTagEventHandler} from './realarm-tag-event-subconstruct';
 import {EventRules} from './service-eventbridge-subconstruct';
-import {SqsHandlerSubConstruct} from './sqs-handler-subconstruct';
 
 interface AutoAlarmConstructProps {
   readonly prometheusWorkspaceId?: string;
@@ -14,7 +16,6 @@ interface AutoAlarmConstructProps {
 
 export class AutoAlarmConstruct extends Construct {
   protected readonly autoAlarm: AutoAlarm;
-  protected readonly sqsHandler: SqsHandlerSubConstruct;
   protected readonly reAlarmProducer: ReAlarmProducer;
   protected readonly reAlarmConsumer: ReAlarmConsumer;
   protected readonly reAlarmTagEventHandler: ReAlarmTagEventHandler;
@@ -88,27 +89,12 @@ export class AutoAlarmConstruct extends Construct {
     );
 
     /**
-     * Create the SQS handler function and all the source queues for each service AutoAlarm supports.
-     * Grant send messages to the mainFunction queue.
-     */
-    this.sqsHandler = new SqsHandlerSubConstruct(
-      this,
-      'SqsHandler',
-      this.autoAlarm.mainFunctionQueue.queueArn,
-      this.autoAlarm.mainFunctionQueue.queueUrl,
-    );
-
-    this.autoAlarm.mainFunctionQueue.grantSendMessages(
-      this.sqsHandler.lambdaFunction,
-    );
-
-    /**
      * Create the EventBridge rules for each service and set the proper queue as the target for each rule
      */
     this.eventBridgeRules = new EventRules(
       this,
       'ServiceEventRules',
-      this.sqsHandler.eventSourceQueues,
+      this.autoAlarm.lambdaFunction,
     );
   }
 }

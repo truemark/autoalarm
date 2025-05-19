@@ -1,3 +1,10 @@
+/**
+ * TODO: wrap the SQS handler logic into a utils module and import it here
+ * TODO: wrap realarm logic into a utils module and import it here
+ * TODO: get all alarms from dynamo db and pass them to the prometheus module and later to the rest of the modules
+ *
+ */
+
 import {
   Handler,
   SQSEvent,

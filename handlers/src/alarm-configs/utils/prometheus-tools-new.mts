@@ -5,5 +5,3 @@
  *
  * @TODO: backport these changes into ec2 modules and remove legacy prometheus tools.
  */
-
-
