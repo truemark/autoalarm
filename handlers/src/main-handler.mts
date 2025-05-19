@@ -2,7 +2,11 @@
  * TODO: wrap the SQS handler logic into a utils module and import it here
  * TODO: wrap realarm logic into a utils module and import it here
  * TODO: get all alarms from dynamo db and pass them to the prometheus module and later to the rest of the modules
- *
+ * TODO: Build out logic for universal tag event that will cause dynamodb to update with all alarms and populate
+ *  the tables for backwards compatability should go in utils.
+ * TODO: Build logic to integrates with Dynamo to account for Prometheus alarm clean up when a DB is deleted
+ *  but the ssm secret is not deleted.
+ *      * Confirm with team if autoalarm should go ahead and remove the secret.
  */
 
 import {

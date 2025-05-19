@@ -77,7 +77,7 @@ export class EventRules extends Construct {
    * Grant the lambda function permission to consume the queue
    * And set the event source to the lambda function
    *
-   * @param lambdaFunction Lambda Funciton to grant consume to
+   * @param lambdaFunction Lambda Function to grant consume to
    */
   private eventRuleTargetSetter(lambdaFunction: ExtendedNodejsFunction): void {
     const addQueues = (rule: Rule, queueName: string) => {
