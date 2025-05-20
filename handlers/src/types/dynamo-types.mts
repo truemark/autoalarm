@@ -21,6 +21,6 @@ export type DynamoUpdateCriteria = {
   category: DynamoValidCategory,
   arn: string,
   tableName: string
-  alarms?: string[],
-  tags?: Tag,
+  alarms: string[],
+  tags: Tag,
 }

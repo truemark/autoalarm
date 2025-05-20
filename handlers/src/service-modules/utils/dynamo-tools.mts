@@ -42,7 +42,7 @@ export class DynamoTools {
    */
 
   /**
-   * Gets current alarms or tags or builds a record template for a specific
+   * Gets current alarms and tags or builds a record template for a specific
    * resource in DynamoDB if the record does not exist.
    */
   static async getDynamoRecord(

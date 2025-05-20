@@ -1,5 +1,7 @@
 import {SSM} from '@aws-sdk/client-ssm';
 import {boolean} from 'valibot';
+import {DynamoRecordTemplate} from '../types/dynamo-types.mjs';
+import {SQSRecord} from 'aws-lambda';
 
 // TODO: use proper typing for ARN
 // TODO: use proper typing for event
@@ -96,15 +98,14 @@ function handleRDSPromCleanup(isDeleteEvent: boolean): void {
   if (isDeleteEvent) {
     // delete all alarms
   }
-  // after deleteing alarms clean up dyanmo db or update it
-  await dynamoUpdateEntries();
+
 }
 
 function handleRDSPromAlarmDelete(alarms: string[]): void {
 // delete some alarms
 
-  // update dynamo with the alarms removed
-  await dynamoUpdateEntries();
+
+
 }
 
 
@@ -118,8 +119,9 @@ function handleRDSPromAlarmDelete(alarms: string[]): void {
  */
 
 export async function rdsPromAlarmManager(
-  event: any,
-  tags: Record<string, string>,
+  event: SQSRecord,
+  eventType: 'tag' | 'create/delete', //TODO add this to a type.
+  dynamoRecord: DynamoRecordTemplate
 
 ): Promise<void> {
   // get the secret ARN from the event

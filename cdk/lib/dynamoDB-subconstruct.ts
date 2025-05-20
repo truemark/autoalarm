@@ -80,9 +80,5 @@ export class AutoAlarmDynamoTable extends Construct {
 
     // Grant the Lambda function permissions to read and write to the DynamoDB table
     this.table.grantReadWriteData(mainFunctionLambda);
-
-    // Set the DynamoDB table ARN and name
-    this.dynamoTableARN = this.table.tableArn;
-    this.dynamoTableName = this.table.tableName;
   }
 }
