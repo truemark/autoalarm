@@ -42,7 +42,8 @@ export class EventRules extends Construct {
     /**
      * SQS Tag Changes differs in pattern from the rest of the services. Create a separate rule for it because it's special.
      * TODO: This should be modified to catch all outlier patterns for tags
-     * @ssm-example: \"detail-type\":\"AWS API Call via CloudTrail\",\"source\":\"aws.ssm\","eventName\":\"AddTagsToResource, || \"eventName\":\"RemoveTagsFromResource\"
+     * @secretsManager-example: \"detail-type\":\"AWS API Call via CloudTrail\",\"source\":\"aws.secretsmanager\","eventName\":\"TagResource, || \"eventName\":\"UntagResource\"
+     * @secretsManager-example: \"detail-type\":\"AWS API Call via CloudTrail\",\"source\":\"aws.secretsmanager\","eventName\":\"TagResource, || \"eventName\":\"UntagResource\"
      */
     this.sqsTagRule = new Rule(this, 'SqsTagRule', {
       eventPattern: {
@@ -66,7 +67,7 @@ export class EventRules extends Construct {
         detailType: ['AWS API Call via CloudTrail'],
         detail: {
           eventSource: ['*'],
-          eventName: ['Create*', 'Delete*', 'running', 'terminated', "PutParameter", "DeleteParameter"],
+          eventName: ['Create*', 'Delete*', 'running', 'terminated', ],
         },
       },
       description: 'Routes create/delete events',

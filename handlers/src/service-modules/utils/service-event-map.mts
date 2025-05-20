@@ -3,36 +3,40 @@
 // TODO: Add logging to each of teh filter functions
 import {SQSRecord} from 'aws-lambda';
 
-export const SSMEventMap = {
-  'aws.ssm': {
+export const SecretsManagerEventMap = {
+  'aws.secretsmanager': {
     eventName: {
-      RemoveTagsFromResource: {
+      UntagResource: {
         hasTags: true,
         tagsKey: 'tagKeys',
-        idKeyName: 'resourceId',
-        isARN: false,
+        idKeyName: 'secretId',
+        isARN: true,
         isDestroyed: false,
+        isCreated: false,
       },
-      AddTagsToResource: {
+      TagResource: {
         hasTags: true,
         tagsKey: 'tags',
-        idKeyName: 'resourceId',
-        isARN: false,
+        idKeyName: 'secretId',
+        isARN: true,
         isDestroyed: false,
+        isCreated: false,
       },
-      DeleteParameter: {
+      DeleteSecret: {
         hasTags: false,
         tagsKey: null,
-        idKeyName: 'ARN',
+        idKeyName: 'arn',
         isARN: true,
         isDestroyed: true,
+        isCreated: false,
       },
-      PutParameter: {
-        hasTags: true,
-        tagsKey: 'tags',
-        idKeyName: 'ARN',
+      CreateSecret: {
+        hasTags: false,
+        tagsKey: null,
+        idKeyName: 'responseElements.arn',
         isARN: true,
         isDestroyed: false,
+        isCreated: true,
       },
     },
   },
@@ -42,7 +46,7 @@ export const SSMEventMap = {
  * @TODO This consolidated map should go in the main handler.
  */
 export const ServiceEventMap = {
-  ...SSMEventMap,
+  ...SecretsManagerEventMap,
 } as const;
 
 // TODO: Move to types file. Create new filtering types
@@ -133,8 +137,9 @@ function findTagsAndId(
  */
 function matchEvent(event: SQSRecord):
   | {
-      service: ValidEventSource | undefined;
+      service: ValidEventSource;
       isDestroyed: boolean;
+      isCreated: boolean;
       tags: {tagKey: string; tagValue?: string}[] | undefined;
       isARN: boolean;
       id: string;
@@ -164,6 +169,7 @@ function matchEvent(event: SQSRecord):
   return {
     service: service.service,
     isDestroyed: eventPatterns.isDestroyed,
+    isCreated: eventPatterns.isCreated,
     tags: tags,
     isARN: isARN,
     id: id,

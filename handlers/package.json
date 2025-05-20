@@ -23,6 +23,7 @@
     "@aws-sdk/client-rds": "^3.799.0",
     "@aws-sdk/client-route53resolver": "^3.799.0",
     "@aws-sdk/client-s3": "^3.800.0",
+    "@aws-sdk/client-secrets-manager": "^3.812.0",
     "@aws-sdk/client-sesv2": "^3.800.0",
     "@aws-sdk/client-sfn": "^3.799.0",
     "@aws-sdk/client-sqs": "^3.799.0",
