@@ -8,6 +8,7 @@ import {ReAlarmConsumer} from './realarm-consumer-subconstruct';
 import {Stack} from 'aws-cdk-lib';
 import {ReAlarmTagEventHandler} from './realarm-tag-event-subconstruct';
 import {EventRules} from './service-eventbridge-subconstruct';
+import {AutoAlarmDynamoTable} from './dynamoDB-subconstruct';
 
 interface AutoAlarmConstructProps {
   readonly prometheusWorkspaceId?: string;
@@ -20,6 +21,7 @@ export class AutoAlarmConstruct extends Construct {
   protected readonly reAlarmConsumer: ReAlarmConsumer;
   protected readonly reAlarmTagEventHandler: ReAlarmTagEventHandler;
   protected readonly eventBridgeRules: EventRules;
+  protected readonly autoAlarmDynamoTable: AutoAlarmDynamoTable;
   constructor(scope: Construct, id: string, props: AutoAlarmConstructProps) {
     super(scope, id);
     //the following four consts are used to pass the correct ARN for whichever prometheus ID is being used as well as to the lambda.
@@ -29,6 +31,29 @@ export class AutoAlarmConstruct extends Construct {
     const prometheusArn = `arn:aws:aps:${region}:${accountId}:workspace/${prometheusWorkspaceId}`;
 
     const enableReAlarm = props.enableReAlarm ?? true;
+
+    /**
+     * Create AutoAlarm DynamoDB table
+     */
+    this.autoAlarmDynamoTable = new AutoAlarmDynamoTable(
+      this,
+      'AlarmTrackingTable',
+      this.autoAlarm.lambdaFunction,
+    );
+
+    /**
+     * Create the MainFunction, mainfunction queue and associated resources
+     */
+    this.autoAlarm = new AutoAlarm(
+      this,
+      'MainHandler',
+      region,
+      accountId,
+      this.autoAlarmDynamoTable.table.tableArn,
+      this.autoAlarmDynamoTable.table.tableName,
+      prometheusArn,
+      prometheusWorkspaceId,
+    );
 
     if (enableReAlarm) {
       /**
@@ -75,18 +100,6 @@ export class AutoAlarmConstruct extends Construct {
         this.reAlarmConsumer.lambdaFunction,
       );
     }
-
-    /**
-     * Create the MainFunction, mainfunction queue and associated resources
-     */
-    this.autoAlarm = new AutoAlarm(
-      this,
-      'MainHandler',
-      region,
-      accountId,
-      prometheusArn,
-      prometheusWorkspaceId,
-    );
 
     /**
      * Create the EventBridge rules for each service and set the proper queue as the target for each rule

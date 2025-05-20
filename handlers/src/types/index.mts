@@ -28,6 +28,7 @@ export {
   PathMetrics,
   LoadBalancerIdentifiers,
   AnomalyAlarmProps,
+  Service,
 } from './module-types.mjs';
 
 // Import and re-export from prometheus-types.mjs
@@ -38,3 +39,12 @@ export {
   PrometheusAlarmConfigArray,
   NamespaceDetails,
 } from './prometheus-types.mjs';
+
+export {
+  DynamoCategoryPartitionKey,
+  DynamoRecordTemplate,
+  DynamoUpdateRecords,
+  DynamoUpdateCriteria,
+  ExtantDynamoRecord,
+  DynamoResourceSortKey,
+} from './dynamo-types.mjs';

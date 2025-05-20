@@ -3,10 +3,15 @@
  * TODO: wrap realarm logic into a utils module and import it here
  * TODO: get all alarms from dynamo db and pass them to the prometheus module and later to the rest of the modules
  * TODO: Build out logic for universal tag event that will cause dynamodb to update with all alarms and populate
- *  the tables for backwards compatability should go in utils.
+ *  the tables for backwards compatability should go in utils. Tag the DynamoDB Table itself
+ *   with autoalarm:dynamo-alarm-sync = true. Remove the tag when the table is fully populated or reset to false.
  * TODO: Build logic to integrates with Dynamo to account for Prometheus alarm clean up when a DB is deleted
  *  but the ssm secret is not deleted.
  *      * Confirm with team if autoalarm should go ahead and remove the secret.
+ *
+ * TODO: when we check dynamo and a record does not exist or is empty, we should grab all tags and alarms for that instance/service
+ *   Then we should send that to the service module in an object, module will process and remove or add alarms (tags should be the same)
+ *   and then remove the adjusted alarms from the dynamo record template than process the dynamo update.
  */
 
 import {

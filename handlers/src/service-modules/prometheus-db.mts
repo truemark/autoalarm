@@ -119,19 +119,13 @@ function handleRDSPromAlarmDelete(alarms: string[]): void {
 
 export async function rdsPromAlarmManager(
   event: any,
+  tags: Record<string, string>,
+
 ): Promise<void> {
   // get the secret ARN from the event
   const secretArn = event.secretArn;
   const tagValue = event.tagValue;
 
-  /**
-   * I'm thinking we have a 'autoalarm-prometheus:enabled' tag. there might be use cases when when we want
-   * tags for testing or other purposes but we don't want to enable prometheus alarms at different points in time.
-   * Make this sgemented enough to remove if team does not want to go this direction.
-   */
-
-  // get the list of alarms from dynamo db for the resource so we know what to delete or update
-  await dynamoListResourceEntries();
 
   // handle the mapping of the secret ARN to the RDS instance/cluster
   await handleRDSMappingFromSSM(tagValue, secretArn);

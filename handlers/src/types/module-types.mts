@@ -32,3 +32,17 @@ export interface AnomalyAlarmProps {
   period: number;
   extendedStatistic: string;
 }
+
+export type Service =
+  | 'alb'
+  | 'cloudfront'
+  | 'ec2'
+  | 'opensearch'
+  | 'rds'
+  | 'rds-cluster'
+  | 'route53-resolver'
+  | 'sqs'
+  | 'step-function'
+  | 'targetgroup'
+  | 'transit-gateway'
+  | 'vpn';
