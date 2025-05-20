@@ -43,8 +43,7 @@ export {
 export {
   DynamoCategoryPartitionKey,
   DynamoRecordTemplate,
-  DynamoUpdateRecords,
+  DynamoValidCategory,
   DynamoUpdateCriteria,
-  ExtantDynamoRecord,
   DynamoResourceSortKey,
 } from './dynamo-types.mjs';

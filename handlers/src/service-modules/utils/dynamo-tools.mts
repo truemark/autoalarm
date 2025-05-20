@@ -1,22 +1,19 @@
 //TODO: May need to investigate concurrency issues with dynamoDB by adding a timestamp to the dynamoDB table Though we are using fifo queues so that should help
 import {
-  AttributeValue,
+  DeleteItemCommand,
   DynamoDBClient,
   GetItemCommand,
-  GetItemCommandInput,
-  GetItemCommandOutput,
   PutItemCommand,
-  PutItemCommandInput,
 } from '@aws-sdk/client-dynamodb';
 import {
-  DynamoCategoryPartitionKey,
+  DynamoValidCategory,
   DynamoRecordTemplate,
-  DynamoUpdateRecords,
+  DynamoUpdateCriteria,
+  DynamoCategoryPartitionKey,
   DynamoResourceSortKey,
-  Tag, ExtantDynamoRecord, DynamoUpdateCriteria
 } from '../../types/index.mjs';
 import * as logging from '@nr1e/logging';
-import {unmarshall} from '@aws-sdk/util-dynamodb';
+import {marshall, unmarshall} from '@aws-sdk/util-dynamodb';
 
 // Initialize logging
 const level = process.env.LOG_LEVEL || 'trace';
@@ -30,9 +27,8 @@ const log = logging.initialize({
   level,
 });
 
-
 export class DynamoTools {
- private static client = new DynamoDBClient();
+  private static client = new DynamoDBClient();
 
   /**
    * Dynamo Uses type indicators in queries. Here are the few we might use
@@ -45,47 +41,42 @@ export class DynamoTools {
    *  NS = Number Set
    */
 
-  private static async getDynamoRecord(
-    category: string,
+  /**
+   * Gets current alarms or tags or builds a record template for a specific
+   * resource in DynamoDB if the record does not exist.
+   */
+  static async getDynamoRecord(
+    category: DynamoValidCategory,
     arn: string,
     tableName: string,
-  ): Promise<ExtantDynamoRecord> {
-    const pKey = `CATEGORY#${category}`;
-    const sKey = `RESOURCE#${arn}`;
-    const tName = tableName;
-
-    let res: GetItemCommandOutput | undefined;
+  ): Promise<DynamoRecordTemplate> {
+    const PK = `CATEGORY#${category}`;
+    const SK = `RESOURCE#${arn}`;
 
     try {
-      res = await this.client.send(
+      const res = await this.client.send(
         new GetItemCommand({
-          TableName: tName,
+          TableName: tableName,
           Key: {
-            PK: {S: pKey},
-            SK: {S: sKey},
+            PK: {S: PK},
+            SK: {S: SK},
           },
-        } as GetItemCommandInput),
+        }),
       );
 
-      // Check if the item exists. If not, create template for record to be created.
       if (!res.Item) {
         log
           .warn()
           .str('Function', 'dynamoGetRecord')
-          .msg('No record found in DynamoDB. New records needs to be created');
-        return undefined;
+          .msg('No record found in DynamoDB. New record needs to be created');
       }
 
-      // Convert Dynamo DB Response to DynamoAlarmRecord for later use in updating/removing the record
-      const record = unmarshall(res.Item);
-      log
-        .info()
-        .str('Function', 'dynamoGetRecord')
-        .str('TableName', tName)
-        .obj('Record', res.Item)
-        .msg('Record found in DynamoDB');
+      const record = res.Item
+        ? (unmarshall(res.Item) as DynamoRecordTemplate)
+        : undefined;
 
-      return res;
+      // Build record template for either existing or new record
+      return this.createDynamoUpdateTemplate(category, arn, record);
     } catch (e) {
       log
         .error()
@@ -97,29 +88,116 @@ export class DynamoTools {
   }
 
   /**
-   * Function to create Dynamo Update template.
-   * @param extantRecord informs the function if a record already exists in the DynamoDB table or if it does not. {@link getDynamoRecord}
-   * @param recordCriteria is the criteria used to create the record template. {@link DynamoUpdateCriteria}
-   *
+   * Returns a normalized DynamoRecordTemplate suitable for updates/puts.
+   * If a record already exists in DynamoDB, merges data with normalized keys.
+   * Otherwise, builds a default record template.
    */
   private static createDynamoUpdateTemplate(
-    extantRecord: ExtantDynamoRecord,
-    recordCriteria: DynamoUpdateCriteria,
+    category: DynamoValidCategory,
+    arn: string,
+    extantRecord?: Partial<DynamoRecordTemplate>,
   ): DynamoRecordTemplate {
+    // Use values from existing, or fill blanks
     return {
-      CATEGORY: `CATEGORY#${category}` as DynamoCategoryPartitionKey,
-      RESOURCE: `RESOURCE#${arn}` as DynamoResourceSortKey,
+      PARTITIONKEY: `CATEGORY#${category as DynamoValidCategory}`,
+      SORTKEY: `RESOURCE#${arn}`,
       category: category,
       resource_arn: arn,
-      alarms: alarms,
-      tags: tags,
+      alarms: extantRecord?.alarms || [],
+      tags: extantRecord?.tags || {},
     };
   }
 
-  private static async deleteDynamoRecord()
+  private static async deleteDynamoRecord(
+    category: DynamoValidCategory,
+    arn: string,
+    tableName: string,
+  ) {
+    try {
+      const PK = `CATEGORY#${category}`;
+      const SK = `RESOURCE#${arn}`;
+      await this.client.send(
+        new DeleteItemCommand({
+          TableName: tableName,
+          Key: {
+            PK: {S: PK},
+            SK: {S: SK},
+          },
+        }),
+      );
+    } catch (e) {
+      log
+        .error()
+        .str('Function', 'dynamoDeleteRecord')
+        .err(e)
+        .msg('Error deleting record from DynamoDB');
+      throw e;
+    }
 
-  static async updateDynamoRecord(updateCriteria: DynamoUpdateCriteria) {
-    await this.getDynamoRecord(updateCriteria.category, updateCriteria.arn, updateCriteria.tableName);
+    log
+      .info()
+      .str('Function', 'dynamoDeleteRecord')
+      .str('PK', `CATEGORY#${category}`)
+      .str('SK', `RESOURCE#${arn}`)
+      .msg('Record deleted from DynamoDB');
   }
 
+  private static async putDynamoRecord(
+    pKey: DynamoCategoryPartitionKey,
+    sKey: DynamoResourceSortKey,
+    updateCriteria: DynamoUpdateCriteria,
+  ) {
+    try {
+      await this.client.send(
+        new PutItemCommand({
+          TableName: updateCriteria.tableName,
+          Item: marshall({
+            PK: pKey,
+            SK: sKey,
+            category: updateCriteria.category,
+            resource_arn: updateCriteria.arn,
+            alarms: updateCriteria.alarms,
+            tags: updateCriteria.tags,
+          }),
+        }),
+      );
+    } catch (e) {
+      log
+        .error()
+        .str('Function', 'dynamoPutRecord')
+        .obj('updateCriteria', updateCriteria)
+        .err(e)
+        .msg('Error putting record in DynamoDB');
+      throw e;
+    }
+  }
+
+  static async updateDynamoRecord(
+    recordToUpdate: DynamoRecordTemplate,
+    updateCriteria: DynamoUpdateCriteria,
+  ) {
+    // Delete Original Record
+    await this.deleteDynamoRecord(
+      recordToUpdate.category,
+      updateCriteria.arn,
+      updateCriteria.tableName,
+    );
+
+    // If a resource has been deleted or autoalarm is disabled, no need to update. Early return
+    if (!updateCriteria.alarms && !updateCriteria.tags) return;
+
+    // Rebuild the record with updated alarms and tags
+    await this.putDynamoRecord(
+      recordToUpdate.PARTITIONKEY as DynamoCategoryPartitionKey,
+      recordToUpdate.SORTKEY as DynamoResourceSortKey,
+      updateCriteria,
+    );
+
+    log
+      .info()
+      .str('Function', 'dynamoUpdateRecord')
+      .obj('recordToUpdate', recordToUpdate)
+      .obj('updateCriteria', updateCriteria)
+      .msg('Record updated in DynamoDB');
+  }
 }
