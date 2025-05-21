@@ -882,7 +882,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       tagKey: 'throughput-throttle',
       metricName: 'ThroughputThrottle',
       metricNamespace: 'AWS/ES',
-      defaultCreate: false,
+      defaultCreate: true,
       anomaly: false,
       defaults: {
         warningThreshold: 40,
@@ -983,6 +983,23 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     //TODO: Under advisement from Trent, anomaly detection is not recommended for red-cluster
+    {
+      tagKey: 'index-writes-blocked',
+      metricName: 'ClusterIndexWritesBlocked',
+      metricNamespace: 'AWS/ES',
+      defaultCreate: true,
+      anomaly: false,
+      defaults: {
+        warningThreshold: null,
+        criticalThreshold: 1,
+        period: 600,
+        evaluationPeriods: 1,
+        statistic: 'Maximum',
+        dataPointsToAlarm: 1,
+        comparisonOperator: 'GreaterThanThreshold',
+        missingDataTreatment: 'notBreaching',
+      },
+    }
   ],
 
   // Owned by Harmony
