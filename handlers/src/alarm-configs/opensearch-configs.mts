@@ -315,7 +315,7 @@ export const OPENSEARCH_CONFIGS: MetricAlarmConfig[] = [
     tagKey: 'throughput-throttle',
     metricName: 'ThroughputThrottle',
     metricNamespace: 'AWS/ES',
-    defaultCreate: false,
+    defaultCreate: true,
     anomaly: false,
     defaults: {
       warningThreshold: 40,
@@ -411,6 +411,23 @@ export const OPENSEARCH_CONFIGS: MetricAlarmConfig[] = [
       dataPointsToAlarm: 1,
       comparisonOperator: 'GreaterThanThreshold',
       missingDataTreatment: 'ignore',
+    },
+  },
+  {
+    tagKey: 'index-writes-blocked',
+    metricName: 'ClusterIndexWritesBlocked',
+    metricNamespace: 'AWS/ES',
+    defaultCreate: true,
+    anomaly: false,
+    defaults: {
+      warningThreshold: null,
+      criticalThreshold: 1,
+      period: 600,
+      evaluationPeriods: 1,
+      statistic: 'Maximum',
+      dataPointsToAlarm: 1,
+      comparisonOperator: 'GreaterThanThreshold',
+      missingDataTreatment: 'notBreaching',
     },
   },
   // add more as needed
