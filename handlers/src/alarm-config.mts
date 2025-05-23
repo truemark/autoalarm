@@ -999,7 +999,7 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
         comparisonOperator: 'GreaterThanThreshold',
         missingDataTreatment: 'notBreaching',
       },
-    }
+    },
   ],
 
   // Owned by Harmony
