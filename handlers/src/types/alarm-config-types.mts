@@ -71,11 +71,13 @@ export type MissingDataTreatment = TreatMissingData[keyof TreatMissingData] &
 export interface MetricAlarmOptions {
   /** Anomaly: Based on a standard deviation. Higher number means thicker band, lower number means thinner band.
    * Non-Anomaly: The value against which the specified statistic is compared.
+h    * For prometheus queries, this is the threshold value for the warning alarm.
    */
   warningThreshold: number | null;
   /**
    * Anomaly: Based on a standard deviation. Higher number means thicker band, lower number means thinner band.
    * Non-Anomaly: The value against which the specified statistic is compared.
+   * For prometheus queries, this is the threshold value for the critical alarm.
    */
   criticalThreshold: number | null;
   /**
@@ -86,34 +88,38 @@ export interface MetricAlarmOptions {
   /**
    * The number of periods that are evaluated when tracking datapoints to alarm.
    * Creates a rolling observability window of n times the period.
+   * For prometheus queries, this is the time series period in seconds.
    */
-  evaluationPeriods: number;
+  evaluationPeriods: number | null;
   /**
    * The number of data points to alarm across all evaluation periods.
+   * Not used in Prometheus queries.
    */
-  dataPointsToAlarm: number;
+  dataPointsToAlarm: number | null;
   /**
    * Valid Cloudwatch Alarm statistics see {@link ValidStatistic} for all valid statistic values
-   *
+   * Not used in Prometheus queries.
    */
-  statistic: ValidStatistic;
+  statistic: ValidStatistic | null;
   /**
    * Specifies how missing data points are treated during alarm evaluation. See {@link TreatMissingData} for valid
    * missing data treatment options
+   * Not used in Prometheus queries.
    *
    */
-  missingDataTreatment: MissingDataTreatment;
+  missingDataTreatment: MissingDataTreatment | null;
   /**
    * Represents Both an Enum and valid string literal values for CloudWatch alarm comparison operators.
    * This type extracts the actual string values from the `ComparisonOperator` enum
    * for type-safe handling of comparison operator strings.
+   * Not used in Prometheus queries.
    *
    * ---
    * @see {@link https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.aws_cloudwatch.ComparisonOperator.html}
    * @see {@link https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html}
    * @see {@link ComparisonOperator} - Enum and Type declaration
    */
-  comparisonOperator: ComparisonOperator;
+  comparisonOperator: ComparisonOperator | null;
 }
 
 /**
@@ -137,6 +143,7 @@ export interface MetricAlarmConfig {
   /**
    *  The namespace of the CloudWatch metric.
    *  Metrics are grouped by namespaces (e.g., "AWS/EC2", "AWS/Lambda", etc...).
+   *  For Prometheus metrics, this is the service or 'engine' that exports metrics to AMP.
    */
   metricNamespace: string;
   /**
@@ -146,11 +153,13 @@ export interface MetricAlarmConfig {
   /**
    *  Indicates whether this alarm is based on anomaly detection.
    *  If true, the alarm will use anomaly detection models instead of standard metrics. If false, it defaults to static threshold alarms.
+   *  Not used in Prometheus queries.
    */
-  anomaly: boolean;
+  anomaly: boolean | null;
   /**
    * These are the Default values provided in the Alarm Config object.
    * @see {@link MetricAlarmOptions} for the structure of these options
    */
   defaults: MetricAlarmOptions;
 }
+

@@ -13,3 +13,4 @@ export {STEP_FUNCTION_CONFIGS} from './step-function-configs.mjs';
 export {TARGET_GROUP_CONFIGS} from './target-group-configs.mjs';
 export {TRANSIT_GATEWAY_CONFIGS} from './transit-gateway-configs.mjs';
 export {VPN_CONFIGS} from './vpn-configs.mjs';
+export {PROMETHEUS_ORACLEDB_CONFIGS} from './prometheus-oracleDB-configs.mjs';
