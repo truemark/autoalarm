@@ -20,3 +20,4 @@ export {parseCloudFrontEventAndCreateAlarms} from './cloudfront-modules.mjs';
 export {parseRDSEventAndCreateAlarms} from './rds-modules.mjs';
 export {parseRDSClusterEventAndCreateAlarms} from './rds-cluster-modules.mjs';
 export {parseSFNEventAndCreateAlarms} from './step-function-modules.mjs';
+export {SecManagerPrometheusModule} from './secrets-manager-prometheus-modules.mjs';

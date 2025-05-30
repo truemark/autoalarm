@@ -6,7 +6,9 @@ import {
   SQSRecord,
 } from 'aws-lambda';
 import * as logging from '@nr1e/logging';
-import * as ServiceModules from './service-modules/_index.mjs';
+import * as ServiceModules from './service-modules/_index.mjs'; // TODO: we need to fix the import when we transition to
+                                                                //  static utility classes with an import for each module
+import {SecManagerPrometheusModule} from './service-modules/_index.mjs';
 import {EC2AlarmManagerArray} from './types/index.mjs';
 
 // Initialize logging
@@ -20,6 +22,22 @@ const log = logging.initialize({
   name: 'main-handler',
   level,
 });
+
+/**
+ * @info the following utility class is initialized to provide access to the secrets manager event map and alarm manager
+ * methods. Similarly, we will transition to static utility classes for each service module
+ */
+
+const SecManagerPrometheus = new SecManagerPrometheusModule();
+
+/**
+ * @info This event map object will be extended to include all services but in this version,
+ * it only includes secrets manager events for prometheus alarm managment.
+ *
+ */
+const EventMap = {
+  ...SecManagerPrometheus.SecretsManagerEventMap,
+}
 
 // TODO Fix the use of any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
