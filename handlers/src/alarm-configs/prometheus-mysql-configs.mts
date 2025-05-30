@@ -12,7 +12,7 @@
 
 import {MetricAlarmConfig} from '../types/index.mjs';
 
-export const PROMETHEUS_ORACLEDB_CONFIGS: MetricAlarmConfig[] = [
+export const PROMETHEUS_MYSQL_CONFIGS: MetricAlarmConfig[] = [
   {
     tagKey: 'activity_execute_count',
     metricName: 'oracledb_activity_execute_count',

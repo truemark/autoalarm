@@ -14,3 +14,5 @@ export {TARGET_GROUP_CONFIGS} from './target-group-configs.mjs';
 export {TRANSIT_GATEWAY_CONFIGS} from './transit-gateway-configs.mjs';
 export {VPN_CONFIGS} from './vpn-configs.mjs';
 export {PROMETHEUS_ORACLEDB_CONFIGS} from './prometheus-oracleDB-configs.mjs';
+export {PROMETHEUS_MYSQL_CONFIGS} from './prometheus-mysql-configs.mjs';
+export {PROMETHEUS_POSTGRES_CONFIGS} from './prometheus-postgres-configs.mjs';

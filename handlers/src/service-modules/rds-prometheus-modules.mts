@@ -1,12 +1,16 @@
 import {SecretsManagerClient} from '@aws-sdk/client-secrets-manager'
+import {
+PROMETHEUS_MYSQL_CONFIGS,
+PROMETHEUS_ORACLEDB_CONFIGS,
+PROMETHEUS_POSTGRES_CONFIGS,
+} from '../alarm-configs/index.mjs';
 
 
 export class PrometheusRDSManager {
-  private client: SecretsManagerClient;
-
-  constructor() {
-    this.client = new SecretsManagerClient({});
-  }
+  private client: SecretsManagerClient = new SecretsManagerClient({});
+  private oracleDBConfigs = PROMETHEUS_ORACLEDB_CONFIGS;
+  private mysqlConfigs = PROMETHEUS_MYSQL_CONFIGS;
+  private postgresConfigs = PROMETHEUS_POSTGRES_CONFIGS;
 
 
 
