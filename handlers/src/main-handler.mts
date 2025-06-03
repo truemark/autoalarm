@@ -7,9 +7,10 @@ import {
 } from 'aws-lambda';
 import * as logging from '@nr1e/logging';
 import * as ServiceModules from './service-modules/_index.mjs'; // TODO: we need to fix the import when we transition to
-                                                                //  static utility classes with an import for each module
+//  static utility classes with an import for each module
 import {SecManagerPrometheusModule} from './service-modules/_index.mjs';
-import {EC2AlarmManagerArray} from './types/index.mjs';
+import {EC2AlarmManagerArray, ServiceEventMap} from './types/index.mjs';
+import {EventParse} from './service-modules/utils/event-parser.mjs';
 
 // Initialize logging
 //TODO: maybe initialize logging in src so we can get child loggers across all modules
@@ -22,22 +23,6 @@ const log = logging.initialize({
   name: 'main-handler',
   level,
 });
-
-/**
- * @info the following utility class is initialized to provide access to the secrets manager event map and alarm manager
- * methods. Similarly, we will transition to static utility classes for each service module
- */
-
-const SecManagerPrometheus = new SecManagerPrometheusModule();
-
-/**
- * @info This event map object will be extended to include all services but in this version,
- * it only includes secrets manager events for prometheus alarm managment.
- *
- */
-const EventMap = {
-  ...SecManagerPrometheus.SecretsManagerEventMap,
-}
 
 // TODO Fix the use of any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -271,6 +256,54 @@ export const handler: Handler = async (
         .msg('Error message found in record body');
       continue;
     }
+
+    /**
+     * TODO: for testing with new filtering logic. For prometheus secrets manager events only.
+     *  Start of new Main Handler logic.
+     *  @info This event map object will be extended to include all services but in this version,
+     * it only includes secrets manager events for prometheus alarm management.
+     *
+     */
+    const EventMap: ServiceEventMap = {
+      ...SecManagerPrometheusModule.SecretsManagerEventMap,
+    } as const;
+
+    // Initialize the EventParse class with the event map and the record
+    const parser = new EventParse(EventMap);
+
+    // check if the event matches the event map for prometheus secrets manager events returns undefined if no match is found
+    const eventMatch = await parser.matchEvent(record);
+
+    // If the event matches the event map, manage the alarms using the SecManagerPrometheusModule otherwise set isSuccesful to false
+    const isSuccesful = eventMatch
+      ? await SecManagerPrometheusModule.manageDbAlarms(
+          eventMatch?.isDestroyed,
+          eventMatch?.tags,
+          eventMatch?.isARN,
+          eventMatch?.id,
+        )
+      : false;
+
+    // If the event does not match the event map or SecManagerPrometheusModule was unsuccessful, log an error and continue to the next record
+    if (!isSuccesful) {
+      log
+        .error()
+        .str('function', 'handler')
+        .str('messageId', record.messageId)
+        .msg(
+          'Event did not match the event map or SecManagerPrometheusModule was unsuccessful',
+        );
+      batchItemFailures.push({itemIdentifier: record.messageId});
+      batchItemBodies.push(record);
+      continue;
+    }
+    /**
+     * TODO: End of new Main Handler logic. for prometheus secrets manager events integration.
+     *
+     *
+     * @END
+     */
+
     // Parse the body of the SQS message
     const event = JSON.parse(record.body);
 

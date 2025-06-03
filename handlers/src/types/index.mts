@@ -38,3 +38,11 @@ export {
   PrometheusAlarmConfigArray,
   NamespaceDetails,
 } from './prometheus-types.mjs';
+
+// Import and re-export from event-filtering-types.mjs
+export {
+  ServiceEventMap,
+  ValidEventSource,
+  ValidEventName,
+  ValidEventPatterns,
+} from './event-parse-types.mjs';

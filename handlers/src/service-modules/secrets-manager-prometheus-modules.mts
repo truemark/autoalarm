@@ -4,7 +4,8 @@ PROMETHEUS_MYSQL_CONFIGS,
 PROMETHEUS_ORACLEDB_CONFIGS,
 PROMETHEUS_POSTGRES_CONFIGS,
 } from '../alarm-configs/index.mjs';
-import { ServiceEventMap } from '../types/event-filtering-types.mjs';
+import { ServiceEventMap } from '../types/index.mjs';
+import * as logging from '@nr1e/logging';
 
 
 export class SecManagerPrometheusModule {
@@ -12,8 +13,9 @@ export class SecManagerPrometheusModule {
   private oracleDBConfigs = PROMETHEUS_ORACLEDB_CONFIGS;
   private mysqlConfigs = PROMETHEUS_MYSQL_CONFIGS;
   private postgresConfigs = PROMETHEUS_POSTGRES_CONFIGS;
+  private static log = logging.getLogger('SecManagerPrometheusModule');
 
-  public static readonly SecretsManagerEventMap = {
+  public static readonly SecretsManagerEventMap: ServiceEventMap = {
     'aws.secretsmanager': {
       eventName: {
         UntagResource: {
@@ -50,7 +52,8 @@ export class SecManagerPrometheusModule {
         },
       },
     },
-  } as const as ServiceEventMap;
+  } as const;
+
 
 
 
@@ -72,47 +75,36 @@ export class SecManagerPrometheusModule {
   //  the default value.
   // TODO: We need logic to overwrite find and replace 'warningThreshold' and 'criticalThreshold' values if a tag is provided
   //  to overwrite the default value.
-  static ManageRdsAlarms(
+  static async manageDbAlarms(
     isDestroyed: boolean,
     tags: {tagKey: string; tagValue?: string}[] | undefined,
     isARN: boolean,
     id: string,
-  ): {updatedAlarms: string[]; UpdatedTags: Tag} {
-    // first check if the id is a valid ARN. If not, convert it to an ARN
-    const arn = !isARN
-      ? `arn:aws:ssm:${process.env.AWS_REGION}:${process.env.AWS_ACCOUNT_ID}:parameter/${id}`
-      : id;
+  ): Promise<boolean> {
+    try {
 
-    // Map RDS instance/cluster ARN to the SSM parameter ARN
-    const rdsMapping = this.rdsMappingFromSecretsManager();
+      // Map RDS instance/cluster ARN to the SSM parameter ARN
+      const rdsMapping = this.rdsMappingFromSecretsManager();
 
-    // build prom Queries
-    const queries = this.createPromQuerysWithLables();
+      // build prom Queries
+      const queries = this.createPromQuerysWithLables();
 
 
-    //update prometheus rules
-    //delete and update functionality - should be in prometheus-tools for a quick call.
+      //update prometheus rules
+      //delete and update functionality - should be in prometheus-tools for a quick call.
 
-    //compare queries against alarms from dynamoRecord.alarms then create updated array
-    const updatedAlarms = dynamoRecord.alarms.filter((quereis) => {};
+    } catch (error) {
+      this.log
+        .error()
+        .str('Function', 'manageDbAlarms')
+        .unknown('error', error)
+        .msg('Error managing DB alarms');
+      return false;
 
-    // Update tags if needed
-    const UpdatedTags = dynamoRecord.tags;
-    if (tags) {
-      tags.forEach((tag) => {
-        if (tag.tagKey in UpdatedTags) {
-          UpdatedTags[tag.tagKey] = tag.tagValue;
-        } else {
-          UpdatedTags[tag.tagKey] = tag.tagValue;
-        }
-      });
     }
 
-    // return the updated alarms and tags
-    return {
-      updatedAlarms: updatedAlarms,
-      UpdatedTags: UpdatedTags,
-    };
+    // Return true if successful.
+    return true
 
 
   }
