@@ -8,6 +8,7 @@ export {
   MissingDataTreatment,
   MetricAlarmOptions,
   MetricAlarmConfig,
+  Fallback,
 } from './alarm-config-types.mjs';
 
 // Import and re-export from enums.mjs

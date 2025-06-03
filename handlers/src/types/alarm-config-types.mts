@@ -163,3 +163,5 @@ export interface MetricAlarmConfig {
   defaults: MetricAlarmOptions;
 }
 
+// Type to ensure metric alarm configs are valid dpending on the calls made to certain alarm config functions.
+export type Fallback<T> = T extends MetricAlarmOptions['period'] ? number : number | null;

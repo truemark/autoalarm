@@ -7,6 +7,8 @@
  */
 export interface ServiceEventMap {
   [source: string]: {
+    arnPattern: [string, string] | null,
+    resrcIdPattern: [string, string] | null;
     eventName: {
       [name: string]: {
         hasTags: boolean;

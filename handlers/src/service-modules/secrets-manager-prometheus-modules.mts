@@ -17,6 +17,8 @@ export class SecManagerPrometheusModule {
 
   public static readonly SecretsManagerEventMap: ServiceEventMap = {
     'aws.secretsmanager': {
+      arnPattern: ["\"arn:aws:secretsmanager:", "\""],
+      resrcIdPattern: null,
       eventName: {
         UntagResource: {
           hasTags: true,

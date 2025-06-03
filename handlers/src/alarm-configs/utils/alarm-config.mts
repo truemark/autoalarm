@@ -2,6 +2,7 @@ import {
   MissingDataTreatment,
   MetricAlarmOptions,
   ValidStatistic,
+  Fallback,
 } from '../../types/index.mjs';
 import {safeParse} from 'valibot';
 import {TreatMissingData} from 'aws-cdk-lib/aws-cloudwatch';
@@ -64,7 +65,18 @@ function parseThresholdOption(
   return parsedValue;
 }
 
-function parseIntegerOption(value: string, defaultValue: number): number {
+/**
+ * Parse an integer option from a string value.
+ * @template Fallback<T> - The type of the option value defined in @see {@link parseMetricAlarmOptions}
+ * - A type that extends MetricAlarmOptions['period'] as a number or (number | null) otherwise
+ * used for default values and to accommodate the three default types that use this funciton. .
+ * @param value
+ * @param defaultValue
+ */
+function parseIntegerOption<T>(
+  value: string,
+  defaultValue: Fallback<T>,
+): Fallback<T> {
   const trimmed = value.trim();
   if (trimmed === '') {
     return defaultValue;
@@ -80,8 +92,12 @@ function parseIntegerOption(value: string, defaultValue: number): number {
 
 export function parseStatisticOption(
   exp: string,
-  defaultValue: ValidStatistic,
-): ValidStatistic {
+  defaultValue: ValidStatistic | null,
+): ValidStatistic | null {
+  // Early return if default is null and expression is empty or === null
+  if (defaultValue === null && (exp === undefined || exp === null))
+    return defaultValue;
+
   // Base formatting normalization for validating statistics
   let trim = exp.trim().toLowerCase();
   trim === 'iqm'
@@ -132,8 +148,8 @@ export function parseStatisticOption(
 
 function parseComparisonOperatorOption(
   value: string,
-  defaultValue: ComparisonOperator,
-): ComparisonOperator {
+  defaultValue: ComparisonOperator | null,
+): ComparisonOperator | null {
   // Check if a normalized value input is a valid comparison operator
   const validOperator = Object.keys(ComparisonOperator).find(
     (operator) => operator.toLowerCase() === value.trim().toLowerCase(),
@@ -150,8 +166,8 @@ function parseComparisonOperatorOption(
 
 function parseMissingDataTreatmentOption(
   value: string,
-  defaultValue: MissingDataTreatment,
-): MissingDataTreatment {
+  defaultValue: MissingDataTreatment | null,
+): MissingDataTreatment | null {
   const validDataTreatment = Object.keys(TreatMissingData).find(
     (V) => V.toLowerCase() === value.trim().toLowerCase(),
   );
@@ -181,7 +197,10 @@ export function parseMetricAlarmOptions(
         : defaults.criticalThreshold,
     period:
       parts.length > 2
-        ? parseIntegerOption(parts[2], defaults.period)
+        ? parseIntegerOption<MetricAlarmOptions['period']>(
+            parts[2],
+            defaults.period,
+          )
         : defaults.period,
     evaluationPeriods:
       parts.length > 3
@@ -197,17 +216,14 @@ export function parseMetricAlarmOptions(
         : defaults.dataPointsToAlarm,
     comparisonOperator:
       parts.length > 6
-        ? (parseComparisonOperatorOption(
-            parts[6],
-            defaults.comparisonOperator,
-          ) satisfies ComparisonOperator)
-        : (defaults.comparisonOperator satisfies ComparisonOperator),
+        ? parseComparisonOperatorOption(parts[6], defaults.comparisonOperator)
+        : defaults.comparisonOperator,
     missingDataTreatment:
       parts.length > 7
-        ? (parseMissingDataTreatmentOption(
+        ? parseMissingDataTreatmentOption(
             parts[7],
             defaults.missingDataTreatment,
-          ) satisfies MissingDataTreatment)
-        : (defaults.missingDataTreatment satisfies MissingDataTreatment),
+          )
+        : defaults.missingDataTreatment,
   };
 }

@@ -20,13 +20,55 @@ import {
  */
 export class EventParse<EventMap extends ServiceEventMap> {
   private readonly log = logging.getLogger('EventParse');
-  private readonly eventMap: ServiceEventMap;
+  private readonly eventMap: EventMap;
 
   constructor(map: EventMap) {
-    this.eventMap = map as ServiceEventMap;
+    this.eventMap = map;
   }
 
-  private findTagsAndId(
+  /**
+   * Last hope fallback for grabbing an ARN if we at least know the source and if the event pattern contains an ARN.
+   * @param sqsRecord
+   * @param isArn - if false, the function will attempt crawl for a resource ID if available.
+   * @param source - The source of the event, which is a valid event source from the EventMap.
+   * @return {string | undefined} - Returns the ARN/resourceID if found, otherwise undefined.
+   * @private
+   */
+  private arnStringCrawl(
+    sqsRecord: SQSRecord,
+    isArn: boolean,
+    source: ValidEventSource<EventMap>,
+  ): string | undefined {
+    // early return if no arnPattern or resrcIdPattern is defined for the source and event pattern
+    if (!isArn && this.eventMap[source].resrcIdPattern === null)
+      return undefined;
+
+    const patternMatch: number[] = [];
+
+    // Grab the pattern based on whether the event is an ARN or a resource ID pattern
+    const idPattern = isArn
+      ? this.eventMap[source].arnPattern
+      : this.eventMap[source].resrcIdPattern;
+
+    // Push the index of the start and end patterns to the patternMatch array
+    patternMatch.push(sqsRecord.body.indexOf(idPattern![0]));
+    patternMatch.push(sqsRecord.body.indexOf(idPattern![1], patternMatch[0]));
+
+    // If the patternMatch array has both start and end indices and neither index returns -1, return the substring
+    return patternMatch.every((index) => index !== -1)
+      ? sqsRecord.body.substring(patternMatch[0], patternMatch[1])
+      : undefined;
+  }
+
+  /**
+   * Finds the ID (ARN or resource ID) from the SQS record based on the event source and event name.
+   * @param sqsRecord
+   * @param source
+   * @param eventName
+   * @param eventPatterns
+   * @private
+   */
+  private findId(
     sqsRecord: SQSRecord,
     source: ValidEventSource<EventMap>,
     eventName: ValidEventName<typeof source>,
@@ -35,24 +77,96 @@ export class EventParse<EventMap extends ServiceEventMap> {
       typeof source,
       typeof eventName
     >,
-  ): {
-    tags: {tagKey: string; tagValue?: string}[] | undefined;
-    id: string;
-  } {
-    // Extract the body from the SQS record
+  ): string | undefined {
+    // Extract the body from the SQS record in json for easy parsing
     const recordBody = JSON.parse(sqsRecord.body);
 
-    const tags =
-      eventPatterns.hasTags && eventPatterns.tagsKey !== null
-        ? recordBody
-        : undefined;
-    const id = recordBody[eventPatterns.idKeyName];
+    let id: string | undefined = undefined;
 
-    // return the full pattern match
-    return {
-      tags: tags,
-      id: id,
-    };
+    // Grab the correct id prefix based on whether the event is an ARN or a resource ID
+    const idPrefix = eventPatterns.isARN
+      ? this.eventMap[source].arnPattern
+      : this.eventMap[source].resrcIdPattern;
+
+    // first check object key for valid id (arn or resource ID)
+    recordBody[eventPatterns.idKeyName] &&
+    recordBody[eventPatterns.idKeyName]
+      .toLowerCase()
+      .replace(/"/g, '')
+      .startsWith(idPrefix)
+      ? (id = recordBody[eventPatterns.idKeyName])
+      : undefined;
+
+    // Try fallback string search for an ARN or resource ID in the SQS record body
+    !id
+      ? (id = this.arnStringCrawl(sqsRecord, eventPatterns.isARN, source))
+      : undefined;
+
+    // If all fails, log details and return undefined
+    if (!id) {
+      this.log
+        .error()
+        .str('Function', 'findTagsAndId')
+        .str('source', source)
+        .unknown('arnPattern', this.eventMap[source].arnPattern)
+        .unknown('resrcIdPattern', this.eventMap[source].resrcIdPattern)
+        .str('eventName', eventName)
+        .obj('eventPattern', eventPatterns)
+        .obj('sqsRecord', JSON.parse(sqsRecord.body))
+        .msg(
+          `No valid ID found for source: ${source}, eventName: ${eventName}. Neither JSON parsing or leaner 
+          string serach succeeded. Please check logs..`,
+        );
+      return undefined;
+    }
+
+    return id;
+  }
+
+  /**
+   * Finds the changed tags from the SQS record based on the event source and event name/pattern.
+   * @param sqsRecord
+   * @param source
+   * @param eventName
+   * @param eventPatterns
+   * @private
+   */
+  private findChangedTags(
+    sqsRecord: SQSRecord,
+    source: ValidEventSource<EventMap>,
+    eventName: ValidEventName<typeof source>,
+    eventPatterns: ValidEventPatterns<
+      EventMap,
+      typeof source,
+      typeof eventName
+    >,
+  ): {tagKey: string; tagValue?: string}[] | undefined {
+    // Early return if we know that we don't have tags for this event
+    if (!eventPatterns.hasTags || eventPatterns.tagsKey === null)
+      return undefined;
+
+    // Extract the body from the SQS record in json for easy parsing
+    const recordBody = JSON.parse(sqsRecord.body);
+
+    // Grab all changed tags if they are present in the event pattern
+    const tags = recordBody[eventPatterns.tagsKey];
+
+    if (!tags) {
+      this.log
+        .error()
+        .str('Function', 'findChangedTags')
+        .str('source', source)
+        .str('eventName', eventName)
+        .obj('eventPatterns', eventPatterns)
+        .obj('sqsRecord', JSON.parse(sqsRecord.body))
+        .msg(
+          `No tags found for source: ${source}, eventName: ${eventName} while event is configured to contain tags. 
+          Please check logs.`,
+        );
+      return undefined;
+    }
+
+    return tags;
   }
 
   /**
@@ -103,21 +217,33 @@ export class EventParse<EventMap extends ServiceEventMap> {
       eventName
     ] satisfies ValidEventPatterns<EventMap, typeof source, typeof eventName>;
 
-    const {tags, id} = this.findTagsAndId(
+    const tags = this.findChangedTags(
       sqsRecord,
       source,
       eventName,
       eventPatterns,
     );
 
-    // Return service name to match module, if the resource is destroyed, tags, and specify the id type
+    const id = this.findId(
+      sqsRecord,
+      source,
+      eventName,
+      eventPatterns,
+    );
+
+    // if we're supposed to have tag but we don't find any we need to return undefined. Logging in findChangedTags.
+    if (eventPatterns.hasTags && !tags) return undefined;
+
+    // if we don't have an id, we can't return a valid object. Logging in findId.
+    if (!id) return undefined;
+
     return {
-      source: source,
-      isDestroyed: eventPatterns.isDestroyed,
-      isCreated: eventPatterns.isCreated,
-      tags: tags,
-      isARN: eventPatterns.isARN,
-      id: id,
-    };
+          source: source,
+          isDestroyed: eventPatterns.isDestroyed,
+          isCreated: eventPatterns.isCreated,
+          tags: tags,
+          isARN: eventPatterns.isARN,
+          id: id,
+        };
   }
 }
