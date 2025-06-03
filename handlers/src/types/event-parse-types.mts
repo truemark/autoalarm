@@ -32,9 +32,7 @@ export type ValidEventSource<M extends ServiceEventMap> =
 
 /**
  * Enforces valid event names from a given service event map.
- * @template M - The service event map type. References the `ServiceEventMap` interface after instantiation.
  * @template S - The specific service event source from the service event map.
- * @property {string} E The specific event name from the service event source. Nested Key of the `eventName` object.
  */
 export type ValidEventName<S extends ServiceEventMap['source'] & string> =
   ServiceEventMap[S]['eventName'] & string;

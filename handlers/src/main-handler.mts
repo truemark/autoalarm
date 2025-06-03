@@ -275,17 +275,17 @@ export const handler: Handler = async (
     const eventMatch = await parser.matchEvent(record);
 
     // If the event matches the event map, manage the alarms using the SecManagerPrometheusModule otherwise set isSuccesful to false
-    const isSuccesful = eventMatch
+    const isSuccessful = eventMatch
       ? await SecManagerPrometheusModule.manageDbAlarms(
-          eventMatch?.isDestroyed,
-          eventMatch?.tags,
-          eventMatch?.isARN,
-          eventMatch?.id,
+          eventMatch.isDestroyed,
+          eventMatch.tags,
+          eventMatch.isARN,
+          eventMatch.id,
         )
       : false;
 
     // If the event does not match the event map or SecManagerPrometheusModule was unsuccessful, log an error and continue to the next record
-    if (!isSuccesful) {
+    if (!isSuccessful) {
       log
         .error()
         .str('function', 'handler')
@@ -295,7 +295,7 @@ export const handler: Handler = async (
         );
       batchItemFailures.push({itemIdentifier: record.messageId});
       batchItemBodies.push(record);
-      continue;
+      //continue; /** During testing we want to not move on to the next record before processing the current one below for other services.*/
     }
     /**
      * TODO: End of new Main Handler logic. for prometheus secrets manager events integration.
