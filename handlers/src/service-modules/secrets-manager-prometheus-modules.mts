@@ -65,8 +65,6 @@ export class SecManagerPrometheusModule {
      */
   }
 
-  // TODO: Will need to create a function create prometheus querys with labels. Look at Prometheus.go in
-  //  db collector for reference.
   private static buildPromQuery(): void{}
 
   //  TODO: We need to check if this is a create event becuase create events don't contain tag values

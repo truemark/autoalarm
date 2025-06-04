@@ -1,6 +1,9 @@
 /**
- * This Class provides utility methods for parsing SQS events and
- * providing strict type and pattern matching for event records.
+ * EventParse class is used to parse SQS events and match them against a service event map.
+ * It provides methods to extract tags, IDs, and determine if the resource is created or destroyed.
+ * @template EventMap - The EventMap Generic is used to grab the literal values from the ServiceEventMap interface
+ * as it is instantiated. This allows for strict type checking and pattern matching for all the event types and patterns
+ * while still providing strong and flexible typing for the individual ServiceEventMaps.
  */
 import {SQSRecord} from 'aws-lambda';
 import * as logging from '@nr1e/logging';
@@ -11,13 +14,7 @@ import {
   ValidEventPatterns,
 } from '../../types/index.mjs';
 
-/**
- * EventParse class is used to parse SQS events and match them against a service event map.
- * It provides methods to extract tags, IDs, and determine if the resource is created or destroyed.
- * @template EventMap - The EventMap Generic is used to grab the literal values from the ServiceEventMap interface
- * as it is instantiated. This allows for strict type checking and pattern matching for all the event types and patterns
- * while still providing strong and flexible typing for the individual ServiceEventMaps.
- */
+
 export class EventParse<EventMap extends ServiceEventMap> {
   private readonly log = logging.getLogger('EventParse');
   private readonly eventMap: EventMap;
@@ -27,14 +24,11 @@ export class EventParse<EventMap extends ServiceEventMap> {
   }
 
   /**
-   * Last hope fallback for grabbing an ARN if we at least know the source and if the event pattern contains an ARN.
-   * @param sqsRecord
-   * @param isArn - if false, the function will attempt crawl for a resource ID if available.
-   * @param source - The source of the event, which is a valid event source from the EventMap.
-   * @return {string | undefined} - Returns the ARN/resourceID if found, otherwise undefined.
+   * Last hope fallback for grabbing an ARN or ResourceID if we at least know
+   * the source and if the event pattern contains an ARN/resourceID.
    * @private
    */
-  private arnStringCrawl(
+  private idStringSearch(
     sqsRecord: SQSRecord,
     isArn: boolean,
     source: ValidEventSource<EventMap>,
@@ -50,22 +44,21 @@ export class EventParse<EventMap extends ServiceEventMap> {
       ? this.eventMap[source].arnPattern
       : this.eventMap[source].resrcIdPattern;
 
+    // Some services change casing as a security measure. Make everything lower before searching.
+    const normalizedBody = sqsRecord.body.toLowerCase();
+
     // Push the index of the start and end patterns to the patternMatch array
-    patternMatch.push(sqsRecord.body.indexOf(idPattern![0]));
-    patternMatch.push(sqsRecord.body.indexOf(idPattern![1], patternMatch[0]));
+    patternMatch.push(normalizedBody.indexOf(idPattern![0]));
+    patternMatch.push(normalizedBody.indexOf(idPattern![1], patternMatch[0]));
 
     // If the patternMatch array has both start and end indices and neither index returns -1, return the substring
     return patternMatch.every((index) => index !== -1)
-      ? sqsRecord.body.substring(patternMatch[0], patternMatch[1])
+      ? normalizedBody.substring(patternMatch[0], patternMatch[1])
       : undefined;
   }
 
   /**
    * Finds the ID (ARN or resource ID) from the SQS record based on the event source and event name.
-   * @param sqsRecord
-   * @param source
-   * @param eventName
-   * @param eventPatterns
    * @private
    */
   private findId(
@@ -89,8 +82,8 @@ export class EventParse<EventMap extends ServiceEventMap> {
       : this.eventMap[source].resrcIdPattern;
 
     // first check object key for valid id (arn or resource ID)
-    recordBody[eventPatterns.idKeyName] &&
     recordBody[eventPatterns.idKeyName]
+    && recordBody[eventPatterns.idKeyName]
       .toLowerCase()
       .replace(/"/g, '')
       .startsWith(idPrefix)
@@ -99,7 +92,7 @@ export class EventParse<EventMap extends ServiceEventMap> {
 
     // Try fallback string search for an ARN or resource ID in the SQS record body
     !id
-      ? (id = this.arnStringCrawl(sqsRecord, eventPatterns.isARN, source))
+      ? (id = this.idStringSearch(sqsRecord, eventPatterns.isARN, source))
       : undefined;
 
     // If all fails, log details and return undefined
@@ -125,10 +118,6 @@ export class EventParse<EventMap extends ServiceEventMap> {
 
   /**
    * Finds the changed tags from the SQS record based on the event source and event name/pattern.
-   * @param sqsRecord
-   * @param source
-   * @param eventName
-   * @param eventPatterns
    * @private
    */
   private findChangedTags(
@@ -171,7 +160,8 @@ export class EventParse<EventMap extends ServiceEventMap> {
 
   /**
    * Matches an SQS event record against a service event mapping for supported AutoAlarm Services.
-   * @return A promise that resolves to an object containing the service name, whether the resource is destroyed or created,
+   * @return A promise that resolves to an object containing the service name,
+   * whether the resource is destroyed or created,
    * changed tags, and the ID type, ID (ARN or resource ID), or undefined if no match is found.
    */
   async matchEvent(sqsRecord: SQSRecord): Promise<
@@ -194,7 +184,8 @@ export class EventParse<EventMap extends ServiceEventMap> {
       .obj('event and map', {eventMap: this.eventMap, event: body})
       .msg('Matching event against service event map');
 
-    // Early check to make sure that the event body contains the correct source and eventName properties before proceeding
+    // Early check to make sure that the event body contains the correct source
+    // and eventName properties before proceeding
     if (
       !Object.keys(this.eventMap).includes(body.source) ||
       !Object.keys(this.eventMap).includes(body.eventName)
