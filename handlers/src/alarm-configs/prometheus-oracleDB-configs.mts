@@ -23,6 +23,8 @@ export const PROMETHEUS_ORACLEDB_CONFIGS: MetricAlarmConfig[] = [
       warningThreshold: 2,
       criticalThreshold: 4,
       period: 60,
+      queryPattern:
+        '_STATISTIC(oracledb_activity_execute_count > _THRESHOLD[_PERIOD]) ',
       evaluationPeriods: null,
       statistic: null,
       dataPointsToAlarm: null,

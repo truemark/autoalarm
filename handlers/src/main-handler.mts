@@ -278,6 +278,8 @@ export const handler: Handler = async (
     const isSuccessful = eventMatch
       ? await SecManagerPrometheusModule.manageDbAlarms(
           eventMatch.isDestroyed,
+          eventMatch.isCreated,
+          eventMatch.eventName,
           eventMatch.tags,
           eventMatch.isARN,
           eventMatch.id,

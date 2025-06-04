@@ -4,16 +4,16 @@ PROMETHEUS_MYSQL_CONFIGS,
 PROMETHEUS_ORACLEDB_CONFIGS,
 PROMETHEUS_POSTGRES_CONFIGS,
 } from '../alarm-configs/index.mjs';
-import { ServiceEventMap } from '../types/index.mjs';
+import {MetricAlarmConfig, ServiceEventMap, ValidEventName} from '../types/index.mjs';
 import * as logging from '@nr1e/logging';
 
 
 export class SecManagerPrometheusModule {
-  private client: SecretsManagerClient = new SecretsManagerClient({});
-  private oracleDBConfigs = PROMETHEUS_ORACLEDB_CONFIGS;
-  private mysqlConfigs = PROMETHEUS_MYSQL_CONFIGS;
-  private postgresConfigs = PROMETHEUS_POSTGRES_CONFIGS;
+  private static oracleDBConfigs = PROMETHEUS_ORACLEDB_CONFIGS;
+  private static mysqlConfigs = PROMETHEUS_MYSQL_CONFIGS;
+  private static postgresConfigs = PROMETHEUS_POSTGRES_CONFIGS;
   private static log = logging.getLogger('SecManagerPrometheusModule');
+
 
   public static readonly SecretsManagerEventMap: ServiceEventMap = {
     'aws.secretsmanager': {
@@ -56,16 +56,80 @@ export class SecManagerPrometheusModule {
     },
   } as const;
 
+  // Private Constructor to prevent instantiation
+   //private static constructor() {}
 
 
+  //connect to secrets manager and pull the secret to a parse
+  private static SecretsParse(arn: string, client: SecretsManagerClient) : {
+    engine: string | undefined,
+    host: string | undefined,
+  } {
+    try {
+      const secret = client.getSecretValue({SecretId: arn});
+      if (!secret || !secret.SecretString) {
+        this.log.error().str('ARN', arn).msg('Secret not found or empty');
+        return {engine: undefined, host: undefined};
+      }
 
-  private static rdsMappingFromSecretsManager(): string {
-    /**
-     * This is the host value from the secret.
-     */
+      const secretData = JSON.parse(secret.SecretString);
+      return {
+        engine: secretData.engine,
+        host: secretData.host,
+      }
+    } catch (error) {
+      this.log.error().str('ARN', arn).unknown('error', error).msg('Error retrieving secret from Secrets Manager');
+      return {engine: undefined, host: undefined};
+    }
   }
 
-  private static buildPromQuery(): void{}
+  // Helper function to fetch alarms
+  private static fetchPrometheusAlarmsConfig: MetricAlarmConfig[] = (engine: string ) =>  {
+      const prometheusAlarmsConfig: MetricAlarmConfig[] = [];
+
+      //fetch prometheus alarm configs for oracle, mysql, or postgres using engine type
+      return engine === 'mysql'
+        ? this.mysqlConfigs
+        : engine === 'oracle'
+        ? this.oracleDBConfigs
+        : engine === 'postgres'
+        ? this.postgresConfigs
+            : undefined
+  }
+
+  private static async buildPromQuery(config: MetricAlarmConfig, tag?: string ): Promise<string[]> {
+
+    const promQuery: string[] = [];
+    const defaultCo
+
+  // Build Prometheus query based if optional tag is set
+    if (tag) {
+
+    }
+
+    return
+  }
+
+
+  // Helper function to manage alarm rules and build a prometheus rules config
+  private static alarmRuleUpdater(created: string[], deleted: string[], updated: string[], currentRules: {}): {}{
+  const promehteusAlarmsConfig = {}
+
+
+
+  if (isCreated || tags?.some(tag => tag.tagKey === 'autoalarm:enabled' && tag.tagValue === 'true')) {
+    // create alarms for this secret
+    alarmsToCreate.push('new-alarms-for-secret');
+  }
+
+  if (tags?.some(tag => tag.tagKey === 'autoalarm:enabled' && tag.tagValue === 'false')) {
+    // update alarms for this secret
+    alarmsToUpdate.push('update-alarms-for-secret');
+  }
+
+  return { prometheusAlarmsConfig: promehteusAlarmsConfig };
+  }
+
 
   //  TODO: We need to check if this is a create event becuase create events don't contain tag values
   //    even if a secretsmanager secret was created with a tag.
@@ -75,16 +139,34 @@ export class SecManagerPrometheusModule {
   //  the default value.
   // TODO: We need logic to overwrite find and replace 'warningThreshold' and 'criticalThreshold' values if a tag is provided
   //  to overwrite the default value.
-  static async manageDbAlarms(
+  public static async manageDbAlarms(
     isDestroyed: boolean,
+    isCreated: boolean,
+    eventName:  string,
     tags: {tagKey: string; tagValue?: string}[] | undefined,
     isARN: boolean,
     id: string,
   ): Promise<boolean> {
+    // arrays of alarms to to be deleted and to be updated
+  // arrays of alarms to be deleted and to be updated
+  const toCreate: string[] = [];
+  const toDelete: string[] = [];
+  const toUpdate: string[] = [];
+
+    // Initialize the Secrets Manager client
+    const client = new SecretsManagerClient({}); // TODO: add retry logic and region if needed.
+
+    // untagging resources and created secrets that have tags send multiple events. Wait 30 sec and check for tags again.
+    if (isDestroyed || tags?.includes({tagKey: 'autoalarm:enabled'}) === false) {
+      // delete all alarms for this secret
+    }
+
+    if (isCreated || eventName === 'UntagResource') {
+
     try {
 
       // Map RDS instance/cluster ARN to the SSM parameter ARN
-      const rdsMapping = this.rdsMappingFromSecretsManager();
+      const rdsMapping = this.secretsManagerDbRouting();
 
       // build prom Queries
       const queries = this.createPromQuerysWithLables();

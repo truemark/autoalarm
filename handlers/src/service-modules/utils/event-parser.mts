@@ -14,7 +14,6 @@ import {
   ValidEventPatterns,
 } from '../../types/index.mjs';
 
-
 export class EventParse<EventMap extends ServiceEventMap> {
   private readonly log = logging.getLogger('EventParse');
   private readonly eventMap: EventMap;
@@ -82,8 +81,8 @@ export class EventParse<EventMap extends ServiceEventMap> {
       : this.eventMap[source].resrcIdPattern;
 
     // first check object key for valid id (arn or resource ID)
+    recordBody[eventPatterns.idKeyName] &&
     recordBody[eventPatterns.idKeyName]
-    && recordBody[eventPatterns.idKeyName]
       .toLowerCase()
       .replace(/"/g, '')
       .startsWith(idPrefix)
@@ -169,6 +168,7 @@ export class EventParse<EventMap extends ServiceEventMap> {
         source: ValidEventSource<EventMap>;
         isDestroyed: boolean;
         isCreated: boolean;
+        eventName: ValidEventName<ValidEventSource<EventMap>>;
         tags: {tagKey: string; tagValue?: string}[] | undefined;
         isARN: boolean;
         id: string;
@@ -215,12 +215,7 @@ export class EventParse<EventMap extends ServiceEventMap> {
       eventPatterns,
     );
 
-    const id = this.findId(
-      sqsRecord,
-      source,
-      eventName,
-      eventPatterns,
-    );
+    const id = this.findId(sqsRecord, source, eventName, eventPatterns);
 
     // if we're supposed to have tag but we don't find any we need to return undefined. Logging in findChangedTags.
     if (eventPatterns.hasTags && !tags) return undefined;
@@ -229,12 +224,13 @@ export class EventParse<EventMap extends ServiceEventMap> {
     if (!id) return undefined;
 
     return {
-          source: source,
-          isDestroyed: eventPatterns.isDestroyed,
-          isCreated: eventPatterns.isCreated,
-          tags: tags,
-          isARN: eventPatterns.isARN,
-          id: id,
-        };
+      source: source,
+      isDestroyed: eventPatterns.isDestroyed,
+      isCreated: eventPatterns.isCreated,
+      eventName: eventName,
+      tags: tags,
+      isARN: eventPatterns.isARN,
+      id: id,
+    };
   }
 }

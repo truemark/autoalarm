@@ -85,6 +85,7 @@ h    * For prometheus queries, this is the threshold value for the warning alarm
    * Varies across services.
    */
   period: number;
+  queryPattern?: string | null; // Prometheus query pattern for alarm
   /**
    * The number of periods that are evaluated when tracking datapoints to alarm.
    * Creates a rolling observability window of n times the period.
