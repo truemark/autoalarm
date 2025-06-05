@@ -360,24 +360,6 @@ export const handler: Handler = async (
           break;
 
         case 'aws.sqs':
-          /**
-           * TODO: Hot fix to prevent work when a queue is created without autoalarm:enabled, true
-           *  will be addressed in a more elegant way in future refactors.
-           */
-          if (!event.detail.requestParameters.tags['autoalarm:enabled']) {
-            log
-              .warn()
-              .str('function', 'handler')
-              .str(
-                'resourceType',
-                JSON.stringify(event.detail.requestParameters.queueName),
-              )
-              .obj('tags', event.detail.requestParameters.tags)
-              .msg(
-                'sqs queue created without autoalarm:enabled tag, skipping alarm creation',
-              );
-            break;
-          }
           await ServiceModules.parseSQSEventAndCreateAlarms(event);
           break;
 
