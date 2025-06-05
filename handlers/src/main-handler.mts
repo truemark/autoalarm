@@ -253,7 +253,7 @@ export const handler: Handler = async (
         .msg('Error message found in record body');
       continue;
     }
-    // Parse the body of the SQS message
+    // Parse the body of the SQS message into a json object
     const event = JSON.parse(record.body);
 
     log.trace().obj('body', event).msg('Processing message body');

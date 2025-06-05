@@ -1,5 +1,12 @@
 # AutoAlarm Changelog
 
+## v1.13.2
+### Fixed: 
+- Fixed logic that would process SQS create events for alarms that were not tagged at creation for autoalarm. During 
+  automation or workflows that create and tear down sqs queues, AutoAlarm would be overloaded with create events and make
+  large number of unnecessary calls to the aws apis and introduce throttling issues. This fix ensures that only queues 
+  that are properly tagged for autoalarm will be processed for alarm creation. (issue 158)
+
 ## v1.13.1
 ### Added:
 - Validation for Statistics using valibot to ensure that only valid statistics are used in the alarm configuration (issue 135).
