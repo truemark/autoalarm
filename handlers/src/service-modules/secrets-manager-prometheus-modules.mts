@@ -1,12 +1,17 @@
-import {SecretsManagerClient} from '@aws-sdk/client-secrets-manager'
+import {SecretsManagerClient} from '@aws-sdk/client-secrets-manager';
 import {
-PROMETHEUS_MYSQL_CONFIGS,
-PROMETHEUS_ORACLEDB_CONFIGS,
-PROMETHEUS_POSTGRES_CONFIGS,
+  PROMETHEUS_MYSQL_CONFIGS,
+  PROMETHEUS_ORACLEDB_CONFIGS,
+  PROMETHEUS_POSTGRES_CONFIGS,
 } from '../alarm-configs/index.mjs';
-import {MetricAlarmConfig, ServiceEventMap, ValidEventName} from '../types/index.mjs';
+import {
+  MetricAlarmConfig,
+  MetricAlarmOptions,
+  ServiceEventMap,
+  ValidEventName,
+} from '../types/index.mjs';
 import * as logging from '@nr1e/logging';
-
+import {parseMetricAlarmOptions} from '../alarm-configs/utils/index.mjs';
 
 export class SecManagerPrometheusModule {
   private static oracleDBConfigs = PROMETHEUS_ORACLEDB_CONFIGS;
@@ -14,10 +19,9 @@ export class SecManagerPrometheusModule {
   private static postgresConfigs = PROMETHEUS_POSTGRES_CONFIGS;
   private static log = logging.getLogger('SecManagerPrometheusModule');
 
-
   public static readonly SecretsManagerEventMap: ServiceEventMap = {
     'aws.secretsmanager': {
-      arnPattern: ["\"arn:aws:secretsmanager:", "\""],
+      arnPattern: ['"arn:aws:secretsmanager:', '"'],
       resrcIdPattern: null,
       eventName: {
         UntagResource: {
@@ -57,13 +61,15 @@ export class SecManagerPrometheusModule {
   } as const;
 
   // Private Constructor to prevent instantiation
-   //private static constructor() {}
-
+  private constructor() {}
 
   //connect to secrets manager and pull the secret to a parse
-  private static SecretsParse(arn: string, client: SecretsManagerClient) : {
-    engine: string | undefined,
-    host: string | undefined,
+  private static SecretsParse(
+    arn: string,
+    client: SecretsManagerClient,
+  ): {
+    engine: string | undefined;
+    host: string | undefined;
   } {
     try {
       const secret = client.getSecretValue({SecretId: arn});
@@ -76,60 +82,94 @@ export class SecManagerPrometheusModule {
       return {
         engine: secretData.engine,
         host: secretData.host,
-      }
+      };
     } catch (error) {
-      this.log.error().str('ARN', arn).unknown('error', error).msg('Error retrieving secret from Secrets Manager');
+      this.log
+        .error()
+        .str('ARN', arn)
+        .unknown('error', error)
+        .msg('Error retrieving secret from Secrets Manager');
       return {engine: undefined, host: undefined};
     }
   }
 
   // Helper function to fetch alarms
-  private static fetchPrometheusAlarmsConfig: MetricAlarmConfig[] = (engine: string ) =>  {
-      const prometheusAlarmsConfig: MetricAlarmConfig[] = [];
-
-      //fetch prometheus alarm configs for oracle, mysql, or postgres using engine type
-      return engine === 'mysql'
-        ? this.mysqlConfigs
-        : engine === 'oracle'
+  private static fetchPrometheusAlarmsConfig: MetricAlarmConfig[] = (
+    engine: string,
+  ) => {
+    //fetch prometheus alarm configs for oracle, mysql, or postgres using engine type
+    return engine === 'mysql'
+      ? this.mysqlConfigs
+      : engine === 'oracle'
         ? this.oracleDBConfigs
         : engine === 'postgres'
-        ? this.postgresConfigs
-            : undefined
-  }
+          ? this.postgresConfigs
+          : undefined;
+  };
 
-  private static async buildPromQuery(config: MetricAlarmConfig, tag?: string ): Promise<string[]> {
+  private static async buildPromQuery(
+    config: MetricAlarmConfig,
+    host: string,
+    tagValue?: string,
+  ): Promise<string[]> {
 
-    const promQuery: string[] = [];
-    const defaultCo
+    // Get alarm values for prometheus
+    const {
+      warningThreshold,
+      criticalThreshold,
+      prometheusExpression,
+      statistic,
+      period,
+    } = tagValue
+      ? parseMetricAlarmOptions(tagValue, config.defaults)
+      : config.defaults;
 
-  // Build Prometheus query based if optional tag is set
-    if (tag) {
-
+    // build the prometheus query
+    const xprBuild = (threshold: number | null) => {
+      prometheusExpression!
+        .replace('/_STATISTIC/', `${statistic}`)
+        .replace('/_THRESHOLD/', `${threshold}`)
+        .replace('/_PERIOD/', `${period}`)
+        .replace('/_HOST/', host);
     }
 
-    return
-  }
-
+    //return any non-null entries
+    return [
+      xprBuild(warningThreshold) ?? null,
+      xprBuild(criticalThreshold) ?? null,
+    ].filter((q) => q !== null);
+  };
 
   // Helper function to manage alarm rules and build a prometheus rules config
-  private static alarmRuleUpdater(created: string[], deleted: string[], updated: string[], currentRules: {}): {}{
-  const promehteusAlarmsConfig = {}
+  private static alarmRuleUpdater(
+    created: string[],
+    deleted: string[],
+    updated: string[],
+    currentRules: Record<string, any>,
+  ): void {
+    const promehteusAlarmsConfig = {};
 
+    if (
+      isCreated ||
+      tags?.some(
+        (tag) => tag.tagKey === 'autoalarm:enabled' && tag.tagValue === 'true',
+      )
+    ) {
+      // create alarms for this secret
+      alarmsToCreate.push('new-alarms-for-secret');
+    }
 
+    if (
+      tags?.some(
+        (tag) => tag.tagKey === 'autoalarm:enabled' && tag.tagValue === 'false',
+      )
+    ) {
+      // update alarms for this secret
+      alarmsToUpdate.push('update-alarms-for-secret');
+    }
 
-  if (isCreated || tags?.some(tag => tag.tagKey === 'autoalarm:enabled' && tag.tagValue === 'true')) {
-    // create alarms for this secret
-    alarmsToCreate.push('new-alarms-for-secret');
+    return promehteusAlarmsConfig;
   }
-
-  if (tags?.some(tag => tag.tagKey === 'autoalarm:enabled' && tag.tagValue === 'false')) {
-    // update alarms for this secret
-    alarmsToUpdate.push('update-alarms-for-secret');
-  }
-
-  return { prometheusAlarmsConfig: promehteusAlarmsConfig };
-  }
-
 
   //  TODO: We need to check if this is a create event becuase create events don't contain tag values
   //    even if a secretsmanager secret was created with a tag.
@@ -142,53 +182,49 @@ export class SecManagerPrometheusModule {
   public static async manageDbAlarms(
     isDestroyed: boolean,
     isCreated: boolean,
-    eventName:  string,
+    eventName: string,
     tags: {tagKey: string; tagValue?: string}[] | undefined,
     isARN: boolean,
     id: string,
   ): Promise<boolean> {
     // arrays of alarms to to be deleted and to be updated
-  // arrays of alarms to be deleted and to be updated
-  const toCreate: string[] = [];
-  const toDelete: string[] = [];
-  const toUpdate: string[] = [];
+    // arrays of alarms to be deleted and to be updated
+    const toCreate: string[] = [];
+    const toDelete: string[] = [];
+    const toUpdate: string[] = [];
 
     // Initialize the Secrets Manager client
     const client = new SecretsManagerClient({}); // TODO: add retry logic and region if needed.
 
     // untagging resources and created secrets that have tags send multiple events. Wait 30 sec and check for tags again.
-    if (isDestroyed || tags?.includes({tagKey: 'autoalarm:enabled'}) === false) {
+    if (
+      isDestroyed ||
+      tags?.includes({tagKey: 'autoalarm:enabled'}) === false
+    ) {
       // delete all alarms for this secret
     }
 
     if (isCreated || eventName === 'UntagResource') {
+      try {
+        // Map RDS instance/cluster ARN to the SSM parameter ARN
+        const rdsMapping = this.secretsManagerDbRouting();
 
-    try {
+        // build prom Queries
+        const queries = this.createPromQuerysWithLables();
 
-      // Map RDS instance/cluster ARN to the SSM parameter ARN
-      const rdsMapping = this.secretsManagerDbRouting();
+        //update prometheus rules
+        //delete and update functionality - should be in prometheus-tools for a quick call.
+      } catch (error) {
+        this.log
+          .error()
+          .str('Function', 'manageDbAlarms')
+          .unknown('error', error)
+          .msg('Error managing DB alarms');
+        return false;
+      }
 
-      // build prom Queries
-      const queries = this.createPromQuerysWithLables();
-
-
-      //update prometheus rules
-      //delete and update functionality - should be in prometheus-tools for a quick call.
-
-    } catch (error) {
-      this.log
-        .error()
-        .str('Function', 'manageDbAlarms')
-        .unknown('error', error)
-        .msg('Error managing DB alarms');
-      return false;
-
+      // Return true if successful.
+      return true;
     }
-
-    // Return true if successful.
-    return true
-
-
   }
-
 }
