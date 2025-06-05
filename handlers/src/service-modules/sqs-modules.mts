@@ -246,7 +246,7 @@ export async function parseSQSEventAndCreateAlarms(event: any): Promise<{
               .msg(
                 'sqs queue created without autoalarm:enabled tag, skipping alarm management',
               );
-            return; // Skip alarm creation if tag is not present
+            return; // Skip alarm management if tag is not present
           }
           if (queueUrl) {
             tags = await fetchSQSTags(queueUrl);
