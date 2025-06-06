@@ -20,7 +20,7 @@
  */
 export interface ServiceEventMap {
   [source: string]: {
-    arnPattern: [string, string] | null,
+    arnPattern: [string, string] | null;
     resrcIdPattern: [string, string] | null;
     eventName: {
       [name: string]: {
@@ -34,6 +34,21 @@ export interface ServiceEventMap {
     };
   };
 }
+
+/**
+ * Interface for the return object from the EventParse class.
+ * Used to type the return value and then also as the input arg for service modules
+ *
+ */
+export interface EventParseResult  {
+  source: string;
+  isDestroyed: boolean;
+  isCreated: boolean;
+  eventName: string;
+  tags: Record<string, string> | undefined; // tags are optional and can be null
+  isARN: boolean;
+  id: string;
+};
 
 /**
  * Defines the structure for service event maps. Passed as a generic type to

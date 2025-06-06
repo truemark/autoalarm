@@ -5,6 +5,7 @@ import {
   PROMETHEUS_POSTGRES_CONFIGS,
 } from '../alarm-configs/index.mjs';
 import {
+  EventParseResult,
   MetricAlarmConfig,
   MetricAlarmOptions,
   ServiceEventMap,
@@ -112,7 +113,6 @@ export class SecManagerPrometheusModule {
     host: string,
     tagValue?: string,
   ): Promise<string[]> {
-
     // Get alarm values for prometheus
     const {
       warningThreshold,
@@ -131,14 +131,14 @@ export class SecManagerPrometheusModule {
         .replace('/_THRESHOLD/', `${threshold}`)
         .replace('/_PERIOD/', `${period}`)
         .replace('/_HOST/', host);
-    }
+    };
 
     //return any non-null entries
     return [
       xprBuild(warningThreshold) ?? null,
       xprBuild(criticalThreshold) ?? null,
     ].filter((q) => q !== null);
-  };
+  }
 
   // Helper function to manage alarm rules and build a prometheus rules config
   private static alarmRuleUpdater(
@@ -171,21 +171,14 @@ export class SecManagerPrometheusModule {
     return promehteusAlarmsConfig;
   }
 
-  //  TODO: We need to check if this is a create event becuase create events don't contain tag values
-  //    even if a secretsmanager secret was created with a tag.
-  //  TODO: If we untag a resource, we need to wait because SecretsManager sends two events and they may come
-  //   out of order. need to pull tags again... a 30 second wait should be enough.
-  // TODO: need logic to find and replace the 'period' value in the alarm config if a tag is provided to overwrite
-  //  the default value.
-  // TODO: We need logic to overwrite find and replace 'warningThreshold' and 'criticalThreshold' values if a tag is provided
-  //  to overwrite the default value.
+  /**  TODO: We need to check if this is a create event becuase create events don't contain tag values
+   *     even if a secretsmanager secret was created with a tag.
+   *
+   *   TODO: If we untag a resource, we need to wait because SecretsManager sends two events and they may come
+   *    out of order. need to pull tags again... a 30 second wait should be enough.
+   */
   public static async manageDbAlarms(
-    isDestroyed: boolean,
-    isCreated: boolean,
-    eventName: string,
-    tags: {tagKey: string; tagValue?: string}[] | undefined,
-    isARN: boolean,
-    id: string,
+    eventParseResult: EventParseResult,
   ): Promise<boolean> {
     // arrays of alarms to to be deleted and to be updated
     // arrays of alarms to be deleted and to be updated
@@ -198,13 +191,16 @@ export class SecManagerPrometheusModule {
 
     // untagging resources and created secrets that have tags send multiple events. Wait 30 sec and check for tags again.
     if (
-      isDestroyed ||
-      tags?.includes({tagKey: 'autoalarm:enabled'}) === false
+      eventParseResult.isDestroyed ||
+      eventParseResult.tags?.includes({tagKey: 'autoalarm:enabled'}) === false
     ) {
       // delete all alarms for this secret
     }
 
-    if (isCreated || eventName === 'UntagResource') {
+    if (
+      eventParseResult.isCreated ||
+      eventParseResult.eventName === 'UntagResource'
+    ) {
       try {
         // Map RDS instance/cluster ARN to the SSM parameter ARN
         const rdsMapping = this.secretsManagerDbRouting();

@@ -12,6 +12,7 @@ import {
   ValidEventSource,
   ValidEventName,
   ValidEventPatterns,
+  EventParseResult,
 } from '../../types/index.mjs';
 
 export class EventParse<EventMap extends ServiceEventMap> {
@@ -81,12 +82,12 @@ export class EventParse<EventMap extends ServiceEventMap> {
       : this.eventMap[source].resrcIdPattern;
 
     // first check object key for valid id (arn or resource ID)
-    recordBody[eventPatterns.idKeyName] &&
-    recordBody[eventPatterns.idKeyName]
+    recordBody.detail[eventPatterns.idKeyName] &&
+    recordBody.detail[eventPatterns.idKeyName]
       .toLowerCase()
       .replace(/"/g, '')
       .startsWith(idPrefix)
-      ? (id = recordBody[eventPatterns.idKeyName])
+      ? (id = recordBody.detail[eventPatterns.idKeyName])
       : undefined;
 
     // Try fallback string search for an ARN or resource ID in the SQS record body
@@ -128,7 +129,7 @@ export class EventParse<EventMap extends ServiceEventMap> {
       typeof source,
       typeof eventName
     >,
-  ): {tagKey: string; tagValue?: string}[] | undefined {
+  ): Record<string, string> | undefined {
     // Early return if we know that we don't have tags for this event
     if (!eventPatterns.hasTags || eventPatterns.tagsKey === null)
       return undefined;
@@ -137,7 +138,12 @@ export class EventParse<EventMap extends ServiceEventMap> {
     const recordBody = JSON.parse(sqsRecord.body);
 
     // Grab all changed tags if they are present in the event pattern
-    const tags = recordBody[eventPatterns.tagsKey];
+    let tags = recordBody.detail[eventPatterns.tagsKey];
+
+    // Filter out any non-autoalarm tags if present
+    tags = tags.filter((t: Record<string, string>) => {
+      return Object.keys(t).every((k) => k.startsWith('autoalarm:'));
+    });
 
     if (!tags) {
       this.log
@@ -148,7 +154,7 @@ export class EventParse<EventMap extends ServiceEventMap> {
         .obj('eventPatterns', eventPatterns)
         .obj('sqsRecord', JSON.parse(sqsRecord.body))
         .msg(
-          `No tags found for source: ${source}, eventName: ${eventName} while event is configured to contain tags. 
+          `No autoalarm tags found for source: ${source}, eventName: ${eventName} while event is configured to contain tags. 
           Please check logs.`,
         );
       return undefined;
@@ -159,22 +165,14 @@ export class EventParse<EventMap extends ServiceEventMap> {
 
   /**
    * Matches an SQS event record against a service event mapping for supported AutoAlarm Services.
-   * @return A promise that resolves to an object containing the service name,
+   * @return A promise that resolves to an object containing the service name
+   * @see {link EventParseResult} for the structure of the returned object.
    * whether the resource is destroyed or created,
    * changed tags, and the ID type, ID (ARN or resource ID), or undefined if no match is found.
    */
-  async matchEvent(sqsRecord: SQSRecord): Promise<
-    | {
-        source: ValidEventSource<EventMap>;
-        isDestroyed: boolean;
-        isCreated: boolean;
-        eventName: ValidEventName<ValidEventSource<EventMap>>;
-        tags: {tagKey: string; tagValue?: string}[] | undefined;
-        isARN: boolean;
-        id: string;
-      }
-    | undefined
-  > {
+  async matchEvent(
+    sqsRecord: SQSRecord,
+  ): Promise<EventParseResult | undefined> {
     //break out the body from the sqs record in json.
     const body = JSON.parse(sqsRecord.body);
 
@@ -187,8 +185,8 @@ export class EventParse<EventMap extends ServiceEventMap> {
     // Early check to make sure that the event body contains the correct source
     // and eventName properties before proceeding
     if (
-      !Object.keys(this.eventMap).includes(body.source) ||
-      !Object.keys(this.eventMap).includes(body.eventName)
+      !Object.keys(this.eventMap).includes(body.detail.source) ||
+      !Object.keys(this.eventMap).includes(body.detail.eventName)
     ) {
       this.log
         .warn()
@@ -200,20 +198,19 @@ export class EventParse<EventMap extends ServiceEventMap> {
       return undefined;
     }
 
-    const source = body.source satisfies ValidEventSource<EventMap>;
+    const source = body.detail.source satisfies ValidEventSource<EventMap>;
 
-    const eventName = body.eventName satisfies ValidEventName<typeof source>;
+    const eventName = body.detail.eventName satisfies ValidEventName<
+      typeof source
+    >;
 
     const eventPatterns = this.eventMap[source].eventName[
       eventName
     ] satisfies ValidEventPatterns<EventMap, typeof source, typeof eventName>;
 
-    const tags = this.findChangedTags(
-      sqsRecord,
-      source,
-      eventName,
-      eventPatterns,
-    );
+    const tags = eventPatterns.hasTags
+      ? this.findChangedTags(sqsRecord, source, eventName, eventPatterns)
+      : undefined;
 
     const id = this.findId(sqsRecord, source, eventName, eventPatterns);
 

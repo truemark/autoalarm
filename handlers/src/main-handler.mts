@@ -261,11 +261,13 @@ export const handler: Handler = async (
      * TODO: for testing with new filtering logic. For prometheus secrets manager events only.
      *  Start of new Main Handler logic.
      *  @info This event map object will be extended to include all services but in this version,
-     * it only includes secrets manager events for prometheus alarm management.
+     *  it only includes secrets manager events for prometheus alarm management.
      *
+     * @Start
      */
     const EventMap: ServiceEventMap = {
       ...SecManagerPrometheusModule.SecretsManagerEventMap,
+      // add other service event maps here.
     } as const;
 
     // Initialize the EventParse class with the event map and the record
@@ -274,30 +276,31 @@ export const handler: Handler = async (
     // check if the event matches the event map for prometheus secrets manager events returns undefined if no match is found
     const eventMatch = await parser.matchEvent(record);
 
-    // If the event matches the event map, manage the alarms using the SecManagerPrometheusModule otherwise set isSuccesful to false
-    const isSuccessful = eventMatch
-      ? await SecManagerPrometheusModule.manageDbAlarms(
-          eventMatch.isDestroyed,
-          eventMatch.isCreated,
-          eventMatch.eventName,
-          eventMatch.tags,
-          eventMatch.isARN,
-          eventMatch.id,
-        )
-      : false;
+    /**
+     *  If the event matches the event map, manage the alarms using the SecManagerPrometheusModule otherwise set isSuccessful to false
+     *  If manageDbAlarms is successful, it will return true, and we can continue processing the record. Otherwise, false.
+     */
+    const isSuccessful =
+      eventMatch && eventMatch.source === 'aws.secretsmanager'
+        ? await SecManagerPrometheusModule.manageDbAlarms(eventMatch)
+        /**
+         * Add other service event management here as needed in the ternary
+         *  @example ? eventMatch && eventMatch.source === 'aws.ec2' ? await ServiceModules.manageEC2Alarms(eventMatch)
+         *  */
+        : false;
 
     // If the event does not match the event map or SecManagerPrometheusModule was unsuccessful, log an error and continue to the next record
     if (!isSuccessful) {
       log
         .error()
         .str('function', 'handler')
-        .str('messageId', record.messageId)
+        .obj('record', record)
         .msg(
           'Event did not match the event map or SecManagerPrometheusModule was unsuccessful',
         );
       batchItemFailures.push({itemIdentifier: record.messageId});
       batchItemBodies.push(record);
-      //continue; /** During testing we want to not move on to the next record before processing the current one below for other services.*/
+      //continue; // During testing we want to not move on to the next record before processing the current one below for other services.
     }
     /**
      * TODO: End of new Main Handler logic. for prometheus secrets manager events integration.

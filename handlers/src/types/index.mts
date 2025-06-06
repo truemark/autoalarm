@@ -46,4 +46,5 @@ export {
   ValidEventSource,
   ValidEventName,
   ValidEventPatterns,
+  EventParseResult,
 } from './event-parse-types.mjs';
