@@ -182,8 +182,10 @@ export class EventParse<EventMap extends ServiceEventMap> {
       .obj('event and map', {eventMap: this.eventMap, event: body})
       .msg('Matching event against service event map');
 
-    // Early check to make sure that the event body contains the correct source
-    // and eventName properties before proceeding
+    /**
+     * Early check to make sure that the event body contains the correct source
+     * and eventName properties before proceeding.
+     */
     if (
       !Object.keys(this.eventMap).includes(body.detail.source) ||
       !Object.keys(this.eventMap).includes(body.detail.eventName)
