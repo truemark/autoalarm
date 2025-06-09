@@ -143,7 +143,7 @@ export class SecManagerPrometheusModule {
   }
 
   // Helper function to fetch alarms
-  private static fetchPrometheusAlarmsConfig = (engine: string) => {
+  private static fetchDefaultConfigs = (engine: string) => {
     //fetch prometheus alarm configs for oracle, mysql, or postgres using engine type
     return engine === 'mysql'
       ? this.mysqlConfigs
@@ -191,8 +191,7 @@ export class SecManagerPrometheusModule {
     tags: Record<string, string>,
     engine: string, // engine type from secret (mysql, oracle, postgres)
     host: string,
-    isUntagged?: boolean,
-    isDisabled?: boolean,
+    option: 'disabled' | 'untagged' | 'tagged',
   ): Promise<{iSuccess: boolean; res: Error | string}> {
     const prometheusWorkspaceId: string =
       process.env.PROMETHEUS_WORKSPACE_ID || '';
@@ -205,13 +204,13 @@ export class SecManagerPrometheusModule {
     }
 
     // If isDisabled is true, delete all Prometheus Alarm Rules and return
-    if (isDisabled) {
+    if (option === 'disabled') {
       try {
         await deletePromRulesForService(prometheusWorkspaceId, engine, [host]);
-        return Promise.resolve({
+        return {
           iSuccess: true,
           res: 'Deleted all Prometheus alarm rules for disabled autoalarm secret.',
-        });
+        };
       } catch (err) {
         return {
           iSuccess: false,
@@ -221,7 +220,7 @@ export class SecManagerPrometheusModule {
     }
 
     // Get default configs for the correct DB engine (eventParseResult.engine)
-    const configs = this.fetchPrometheusAlarmsConfig(engine);
+    const configs = this.fetchDefaultConfigs(engine);
 
     // Big problem. If no configs are found, return early with error obj.
     if (!configs) {
@@ -238,9 +237,8 @@ export class SecManagerPrometheusModule {
     /**
      * UntagResource events only contain keys so we just grab the default values
      */
-    if (isUntagged) {
+    if (option === 'untagged') {
       try {
-        const configs = this.fetchPrometheusAlarmsConfig(engine);
         // TODO: Add logic to update alarm configs for untagged secrets
         return {
           iSuccess: true,
@@ -323,8 +321,11 @@ export class SecManagerPrometheusModule {
       secretTags,
       resourceInfo.engine,
       resourceInfo.host,
-      eventParseResult.eventName === 'UntagResource',
-      secretTags['autoalarm:enabled'] === 'false',
+      !secretTags['autoalarm:enabled']
+        ? 'disabled'
+        : eventParseResult.eventName === 'UntagResource'
+          ? 'untagged'
+          : 'tagged',
     );
 
     // If alarmRuleUpdater failed for untag and tag events, log the error and return false
