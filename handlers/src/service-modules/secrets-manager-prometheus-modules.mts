@@ -323,7 +323,7 @@ export class SecManagerPrometheusModule {
       secretTags,
       resourceInfo.engine,
       resourceInfo.host,
-      eventParseResult.eventName === 'UntagResource' ? true : false,
+      eventParseResult.eventName === 'UntagResource',
       secretTags['autoalarm:enabled'] === 'false',
     );
 
