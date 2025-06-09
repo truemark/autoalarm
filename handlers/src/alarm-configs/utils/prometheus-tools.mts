@@ -214,8 +214,9 @@ async function getPromAlarmConfigs(
           }
 
           // Determine the duration
-          const durationTime =
-            updatedDefaults.period * updatedDefaults.evaluationPeriods;
+          const durationTime = updatedDefaults.evaluationPeriods
+            ? updatedDefaults.period * updatedDefaults.evaluationPeriods
+            : updatedDefaults.period;
 
           // Build the Prometheus query
           let alarmQuery = '';
