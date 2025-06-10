@@ -1,3 +1,5 @@
+import {TagsObject} from './module-types.mjs';
+
 export interface PrometheusAlarmConfig {
   instanceId: string; // ID of the instance
   type: string; // The type or classification of the alarm
@@ -35,3 +37,14 @@ export type PrometheusAlarmConfigArray = PrometheusAlarmConfig[];
 export interface NamespaceDetails {
   groups: RuleGroup[];
 }
+
+
+type DbEngine = 'ORACLE' | 'MYSQL' | 'POSTGRES';
+
+
+export interface MassPromUpdatesMap {
+  prometheusWorkspaceId: string; // The ID of the Prometheus workspace.
+  engine: DbEngine;
+  hostID: string;
+  ruleGroup: RuleGroup;
+  }

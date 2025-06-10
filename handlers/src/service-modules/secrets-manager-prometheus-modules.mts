@@ -165,9 +165,7 @@ export class SecManagerPrometheusModule {
     if (!parsedTags) {
       try {
         fetchedTags = (
-          await client.send(
-            new DescribeSecretCommand({SecretId: parsed.id}),
-          )
+          await client.send(new DescribeSecretCommand({SecretId: parsed.id}))
         ).Tags;
 
         // filter out all autoalarm tags
@@ -183,12 +181,9 @@ export class SecManagerPrometheusModule {
       } catch (error) {
         return {
           isSuccess: false,
-          res: new Error(
-            `Failed to fetch tags for secret ARN: ${parsed.id}`,
-            {
-              cause: error,
-            },
-          ),
+          res: new Error(`Failed to fetch tags for secret ARN: ${parsed.id}`, {
+            cause: error,
+          }),
         };
       }
     }
@@ -204,10 +199,10 @@ export class SecManagerPrometheusModule {
 
     // set constants for return object
     const tags = parsedTags ? parsedTags : fetchedTags;
-    const isRemoved = (parsed.eventName === 'UntagResource' && tags !== fetchedTags);
-    const isAdded = (parsed.eventName === 'TagResource' && tags !== fetchedTags);
+    const isRemoved =
+      parsed.eventName === 'UntagResource' && tags !== fetchedTags;
+    const isAdded = parsed.eventName === 'TagResource' && tags !== fetchedTags;
     const isFallback = tags === fetchedTags;
-
 
     // If tags are found, return them
     return {
@@ -397,8 +392,6 @@ export class SecManagerPrometheusModule {
 
     // Untagged (isRemoved) events management
 
-
-
     //Once we have the configs, we can rebuild the Prometheus rules
     for (const config of configs) {
     }
@@ -491,6 +484,43 @@ export class SecManagerPrometheusModule {
         );
       return true;
     }
+
+    /**
+     * TODO: It's coming back to me. AMP is so slow to respond that HAVE to go the following route:
+     *  1. When a tag event comes in:
+     *    - stop parsing the event and grab ALL the autoalarm tags and host/engine from every secret that
+     *      is tagged with Any AutoAlarm tag.
+     *  2. Looking on line 944 in prometheus-tools.mts, I think we can read the rulegroup namespace and
+     *      filter out rules that have changes when compared to our configs with tags that we pull
+     *  3. When new events come in, we just check and discard any events require no changes.
+     *          - We need to process in batches so that we can handle the slow response time of AMP.
+     *  4. Create a static object to store the rulegroup namesapce in the main handler for all items in a batch
+     *        - This will allow us to compare the rulegroup namespace to the configs and determine if we need to
+     *        update alarms and prevent us from having to re-fetch the configs
+     *  5. If we have a Destroyed event, we will delete all alarms for the secret. Still need dynamo.
+     *  6. Create Events can still be safely ignored as they will be followed by a TagResource event
+     *
+     *
+     *  TODO:
+     *     - Modify tag fetching/secretParse to grab all tags and host/engine from every secret that is autoalarm tagged
+     *       if possible to filter out any secrets that are not relevant autoAlarm. - for Tagged Events only.
+     *     - Moddify the configs function to be async if it isn't for concurrent runs
+     *     - Modify buildPromQuery Function:
+     *         - to be async if not
+     *         - follow the same pattern as requried by managePromNamespaceAlarms and Prom types
+     *         build a compatible object to be used in managePromNamespaceAlarms
+     *     - Port over modified Dynamo logic for destroy events.
+     *     - Modify logic in main handler to check all events and batch them togehter if they are secrets manager events
+     *     - add eventbridge rules and permissions for secrets manager
+     *
+     *  @FUNCTIONS NEEDED:
+     *     - secretsParse/fetchTags One function
+     *     - fetchDefaultConfigs
+     *     -buildPromQuery
+     *     - dynamoDBFetch
+     *     - Function to hold the prometheusRules so we don't keep callingmultiple times for that during each run
+     *
+     */
 
     // If we have a Destroyed event, we will delete all alarms for the secret. No need to grab tags or secrets.
 

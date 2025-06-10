@@ -1,0 +1,320 @@
+import {
+  SecretsManagerClient,
+  DescribeSecretCommand,
+  ListSecretsCommandInput,
+  SecretListEntry,
+  ListSecretsCommand,
+} from '@aws-sdk/client-secrets-manager';
+import {
+  PROMETHEUS_MYSQL_CONFIGS,
+  PROMETHEUS_ORACLEDB_CONFIGS,
+  PROMETHEUS_POSTGRES_CONFIGS,
+} from '../alarm-configs/index.mjs';
+import {
+  AlarmUpdateOptions,
+  AlarmUpdateResult,
+  EventParseResult,
+  MetricAlarmConfig,
+  ServiceEventMap,
+  TagsObject,
+} from '../types/index.mjs';
+import {ConfiguredRetryStrategy} from '@smithy/util-retry';
+import * as logging from '@nr1e/logging';
+import {
+  deletePromRulesForService,
+  parseMetricAlarmOptions,
+} from '../alarm-configs/utils/index.mjs';
+
+export class SecManagerPrometheusModule {
+  private static oracleDBConfigs = PROMETHEUS_ORACLEDB_CONFIGS;
+  private static mysqlConfigs = PROMETHEUS_MYSQL_CONFIGS;
+  private static postgresConfigs = PROMETHEUS_POSTGRES_CONFIGS;
+  private static log = logging.getLogger('SecManagerPrometheusModule');
+
+  public static readonly SecretsManagerEventMap: ServiceEventMap = {
+    'aws.secretsmanager': {
+      arnPattern: ['"arn:aws:secretsmanager:', '"'],
+      resrcIdPattern: null,
+      eventName: {
+        UntagResource: {
+          hasTags: true,
+          tagsKey: 'tagKeys',
+          idKeyName: 'secretId',
+          isARN: true,
+          isDestroyed: false,
+          isCreated: false,
+        },
+        TagResource: {
+          hasTags: true,
+          tagsKey: 'tags',
+          idKeyName: 'secretId',
+          isARN: true,
+          isDestroyed: false,
+          isCreated: false,
+        },
+        DeleteSecret: {
+          hasTags: false,
+          tagsKey: null,
+          idKeyName: 'arn',
+          isARN: true,
+          isDestroyed: true,
+          isCreated: false,
+        },
+        CreateSecret: {
+          hasTags: false,
+          tagsKey: null,
+          idKeyName: 'responseElements.arn',
+          isARN: true,
+          isDestroyed: false,
+          isCreated: true,
+        },
+      },
+    },
+  } as const;
+
+  // Private Constructor to prevent instantiation
+  private constructor() {}
+
+  //connect to secrets manager and pull the secret to a parse
+  private static secretsParse(
+    arn: string,
+    client: SecretsManagerClient,
+  ): AlarmUpdateResult<{
+    engine: string | undefined;
+    host: string | undefined;
+    secretsFound: boolean;
+  }> {
+    try {
+      const secret = client.getSecretValue({SecretId: arn});
+
+      if (!secret || !secret.SecretString) {
+        return {
+          isSuccess: true,
+          res: new Error(`Secret not found or empty for ARN: ${arn}`),
+          data: {
+            engine: undefined,
+            host: undefined,
+            secretsFound: false,
+          },
+        };
+      }
+
+      // Parse the secret string to extract engine and host
+      const secretData = JSON.parse(secret.SecretString);
+      return {
+        isSuccess: true,
+        res: 'Successfully retrieved secret data',
+        data: {
+          engine: secretData.engine,
+          host: secretData.host,
+          secretsFound: true,
+        },
+      };
+    } catch (err) {
+      return {
+        isSuccess: false,
+        res: new Error(`Failed to retrieve secret for ARN: ${arn}:`, {
+          cause: err,
+        }),
+      };
+    }
+  }
+
+  /**
+   * Dynamo DB fetcher to check for instances of alarms for a secret when it is
+   * destroyed, and we can't get the host and engine from the secret.
+   * TODO: Belongs in dynamoDB utils file. Temp.
+   */
+  private static dynamoDBFetch(arn: string): AlarmUpdateResult<{
+    arn: string;
+    engine: string | undefined;
+    host: string | undefined;
+    alarmsFound: boolean;
+  }> {
+    // This function is a placeholder for the actual DynamoDB fetch logic.
+    // It should return an object with engine, host, and secretsFound properties.
+    // For now, we will return a dummy object.
+    return {
+      isSuccess: true,
+      res: 'DynamoDB fetch not implemented',
+      data: {
+        arn: arn,
+        engine: 'mysql', // Example engine
+        host: 'example-host', // Example host
+        alarmsFound: true,
+      },
+    };
+  }
+
+  /**
+   * Fetch all ARNs that have associated autoalarm tags from secrets manager
+   * @private
+   */
+  private static async fetchTags(client: SecretsManagerClient): Promise<
+    AlarmUpdateResult<{
+      autoalarmSecrets: {
+        arn: string;
+        tags: TagsObject;
+      };
+    }>
+  > {
+    //set next token for later use to grab all secrets
+    let nextToken: string | undefined = undefined;
+
+    // Initialize an array to hold all secrets
+    const allSecrets: SecretListEntry[] = [];
+
+    // Fetch all secrets in a loop until there are no more pages
+    try {
+      do {
+        const input: ListSecretsCommandInput = {
+          MaxResults: 100,
+          NextToken: nextToken,
+        };
+
+        // make call to list secrets
+        const response = await client.send(new ListSecretsCommand(input));
+        allSecrets.push(...(response.SecretList ?? []));
+        nextToken = response.NextToken;
+      } while (nextToken);
+    } catch (err) {
+      return {
+        isSuccess: false,
+        res: new Error('Failed to fetch secrets from Secrets Manager', {
+          cause: err,
+        }),
+      };
+    }
+
+    // Filter secrets to find those with autoalarm tags
+    const autoalarmSecrets = allSecrets.filter((secret) => {
+      return secret.Tags?.some((tag): tag is {Key: string, Value: string} => !!tag.Key && tag.Key.startsWith('autoalarm:'));
+    });
+
+    // now create an object with secret ARNs and their tags
+    const secretsWithTags = autoalarmSecrets.map((secret) => ({
+      arn: secret.ARN,
+      tags: secret.Tags,
+    }));
+
+    // If tags are found, return them
+    return {
+      isSuccess: true,
+      res: 'Fetched all autoalarm secrets with tags',
+      data: {
+        autoalarmSecrets: [
+          {
+            arn: 'arn:aws:secretsmanager:region:account-id:secret:example-secret',
+            tags: [{key: 'autoalarm:example', value: 'value'}],
+          },
+        ],
+      },
+    };
+  }
+
+  // Helper function to fetch alarms
+  private static fetchDefaultConfigs = (engine: string) => {
+    //fetch prometheus alarm configs for oracle, mysql, or postgres using engine type
+    return engine === 'mysql'
+      ? this.mysqlConfigs
+      : engine === 'oracle'
+        ? this.oracleDBConfigs
+        : engine === 'postgres'
+          ? this.postgresConfigs
+          : undefined;
+  };
+
+  private static async buildPromQuery(
+    config: MetricAlarmConfig,
+    host: string,
+    tagValue?: string,
+  ): Promise<string[]> {
+    // Get alarm values for prometheus
+    const {
+      warningThreshold,
+      criticalThreshold,
+      prometheusExpression,
+      statistic,
+      period,
+    } = tagValue
+      ? parseMetricAlarmOptions(tagValue, config.defaults)
+      : config.defaults;
+
+    // build the prometheus query
+    const xprBuild = (threshold: number | null) => {
+      prometheusExpression!
+        .replace('/_STATISTIC/', `${statistic}`)
+        .replace('/_THRESHOLD/', `${threshold}`)
+        .replace('/_PERIOD/', `${period}`)
+        .replace('/_HOST/', host);
+    };
+
+    //return any non-null entries
+    return [
+      xprBuild(warningThreshold) ?? null,
+      xprBuild(criticalThreshold) ?? null,
+    ].filter((q) => q !== null);
+  }
+
+  /**
+   * Handle Destroyed Events
+   */
+  private static async handleDestroyedAndDisabled<T extends boolean>(
+    prometheusWorkspaceId: string,
+    options: AlarmUpdateOptions<T>,
+  ): Promise<AlarmUpdateResult> {
+    // some service events may not need to action this event type. Ideally these would be removed from the event map
+
+    // Try to handle the destroyed event by deleting all Prometheus rules for the host
+    try {
+      await deletePromRulesForService(prometheusWorkspaceId, options.engine, [
+        options.hostID,
+      ]);
+      return {
+        isSuccess: true,
+        res: 'Deleted all Prometheus alarm rules for disabled autoalarm secret.',
+      };
+    } catch (err) {
+      return {
+        isSuccess: false,
+        res: new Error('Failed to delete Prometheus Alarms ', {cause: err}),
+      };
+    }
+  }
+
+  /**
+   * Public static method which is called in main-handler to manage DB prometheus alarms
+   * @param eventParseResult - The result of the event parsing, containing details about the event.
+   * @see {@link EventParseResult} for more details on the structure of this object.
+   */
+  public static async managePromDbAlarms(
+    eventParseResult: EventParseResult,
+  ): Promise<boolean> {
+    // Skip if CreateSecret event - Does not include tags and follow-up event with tags will follow
+    if (eventParseResult.isCreated) {
+      this.log
+        .info()
+        .str('Function', 'manageDbAlarms')
+        .obj('EventParseResult', eventParseResult)
+        .msg(
+          'Secrets Manager sends follow up events for tags after CreateSecret event. Event handled.',
+        );
+      return true;
+    }
+
+    // any tag even that comes in should grab all secrets tags and host/engine into an object
+
+    // If we have a Destroyed event, we will delete all alarms for the secret. No need to grab tags or secrets.
+
+    // Initialize the Secrets Manager client then get host and engine
+    const client = new SecretsManagerClient({
+      region: process.env.AWS_REGION,
+      retryStrategy: new ConfiguredRetryStrategy(
+        20,
+        (retryAttempt) => retryAttempt ** 2 * 500,
+      ),
+    });
+
+    return true;
+  }
+}
