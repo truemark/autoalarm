@@ -1,4 +1,7 @@
-import {SecretsManagerClient} from '@aws-sdk/client-secrets-manager';
+import {
+  SecretsManagerClient,
+  DescribeSecretCommand,
+} from '@aws-sdk/client-secrets-manager';
 import {
   PROMETHEUS_MYSQL_CONFIGS,
   PROMETHEUS_ORACLEDB_CONFIGS,
@@ -12,13 +15,12 @@ import {
   ServiceEventMap,
   TagsObject,
 } from '../types/index.mjs';
+import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import * as logging from '@nr1e/logging';
 import {
   deletePromRulesForService,
   parseMetricAlarmOptions,
 } from '../alarm-configs/utils/index.mjs';
-import {success} from 'concurrently/dist/src/defaults.js';
-import {IEngine} from 'aws-cdk-lib/aws-rds';
 
 export class SecManagerPrometheusModule {
   private static oracleDBConfigs = PROMETHEUS_ORACLEDB_CONFIGS;
@@ -71,16 +73,14 @@ export class SecManagerPrometheusModule {
   private constructor() {}
 
   //connect to secrets manager and pull the secret to a parse
-  private static SecretsParse(
+  private static secretsParse(
     arn: string,
     client: SecretsManagerClient,
-  ):
-    | AlarmUpdateResult<{
-        engine?: string;
-        host?: string;
-        secretsFound?: boolean;
-      }>
-    | undefined {
+  ): AlarmUpdateResult<{
+    engine: string | undefined;
+    host: string | undefined;
+    secretsFound: boolean;
+  }> {
     try {
       const secret = client.getSecretValue({SecretId: arn});
 
@@ -89,6 +89,8 @@ export class SecManagerPrometheusModule {
           isSuccess: true,
           res: new Error(`Secret not found or empty for ARN: ${arn}`),
           data: {
+            engine: undefined,
+            host: undefined,
             secretsFound: false,
           },
         };
@@ -108,55 +110,76 @@ export class SecManagerPrometheusModule {
     } catch (err) {
       return {
         isSuccess: false,
-        res: new Error(`Failed to retrieve secret for ARN: ${arn}:`, {cause: err}),
-      }
-
+        res: new Error(`Failed to retrieve secret for ARN: ${arn}:`, {
+          cause: err,
+        }),
+      };
     }
   }
 
   // Helper Function to fetch tags from Secrets Manager if eventParseResult does not have them
-  private static async fetchSecretTags(
-    arn: string,
+  private static async fetchTags(
+    eventParseResult: EventParseResult,
     client: SecretsManagerClient,
-  ): Promise<TagsObject | undefined> {
+  ): Promise<AlarmUpdateResult<{tags: TagsObject | undefined}>> {
+    let tags;
+
+    // first check if the eventParsed result has tags and use them if it does
+    const parsedTags: TagsObject | undefined = eventParseResult.hasTags
+      ? eventParseResult.tags
+      : undefined;
+
+    // If tags are present in the eventParseResult, assign parsedTags to tags
+    tags = parsedTags ? (parsedTags satisfies TagsObject) : undefined;
+
+    // If no tags in eventParseResult, try to fetch them from Secrets Manager
+
     try {
-      const tags = await client.listSecretTags({SecretId: arn}); // TODO
-
-      // We don't care if there are not any tags. Early return if none.
-      if (!tags || !tags.Tags || tags.Tags.length === 0) {
-        this.log.warn().str('ARN', arn).msg('No tags found for secret');
-        return undefined;
-      }
-
-      // Filter out any non-autoalarm tags
-      const autoAlarmTags = tags.Tags.filter((tag: {Key: string}) =>
-        tag.Key.startsWith('autoalarm:'),
-      );
-
-      // If no autoalarm tags, we're not interested... return undefined
-      if (autoAlarmTags.length === 0) {
-        this.log
-          .warn()
-          .str('Function', 'fetchSecretTags')
-          .str('ARN', arn)
-          .obj('DiscoveredTags', tags.Tags)
-          .msg('No autoalarm tags found for secret');
-        return undefined; // return undefined if no autoalarm tags are present
-      }
-
-      // return all autoalarm tags
-      return tags.tags;
+      tags = (
+        await client.send(
+          new DescribeSecretCommand({SecretId: eventParseResult.id}),
+        )
+      ).Tags;
     } catch (error) {
-      this.log
-        .fatal()
-        .str('Function', 'fetchSecretTags')
-        .str('ARN', arn)
-        .unknown('error', error)
-        .msg(
-          'Error fetching tags from Secrets Manager. Manually review tags, logs and debug this function',
-        );
-      return undefined;
+      return {
+        isSuccess: false,
+        res: new Error(
+          `Failed to fetch tags for secret ARN: ${eventParseResult.id}`,
+          {
+            cause: error,
+          },
+        ),
+      };
     }
+
+    // filter out all autoalarm tags
+    tags =
+      tags && tags.length > 0
+        ? (tags.filter(
+            (tag): tag is {Key: string; Value: string} =>
+              !!tag.Key &&
+              tag.Key.startsWith('autoalarm:') &&
+              typeof tag.Value === 'string',
+          ) satisfies TagsObject)
+        : undefined;
+
+    // If no tags are found, return success with undefined tags
+    if (!tags) {
+      return {
+        isSuccess: true,
+        res: 'No tags found for secret',
+        data: {tags: undefined},
+      };
+    }
+
+    // If tags are found, return them
+    return {
+      isSuccess: true,
+      res: 'Tags found in eventParseResult',
+      data: {
+        tags: tags satisfies TagsObject, // Ensure tags are of type TagsObject
+      },
+    };
   }
 
   // Helper function to fetch alarms
@@ -337,7 +360,6 @@ export class SecManagerPrometheusModule {
   public static async managePromDbAlarms(
     eventParseResult: EventParseResult,
   ): Promise<boolean> {
-
     // Skip if CreateSecret event - Does not include tags and follow-up event with tags will follow
     if (eventParseResult.isCreated) {
       this.log
@@ -350,29 +372,53 @@ export class SecManagerPrometheusModule {
       return true;
     }
 
-    // Initialize the Secrets Manager client then get host and engine
-    const client = new SecretsManagerClient({}); // TODO: add retry logic and region if needed.
-    const resourceInfo = !eventParseResult.isDestroyed
-      ? this.SecretsParse(eventParseResult.id, client)
-      : undefined; // TODO: change this to grabbing host and engine from dynamo;
+    // If we have a Destroyed event, we will delete all alarms for the secret. No need to grab tags or secrets.
 
-    // If either host or engine are undefined, we cannot manage alarms. Log and return false.
-    if (!resourceInfo) {
+
+    // Initialize the Secrets Manager client then get host and engine
+    const client = new SecretsManagerClient({
+      region: process.env.AWS_REGION,
+      retryStrategy: new ConfiguredRetryStrategy(
+        20,
+        (retryAttempt) => retryAttempt ** 2 * 500,
+      ),
+    });
+
+    const {isSuccess, res, data} = this.secretsParse(
+      eventParseResult.id,
+      client,
+    );
+
+    // If secretsParse was unsuccessful, we cannot manage alarms. Log and return false.
+    if (!resourceInfo?.isSuccess) {
       this.log
         .error()
         .str('Function', 'manageDbAlarms')
         .obj('EventParseResult', eventParseResult)
-        .obj('Host and Engine', resourceInfo)
+        .unknown('ResourceInfo', resourceInfo?.res)
         .msg(
-          'Secret does not contain valid engine or host information. Exiting alarm management.',
+          'Failed to retrieve resource info from Secrets Manager. Event not handled.',
         );
       return false;
     }
 
-    // Get tags from event or fallback to fetchSecretTags - checking for autoalarm tags only.
-    const tags = eventParseResult.hasTags
-      ? eventParseResult.tags
-      : await this.fetchSecretTags(eventParseResult.id, client);
+    // If secretsParse was successful but no secrets were found, exit early and return true.
+    if (resourceInfo.isSuccess && !resourceInfo.data?.secretsFound) {
+      this.log
+        .info()
+        .str('Function', 'manageDbAlarms')
+        .obj('EventParseResult', eventParseResult)
+        .msg(
+          'No secrets found for the given ARN. Event handled without updating alarms.',
+        );
+      return true;
+    }
+
+    // Get tags from eventParseResult if present, otherwise fetch them from Secrets Manager
+    const tags = this.fetchTags(eventParseResult, client);
+
+
+    // Fall back to fetching tags from Secrets Manager if not present in eventParseResult
 
     // If there are not any autoAlarm tags, we are not interested
     if (!eventParseResult.isDestroyed && tags === undefined) {
@@ -387,9 +433,14 @@ export class SecManagerPrometheusModule {
     }
 
     // We've now filtered out any events that are not relevant to autoalarm. Create the alarm update options from eventParseResult
-    const options = this.buildAlarmUpdateOptions<
-      (typeof eventParseResult)['hasTags']
-    >(eventParseResult, resourceInfo.engine, resourceInfo.host, tags);
+    const options = resourceInfo.data!.secretsFound
+      ? this.buildAlarmUpdateOptions<(typeof eventParseResult)['hasTags']>(
+          eventParseResult,
+          resourceInfo.data.engine,
+          resourceInfo.data.host,
+          tags,
+        )
+      : undefined;
 
     // if options is undefined, we cannot update alarms. Log and return false.
     if (!options) {
