@@ -17,6 +17,7 @@ import {
   MetricAlarmConfig,
   ServiceEventMap,
   TagsObject,
+  Tag,
 } from '../types/index.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import * as logging from '@nr1e/logging';
@@ -147,15 +148,12 @@ export class SecManagerPrometheusModule {
   }
 
   /**
-   * Fetch all ARNs that have associated autoalarm tags from secrets manager
+   * Fetch all ARNs and corresponding autoalarm tags.r
    * @private
    */
   private static async fetchTags(client: SecretsManagerClient): Promise<
     AlarmUpdateResult<{
-      autoalarmSecrets: {
-        arn: string;
-        tags: TagsObject;
-      };
+      autoalarmSecrets: Record<string, TagsObject>[];
     }>
   > {
     //set next token for later use to grab all secrets
@@ -188,31 +186,40 @@ export class SecManagerPrometheusModule {
 
     // Filter secrets to find those with autoalarm tags
     const autoalarmSecrets = allSecrets.filter((secret) => {
-      return secret.Tags?.some((tag): tag is {Key: string, Value: string} => !!tag.Key && tag.Key.startsWith('autoalarm:'));
+      return secret.Tags?.some(
+        (tag): tag is {Key: string; Value: string} =>
+          !!tag.Key && tag.Key.startsWith('autoalarm:'),
+      );
     });
 
-    // now create an object with secret ARNs and their tags
+    // Using type assertion here because we already sufficiently type guard above in autoalarmSecrets filter
     const secretsWithTags = autoalarmSecrets.map((secret) => ({
       arn: secret.ARN,
       tags: secret.Tags,
-    }));
+    })) as unknown as Record<string, TagsObject>[];
+
+    // return isSuccess if there are no autoalarm secrets so we have a logging trail
+    if (secretsWithTags.length === 0) {
+      return {
+        isSuccess: true,
+        res: 'No autoalarm secrets found with tags',
+        data: {
+          autoalarmSecrets: [],
+        },
+      };
+    }
 
     // If tags are found, return them
     return {
       isSuccess: true,
       res: 'Fetched all autoalarm secrets with tags',
       data: {
-        autoalarmSecrets: [
-          {
-            arn: 'arn:aws:secretsmanager:region:account-id:secret:example-secret',
-            tags: [{key: 'autoalarm:example', value: 'value'}],
-          },
-        ],
+        autoalarmSecrets: [...secretsWithTags],
       },
     };
   }
 
-  // Helper function to fetch alarms
+  // Helper function to fetch default values for Prometheus configs based on engine type
   private static fetchDefaultConfigs = (engine: string) => {
     //fetch prometheus alarm configs for oracle, mysql, or postgres using engine type
     return engine === 'mysql'

@@ -44,6 +44,7 @@ type DbEngine = 'ORACLE' | 'MYSQL' | 'POSTGRES';
 
 export interface MassPromUpdatesMap {
   prometheusWorkspaceId: string; // The ID of the Prometheus workspace.
+  secretArn: string; // The ARN of the Prometheus workspace.
   engine: DbEngine;
   hostID: string;
   ruleGroup: RuleGroup;
