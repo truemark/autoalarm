@@ -1,3 +1,5 @@
+import {TagsObject} from './module-types.mjs';
+
 /**
  * @interface ServiceEventMap
  * Defines the structure for service event maps.
@@ -45,7 +47,8 @@ export interface EventParseResult  {
   isDestroyed: boolean;
   isCreated: boolean;
   eventName: string;
-  tags: Record<string, string> | undefined; // tags are optional and can be null
+  hasTags: boolean;
+  tags: TagsObject | undefined;
   isARN: boolean;
   id: string;
 };

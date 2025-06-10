@@ -12,7 +12,7 @@ import {
   ValidEventSource,
   ValidEventName,
   ValidEventPatterns,
-  EventParseResult,
+  EventParseResult, TagsObject
 } from '../../types/index.mjs';
 
 export class EventParse<EventMap extends ServiceEventMap> {
@@ -129,7 +129,7 @@ export class EventParse<EventMap extends ServiceEventMap> {
       typeof source,
       typeof eventName
     >,
-  ): Record<string, string> | undefined {
+  ): TagsObject | undefined {
     // Early return if we know that we don't have tags for this event
     if (!eventPatterns.hasTags || eventPatterns.tagsKey === null)
       return undefined;
@@ -227,9 +227,10 @@ export class EventParse<EventMap extends ServiceEventMap> {
       isDestroyed: eventPatterns.isDestroyed,
       isCreated: eventPatterns.isCreated,
       eventName: eventName,
+      hasTags: eventPatterns.hasTags,
       tags: tags,
       isARN: eventPatterns.isARN,
       id: id,
-    };
+    } as const;
   }
 }

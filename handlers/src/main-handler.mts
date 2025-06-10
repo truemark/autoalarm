@@ -282,7 +282,7 @@ export const handler: Handler = async (
      */
     const isSuccessful =
       eventMatch && eventMatch.source === 'aws.secretsmanager'
-        ? await SecManagerPrometheusModule.manageDbAlarms(eventMatch)
+        ? await SecManagerPrometheusModule.managePromDbAlarms(eventMatch)
         /**
          * Add other service event management here as needed in the ternary
          *  @example ? eventMatch && eventMatch.source === 'aws.ec2' ? await ServiceModules.manageEC2Alarms(eventMatch)

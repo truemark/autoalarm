@@ -29,6 +29,9 @@ export {
   PathMetrics,
   LoadBalancerIdentifiers,
   AnomalyAlarmProps,
+  AlarmUpdateOptions,
+  TagsObject,
+  AlarmUpdateResult,
 } from './module-types.mjs';
 
 // Import and re-export from prometheus-types.mjs
