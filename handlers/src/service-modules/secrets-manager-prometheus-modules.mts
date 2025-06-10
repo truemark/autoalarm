@@ -117,67 +117,107 @@ export class SecManagerPrometheusModule {
     }
   }
 
+  /**
+   * Dynamo DB fetcher to check for instances of alarms for a secret when it is
+   * destroyed, and we can't get the host and engine from the secret.
+   * TODO: Belongs in dynamoDB utils file. Temp.
+   */
+  private static dynamoDBFetch(arn: string): AlarmUpdateResult<{
+    arn: string;
+    engine: string | undefined;
+    host: string | undefined;
+    alarmsFound: boolean;
+  }> {
+    // This function is a placeholder for the actual DynamoDB fetch logic.
+    // It should return an object with engine, host, and secretsFound properties.
+    // For now, we will return a dummy object.
+    return {
+      isSuccess: true,
+      res: 'DynamoDB fetch not implemented',
+      data: {
+        arn: arn,
+        engine: 'mysql', // Example engine
+        host: 'example-host', // Example host
+        alarmsFound: true,
+      },
+    };
+  }
+
   // Helper Function to fetch tags from Secrets Manager if eventParseResult does not have them
   private static async fetchTags(
-    eventParseResult: EventParseResult,
+    parsed: EventParseResult,
     client: SecretsManagerClient,
-  ): Promise<AlarmUpdateResult<{tags: TagsObject | undefined}>> {
-    let tags;
-
+  ): Promise<
+    AlarmUpdateResult<{
+      tags?: TagsObject | undefined;
+      isRemoved?: boolean;
+      isFallback?: boolean;
+      isAdded?: boolean;
+    }>
+  > {
+    let fetchedTags;
     // first check if the eventParsed result has tags and use them if it does
-    const parsedTags: TagsObject | undefined = eventParseResult.hasTags
-      ? eventParseResult.tags
+    const parsedTags: TagsObject | undefined = parsed.hasTags
+      ? parsed.tags
       : undefined;
 
-    // If tags are present in the eventParseResult, assign parsedTags to tags
-    tags = parsedTags ? (parsedTags satisfies TagsObject) : undefined;
-
     // If no tags in eventParseResult, try to fetch them from Secrets Manager
+    if (!parsedTags) {
+      try {
+        fetchedTags = (
+          await client.send(
+            new DescribeSecretCommand({SecretId: parsed.id}),
+          )
+        ).Tags;
 
-    try {
-      tags = (
-        await client.send(
-          new DescribeSecretCommand({SecretId: eventParseResult.id}),
-        )
-      ).Tags;
-    } catch (error) {
-      return {
-        isSuccess: false,
-        res: new Error(
-          `Failed to fetch tags for secret ARN: ${eventParseResult.id}`,
-          {
-            cause: error,
-          },
-        ),
-      };
+        // filter out all autoalarm tags
+        fetchedTags =
+          fetchedTags && fetchedTags.length > 0
+            ? (fetchedTags.filter(
+                (tag): tag is {Key: string; Value: string} =>
+                  !!tag.Key &&
+                  tag.Key.startsWith('autoalarm:') &&
+                  typeof tag.Value === 'string',
+              ) satisfies TagsObject)
+            : undefined;
+      } catch (error) {
+        return {
+          isSuccess: false,
+          res: new Error(
+            `Failed to fetch tags for secret ARN: ${parsed.id}`,
+            {
+              cause: error,
+            },
+          ),
+        };
+      }
     }
 
-    // filter out all autoalarm tags
-    tags =
-      tags && tags.length > 0
-        ? (tags.filter(
-            (tag): tag is {Key: string; Value: string} =>
-              !!tag.Key &&
-              tag.Key.startsWith('autoalarm:') &&
-              typeof tag.Value === 'string',
-          ) satisfies TagsObject)
-        : undefined;
-
     // If no tags are found, return success with undefined tags
-    if (!tags) {
+    if (!parsedTags && !fetchedTags) {
       return {
         isSuccess: true,
-        res: 'No tags found for secret',
+        res: 'No tags found for secret. Please review lambda logs and debug.',
         data: {tags: undefined},
       };
     }
 
+    // set constants for return object
+    const tags = parsedTags ? parsedTags : fetchedTags;
+    const isRemoved = (parsed.eventName === 'UntagResource' && tags !== fetchedTags);
+    const isAdded = (parsed.eventName === 'TagResource' && tags !== fetchedTags);
+    const isFallback = tags === fetchedTags;
+
+
     // If tags are found, return them
     return {
       isSuccess: true,
-      res: 'Tags found in eventParseResult',
+      res: 'Tags Identified',
       data: {
-        tags: tags satisfies TagsObject, // Ensure tags are of type TagsObject
+        tags: tags,
+        isRemoved: isRemoved,
+        isAdded: isAdded,
+        isFallback: isFallback,
       },
     };
   }
@@ -237,7 +277,7 @@ export class SecManagerPrometheusModule {
     engine: string,
     hostID: string,
     tags: AlarmUpdateOptions<T>['mode']['tags'],
-  ): AlarmUpdateOptions<T> | undefined {
+  ): AlarmUpdateResult<{options?: AlarmUpdateOptions<T>}> {
     const event = eventParseResult.isCreated
       ? 'created'
       : eventParseResult.isDestroyed
@@ -249,18 +289,119 @@ export class SecManagerPrometheusModule {
             : null;
 
     // If we should have tags but they are not present, return undefined as options are in
-    if (eventParseResult.hasTags && !tags) return undefined;
+    if (eventParseResult.hasTags && !tags) {
+      return {
+        isSuccess: false,
+        res: 'Tags are required but not present in eventParseResult.',
+      };
+    }
 
-    if (event === null) return undefined;
+    if (event === null)
+      return {
+        isSuccess: false,
+        res: 'Event type not recognized or not handled.',
+      };
 
     return {
-      engine: engine,
-      hostID: hostID,
-      mode: {
-        eventType: event,
-        tags: tags,
+      isSuccess: true,
+      res: 'Alarm update options built successfully.',
+      data: {
+        options: {
+          engine,
+          hostID,
+          mode: {
+            eventType: event,
+            tags: tags,
+          },
+        } satisfies AlarmUpdateOptions<T>,
       },
     };
+  }
+
+  /**
+   * Handle Create Events
+   */
+  private static async handleCreatedt<T extends boolean>(
+    options: AlarmUpdateOptions<T>,
+  ): Promise<AlarmUpdateResult<{options: AlarmUpdateOptions<T>}>> {
+    // Many services create events do not need action and are followed by TagResource events
+    //Placeholder for any create event handling logic
+
+    return {
+      isSuccess: false,
+      res: 'Create event not handled, no options provided. and shouldPass is false.',
+      data: {
+        options: options,
+      },
+    };
+  }
+
+  /**
+   * Handle Destroyed Events
+   */
+  private static async handleDestroyedAndDisabled<T extends boolean>(
+    prometheusWorkspaceId: string,
+    options: AlarmUpdateOptions<T>,
+  ): Promise<AlarmUpdateResult> {
+    // some service events may not need to action this event type. Ideally these would be removed from the event map
+
+    // Try to handle the destroyed event by deleting all Prometheus rules for the host
+    try {
+      await deletePromRulesForService(prometheusWorkspaceId, options.engine, [
+        options.hostID,
+      ]);
+      return {
+        isSuccess: true,
+        res: 'Deleted all Prometheus alarm rules for disabled autoalarm secret.',
+      };
+    } catch (err) {
+      return {
+        isSuccess: false,
+        res: new Error('Failed to delete Prometheus Alarms ', {cause: err}),
+      };
+    }
+  }
+
+  /**
+   * Handle all tagged events, including TagResource and UntagResource
+   * @param prometheusWorkspaceId - The ID of the Prometheus workspace.
+   * @param options - The options for the alarm update, including engine and host ID.
+   * @param tags - The tags associated with the event, which can be undefined if not present.
+   * @param isRemoved - Indicates if the tags were removed AND found in the parsed event(UntagResource event).
+   * @param isAdded - Indicates if the tags were added AND found in the Parsed Event (TagResource event).
+   * @param isFallback - Indicates if the tags were fetched from Secrets Manager instead of the eventParseResult.
+   * requiring that we rebuild all the alarms for the host and engine vs. just what was changed.
+   */
+  private static async handleTags<T extends boolean>(
+    prometheusWorkspaceId: string,
+    options: AlarmUpdateOptions<T>,
+    tags: TagsObject,
+    isRemoved?: boolean,
+    isAdded?: boolean,
+    isFallback?: boolean,
+  ): Promise<AlarmUpdateResult> {
+    // Get default configs for the correct DB engine (eventParseResult.engine)
+    const configs = this.fetchDefaultConfigs(options.engine);
+
+    // Big problem. If no configs are found, return early with error obj.
+    if (!configs) {
+      return {
+        isSuccess: false,
+        res: new Error(
+          'No Prometheus alarm configs found for the specified engine. ' +
+            'The following was returned when calling fetchPrometheusAlarmsConfig: ',
+          configs,
+        ),
+      };
+    }
+
+    // Untagged (isRemoved) events management
+
+
+
+    //Once we have the configs, we can rebuild the Prometheus rules
+    for (const config of configs) {
+    }
   }
 
   /**
@@ -282,27 +423,6 @@ export class SecManagerPrometheusModule {
         isSuccess: false,
         res: new Error('Missing PROMETHEUS_WORKSPACE_ID'),
       };
-    }
-
-    // If autoAlarm is disabled or a secret is destroyed, delete all Prometheus rules for the host
-    if (
-      options.mode.eventType === 'disabled' ||
-      options.mode.eventType === 'destroyed'
-    ) {
-      try {
-        await deletePromRulesForService(prometheusWorkspaceId, options.engine, [
-          options.hostID,
-        ]);
-        return {
-          isSuccess: true,
-          res: 'Deleted all Prometheus alarm rules for disabled autoalarm secret.',
-        };
-      } catch (err) {
-        return {
-          isSuccess: false,
-          res: new Error('Failed to delete Prometheus Alarms ', {cause: err}),
-        };
-      }
     }
 
     // Get default configs for the correct DB engine (eventParseResult.engine)
@@ -374,7 +494,6 @@ export class SecManagerPrometheusModule {
 
     // If we have a Destroyed event, we will delete all alarms for the secret. No need to grab tags or secrets.
 
-
     // Initialize the Secrets Manager client then get host and engine
     const client = new SecretsManagerClient({
       region: process.env.AWS_REGION,
@@ -416,7 +535,6 @@ export class SecManagerPrometheusModule {
 
     // Get tags from eventParseResult if present, otherwise fetch them from Secrets Manager
     const tags = this.fetchTags(eventParseResult, client);
-
 
     // Fall back to fetching tags from Secrets Manager if not present in eventParseResult
 
