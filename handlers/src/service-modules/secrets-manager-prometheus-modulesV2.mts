@@ -37,6 +37,13 @@ export class SecManagerPrometheusModule {
   private static postgresConfigs = PROMETHEUS_POSTGRES_CONFIGS;
   private static log = logging.getLogger('SecManagerPrometheusModule');
   private static nameSpaceDetails: NamespaceDetails = {groups: []};
+  private static client = new SecretsManagerClient({
+    region: process.env.AWS_REGION,
+    retryStrategy: new ConfiguredRetryStrategy(
+      20,
+      (retryAttempt) => retryAttempt ** 2 * 500,
+    ),
+  });
 
   public static readonly SecretsManagerEventMap: ServiceEventMap = {
     'aws.secretsmanager': {
@@ -110,26 +117,30 @@ export class SecManagerPrometheusModule {
 
   /**
    * Parses secrets from the Secrets Manager and retrieves engine and host information.
-   * Creates a list of {@link MassPromUpdatesMap} objects.
+   * Creates a list of {@link PromUpdatesMap} objects.
    * Utilized in the {@link fetchAutoAlarmSecrets} method.
-   * @param autoAlarmSecrets
    * @private
    */
-  private static parseSecrets(
-    autoAlarmSecrets: {[arn: string]: Tag[]},
-    client: SecretsManagerClient,
-  ): AlarmUpdateResult<{
-    secretsArnMap?: PromUpdatesMap;
-  }> {
-    const secretsArns: string[] = Object.keys(autoAlarmSecrets);
+  private static async parseSecrets(
+    autoAlarmSecrets: Array<Record<string, Tag[]>>,
+  ): Promise<
+    AlarmUpdateResult<{
+      secretsArnMap?: PromUpdatesMap;
+    }>
+  > {
+    const secretsArns: string[] = autoAlarmSecrets.map(
+      (obj) => Object.keys(obj)[0],
+    );
     const secretsArnMap: PromUpdatesMap = new Map();
 
     // BatchGetSecretValueCommand can only return 20 secrets at a time so we will need to chunk the ARNs
     const chunkSize = 20;
     const index = 0;
+    let chunk = [];
 
+    // Loop through the secretsArns in chunks of chunkSize to satisfy the limits of the BatchGetSecretValueCommand
     do {
-      const chunk = secretsArns.slice(index, index + chunkSize - 1);
+      chunk = secretsArns.slice(index, index + chunkSize);
 
       const input: BatchGetSecretValueCommandInput = {
         SecretIdList: chunk,
@@ -142,10 +153,10 @@ export class SecManagerPrometheusModule {
       };
 
       try {
-        const response: BatchGetSecretValueCommandOutput = await client.send(
-          new BatchGetSecretValueCommand(input),
-        );
+        const response: BatchGetSecretValueCommandOutput =
+          await this.client.send(new BatchGetSecretValueCommand(input));
 
+        // If the response is empty, return an error result
         if (response && response.SecretValues) {
           for (const secret of Object.values(response.SecretValues)) {
             // AWS is dumb so we need to parse the secret string to a json object because it's 'enclosed' in single quotes
@@ -158,7 +169,7 @@ export class SecManagerPrometheusModule {
               return {
                 isSuccess: false,
                 res: new Error(`Failed to batch get secrets.`, {
-                  cause: `BatchGetSecretValueCommandOutput failed on ${autoAlarmSecrets.arn}.`,
+                  cause: `BatchGetSecretValueCommandOutput failed on ${secret.ARN}.`,
                 }),
               };
 
@@ -171,18 +182,26 @@ export class SecManagerPrometheusModule {
               return {
                 isSuccess: false,
                 res: new Error(`Failed to batch get secrets.`, {
-                  cause: `BatchGetSecretValueCommandOutput failed on ${autoAlarmSecrets.arn}. Host or engine not found.`,
+                  cause: `BatchGetSecretValueCommandOutput failed on ${secret.ARN}. Host or engine not found.`,
                 }),
               };
+
+            // Get autoalarm tags for the current secret
+            const tags = autoAlarmSecrets
+              .filter((obj) => Object.hasOwn(obj, secret.ARN!))
+              .map((obj) => obj[secret.ARN!])[0];
+
+            //check if autoalarm is disabled and store in a var to keep the code clean
+            const isDisabled = tags.some(
+              (tag) => tag.Key === 'autoalarm:enabled' && tag.Value === 'false',
+            );
 
             // Add entry in the secretsArnMap
             secretsArnMap.set(secret.ARN!, {
               engine: engine,
               hostID: host,
-              isDisabled: autoAlarmSecrets[secret.ARN!].some(
-                (t) => t.Key === 'autoalarm:enabled' && t.Value === 'false',
-              ),
-              tags: autoAlarmSecrets[secret.ARN!],
+              isDisabled: isDisabled,
+              tags: tags,
               ruleGroup: engine,
             });
           }
@@ -197,14 +216,25 @@ export class SecManagerPrometheusModule {
       }
     } while (index < secretsArns.length);
 
-    // return the secretsArnMap
+    // If secretsArnMap is empty, return an isSuccess
+    if (secretsArnMap.size < 1) {
+      return {
+        isSuccess: true,
+        res: 'No secrets found with autoalarm tags',
+        data: {
+          secretsArnMap: undefined,
+        },
+      };
+    }
+
+    // if populated return the secretsArnMap
     return {
       isSuccess: true,
       res: 'Parsed secrets from Secrets Manager',
       data: {
-        secretsArnMap: secretsArnMap.size > 0 ? secretsArnMap : undefined,
+        secretsArnMap: secretsArnMap,
       },
-    }
+    };
   }
 
   /**
@@ -212,11 +242,12 @@ export class SecManagerPrometheusModule {
    * @private
    */
   private static async fetchAutoAlarmSecrets(
+    arn: string,
     client: SecretsManagerClient,
   ): Promise<
     AlarmUpdateResult<{
-      //foundSecrets: boolean;
-      autoalarmSecrets: Record<string, TagsObject>[];
+      autoAlarmSecrets?: Array<Record<string, Tag[]>> | undefined;
+      secretsArnMap?: PromUpdatesMap;
     }>
   > {
     //set next token for later use to grab all secrets
@@ -225,7 +256,10 @@ export class SecManagerPrometheusModule {
     // Initialize an array to hold all secrets
     const allSecrets: SecretListEntry[] = [];
 
-    // 1. Fetch all secrets in a loop until there are no more pages, then filter out secrets with autoalarm tags
+    /**
+     * 1. Fetch all secrets that have autoalarm tags.
+     *
+     */
     try {
       do {
         const input: ListSecretsCommandInput = {
@@ -256,9 +290,8 @@ export class SecManagerPrometheusModule {
     });
 
     const secretsWithTags = autoalarmSecrets.map((secret) => ({
-      arn: secret.ARN,
-      tags: secret.Tags,
-    })) as unknown as Record<string, TagsObject>[];
+      [secret.ARN!]: secret.Tags,
+    })) as Array<Record<string, Tag[]>>;
 
     // return isSuccess if there are no autoalarm secrets so we have a logging trail
     if (secretsWithTags.length < 1) {
@@ -266,19 +299,34 @@ export class SecManagerPrometheusModule {
         isSuccess: true,
         res: 'No autoalarm secrets found with tags',
         data: {
-          autoalarmSecrets: [],
+          autoAlarmSecrets: secretsWithTags,
         },
       };
     }
 
+    /**
+     * 2. Parse secrets to get host and engine information and build map of all
+     * secrets and information needed to manage alarms.
+     */
+    const secretsParseResult = await this.parseSecrets(secretsWithTags);
 
+    // early return if not successful or if secretsArnMap is not present becuase the proper strings wer not found
+    if (
+      !secretsParseResult.isSuccess ||
+      (secretsParseResult.isSuccess && !secretsParseResult.data)
+    )
+      return {
+        isSuccess: secretsParseResult.isSuccess,
+        res: secretsParseResult.res,
+      };
 
-    // If tags are found, return them
+    // Return the secretsArnMap if we successfully parsed secrets
     return {
       isSuccess: true,
-      res: 'Fetched all autoalarm secrets with tags',
+      res: 'Successfully fetched autoalarm secrets from Secrets Manager',
       data: {
-        autoalarmSecrets: [...secretsWithTags],
+        autoAlarmSecrets: secretsWithTags,
+        secretsArnMap: secretsParseResult.data!.secretsArnMap,
       },
     };
   }
@@ -510,13 +558,6 @@ export class SecManagerPrometheusModule {
     // If we have a Destroyed event, we will delete all alarms for the secret. No need to grab tags or secrets.
 
     // Initialize the Secrets Manager client then get host and engine
-    const client = new SecretsManagerClient({
-      region: process.env.AWS_REGION,
-      retryStrategy: new ConfiguredRetryStrategy(
-        20,
-        (retryAttempt) => retryAttempt ** 2 * 500,
-      ),
-    });
 
     return true;
   }
