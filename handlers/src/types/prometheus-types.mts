@@ -60,4 +60,8 @@ export interface MassPromUpdatesObject<E = string> {
     ruleGroup: RuleGroup<E> | undefined;
 }
 
+/**
+ * Represents a map of Prometheus updates, where the key is the arn or identifier
+ * and the value is a {@link MassPromUpdatesObject} interface.
+ */
 export interface PromUpdatesMap extends Map<string, MassPromUpdatesObject> {}
