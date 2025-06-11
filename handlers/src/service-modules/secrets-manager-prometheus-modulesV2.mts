@@ -122,12 +122,22 @@ export class SecManagerPrometheusModule {
   }
 
   /**
+   * Helper function to hash arn/id to more securely store and later retreive in dynamoDB.
+   */
+  private static hashArn(arn: string): string {
+    // This function is a placeholder for the actual hashing logic.
+    // It should return a hashed version of the ARN.
+    // For now, we will return the ARN as is.
+    return arn; // Replace with actual hashing logic
+  }
+
+  /**
    * Dynamo DB fetcher to check for instances of alarms for a secret when it is
    * destroyed, and we can't get the host and engine from the secret.
    * TODO: Belongs in dynamoDB utils file. Temp.
    */
   private static dynamoDBFetch(arn: string): AlarmUpdateResult<{
-    arn: string;
+    id: string;
     engine: string | undefined;
     host: string | undefined;
     alarmsFound: boolean;
@@ -139,7 +149,7 @@ export class SecManagerPrometheusModule {
       isSuccess: true,
       res: 'DynamoDB fetch not implemented',
       data: {
-        arn: arn,
+        id: arn,
         engine: 'mysql', // Example engine
         host: 'example-host', // Example host
         alarmsFound: true,
@@ -268,14 +278,15 @@ export class SecManagerPrometheusModule {
    */
   private static async handleDestroyedAndDisabled<T extends boolean>(
     prometheusWorkspaceId: string,
-    options: AlarmUpdateOptions<T>,
+    engine: string,
+    hostID: string,
   ): Promise<AlarmUpdateResult> {
     // some service events may not need to action this event type. Ideally these would be removed from the event map
 
     // Try to handle the destroyed event by deleting all Prometheus rules for the host
     try {
-      await deletePromRulesForService(prometheusWorkspaceId, options.engine, [
-        options.hostID,
+      await deletePromRulesForService(prometheusWorkspaceId, engine, [
+        hostID,
       ]);
       return {
         isSuccess: true,
@@ -297,6 +308,18 @@ export class SecManagerPrometheusModule {
   public static async managePromDbAlarms(
     eventParseResult: EventParseResult,
   ): Promise<boolean> {
+    // Define prometheus workspace ID
+    const prometheusWorkspaceId = process.env.PROMETHEUS_WORKSPACE_ID;
+
+    // Validate that the prometheus workspace ID is set
+    if (!prometheusWorkspaceId) {
+      this.log
+        .error()
+        .str('Function', 'managePromDbAlarms')
+        .msg('Prometheus workspace ID is not set in environment variables.');
+      return false;
+    }
+
     // Skip if CreateSecret event - Does not include tags and follow-up event with tags will follow
     if (eventParseResult.isCreated) {
       this.log
@@ -309,7 +332,51 @@ export class SecManagerPrometheusModule {
       return true;
     }
 
-    // any tag even that comes in should grab all secrets tags and host/engine into an object
+    // Handle Destroyed events (delete alarms, fetch info first)
+    if (eventParseResult.isDestroyed) {
+      const destroyedInfo = await this.dynamoDBFetch(eventParseResult.id);
+
+      // Early exit on failed fetch
+      if (!destroyedInfo?.isSuccess) {
+        this.log
+          .error()
+          .str('Function', 'manageDbAlarms')
+          .unknown('DynamoDBFetchError', destroyedInfo?.res)
+          .msg('Failed to fetch DynamoDB data for destroyed secret. Cannot proceed.');
+        return false;
+      }
+
+      // Success fetch: log and process if alarms found
+      this.log
+        .info()
+        .str('Function', 'manageDbAlarms')
+        .obj('DynamoDBFetchSuccess', destroyedInfo.data)
+        .msg('Successfully fetched DynamoDB data for destroyed secret.');
+
+      if (destroyedInfo.data?.alarmsFound) {
+        const result = await this.handleDestroyedAndDisabled(
+          prometheusWorkspaceId,
+          destroyedInfo.data.host!, destroyedInfo.data.engine!);
+
+        // If the result is not successful, log the error and return false
+        if (!result.isSuccess) {
+          this.log
+            .error()
+            .str('Function', 'handleDestroyedAndDisabled')
+            .obj('HandleDestroyedError', result)
+            .msg('Failed to handle destroyed event.');
+          return false;
+        }
+      }
+      // All work for destroyed events is done, early exit
+      return true;
+    }
+
+
+
+    // Create and destroyed events have both been handled, only events here are UntagResource and TagResource.
+
+
 
     // If we have a Destroyed event, we will delete all alarms for the secret. No need to grab tags or secrets.
 
