@@ -25,29 +25,39 @@ export interface AMPRule {
   };
 }
 
-//for prometheus rule groups in NameSpaces
-export interface RuleGroup {
-  name: string;
+/**
+ * Represents a group of Prometheus rules.
+ * @template N - by default is undefined, but can be used to specify a rule
+ * group name type for different services later defined here in this type file.
+ */
+export interface RuleGroup<N = string> {
+  name: N;
   rules: AMPRule[];
 }
 
 export type PrometheusAlarmConfigArray = PrometheusAlarmConfig[];
 
 //for prometheus namespace details when populating the rule groups
-export interface NamespaceDetails {
-  groups: RuleGroup[];
+export interface NamespaceDetails<N = string> {
+  groups: RuleGroup<N>[];
 }
 
+/**
+ * Represents the database engine type for Prometheus logic
+ */
+export type DbEngine = 'ORACLE' | 'MYSQL' | 'POSTGRES';
 
-type DbEngine = 'ORACLE' | 'MYSQL' | 'POSTGRES';
+/**
+ * Represents a mapping of mass Prometheus updates.
+ * @template E - The type of the service engine/s, default is string. This allows
+ * flexibility in specifying different engines across different services.
+ */
+export interface MassPromUpdatesObject<E = string> {
+    engine: E | undefined;
+    hostID: string | undefined;
+    isDisabled: boolean;
+    tags: TagsObject;
+    ruleGroup: RuleGroup<E> | undefined;
+}
 
-
-export interface MassPromUpdatesMap {
-  prometheusWorkspaceId: string; // The ID of the Prometheus workspace.
-  secretArn: string;
-  engine: DbEngine;
-  hostID: string;
-  isDisabled: boolean;
-  tags: TagsObject[] | undefined;
-  ruleGroup: RuleGroup;
-  }
+export interface PromUpdatesMap extends Map<string, MassPromUpdatesObject> {}

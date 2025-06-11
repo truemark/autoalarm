@@ -41,6 +41,8 @@ export {
   RuleGroup,
   PrometheusAlarmConfigArray,
   NamespaceDetails,
+  DbEngine,
+  PromUpdatesMap
 } from './prometheus-types.mjs';
 
 // Import and re-export from event-filtering-types.mjs

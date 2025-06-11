@@ -1,9 +1,11 @@
 import {
   SecretsManagerClient,
-  DescribeSecretCommand,
   ListSecretsCommandInput,
   SecretListEntry,
   ListSecretsCommand,
+  BatchGetSecretValueCommand,
+  BatchGetSecretValueCommandInput,
+  BatchGetSecretValueCommandOutput,
 } from '@aws-sdk/client-secrets-manager';
 import {
   PROMETHEUS_MYSQL_CONFIGS,
@@ -11,13 +13,16 @@ import {
   PROMETHEUS_POSTGRES_CONFIGS,
 } from '../alarm-configs/index.mjs';
 import {
-  AlarmUpdateOptions,
   AlarmUpdateResult,
   EventParseResult,
   MetricAlarmConfig,
   ServiceEventMap,
   TagsObject,
+  NamespaceDetails,
+  RuleGroup,
+  DbEngine,
   Tag,
+  PromUpdatesMap,
 } from '../types/index.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import * as logging from '@nr1e/logging';
@@ -31,6 +36,7 @@ export class SecManagerPrometheusModule {
   private static mysqlConfigs = PROMETHEUS_MYSQL_CONFIGS;
   private static postgresConfigs = PROMETHEUS_POSTGRES_CONFIGS;
   private static log = logging.getLogger('SecManagerPrometheusModule');
+  private static nameSpaceDetails: NamespaceDetails = {groups: []};
 
   public static readonly SecretsManagerEventMap: ServiceEventMap = {
     'aws.secretsmanager': {
@@ -76,61 +82,6 @@ export class SecManagerPrometheusModule {
   // Private Constructor to prevent instantiation
   private constructor() {}
 
-  //connect to secrets manager and pull the secret to a parse
-  private static secretsParse(
-    arn: string,
-    client: SecretsManagerClient,
-  ): AlarmUpdateResult<{
-    engine: string | undefined;
-    host: string | undefined;
-    secretsFound: boolean;
-  }> {
-    try {
-      const secret = client.getSecretValue({SecretId: arn});
-
-      if (!secret || !secret.SecretString) {
-        return {
-          isSuccess: true,
-          res: new Error(`Secret not found or empty for ARN: ${arn}`),
-          data: {
-            engine: undefined,
-            host: undefined,
-            secretsFound: false,
-          },
-        };
-      }
-
-      // Parse the secret string to extract engine and host
-      const secretData = JSON.parse(secret.SecretString);
-      return {
-        isSuccess: true,
-        res: 'Successfully retrieved secret data',
-        data: {
-          engine: secretData.engine,
-          host: secretData.host,
-          secretsFound: true,
-        },
-      };
-    } catch (err) {
-      return {
-        isSuccess: false,
-        res: new Error(`Failed to retrieve secret for ARN: ${arn}:`, {
-          cause: err,
-        }),
-      };
-    }
-  }
-
-  /**
-   * Helper function to hash arn/id to more securely store and later retreive in dynamoDB.
-   */
-  private static hashArn(arn: string): string {
-    // This function is a placeholder for the actual hashing logic.
-    // It should return a hashed version of the ARN.
-    // For now, we will return the ARN as is.
-    return arn; // Replace with actual hashing logic
-  }
-
   /**
    * Dynamo DB fetcher to check for instances of alarms for a secret when it is
    * destroyed, and we can't get the host and engine from the secret.
@@ -158,11 +109,113 @@ export class SecManagerPrometheusModule {
   }
 
   /**
+   * Parses secrets from the Secrets Manager and retrieves engine and host information.
+   * Creates a list of {@link MassPromUpdatesMap} objects.
+   * Utilized in the {@link fetchAutoAlarmSecrets} method.
+   * @param autoAlarmSecrets
+   * @private
+   */
+  private static parseSecrets(
+    autoAlarmSecrets: {[arn: string]: Tag[]},
+    client: SecretsManagerClient,
+  ): AlarmUpdateResult<{
+    secretsArnMap?: PromUpdatesMap;
+  }> {
+    const secretsArns: string[] = Object.keys(autoAlarmSecrets);
+    const secretsArnMap: PromUpdatesMap = new Map();
+
+    // BatchGetSecretValueCommand can only return 20 secrets at a time so we will need to chunk the ARNs
+    const chunkSize = 20;
+    const index = 0;
+
+    do {
+      const chunk = secretsArns.slice(index, index + chunkSize - 1);
+
+      const input: BatchGetSecretValueCommandInput = {
+        SecretIdList: chunk,
+        Filters: [
+          {
+            Key: 'name',
+            Values: ['host', 'engine'],
+          },
+        ],
+      };
+
+      try {
+        const response: BatchGetSecretValueCommandOutput = await client.send(
+          new BatchGetSecretValueCommand(input),
+        );
+
+        if (response && response.SecretValues) {
+          for (const secret of Object.values(response.SecretValues)) {
+            // AWS is dumb so we need to parse the secret string to a json object because it's 'enclosed' in single quotes
+            const secretStrings = secret.SecretString
+              ? JSON.parse(secret.SecretString)
+              : undefined;
+
+            // If the secret object is not found, return an error result
+            if (!secretStrings)
+              return {
+                isSuccess: false,
+                res: new Error(`Failed to batch get secrets.`, {
+                  cause: `BatchGetSecretValueCommandOutput failed on ${autoAlarmSecrets.arn}.`,
+                }),
+              };
+
+            // Pull host and engine from the secretStrings object
+            const host = secretStrings.host;
+            const engine = secretStrings.engine;
+
+            // If either host or engine is not found, return an error result
+            if (!host || !engine)
+              return {
+                isSuccess: false,
+                res: new Error(`Failed to batch get secrets.`, {
+                  cause: `BatchGetSecretValueCommandOutput failed on ${autoAlarmSecrets.arn}. Host or engine not found.`,
+                }),
+              };
+
+            // Add entry in the secretsArnMap
+            secretsArnMap.set(secret.ARN!, {
+              engine: engine,
+              hostID: host,
+              isDisabled: autoAlarmSecrets[secret.ARN!].some(
+                (t) => t.Key === 'autoalarm:enabled' && t.Value === 'false',
+              ),
+              tags: autoAlarmSecrets[secret.ARN!],
+              ruleGroup: engine,
+            });
+          }
+        }
+      } catch (err) {
+        return {
+          isSuccess: false,
+          res: new Error('Failed to batch get secrets from Secrets Manager', {
+            cause: err,
+          }),
+        };
+      }
+    } while (index < secretsArns.length);
+
+    // return the secretsArnMap
+    return {
+      isSuccess: true,
+      res: 'Parsed secrets from Secrets Manager',
+      data: {
+        secretsArnMap: secretsArnMap.size > 0 ? secretsArnMap : undefined,
+      },
+    }
+  }
+
+  /**
    * Fetch all ARNs and corresponding autoalarm tags.r
    * @private
    */
-  private static async fetchTags(client: SecretsManagerClient): Promise<
+  private static async fetchAutoAlarmSecrets(
+    client: SecretsManagerClient,
+  ): Promise<
     AlarmUpdateResult<{
+      //foundSecrets: boolean;
       autoalarmSecrets: Record<string, TagsObject>[];
     }>
   > {
@@ -172,7 +225,7 @@ export class SecManagerPrometheusModule {
     // Initialize an array to hold all secrets
     const allSecrets: SecretListEntry[] = [];
 
-    // Fetch all secrets in a loop until there are no more pages
+    // 1. Fetch all secrets in a loop until there are no more pages, then filter out secrets with autoalarm tags
     try {
       do {
         const input: ListSecretsCommandInput = {
@@ -202,14 +255,13 @@ export class SecManagerPrometheusModule {
       );
     });
 
-    // Using type assertion here because we already sufficiently type guard above in autoalarmSecrets filter
     const secretsWithTags = autoalarmSecrets.map((secret) => ({
       arn: secret.ARN,
       tags: secret.Tags,
     })) as unknown as Record<string, TagsObject>[];
 
     // return isSuccess if there are no autoalarm secrets so we have a logging trail
-    if (secretsWithTags.length === 0) {
+    if (secretsWithTags.length < 1) {
       return {
         isSuccess: true,
         res: 'No autoalarm secrets found with tags',
@@ -218,6 +270,8 @@ export class SecManagerPrometheusModule {
         },
       };
     }
+
+
 
     // If tags are found, return them
     return {
@@ -276,7 +330,7 @@ export class SecManagerPrometheusModule {
   /**
    * Handle Destroyed Events
    */
-  private static async handleDestroyedAndDisabled<T extends boolean>(
+  private static async handleDestroyedAndDisabled(
     prometheusWorkspaceId: string,
     engine: string,
     hostID: string,
@@ -285,9 +339,7 @@ export class SecManagerPrometheusModule {
 
     // Try to handle the destroyed event by deleting all Prometheus rules for the host
     try {
-      await deletePromRulesForService(prometheusWorkspaceId, engine, [
-        hostID,
-      ]);
+      await deletePromRulesForService(prometheusWorkspaceId, engine, [hostID]);
       return {
         isSuccess: true,
         res: 'Deleted all Prometheus alarm rules for disabled autoalarm secret.',
@@ -298,6 +350,32 @@ export class SecManagerPrometheusModule {
         res: new Error('Failed to delete Prometheus Alarms ', {cause: err}),
       };
     }
+  }
+
+  private static updateNameSpaceDetails(
+    nameSpaceDetails: NamespaceDetails,
+  ): NamespaceDetails {
+    return {
+      groups: [
+        {
+          name: 'autoalarm',
+          rules: [],
+        },
+      ],
+    };
+  }
+
+  /**
+   * Compare two NamespaceDetails objects and update the rule groups if they differ.
+   * @param nameSpaceDetails - The current namespace details.
+   * @param updateDetails - The updated namespace details to compare against.
+   */
+  private static compareAndUpdateRuleGroups(
+    updateDetails: NamespaceDetails,
+  ): AlarmUpdateResult<{
+    updatedRuleGroups: RuleGroup[];
+  }> {
+    const updatedRuleGroups: RuleGroup[] = Object.values(updateDetails);
   }
 
   /**
@@ -327,14 +405,14 @@ export class SecManagerPrometheusModule {
         .str('Function', 'manageDbAlarms')
         .obj('EventParseResult', eventParseResult)
         .msg(
-          'Secrets Manager sends follow up events for tags after CreateSecret event. Event handled.',
+          'Secrets Manager sends follow up events for tags after CreateSecret event. No Action required.',
         );
       return true;
     }
 
     // Handle Destroyed events (delete alarms, fetch info first)
     if (eventParseResult.isDestroyed) {
-      const destroyedInfo = await this.dynamoDBFetch(eventParseResult.id);
+      const destroyedInfo = this.dynamoDBFetch(eventParseResult.id);
 
       // Early exit on failed fetch
       if (!destroyedInfo?.isSuccess) {
@@ -342,7 +420,9 @@ export class SecManagerPrometheusModule {
           .error()
           .str('Function', 'manageDbAlarms')
           .unknown('DynamoDBFetchError', destroyedInfo?.res)
-          .msg('Failed to fetch DynamoDB data for destroyed secret. Cannot proceed.');
+          .msg(
+            'Failed to fetch DynamoDB data for destroyed secret. Cannot proceed.',
+          );
         return false;
       }
 
@@ -356,7 +436,9 @@ export class SecManagerPrometheusModule {
       if (destroyedInfo.data?.alarmsFound) {
         const result = await this.handleDestroyedAndDisabled(
           prometheusWorkspaceId,
-          destroyedInfo.data.host!, destroyedInfo.data.engine!);
+          destroyedInfo.data.host!,
+          destroyedInfo.data.engine!,
+        );
 
         // If the result is not successful, log the error and return false
         if (!result.isSuccess) {
@@ -368,15 +450,62 @@ export class SecManagerPrometheusModule {
           return false;
         }
       }
-      // All work for destroyed events is done, early exit
+      // All work for destroyed event is done
       return true;
     }
 
+    /**
+     * All following events are UntagResource and TagResource type events.
+     *   1. Get the secret ARN from the eventParseResult and fetch tags for every secret that is taged with autoalarm tags.
+     *   2. Get host and engine secret from every autoalarm tagged secret. Log warning if host or engine is not found with for later debug.
+     *   3. Get configs and build nameSpaceUpdate object (NameSpaceDetails Interface) @see {@link NameSpaceDetails}.
+     *   4. Compare each rule group in the nameSpaceUpdate map with the existing presentNameSpaceRules map.
+     *   5. If any divergence is found any rule group, update the prometheus rules for the entire rule group.
+     *   6. replace  with latest updates for following event lookup.
+     */
 
+    // Instantiate default namespaceUpdateMap
+    const nameSpaceUpdateMap: NamespaceDetails<DbEngine> = {groups: []};
 
-    // Create and destroyed events have both been handled, only events here are UntagResource and TagResource.
+    // Get all autoalarm tagged secrets from Secrets Manager
+    const AutoAlarmSecrets = await this.fetchAutoAlarmSecrets(
+      new SecretsManagerClient({
+        region: process.env.AWS_REGION,
+        retryStrategy: new ConfiguredRetryStrategy(
+          20,
+          (retryAttempt) => retryAttempt ** 2 * 500,
+        ),
+      }),
+    );
 
+    if (!AutoAlarmSecrets.isSuccess) {
+      this.log
+        .error()
+        .str('Function', 'fetchAutoAlarmSecrets')
+        .unknown('FetchTagsError', AutoAlarmSecrets.res)
+        .msg('Failed to fetch Secrets.');
+      return false;
+    }
 
+    if (
+      AutoAlarmSecrets.isSuccess &&
+      AutoAlarmSecrets.data &&
+      AutoAlarmSecrets.data.autoalarmSecrets.length < 1
+    ) {
+      this.log
+        .info()
+        .str('Function', 'fetchAutoAlarmSecrets')
+        .obj('AutoAlarmSecrets', AutoAlarmSecrets.data)
+        .msg('No autoalarm secrets found.');
+      return true;
+    }
+
+    // Build a map of secrets with all the info needed to update Prometheus alarms
+    const prometheusUpdateMap: MassPromUpdatesMap = {};
+
+    // Get all host/engine secrets for autoalarm tagged secrets
+    for (const {secretArn, engine} of AutoAlarmSecrets.data!.autoalarmSecrets) {
+    }
 
     // If we have a Destroyed event, we will delete all alarms for the secret. No need to grab tags or secrets.
 
