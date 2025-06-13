@@ -1,5 +1,7 @@
 // Type definitions for autoalarm service modules
 
+import {SQSRecord} from 'aws-lambda';
+
 export interface EC2AlarmManagerObject {
   instanceID: string;
   tags: Tag;

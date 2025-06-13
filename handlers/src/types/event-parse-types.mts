@@ -1,4 +1,5 @@
 import {TagsObject} from './module-types.mjs';
+import {SQSRecord} from 'aws-lambda';
 
 /**
  * @interface ServiceEventMap
@@ -43,7 +44,7 @@ export interface ServiceEventMap {
  *
  */
 export interface EventParseResult  {
-  source: string;
+  source: string | undefined;
   isDestroyed: boolean;
   isCreated: boolean;
   eventName: string;
@@ -52,6 +53,16 @@ export interface EventParseResult  {
   isARN: boolean;
   id: string;
 };
+
+/**
+ * Represents an object that contains an eventParseResultMapped to the SQSRecord
+ */
+export interface RecordMatchPairs {
+  record: SQSRecord;
+  eventParseResult: EventParseResult;
+}[]
+
+export type RecordMatchPairsArray = RecordMatchPairs[];
 
 /**
  * Defines the structure for service event maps. Passed as a generic type to
@@ -82,3 +93,5 @@ export type ValidEventPatterns<
   S extends ServiceEventMap['source'] & string,
   E extends M[S]['eventName'] & string,
 > = E extends {[name: string]: infer P} ? P : never;
+
+

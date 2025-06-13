@@ -9,11 +9,22 @@ export interface PrometheusAlarmConfig {
   severityType: string; // The severity of the alarm
 }
 
-//for prometheus rules in rule groups
+/**
+ * Represents a single Prometheus rule for an alarm.
+ * @property {string} alertName - The name of the alert.
+ * @property {string} expr - The Prometheus expression/query for the rule.
+ * @property {string} [timeSeries] - Optional time series identifier.
+ * @property {Object} [labels] - Optional labels for the alert.
+ * @property {string} labels.severity - The severity level of the alert.
+ * @property {Object} [annotations] - Optional annotations for the alert.
+ * @property {string} annotations.summary - A summary of the alert.
+ * @property {string} annotations.description - A description of the alert.
+ * @property {Object} [annotations] - Additional annotations for the alert.
+ */
 export interface AMPRule {
-  alert: string;
+  alertName: string;
   expr: string;
-  for?: string;
+  timeSeries?: string;
   labels?: {
     severity: string;
     [key: string]: string;
@@ -37,8 +48,14 @@ export interface RuleGroup<N = string> {
 
 export type PrometheusAlarmConfigArray = PrometheusAlarmConfig[];
 
+// Interface to correlate namespace with its configs (groups and rules
+export interface NameSpaceDetails{
+  namespace: string;
+  details: NamespaceConfig;
+}
+
 //for prometheus namespace details when populating the rule groups
-export interface NamespaceDetails<N = string> {
+export interface NamespaceConfig<N = string> {
   groups: RuleGroup<N>[];
 }
 
@@ -57,7 +74,6 @@ export interface MassPromUpdatesObject<E = string> {
     hostID: string | undefined;
     isDisabled: boolean;
     tags: TagsObject;
-    ruleGroup: RuleGroup<E> | undefined;
 }
 
 /**

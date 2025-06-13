@@ -12,7 +12,8 @@ import {
   ValidEventSource,
   ValidEventName,
   ValidEventPatterns,
-  EventParseResult, TagsObject
+  EventParseResult,
+  TagsObject,
 } from '../../types/index.mjs';
 
 export class EventParse<EventMap extends ServiceEventMap> {
@@ -170,9 +171,7 @@ export class EventParse<EventMap extends ServiceEventMap> {
    * whether the resource is destroyed or created,
    * changed tags, and the ID type, ID (ARN or resource ID), or undefined if no match is found.
    */
-  async matchEvent(
-    sqsRecord: SQSRecord,
-  ): Promise<EventParseResult | undefined> {
+  async matchEvent(sqsRecord: SQSRecord): Promise<EventParseResult> {
     //break out the body from the sqs record in json.
     const body = JSON.parse(sqsRecord.body);
 
@@ -197,7 +196,16 @@ export class EventParse<EventMap extends ServiceEventMap> {
         .msg(
           'Event body does not contain valid source or eventName properties',
         );
-      return undefined;
+      return {
+        source: undefined,
+        isDestroyed: false,
+        isCreated: false,
+        eventName: '',
+        hasTags: false,
+        tags: undefined,
+        isARN: false,
+        id: '',
+      };
     }
 
     const source = body.detail.source satisfies ValidEventSource<EventMap>;
@@ -216,11 +224,31 @@ export class EventParse<EventMap extends ServiceEventMap> {
 
     const id = this.findId(sqsRecord, source, eventName, eventPatterns);
 
-    // if we're supposed to have tag but we don't find any we need to return undefined. Logging in findChangedTags.
-    if (eventPatterns.hasTags && !tags) return undefined;
+    // if we're supposed to have tag, but we don't find any we need to return undefined. Logging in findChangedTags.
+    if (eventPatterns.hasTags && !tags)
+      return {
+        source: undefined,
+        isDestroyed: false,
+        isCreated: false,
+        eventName: '',
+        hasTags: false,
+        tags: undefined,
+        isARN: false,
+        id: '',
+      };
 
     // if we don't have an id, we can't return a valid object. Logging in findId.
-    if (!id) return undefined;
+    if (!id)
+      return {
+        source: undefined,
+        isDestroyed: false,
+        isCreated: false,
+        eventName: '',
+        hasTags: false,
+        tags: undefined,
+        isARN: false,
+        id: '',
+      };
 
     return {
       source: source,

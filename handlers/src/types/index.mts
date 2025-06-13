@@ -40,9 +40,10 @@ export {
   AMPRule,
   RuleGroup,
   PrometheusAlarmConfigArray,
-  NamespaceDetails,
+  NamespaceConfig,
   DbEngine,
-  PromUpdatesMap
+  PromUpdatesMap,
+  NameSpaceDetails
 } from './prometheus-types.mjs';
 
 // Import and re-export from event-filtering-types.mjs
@@ -52,4 +53,6 @@ export {
   ValidEventName,
   ValidEventPatterns,
   EventParseResult,
+  RecordMatchPairs,
+  RecordMatchPairsArray
 } from './event-parse-types.mjs';

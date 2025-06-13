@@ -14,7 +14,7 @@ import {
   AlarmClassification,
   AMPRule,
   EC2AlarmManagerArray,
-  NamespaceDetails,
+  NamespaceConfig,
   PrometheusAlarmConfigArray,
   RuleGroup,
 } from '../../types/index.mjs';
@@ -604,7 +604,7 @@ export async function queryPrometheusForService(
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 // Function to list namespaces
-const listNamespaces = async (
+export const listNamespaces = async (
   workspaceId: string,
 ): Promise<RuleGroupsNamespaceSummary[]> => {
   const command = new ListRuleGroupsNamespacesCommand({workspaceId});
@@ -627,7 +627,7 @@ const listNamespaces = async (
 export const describeNamespace = async (
   workspaceId: string,
   namespace: string,
-): Promise<NamespaceDetails | null> => {
+): Promise<NamespaceConfig | null> => {
   const command = new DescribeRuleGroupsNamespaceCommand({
     workspaceId,
     name: namespace,
@@ -651,7 +651,7 @@ export const describeNamespace = async (
         .str('rawData', dataStr)
         .msg('Raw data from API');
       try {
-        const nsDetails = yaml.load(dataStr) as NamespaceDetails;
+        const nsDetails = yaml.load(dataStr) as NamespaceConfig;
         if (!isNamespaceDetails(nsDetails)) {
           throw new Error('Invalid namespace details structure');
         }
@@ -689,7 +689,7 @@ export const describeNamespace = async (
 };
 
 // Function to create a new namespace
-async function createNamespace(
+export async function createNamespace(
   promWorkspaceId: string,
   namespace: string,
   // TODO Fix the use of any
@@ -703,14 +703,14 @@ async function createNamespace(
     .str('namespace', namespace)
     .msg('Creating new Prometheus namespace with rules');
 
-  const nsDetails = {
+  const nsDetails: NamespaceConfig = {
     groups: [
       {
         name: 'AutoAlarm',
         rules: alarmConfigs.map((config) => ({
-          alert: config.alarmName,
+          alertName: config.alarmName,
           expr: config.alarmQuery,
-          for: config.duration,
+          timeSeries: config.duration,
           labels: {severity: config.severityType},
           annotations: {
             summary: `${config.alarmName} alert triggered`,
@@ -748,18 +748,18 @@ async function createNamespace(
     .msg('Created new namespace and added rules');
 }
 
-// Helper function to ensure that the object is a NamespaceDetails interface
-function isNamespaceDetails(obj: unknown): obj is NamespaceDetails {
+// Helper function to ensure that the object is a NamespaceConfig interface
+export function isNamespaceDetails(obj: unknown): obj is NamespaceConfig {
   return (
     typeof obj === 'object' &&
     obj !== null &&
     'groups' in obj &&
-    Array.isArray((obj as NamespaceDetails).groups)
+    Array.isArray((obj as NamespaceConfig).groups)
   );
 }
 
 // This function is used to verify that a workspace exists and is active.
-async function verifyPromWorkspace(promWorkspaceId: string) {
+export async function verifyPromWorkspace(promWorkspaceId: string) {
   // we have to cast our promWorkspaceId to the DescribeWorkspaceCommandInput type in order to query for the workspace
   const input: DescribeWorkspaceCommandInput = {
     workspaceId: promWorkspaceId,
@@ -947,7 +947,7 @@ export async function managePromNamespaceAlarms(
   for (const config of alarmConfigs) {
     // Find the index of the existing rule with the same name
     const existingRuleIndex = ruleGroup.rules.findIndex(
-      (rule): rule is AMPRule => rule.alert === config.alarmName,
+      (rule): rule is AMPRule => rule.alertName === config.alarmName,
     );
 
     if (existingRuleIndex !== -1) {
@@ -955,7 +955,7 @@ export async function managePromNamespaceAlarms(
       const existingRule = ruleGroup.rules[existingRuleIndex];
       if (
         existingRule.expr !== config.alarmQuery ||
-        existingRule.for !== config.duration
+        existingRule.timeSeries !== config.duration
       ) {
         log
           .info()
@@ -971,7 +971,7 @@ export async function managePromNamespaceAlarms(
         ruleGroup.rules[existingRuleIndex] = {
           ...existingRule,
           expr: config.alarmQuery,
-          for: config.duration,
+          timeSeries: config.duration,
         };
       } else {
         log
@@ -992,9 +992,9 @@ export async function managePromNamespaceAlarms(
         .str('alarmName', config.alarmName)
         .msg('AMPRule does not exist. Adding new rule to the rule group.');
       ruleGroup.rules.push({
-        alert: config.alarmName,
+        alertName: config.alarmName,
         expr: config.alarmQuery,
-        for: config.duration,
+        timeSeries: config.duration,
         labels: {severity: config.severityType},
         annotations: {
           summary: `${config.alarmName} alert triggered`,
@@ -1087,7 +1087,7 @@ export async function deletePromRulesForService(
 
     // Filter out rules associated with any of the serviceIdentifiers
     ruleGroup.rules = ruleGroup.rules.filter(
-      (rule) => !serviceIdentifiers.some((id) => rule.alert.includes(id)),
+      (rule) => !serviceIdentifiers.some((id) => rule.alertName.includes(id)),
     );
 
     if (ruleGroup.rules.length === 0) {

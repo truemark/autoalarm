@@ -9,7 +9,13 @@ import * as logging from '@nr1e/logging';
 import * as ServiceModules from './service-modules/_index.mjs'; // TODO: we need to fix the import when we transition to
 //  static utility classes with an import for each module
 import {SecManagerPrometheusModule} from './service-modules/_index.mjs';
-import {EC2AlarmManagerArray, ServiceEventMap} from './types/index.mjs';
+import {
+  EC2AlarmManagerArray,
+  EventParseResult,
+  RecordMatchPairs,
+  RecordMatchPairsArray,
+  ServiceEventMap
+} from './types/index.mjs';
 import {EventParse} from './service-modules/utils/event-parser.mjs';
 
 // Initialize logging
@@ -231,16 +237,72 @@ export const handler: Handler = async (
 ): Promise<void | SQSBatchResponse> => {
   log.trace().unknown('event', event).msg('Received event');
   // Create an array for all the EC2 events to be stored in and passed to the processEC2Event function imported form ec2-modules.mts
-  // Still need to figure out type for event objects as they can vary from event to event
+  /**
+   * Still need to figure out type for event objects as they can vary from event to event. Spoiler alert, it's {@link SQSRecord}
+   * Not changing to prevent breaking changes until I can look at this closer
+   */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ec2Events: any[] = [];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ec2TagEvents: any[] = [];
-  /**
-   * Create batch item failures array to store any failed items from the batch.
-   */
   const batchItemFailures: SQSBatchItemFailure[] = [];
   const batchItemBodies: SQSRecord[] = [];
+
+  /**
+   * TODO: for testing with new filtering logic. For prometheus secrets manager events only.
+   *  Start of new Main Handler logic.
+   *  @info This event map object will be extended to include all services but in this version,
+   *  it only includes secrets manager events for prometheus alarm management.
+   *
+   * @Start
+   */
+  const EventMap: ServiceEventMap = {
+    ...SecManagerPrometheusModule.SecretsManagerEventMap,
+    // add other service event maps here.
+  } as const;
+
+  // Initialize the EventParse class with the event map and the record
+  const parser = new EventParse(EventMap);
+
+  // pair each record with its corresponding event result as long as the source is NOT undefined
+  const recordMatchPairs: RecordMatchPairsArray = (
+    await Promise.all(
+      event.Records.map(async record => ({
+        record,
+        eventParseResult: await parser.matchEvent(record),
+      }))
+    )
+  ).filter((pair) => pair.eventParseResult.source !== undefined);
+
+  /**
+   * If this is extended to include all services, extract undefined event matches
+   * and submit them to batchItemFailures and batchItemBodies
+   */
+
+  const secretsManagerEvents: RecordMatchPairsArray = recordMatchPairs.filter(eventPair => eventPair.eventParseResult.source === 'aws.secretsmanager');
+
+  const isSuccessful = secretsManagerEvents.length > 0
+      ? await SecManagerPrometheusModule.managePromDbAlarms(secretsManagerEvents)
+      : false;
+
+  if (!isSuccessful) {
+    log
+      .error()
+      .str('function', 'handler')
+      .obj('record', secretsManagerEvents)
+      .msg(
+        'Event did not match the event map or SecManagerPrometheusModule was unsuccessful',
+      );
+
+    for (const eventMatchPair of secretsManagerEvents) {
+      batchItemFailures.push({itemIdentifier: eventMatchPair.record.messageId});
+      batchItemBodies.push(eventMatchPair.record);
+    }
+  }
+  /**
+   *
+   * @END
+   */
 
   if (!event.Records) {
     log.warn().msg('No Records found in event');
@@ -256,58 +318,6 @@ export const handler: Handler = async (
         .msg('Error message found in record body');
       continue;
     }
-
-    /**
-     * TODO: for testing with new filtering logic. For prometheus secrets manager events only.
-     *  Start of new Main Handler logic.
-     *  @info This event map object will be extended to include all services but in this version,
-     *  it only includes secrets manager events for prometheus alarm management.
-     *
-     * @Start
-     */
-    const EventMap: ServiceEventMap = {
-      ...SecManagerPrometheusModule.SecretsManagerEventMap,
-      // add other service event maps here.
-    } as const;
-
-    // Initialize the EventParse class with the event map and the record
-    const parser = new EventParse(EventMap);
-
-    // check if the event matches the event map for prometheus secrets manager events returns undefined if no match is found
-    const eventMatch = await parser.matchEvent(record);
-
-    /**
-     *  If the event matches the event map, manage the alarms using the SecManagerPrometheusModule otherwise set isSuccessful to false
-     *  If manageDbAlarms is successful, it will return true, and we can continue processing the record. Otherwise, false.
-     */
-    const isSuccessful =
-      eventMatch && eventMatch.source === 'aws.secretsmanager'
-        ? await SecManagerPrometheusModule.managePromDbAlarms(eventMatch)
-        /**
-         * Add other service event management here as needed in the ternary
-         *  @example ? eventMatch && eventMatch.source === 'aws.ec2' ? await ServiceModules.manageEC2Alarms(eventMatch)
-         *  */
-        : false;
-
-    // If the event does not match the event map or SecManagerPrometheusModule was unsuccessful, log an error and continue to the next record
-    if (!isSuccessful) {
-      log
-        .error()
-        .str('function', 'handler')
-        .obj('record', record)
-        .msg(
-          'Event did not match the event map or SecManagerPrometheusModule was unsuccessful',
-        );
-      batchItemFailures.push({itemIdentifier: record.messageId});
-      batchItemBodies.push(record);
-      //continue; // During testing we want to not move on to the next record before processing the current one below for other services.
-    }
-    /**
-     * TODO: End of new Main Handler logic. for prometheus secrets manager events integration.
-     *
-     *
-     * @END
-     */
 
     // Parse the body of the SQS message
     const event = JSON.parse(record.body);
