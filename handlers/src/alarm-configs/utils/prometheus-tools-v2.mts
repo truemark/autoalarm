@@ -22,7 +22,12 @@ import {
   verifyPromWorkspace,
 } from './prometheus-tools.mjs';
 import * as yaml from 'js-yaml';
-import {AMPRule, NamespaceConfig, NameSpaceDetails, RuleGroup} from '../../types/index.mjs';
+import {
+  AMPRule,
+  NamespaceConfig,
+  NameSpaceDetails,
+  RuleGroup,
+} from '../../types/index.mjs';
 
 const log: logging.Logger = logging.getLogger('ec2-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -35,28 +40,47 @@ const client = new AmpClient({
   ),
 });
 
-async function nameSpaceExists(namespaces: string[], promWorkspaceId: string) {
-  try {
-    const response = await client.send(
-      new ListRuleGroupsNamespacesCommand({workspaceId: promWorkspaceId}),
-    );
-    return response.ruleGroupsNamespaces || [];
-  } catch (error) {
-    log
-      .error()
-      .str('function', 'listNamespaces')
-      .err(error)
-      .msg('Failed to list namespaces');
-    throw new Error(`Failed to list namespaces: ${error}`);
-  }
+async function nameSpaceExists(
+  promWorkspaceId: string,
+  updatedConfigs: NameSpaceDetails,
+): Promise<boolean> {
+  await Promise.all(
+    Object.keys(updatedConfigs).map(async (namespace) => {
+      try {
+        const response = await client.send(
+          new ListRuleGroupsNamespacesCommand({workspaceId: promWorkspaceId}),
+        );
+
+        if (
+          !response.ruleGroupsNamespaces?.some((ns) => ns.name === namespace)
+        ) {
+          // Create the namespace if it does not exist
+          await createNamespace(
+            promWorkspaceId,
+            namespace,
+            updatedConfigs[namespace].groups,
+          );
+        }
+        return true;
+      } catch (error) {
+        log
+          .error()
+          .str('function', 'nameSpaceExists')
+          .err(error)
+          .msg('Failed to list namespaces');
+        throw new Error(`Failed to list namespaces: ${error}`);
+      }
+    }),
+  );
+  return true;
 }
 
-// Describe the namespace to check if it exists
+// Describe the namespace to get current details
 async function describeNamespaceV2(
   promWorkspaceId: string,
   namespaces: string[],
-) {
-  const namespaceDetails: Record<string, NamespaceConfig | Uint8Array> = {};
+):Promise<NameSpaceDetails> {
+  const namespaceDetails: {[namespace: string]: NamespaceConfig | Uint8Array} = {};
 
   const command = new DescribeRuleGroupsNamespaceCommand({
     workspaceId: promWorkspaceId,
@@ -94,11 +118,13 @@ async function describeNamespaceV2(
       }
     }),
   );
-  return namespaceDetails;
+  return namespaceDetails as NameSpaceDetails;
 }
 
-// Check if ns empty, if it is create it. Check if <2000 rules.
-export async function verifyNamespace(namespaces: Record<string, NamespaceConfig>, alarmConfigs: NameSpaceDetails): Promise<void> {
+// Check if ns empty, if it is, create it. Check if <2000 rules.
+export async function verifyNamespace(
+  namespaces: NameSpaceDetails,
+): Promise<void> {
   Object.entries(namespaces).forEach(([K, V]) => {
     if (!isNamespaceDetails(V)) {
       log
@@ -125,7 +151,7 @@ export async function verifyNamespace(namespaces: Record<string, NamespaceConfig
         'The namespace has 2000 or more rules. Halting and falling back to CW Alarms.',
       );
     }
-  })
+  });
 }
 
 /**
@@ -142,8 +168,6 @@ export async function managePromNamespaceAlarms(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   alarmConfigs: any[],
 ) {
-
-
   // List all existing namespaces and count total rules
   const namespaces = await listNamespacesV2(promWorkspaceId);
   let totalWSRules = 0;
@@ -191,7 +215,7 @@ export async function managePromNamespaceAlarms(
   }
 
   // Describe the specific namespace to get its details
-  const nsDetails = await describeNamespace(promWorkspaceId, namespace);
+  const nsDetails = await describeNamespaceV2(promWorkspaceId, namespaces);
   if (!nsDetails || !isNamespaceDetails(nsDetails)) {
     log
       .warn()
@@ -202,47 +226,38 @@ export async function managePromNamespaceAlarms(
   }
 
   // Sanity check: if namespace is empty, delete and recreate it
-  if (nsDetails.groups.length === 0) {
-    log
-      .warn()
-      .str('function', 'managePromNamespaceAlarms')
-      .str('namespace', namespace)
-      .msg(
-        'Namespace is empty. Deleting and recreating it with updated rules.',
-      );
-
-    const deleteNamespaceCommand = new DeleteRuleGroupsNamespaceCommand({
-      workspaceId: promWorkspaceId,
-      name: namespace,
-    });
-
-    try {
-      await client.send(deleteNamespaceCommand);
+  await Promise.all(Object.entries(nsDetails).map( async ([K, V]) => {
+    if (V.groups.length < 1) {
       log
-        .info()
+        .warn()
         .str('function', 'managePromNamespaceAlarms')
-        .str('namespace', namespace)
-        .msg('Deleted empty namespace.');
+        .str('namespace', K)
+        .msg(
+          'Namespace is empty. Deleting and recreating it with updated rules.',
+        );
 
-      await createNamespace(promWorkspaceId, namespace, alarmConfigs);
-      log
-        .info()
-        .str('function', 'managePromNamespaceAlarms')
-        .str('namespace', namespace)
-        .msg('Recreated namespace with updated rules.');
-      return;
-    } catch (error) {
-      log
-        .error()
-        .str('function', 'managePromNamespaceAlarms')
-        .str('namespace', namespace)
-        .err(error)
-        .msg('Failed to delete empty namespace.');
-      throw new Error(
-        `Failed to delete empty namespace: ${error}. Function will be unable to proceed.`,
-      );
+      const deleteNamespaceCommand = new DeleteRuleGroupsNamespaceCommand({
+        workspaceId: promWorkspaceId,
+        name: K,
+      });
+
+      try {
+        await client.send(deleteNamespaceCommand);
+        await createNamespace(promWorkspaceId, namespace, alarmConfigs);
+        return;
+      } catch (error) {
+        log
+          .error()
+          .str('function', 'managePromNamespaceAlarms')
+          .str('namespace', K)
+          .err(error)
+          .msg('Failed to delete empty namespace.');
+        throw new Error(
+          `Failed to delete empty namespace and recreate: ${error}. Function will be unable to proceed.`,
+        );
+      }
     }
-  }
+  }));
 
   // Find the rule group within the namespace or create a new one
   const ruleGroup = nsDetails.groups.find(

@@ -50,8 +50,7 @@ export type PrometheusAlarmConfigArray = PrometheusAlarmConfig[];
 
 // Interface to correlate namespace with its configs (groups and rules
 export interface NameSpaceDetails{
-  namespace: string;
-  details: NamespaceConfig;
+  [namespace: string]: NamespaceConfig;
 }
 
 //for prometheus namespace details when populating the rule groups
