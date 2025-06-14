@@ -22,6 +22,7 @@ import {
   PromUpdatesMap,
   RecordMatchPairsArray,
   AMPRule,
+  NameSpaceDetails,
 } from '../types/index.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import * as logging from '@nr1e/logging';
@@ -311,21 +312,29 @@ export class SecManagerPrometheusModule {
    * Helper function to build prometheus query for a given host and tag value
    * @private
    */
-  private static async buildPromQuery(
-    config: MetricAlarmConfig,
+  private static async buildAMPRules(
+    engine: string,
     host: string,
-    tagValue?: string,
-  ): Promise<string[]> {
+    tags: Tag[],
+  ): Promise<AlarmUpdateResult<{namespaceDetails: NameSpaceDetails}>> {
     // Get alarm values for prometheus
-    const {
-      warningThreshold,
-      criticalThreshold,
-      prometheusExpression,
-      statistic,
-      period,
-    } = tagValue
-      ? parseMetricAlarmOptions(tagValue, config.defaults)
-      : config.defaults;
+    const configs = this.fetchDefaultConfigs(engine);
+
+    if (!configs)
+      return {
+        isSuccess: false,
+        res: new Error('Failed to fetch default configs from Secrets Manager', {
+          cause: 'no config match found for engine type',
+        }),
+      };
+
+    // Reassign configs defaults if corresponding tag key is found
+    configs.forEach(config => {
+      const match = tags.flatMap(tag => Object.entries(tag))
+          .find(([key]) => key.includes(config.tagKey));
+       const [, value] = match ? match : ''
+        config.defaults = parseMetricAlarmOptions(value, config.defaults);
+    });
 
     // build the prometheus query
     const xprBuild = (threshold: number | null) => {
