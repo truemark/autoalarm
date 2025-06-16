@@ -42,8 +42,10 @@ export {
   PrometheusAlarmConfigArray,
   NamespaceConfig,
   DbEngine,
-  PromUpdatesMap,
-  NameSpaceDetails
+  NameSpaceDetails,
+  PromHostInfo,
+  PromUpdateMap
+
 } from './prometheus-types.mjs';
 
 // Import and re-export from event-filtering-types.mjs

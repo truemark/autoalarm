@@ -13,7 +13,7 @@ import {
   ListRuleGroupsNamespacesCommand,
   PutRuleGroupsNamespaceCommand,
 } from '@aws-sdk/client-amp';
-import {describeNamespace} from './index.mjs';
+import {buildAlarmName, describeNamespace} from './index.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {defaultProvider} from '@aws-sdk/credential-provider-node';
 import {
@@ -23,10 +23,11 @@ import {
 } from './prometheus-tools.mjs';
 import * as yaml from 'js-yaml';
 import {
-  AMPRule,
+  AlarmClassification, AlarmUpdateResult,
+  AMPRule, MetricAlarmConfig,
   NamespaceConfig,
   NameSpaceDetails,
-  RuleGroup,
+  RuleGroup
 } from '../../types/index.mjs';
 
 const log: logging.Logger = logging.getLogger('ec2-modules');
@@ -152,6 +153,43 @@ export async function verifyNamespace(
       );
     }
   });
+}
+
+// build AMPRule for a given engine, hostID, config, expression and severity
+export function buildAMPRule(
+  engine: string,
+  hostID: string,
+  config: MetricAlarmConfig,
+  expr: string,
+  severity: 'warning' | 'critical',
+): AlarmUpdateResult<{ampRule: AMPRule}> {
+
+  const alertName = buildAlarmName(
+    config,
+    engine,
+    hostID,
+    severity === 'warning' ? AlarmClassification.Warning : AlarmClassification.Critical,
+    'static',
+  );
+
+  const rule: AMPRule = {
+    alertName: alertName,
+    expr: expr,
+    timeSeries: `${config.defaults.period}m`,
+    labels: {
+      severity: severity.toLowerCase(),
+    },
+    annotations: {
+      summary: `AutoAlarm for ${hostID}. Managed with tag: autoalarm:${config.tagKey}`,
+      description: `${severity} monitor for ${hostID}. Monitoring ${config.metricName} for ${config.defaults.period} minutes. Periods`,
+    },
+  };
+
+  return {
+    isSuccess: true,
+    res: 'Successfully built AMPRule',
+    data: {ampRule: rule},
+  };
 }
 
 /**

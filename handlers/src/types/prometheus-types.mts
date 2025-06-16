@@ -1,4 +1,4 @@
-import {TagsObject} from './module-types.mjs';
+import {Tag} from './index.mjs';
 
 export interface PrometheusAlarmConfig {
   instanceId: string; // ID of the instance
@@ -49,7 +49,7 @@ export interface RuleGroup<N = string> {
 export type PrometheusAlarmConfigArray = PrometheusAlarmConfig[];
 
 // Interface to correlate namespace with its configs (groups and rules
-export interface NameSpaceDetails{
+export interface NameSpaceDetails {
   [namespace: string]: NamespaceConfig;
 }
 
@@ -64,19 +64,21 @@ export interface NamespaceConfig<N = string> {
 export type DbEngine = 'ORACLE' | 'MYSQL' | 'POSTGRES';
 
 /**
- * Represents a mapping of mass Prometheus updates.
- * @template E - The type of the service engine/s, default is string. This allows
- * flexibility in specifying different engines across different services.
+ * Represents a mapping of Prometheus event sorting values for each engine (used as a namespace).
+ * flexibility in specifying different engines across different services for strong typing.
  */
-export interface MassPromUpdatesObject<E = string> {
-    engine: E | undefined;
-    hostID: string | undefined;
+export interface PromHostInfo {
+    hostID: string;
     isDisabled: boolean;
-    tags: TagsObject;
+    tags: Tag[];
+    ampRule?: AMPRule;
 }
 
 /**
- * Represents a map of Prometheus updates, where the key is the arn or identifier
- * and the value is a {@link MassPromUpdatesObject} interface.
+ * Represents a mapping of mass Prometheus updates.
+ * @template E - The type of the service engine/s, default is string. This allows
+ * flexibility in specifying different engines across different services.
+ * Map<E - engine, Map<string - arn,  {hostID: string; isDisabled: boolean; tags: Tag[], ampRule?: AMPRule}>>
  */
-export interface PromUpdatesMap extends Map<string, MassPromUpdatesObject> {}
+export interface PromUpdateMap<E extends string = string>
+  extends Map<E, Map<string, PromHostInfo>> {}

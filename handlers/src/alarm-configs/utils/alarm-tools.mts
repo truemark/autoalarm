@@ -231,7 +231,7 @@ async function handleAnomalyDetectionWorkflow(
       Namespace: config.metricNamespace,
       MetricName: config.metricName,
       Dimensions: [...dimensions],
-      Stat: updatedDefaults.statistic,
+      Stat: updatedDefaults.statistic!,
       Configuration: {MetricTimezone: 'UTC'},
     };
 
@@ -260,7 +260,7 @@ async function handleAnomalyDetectionWorkflow(
             Dimensions: [...dimensions],
           },
           Period: updatedDefaults.period,
-          Stat: updatedDefaults.statistic,
+          Stat: updatedDefaults.statistic!,
         },
       },
       {
@@ -269,16 +269,16 @@ async function handleAnomalyDetectionWorkflow(
       },
     ];
 
-    const alarmInput = {
+    const alarmInput: PutMetricAlarmCommandInput = {
       AlarmName: alarmName,
       ComparisonOperator:
         updatedDefaults.comparisonOperator as ComparisonOperator,
-      EvaluationPeriods: updatedDefaults.evaluationPeriods,
+      EvaluationPeriods: updatedDefaults.evaluationPeriods!,
       Metrics: metrics,
       ThresholdMetricId: 'anomalyDetectionBand',
       ActionsEnabled: false,
       Tags: [{Key: 'severity', Value: classification}],
-      TreatMissingData: updatedDefaults.missingDataTreatment,
+      TreatMissingData: updatedDefaults.missingDataTreatment!,
     };
 
     log
@@ -446,9 +446,9 @@ async function handleStaticThresholdWorkflow(
   try {
     const alarmInput: PutMetricAlarmCommandInput = {
       AlarmName: alarmName,
-      ComparisonOperator: updatedDefaults.comparisonOperator,
-      EvaluationPeriods: updatedDefaults.evaluationPeriods,
-      DatapointsToAlarm: updatedDefaults.dataPointsToAlarm,
+      ComparisonOperator: updatedDefaults.comparisonOperator!,
+      EvaluationPeriods: updatedDefaults.evaluationPeriods!,
+      DatapointsToAlarm: updatedDefaults.dataPointsToAlarm!,
       MetricName: config.metricName,
       Namespace: config.metricNamespace,
       Period: updatedDefaults.period,
@@ -465,13 +465,13 @@ async function handleStaticThresholdWorkflow(
         'TM',
         'TS',
       ].some((prefix) => updatedDefaults.statistic!.startsWith(prefix))
-        ? {ExtendedStatistic: updatedDefaults.statistic}
+        ? {ExtendedStatistic: updatedDefaults.statistic!}
         : {Statistic: updatedDefaults.statistic as Statistic}),
       Threshold: threshold,
       ActionsEnabled: false,
       Dimensions: [...dimensions],
       Tags: [{Key: 'severity', Value: classification}],
-      TreatMissingData: updatedDefaults.missingDataTreatment,
+      TreatMissingData: updatedDefaults.missingDataTreatment!,
     };
 
     log

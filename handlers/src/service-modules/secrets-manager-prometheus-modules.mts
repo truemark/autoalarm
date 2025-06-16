@@ -14,19 +14,18 @@ import {
 } from '../alarm-configs/index.mjs';
 import {
   AlarmUpdateResult,
-  MetricAlarmConfig,
   ServiceEventMap,
-  NamespaceConfig,
-  RuleGroup,
   Tag,
-  PromUpdatesMap,
   RecordMatchPairsArray,
   AMPRule,
-  NameSpaceDetails,
+  PromUpdateMap, PromHostInfo,
 } from '../types/index.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import * as logging from '@nr1e/logging';
-import {parseMetricAlarmOptions} from '../alarm-configs/utils/index.mjs';
+import {
+  parseMetricAlarmOptions,
+} from '../alarm-configs/utils/index.mjs';
+import {buildAMPRule} from '../alarm-configs/utils/prometheus-tools-v2.mjs';
 
 export class SecManagerPrometheusModule {
   private static oracleDBConfigs = PROMETHEUS_ORACLEDB_CONFIGS;
@@ -91,9 +90,9 @@ export class SecManagerPrometheusModule {
    * TODO: Belongs in dynamoDB utils file. Temp.
    */
   private static dynamoDBFetch(arn: string): AlarmUpdateResult<{
-    id: string;
-    engine: string | undefined;
-    host: string | undefined;
+    id?: string;
+    engine?: string;
+    host?: string;
     alarmsFound: boolean;
   }> {
     // This function is a placeholder for the actual DynamoDB fetch logic.
@@ -121,13 +120,13 @@ export class SecManagerPrometheusModule {
     autoAlarmSecrets: Array<Record<string, Tag[]>>,
   ): Promise<
     AlarmUpdateResult<{
-      secretsArnMap?: PromUpdatesMap;
+      secretsArnMap?: PromUpdateMap;
     }>
   > {
     const secretsArns: string[] = autoAlarmSecrets.map(
       (obj) => Object.keys(obj)[0],
     );
-    const secretsArnMap: PromUpdatesMap = new Map();
+    const secretsArnMap: PromUpdateMap = new Map();
 
     // BatchGetSecretValueCommand can only return 20 secrets at a time so we will need to chunk the ARNs
     const chunkSize = 20;
@@ -169,11 +168,9 @@ export class SecManagerPrometheusModule {
                 }),
               };
 
-            // Pull host and engine from the secretStrings object
-            const host = secretStrings.host ? secretStrings.host : undefined;
-            const engine = secretStrings.engine
-              ? secretStrings.engine
-              : undefined;
+            // Pull host and engine from the secretStrings object - engine is always uppercase for namespace name
+            const host = secretStrings.host;
+            const engine = secretStrings.engine.toUpperCase();
 
             // Get autoalarm tags for the current secret
             const tags = autoAlarmSecrets
@@ -185,13 +182,21 @@ export class SecManagerPrometheusModule {
               (tag) => tag.Key === 'autoalarm:enabled' && tag.Value === 'false',
             );
 
-            // Add entry in the secretsArnMap
-            secretsArnMap.set(secret.ARN!, {
-              engine: engine,
+            // store 
+            const mapEntry = {
               hostID: host,
               isDisabled: isDisabled,
               tags: tags,
-            });
+            };
+
+            // Ensure the engine map exists
+            if (!secretsArnMap.has(engine)) {
+              secretsArnMap.set(engine, new Map());
+            }
+
+            // Add the entry
+            secretsArnMap.get(engine)!.set(secret.ARN!, mapEntry);
+
           }
         }
       } catch (err) {
@@ -209,9 +214,6 @@ export class SecManagerPrometheusModule {
       return {
         isSuccess: true,
         res: 'No secrets found with autoalarm tags',
-        data: {
-          secretsArnMap: undefined,
-        },
       };
     }
 
@@ -310,76 +312,78 @@ export class SecManagerPrometheusModule {
 
   /**
    * Helper function to build prometheus query for a given host and tag value
+   * disabled alarms are filtered out in the {@link managePromDbAlarms} method
    * @private
    */
-  private static async buildAMPRules(
-    engine: string,
-    host: string,
-    tags: Tag[],
-  ): Promise<AlarmUpdateResult<{namespaceDetails: NameSpaceDetails}>> {
-    // Get alarm values for prometheus
-    const configs = this.fetchDefaultConfigs(engine);
+  private static async buildNamespaceDetailsMap(
+    eventsSortMap: PromUpdateMap,
+  ): Promise<AlarmUpdateResult> {
 
-    if (!configs)
-      return {
-        isSuccess: false,
-        res: new Error('Failed to fetch default configs from Secrets Manager', {
-          cause: 'no config match found for engine type',
-        }),
-      };
+    const failedEngineTypes: string[] = [];
+    // Get alarm values for prometheus - keys in map are the secret ARNs
+    engineLoop: for (const key of eventsSortMap.keys()) {
+      const configs = this.fetchDefaultConfigs(key);
+      // Loop through each secret in the eventsSortMap
+      secretsLoop: for (const secret of eventsSortMap.get(key)!) {
+        // Failsafe if no configs are returned from fetchDefaultConfigs
+        if (!configs)
+          return {
+            isSuccess: false,
+            res: new Error('Failed to fetch configs', {
+              cause: `no config match found for engine type ${eventsSortMap.get(key)!.engine}`,
+            }),
+          };
 
-    // Reassign configs defaults if corresponding tag key is found
-    configs.forEach(config => {
-      const match = tags.flatMap(tag => Object.entries(tag))
-          .find(([key]) => key.includes(config.tagKey));
-       const [, value] = match ? match : ''
-        config.defaults = parseMetricAlarmOptions(value, config.defaults);
-    });
 
-    // build the prometheus query
-    const xprBuild = (threshold: number | null) => {
-      prometheusExpression!
-        .replace('/_STATISTIC/', `${statistic}`)
-        .replace('/_THRESHOLD/', `${threshold}`)
-        .replace('/_PERIOD/', `${period}`)
-        .replace('/_HOST/', host);
-    };
+      // Reassign configs defaults if corresponding tag key is found
+      configs.forEach((config) => {
+        const tags = eventsSortMap.get(key)?.tags || [];
 
-    //return any non-null entries
-    return [
-      xprBuild(warningThreshold) ?? null,
-      xprBuild(criticalThreshold) ?? null,
-    ].filter((q) => q !== null);
-  }
+        const match = tags.find((tag) => tag.Key.includes(config.tagKey));
+        config.defaults = parseMetricAlarmOptions(
+          match?.value ?? '',
+          config.defaults,
+        );
+      });
 
-  /**
-   * Helper function to update the namespace details updated alarm values
-   * @private
-   */
-  private static updateNameSpaceDetails(
-    nameSpaceDetails: NamespaceConfig,
-  ): NamespaceConfig {
+      // build the prometheus query for each config
+      configs.forEach((config) => {
+        for (const severity of [
+          config.defaults.warningThreshold,
+          config.defaults.criticalThreshold,
+        ]) {
+          config.defaults
+            .prometheusExpression!.replace(
+              '/_STATISTIC/',
+              `${config.defaults.statistic}`,
+            )
+            .replace('/_THRESHOLD/', `${severity}`)
+            .replace('/_HOST/', `${eventsSortMap.get(key)?.hostID}`);
+
+          // build and add rule to the namespace details map
+          const rule = buildAMPRule(
+            eventsSortMap.get(key)!.engine!,
+            eventsSortMap.get(key)!.hostID!,
+            config,
+            config.defaults.prometheusExpression!,
+            severity === config.defaults.warningThreshold
+              ? 'warning'
+              : 'critical',
+          );
+
+          nameSpaceDetailsMap.set(eventsSortMap.get(key)!.engine!, {
+            hostID: eventsSortMap.get(key)!.hostID,
+            isDisabled: eventsSortMap.get(key)!.isDisabled,
+            ampRule: rule.data!.ampRule,
+          });
+        }
+      });
+    }
+
     return {
-      groups: [
-        {
-          name: 'autoalarm',
-          rules: [],
-        },
-      ],
+      isSuccess: true,
+      res: 'Successfully built namespace details map',
     };
-  }
-
-  /**
-   * Compare two NamespaceConfig objects and update the rule groups if they differ.
-   * @param nameSpaceDetails - The current namespace details.
-   * @param updateDetails - The updated namespace details to compare against.
-   */
-  private static compareAndUpdateRuleGroups(
-    updateDetails: NamespaceConfig,
-  ): AlarmUpdateResult<{
-    updatedRuleGroups: RuleGroup[];
-  }> {
-    const updatedRuleGroups: RuleGroup[] = Object.values(updateDetails);
   }
 
   /**
@@ -393,9 +397,9 @@ export class SecManagerPrometheusModule {
     // Define prometheus workspace ID and prometheus updates map
     const prometheusWorkspaceId = process.env.PROMETHEUS_WORKSPACE_ID;
 
-    // Instantiate default namespaceUpdateMap to compare against updates later. Build prometheus updates map
+    // Instantiate default namespaceUpdateMap to build rules file for each engine
     const nameSpaceDetailsMap = new Map<string, AMPRule>();
-    const promUpdatesMap: PromUpdatesMap = new Map();
+    const promUpdatesMap: PromUpdateMap = new Map();
 
     // Validate that the prometheus workspace ID is set
     if (!prometheusWorkspaceId) {
@@ -417,9 +421,9 @@ export class SecManagerPrometheusModule {
       const {eventParseResult} = pair;
       const destroyedInfo = this.dynamoDBFetch(eventParseResult.id);
       if (destroyedInfo.isSuccess && destroyedInfo.data?.alarmsFound) {
-        promUpdatesMap.set(destroyedInfo.data.id, {
-          engine: destroyedInfo.data.engine,
-          hostID: destroyedInfo.data.host,
+        promUpdatesMap.set(destroyedInfo.data.id!, {
+          engine: destroyedInfo.data.engine!,
+          hostID: destroyedInfo.data.host!,
           isDisabled: true,
           tags: [],
         });
@@ -448,10 +452,8 @@ export class SecManagerPrometheusModule {
      *   6. replace  with latest updates for following event lookup.
      */
 
-    // Get all autoalarm tagged secrets
+    // fetch a list of secrets with autolarm tags and then attempt to map secret values for host and engine
     const autoAlarmSecrets = await this.fetchAutoAlarmSecrets();
-
-    // fetch secrets for host/engine
     const tagSecretsMap = autoAlarmSecrets.data
       ? await this.mapSecretValues(autoAlarmSecrets.data.secrets)
       : undefined;
@@ -521,6 +523,25 @@ export class SecManagerPrometheusModule {
 
     // clean up tagSecretsMap now that we moved the secrets to the prometheus updates map
     tagSecretsMap.data ? delete tagSecretsMap.data : undefined;
+
+    // Remove any secrets that are disabled from the prometheus updates map
+    const autoAlarmDisabledSecrets: string[] = [];
+    promUpdatesMap.forEach((value, key) => {
+      if (value.isDisabled) {
+        autoAlarmDisabledSecrets.push(key);
+        promUpdatesMap.delete(key);
+      }
+    });
+
+    if (autoAlarmDisabledSecrets.length > 0) {
+      this.log
+        .info()
+        .str('Function', 'managePromDbAlarms')
+        .obj('DisabledSecrets', autoAlarmDisabledSecrets)
+        .msg(
+          'AutoAlarm is disabled for the following secrets. These secrets will not be included in the new ruleset.',
+        );
+    }
 
     // If we successfully processed all secrets, log and return true
     this.log

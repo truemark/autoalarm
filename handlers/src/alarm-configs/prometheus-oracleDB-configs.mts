@@ -22,9 +22,9 @@ export const PROMETHEUS_ORACLEDB_CONFIGS: MetricAlarmConfig[] = [
     defaults: {
       warningThreshold: 2,
       criticalThreshold: 4,
-      period: 60,
+      period: 60, // Unit is minutes for Prometheus
       prometheusExpression:
-        '_STATISTIC(oracledb_activity_execute_count > _THRESHOLD[_PERIOD])_HOST ',
+        '_STATISTIC(oracledb_activity_execute_count{host="_HOST"} > _THRESHOLD)',
       evaluationPeriods: null,
       statistic: null,
       dataPointsToAlarm: null,
