@@ -3,7 +3,7 @@ import {
   ListTagsForResourceCommand,
 } from '@aws-sdk/client-cloudfront';
 import * as logging from '@nr1e/logging';
-import {Tag, AlarmClassification} from '../types/index.mjs';
+import {TagRecord, AlarmClassification} from '../types/index.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
   getCWAlarmsForInstance,
@@ -36,7 +36,7 @@ const metricConfigs = CLOUDFRONT_CONFIGS;
 
 export async function fetchCloudFrontTags(
   distributionArn: string,
-): Promise<Tag> {
+): Promise<TagRecord> {
   try {
     // Use the distributionArn directly as it's already an ARN
     const command = new ListTagsForResourceCommand({Resource: distributionArn});
@@ -71,7 +71,7 @@ export async function fetchCloudFrontTags(
 
 async function checkAndManageCloudFrontStatusAlarms(
   distributionId: string,
-  tags: Tag,
+  tags: TagRecord,
 ): Promise<void> {
   log
     .info()
@@ -187,7 +187,7 @@ async function checkAndManageCloudFrontStatusAlarms(
 
 export async function manageCloudFrontAlarms(
   distributionId: string,
-  tags: Tag,
+  tags: TagRecord,
 ): Promise<void> {
   await checkAndManageCloudFrontStatusAlarms(distributionId, tags);
 }

@@ -28,7 +28,7 @@ import {
   MetricAlarmConfig,
   MetricAlarmOptions,
   PathMetrics,
-  Tag,
+  TagRecord,
   EC2AlarmManagerArray,
   ValidInstanceState,
 } from '../types/index.mjs';
@@ -280,7 +280,7 @@ export async function createStatusAlarmForInstance(
   }
 }
 
-async function checkAndManageStatusAlarm(instanceId: string, tags: Tag) {
+async function checkAndManageStatusAlarm(instanceId: string, tags: TagRecord) {
   if (tags['autoalarm:enabled'] === 'false') {
     await deleteAlarm(`AutoAlarm-EC2-${instanceId}-StatusCheckFailed`);
     log.info().msg('Status check alarm creation skipped due to tag settings.');
@@ -462,7 +462,7 @@ async function handleAlarmCreation(
 // Helper function to handle CloudWatch alarm logic
 async function handleCloudWatchAlarms(
   instanceID: string,
-  tags: Tag,
+  tags: TagRecord,
   isWindows: boolean,
 ) {
   const alarmsToKeep = new Set<string>();

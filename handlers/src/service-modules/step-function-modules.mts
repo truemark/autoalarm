@@ -1,6 +1,6 @@
 import {SFNClient, ListTagsForResourceCommand} from '@aws-sdk/client-sfn';
 import * as logging from '@nr1e/logging';
-import {AlarmClassification, Tag} from '../types/index.mjs';
+import {AlarmClassification, TagRecord} from '../types/index.mjs';
 import {
   CloudWatchClient,
   DeleteAlarmsCommand,
@@ -30,13 +30,13 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
 
 const metricConfigs = STEP_FUNCTION_CONFIGS;
 
-export async function fetchSFNTags(sfnArn: string): Promise<Tag> {
+export async function fetchSFNTags(sfnArn: string): Promise<TagRecord> {
   try {
     const command = new ListTagsForResourceCommand({
       resourceArn: sfnArn,
     });
     const response = await sfnClient.send(command);
-    const tags: Tag = {};
+    const tags: TagRecord = {};
 
     response.tags?.forEach((tag) => {
       if (tag.key && tag.value) {
@@ -64,7 +64,7 @@ export async function fetchSFNTags(sfnArn: string): Promise<Tag> {
 
 async function checkAndManageSFNStatusAlarms(
   sfnArn: string,
-  tags: Tag,
+  tags: TagRecord,
 ): Promise<void> {
   log
     .info()

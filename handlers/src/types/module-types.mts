@@ -1,10 +1,12 @@
+import {Tag as awsTag} from '@aws-sdk/client-cloudwatch';
+
 // Type definitions for autoalarm service modules
 
 import {SQSRecord} from 'aws-lambda';
 
 export interface EC2AlarmManagerObject {
   instanceID: string;
-  tags: Tag;
+  tags: TagRecord;
   state: string;
   ec2Metadata?: {platform: string | null; privateIP: string | null};
 }
@@ -44,9 +46,19 @@ export interface AlarmUpdateResult<Data = undefined> {
 /**
  * Tags come on various interfaces. Capture known object shapes here for use
  * across autoalarm service modules.
+ * TODO: remove and backport new interface for tags to all service modules
  */
-export interface Tag extends Record<string, string> {}
-export type TagsObject = Tag | Tag[] | string[]; // for events with tag keys only
+export interface TagRecord extends Record<string, string> {}
+
+/**
+ * extends aws tag schema for their interface but enforces nonNullable values for keys
+ */
+export interface TagV2 extends awsTag {
+  Key: string;
+  Value: string;
+}
+
+export type TagsObject = TagRecord | TagRecord[] | string[]; // for events with tag keys only
 
 /**
  * Used as a unified interface for alarm update options based on event type and

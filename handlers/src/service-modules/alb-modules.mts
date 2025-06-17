@@ -5,7 +5,7 @@ import {
 import * as logging from '@nr1e/logging';
 import {
   LoadBalancerIdentifiers,
-  Tag,
+  TagRecord,
   AlarmClassification,
 } from '../types/index.mjs';
 import {
@@ -38,13 +38,13 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
 
 const metricConfigs = ALB_CONFIGS;
 
-export async function fetchALBTags(loadBalancerArn: string): Promise<Tag> {
+export async function fetchALBTags(loadBalancerArn: string): Promise<TagRecord> {
   try {
     const command = new DescribeTagsCommand({
       ResourceArns: [loadBalancerArn],
     });
     const response = await elbClient.send(command);
-    const tags: Tag = {};
+    const tags: TagRecord = {};
 
     response.TagDescriptions?.forEach((tagDescription) => {
       tagDescription.Tags?.forEach((tag) => {
@@ -75,7 +75,7 @@ export async function fetchALBTags(loadBalancerArn: string): Promise<Tag> {
 
 async function checkAndManageALBStatusAlarms(
   loadBalancerName: string,
-  tags: Tag,
+  tags: TagRecord,
 ) {
   log
     .info()
@@ -191,7 +191,7 @@ async function checkAndManageALBStatusAlarms(
 
 export async function manageALBAlarms(
   loadBalancerName: string,
-  tags: Tag,
+  tags: TagRecord,
 ): Promise<void> {
   await checkAndManageALBStatusAlarms(loadBalancerName, tags);
 }

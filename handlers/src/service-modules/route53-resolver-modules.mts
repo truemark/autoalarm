@@ -3,7 +3,7 @@ import {
   Route53ResolverClient,
 } from '@aws-sdk/client-route53resolver';
 import * as logging from '@nr1e/logging';
-import {AlarmClassification, Tag} from '../types/index.mjs';
+import {AlarmClassification, TagRecord} from '../types/index.mjs';
 import {
   CloudWatchClient,
   DeleteAlarmsCommand,
@@ -33,13 +33,13 @@ const cloudWatchClient = new CloudWatchClient({
 
 const metricConfigs = ROUTE53_RESOLVER_CONFIGS;
 
-export async function fetchR53ResolverTags(endpointId: string): Promise<Tag> {
+export async function fetchR53ResolverTags(endpointId: string): Promise<TagRecord> {
   try {
     const command = new ListTagsForResourceCommand({
       ResourceArn: endpointId,
     });
     const response = await route53ResolverClient.send(command);
-    const tags: Tag = {};
+    const tags: TagRecord = {};
 
     response.Tags?.forEach((tag) => {
       if (tag.Key && tag.Value) {
@@ -67,7 +67,7 @@ export async function fetchR53ResolverTags(endpointId: string): Promise<Tag> {
 
 async function checkAndManageR53ResolverStatusAlarms(
   endpointId: string,
-  tags: Tag,
+  tags: TagRecord,
 ) {
   log
     .info()
@@ -179,7 +179,7 @@ async function checkAndManageR53ResolverStatusAlarms(
 
 export async function manageR53ResolverAlarms(
   endpointId: string,
-  tags: Tag,
+  tags: TagRecord,
 ): Promise<void> {
   await checkAndManageR53ResolverStatusAlarms(endpointId, tags);
 }

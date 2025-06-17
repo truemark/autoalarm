@@ -1,6 +1,6 @@
 import {EC2Client, DescribeTagsCommand} from '@aws-sdk/client-ec2';
 import * as logging from '@nr1e/logging';
-import {AlarmClassification, Tag} from '../types/index.mjs';
+import {AlarmClassification, TagRecord} from '../types/index.mjs';
 import {
   CloudWatchClient,
   DeleteAlarmsCommand,
@@ -67,7 +67,7 @@ export async function fetchVpnTags(
 
 async function checkAndManageVpnStatusAlarms(
   vpnId: string,
-  tags: Tag,
+  tags: TagRecord,
 ): Promise<void> {
   log
     .info()
@@ -175,7 +175,7 @@ async function checkAndManageVpnStatusAlarms(
     .msg('Finished alarm management process');
 }
 
-export async function manageVpnAlarms(vpnId: string, tags: Tag): Promise<void> {
+export async function manageVpnAlarms(vpnId: string, tags: TagRecord): Promise<void> {
   await checkAndManageVpnStatusAlarms(vpnId, tags);
 }
 

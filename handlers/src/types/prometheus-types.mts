@@ -1,4 +1,4 @@
-import {Tag} from './index.mjs';
+import {TagV2} from './index.mjs';
 
 export interface PrometheusAlarmConfig {
   instanceId: string; // ID of the instance
@@ -67,12 +67,16 @@ export type DbEngine = 'ORACLE' | 'MYSQL' | 'POSTGRES';
  * Represents a mapping of Prometheus event sorting values for each engine (used as a namespace).
  * flexibility in specifying different engines across different services for strong typing.
  */
-export interface PromHostInfo {
-    hostID: string;
-    isDisabled: boolean;
-    tags: Tag[];
-    ampRule?: AMPRule;
-}
+export interface PromHostInfoMap
+  extends Map<
+    string,
+    {
+      hostID?: string;
+      isDisabled?: boolean;
+      tags?: TagV2[];
+      ampRule?: AMPRule;
+    }
+  > {}
 
 /**
  * Represents a mapping of mass Prometheus updates.
@@ -81,4 +85,4 @@ export interface PromHostInfo {
  * Map<E - engine, Map<string - arn,  {hostID: string; isDisabled: boolean; tags: Tag[], ampRule?: AMPRule}>>
  */
 export interface PromUpdateMap<E extends string = string>
-  extends Map<E, Map<string, PromHostInfo>> {}
+  extends Map<E, PromHostInfoMap> {}

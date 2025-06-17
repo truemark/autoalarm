@@ -5,7 +5,7 @@ import {
   DescribeTargetGroupsCommandOutput,
 } from '@aws-sdk/client-elastic-load-balancing-v2';
 import * as logging from '@nr1e/logging';
-import {AlarmClassification, Tag} from '../types/index.mjs';
+import {AlarmClassification, TagRecord} from '../types/index.mjs';
 import {
   CloudWatchClient,
   DeleteAlarmsCommand,
@@ -37,13 +37,13 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
 
 const metricConfigs = TARGET_GROUP_CONFIGS;
 
-export async function fetchTGTags(targetGroupArn: string): Promise<Tag> {
+export async function fetchTGTags(targetGroupArn: string): Promise<TagRecord> {
   try {
     const command = new DescribeTagsCommand({
       ResourceArns: [targetGroupArn],
     });
     const response = await elbClient.send(command);
-    const tags: Tag = {};
+    const tags: TagRecord = {};
 
     response.TagDescriptions?.forEach((tagDescription) => {
       tagDescription.Tags?.forEach((tag) => {
@@ -75,7 +75,7 @@ export async function fetchTGTags(targetGroupArn: string): Promise<Tag> {
 async function manageTGAlarms(
   targetGroupName: string,
   loadBalancerName: string | null,
-  tags: Tag,
+  tags: TagRecord,
 ) {
   log
     .info()

@@ -25,7 +25,8 @@ export {
 export {
   EC2AlarmManagerObject,
   EC2AlarmManagerArray,
-  Tag,
+  TagRecord,
+  TagV2,
   PathMetrics,
   LoadBalancerIdentifiers,
   AnomalyAlarmProps,
@@ -43,7 +44,7 @@ export {
   NamespaceConfig,
   DbEngine,
   NameSpaceDetails,
-  PromHostInfo,
+  PromHostInfoMap,
   PromUpdateMap
 
 } from './prometheus-types.mjs';

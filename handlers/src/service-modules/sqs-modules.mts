@@ -1,6 +1,6 @@
 import {SQSClient, ListQueueTagsCommand} from '@aws-sdk/client-sqs';
 import * as logging from '@nr1e/logging';
-import {AlarmClassification, Tag} from '../types/index.mjs';
+import {AlarmClassification, TagRecord} from '../types/index.mjs';
 import {
   CloudWatchClient,
   DeleteAlarmsCommand,
@@ -30,11 +30,11 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
 
 const metricConfigs = SQS_CONFIGS;
 
-export async function fetchSQSTags(queueUrl: string): Promise<Tag> {
+export async function fetchSQSTags(queueUrl: string): Promise<TagRecord> {
   try {
     const command = new ListQueueTagsCommand({QueueUrl: queueUrl});
     const response = await sqsClient.send(command);
-    const tags: Tag = response.Tags || {};
+    const tags: TagRecord = response.Tags || {};
 
     log
       .info()
@@ -55,7 +55,7 @@ export async function fetchSQSTags(queueUrl: string): Promise<Tag> {
   }
 }
 
-async function checkAndManageSQSStatusAlarms(queueName: string, tags: Tag) {
+async function checkAndManageSQSStatusAlarms(queueName: string, tags: TagRecord) {
   log
     .info()
     .str('function', 'checkAndManageSQSStatusAlarms')
@@ -166,7 +166,7 @@ async function checkAndManageSQSStatusAlarms(queueName: string, tags: Tag) {
 
 export async function manageSQSAlarms(
   queueName: string,
-  tags: Tag,
+  tags: TagRecord,
 ): Promise<void> {
   await checkAndManageSQSStatusAlarms(queueName, tags);
 }

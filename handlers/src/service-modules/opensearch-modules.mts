@@ -1,7 +1,7 @@
 import {OpenSearchClient, ListTagsCommand} from '@aws-sdk/client-opensearch';
 import * as logging from '@nr1e/logging';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
-import {AlarmClassification, Tag} from '../types/index.mjs';
+import {AlarmClassification, TagRecord} from '../types/index.mjs';
 import {
   getCWAlarmsForInstance,
   deleteExistingAlarms,
@@ -31,13 +31,13 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
 
 const metricConfigs = OPENSEARCH_CONFIGS;
 
-export async function fetchOpenSearchTags(domainArn: string): Promise<Tag> {
+export async function fetchOpenSearchTags(domainArn: string): Promise<TagRecord> {
   try {
     const command = new ListTagsCommand({
       ARN: domainArn,
     });
     const response = await openSearchClient.send(command);
-    const tags: Tag = {};
+    const tags: TagRecord = {};
 
     response.TagList?.forEach((tag) => {
       if (tag.Key && tag.Value) {
@@ -67,7 +67,7 @@ export async function fetchOpenSearchTags(domainArn: string): Promise<Tag> {
 async function checkAndManageOpenSearchStatusAlarms(
   domainName: string,
   accountID: string,
-  tags: Tag,
+  tags: TagRecord,
 ) {
   log
     .info()
@@ -188,7 +188,7 @@ async function checkAndManageOpenSearchStatusAlarms(
 export async function manageOpenSearchAlarms(
   domainName: string,
   accountID: string,
-  tags: Tag,
+  tags: TagRecord,
 ): Promise<void> {
   await checkAndManageOpenSearchStatusAlarms(domainName, accountID, tags);
 }

@@ -1,7 +1,7 @@
 import {RDSClient, DescribeDBInstancesCommand} from '@aws-sdk/client-rds';
 import * as logging from '@nr1e/logging';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
-import {AlarmClassification, Tag} from '../types/index.mjs';
+import {AlarmClassification, TagRecord} from '../types/index.mjs';
 import {
   getCWAlarmsForInstance,
   deleteExistingAlarms,
@@ -67,7 +67,7 @@ export async function fetchRDSTags(
 
 async function checkAndManageRDSStatusAlarms(
   dbInstanceId: string,
-  tags: Tag,
+  tags: TagRecord,
 ): Promise<void> {
   log
     .info()

@@ -1,6 +1,6 @@
 import {EC2Client, DescribeTagsCommand} from '@aws-sdk/client-ec2';
 import * as logging from '@nr1e/logging';
-import {AlarmClassification, Tag} from '../types/index.mjs';
+import {AlarmClassification, TagRecord} from '../types/index.mjs';
 import {
   CloudWatchClient,
   DeleteAlarmsCommand,
@@ -67,7 +67,7 @@ export async function fetchTransitGatewayTags(
 
 async function checkAndManageTransitGatewayStatusAlarms(
   transitGatewayId: string,
-  tags: Tag,
+  tags: TagRecord,
 ): Promise<void> {
   log
     .info()
@@ -177,7 +177,7 @@ async function checkAndManageTransitGatewayStatusAlarms(
 
 export async function manageTransitGatewayAlarms(
   transitGatewayId: string,
-  tags: Tag,
+  tags: TagRecord,
 ): Promise<void> {
   await checkAndManageTransitGatewayStatusAlarms(transitGatewayId, tags);
 }
