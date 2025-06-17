@@ -19,7 +19,7 @@ import {
   AMPRule,
   PromUpdateMap,
   PromHostInfoMap,
-  TagV2,
+  TagV2, MetricAlarmConfig
 } from '../types/index.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import * as logging from '@nr1e/logging';
@@ -298,20 +298,94 @@ export class SecManagerPrometheusModule {
     promUpdateMap: PromUpdateMap,
   ): Promise<AlarmUpdateResult> {
     // Loop through each key (engine) in the prometheus update map
-    for (const key of promUpdateMap.keys()) {
-      // grab configs for each namespace (key of promUpdateMap/engine)
-      const configs = this.fetchDefaultConfigs(key)!;
+    const allEngines = Array.from(promUpdateMap.keys());
+    const engineConfigs = new Map<string, any[]>();
 
-      // If configs are not found, log and return error
+    for (const engine of allEngines) {
+      const configs = this.fetchDefaultConfigs(engine);
       if (!configs) {
         return {
           isSuccess: false,
-          res: new Error(`Could not fetch configs `, {
-            cause: `No configs found for engine: ${key}`,
-          }),
+          res: new Error(`Could not fetch configs for engine: ${engine}`),
         };
       }
+      engineConfigs.set(engine, configs);
+    }
 
+    // process all engines/namespaces
+    for (const [engine, hostInfoMap] of promUpdateMap.entries()) {
+      const configs = engineConfigs.get(engine)!;
+
+      // Process all hosts for each engine present in promUpdateMap
+      for (const [arn, hostInfo] of hostInfoMap.entries()) {
+        this.processHostRules(engine, arn, hostInfo, configs);
+      }
+    }
+
+    return {
+      isSuccess: true,
+      res: 'Successfully built namespace details map',
+    };
+
+
+  }
+
+  private static applyTagOverrides(tags: TagV2[], configs: any[]): any[] {
+    return configs.map(config => {
+      const configCopy = { ...config };
+      const match = tags.find(tag => tag.Key?.includes(config.tagKey));
+
+      if (match) {
+        configCopy.defaults = parseMetricAlarmOptions(match.Value ?? '', config.defaults);
+      }
+
+      return configCopy;
+    });
+  }
+
+  private static processHostRules(
+    engine: string,
+    arn: string,
+    hostInfo: PromHostInfoMap,
+    configs: MetricAlarmConfig[]
+  ): void {
+    // Build Array Object to hold configs for tag overrides
+    const processedConfigs = this.applyTagOverrides(hostInfo.get(arn)?.tags!, configs);
+
+    // Generate Prometheus expressions and rules for each config
+    for (const config of processedConfigs) {
+      const severities = [
+        { threshold: config.defaults.warningThreshold, type: 'warning' },
+        { threshold: config.defaults.criticalThreshold, type: 'critical' }
+      ];
+
+      for (const { threshold, type } of severities) {
+        const configs = this.fetchDefaultConfigs(
+          engine,
+        );
+
+        const rule = buildAMPRule(
+          engine,
+          hostInfo.get(arn)?.hostID!,
+          config,
+          type,
+        );
+
+        // ✅ Use unique key per rule
+        const ruleKey = `${arn}-${config.tagKey}-${type}`;
+        nameSpaceDetailsMap.set(ruleKey, {
+          hostID: hostInfo.hostID,
+          isDisabled: hostInfo.isDisabled,
+          ampRule: rule.data?.ampRule,
+        });
+      }
+    }
+  }
+
+
+
+
+private static temp(){
       // Get each ARN and host info in the engine map
       const hostInfoMap = promUpdateMap.get(key)!;
       const arns = Array.from(hostInfoMap.keys());
@@ -490,9 +564,6 @@ export class SecManagerPrometheusModule {
     }
 
 
-    // clean up tagSecretsMap now that we moved the secrets to the prometheus updates map
-    tagSecretsMap.data ? delete tagSecretsMap.data : undefined;
-
     // Remove any secrets that are disabled from the prometheus updates map
     const autoAlarmDisabledSecrets: string[] = [];
 
@@ -510,7 +581,9 @@ export class SecManagerPrometheusModule {
 
     })
 
-    // Now that we have trimmed the disabled and destroyed secrets, we can build check against our namespace details.
+    // First, let's build the PromUpdatesMap with the alert rules for each engine/host
+    const nsExists = nameSpaceExists(
+
 
 
     if (autoAlarmDisabledSecrets.length) {
