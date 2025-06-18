@@ -77,6 +77,7 @@ export type DbEngine = 'ORACLE' | 'MYSQL' | 'POSTGRES';
  * Represents a mapping of Prometheus event sorting values for each engine (used as a namespace).
  * flexibility in specifying different engines across different services for strong typing.
  * Object properties are loose here to account for building the map over execution time.
+ * TODO: this should be used with Cloudwatch as well for all services
  */
 export interface PromHostInfoMap
   extends Map<
@@ -95,6 +96,18 @@ export interface PromHostInfoMap
  * @template E - The type of the service engine/s, default is string. This allows
  * flexibility in specifying different engines across different services.
  * Map<E - engine, Map<string - arn,  {hostID: string; isDisabled: boolean; tags: Tag[], ampRule?: AMPRule}>>
+ * TODO: This should be used with CloudWatch as well for all services
  */
 export interface PromUpdateMap<E extends string = string>
   extends Map<E, PromHostInfoMap> {}
+
+/**
+ * Interface for return value when comparing PromUpdateMap to NamespaceDetailsMap
+ */
+
+interface CompareResult {
+  addedRules: Array<{ namespace: string; rules: AMPRule[] }>;
+  removedRules: Array<{ namespace: string; rules: AMPRule[] }>;
+  updatedNamespaceDetailsMap: NamespaceDetailsMap;
+  dynamoRecordsUpdate: PromUpdateMap;
+}

@@ -47,8 +47,6 @@ export {
   NamespaceDetailsMap,
   PromHostInfoMap,
   PromUpdateMap,
-  RequiredPromHostInfo
-
 } from './prometheus-types.mjs';
 
 // Import and re-export from event-filtering-types.mjs

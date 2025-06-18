@@ -6,6 +6,7 @@ import {
   ListSecretsCommandOutput,
   SecretListEntry,
   SecretsManagerClient,
+  Tag,
 } from '@aws-sdk/client-secrets-manager';
 import {
   PROMETHEUS_MYSQL_CONFIGS,
@@ -13,13 +14,14 @@ import {
   PROMETHEUS_POSTGRES_CONFIGS,
 } from '../alarm-configs/index.mjs';
 import {
+  AlarmUpdateResult,
+  EventParseResult,
   MetricAlarmConfig,
   NamespaceDetailsMap,
   PromHostInfoMap,
   PromUpdateMap,
   RecordMatchPairsArray,
   ServiceEventMap,
-  TagV2,
 } from '../types/index.mjs';
 import {ModUtil} from '../../src/service-modules/utils/index.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
@@ -31,10 +33,10 @@ export class SecManagerPrometheusModule {
   private static oracleDBConfigs = PROMETHEUS_ORACLEDB_CONFIGS;
   private static mysqlConfigs = PROMETHEUS_MYSQL_CONFIGS;
   private static postgresConfigs = PROMETHEUS_POSTGRES_CONFIGS;
-  private static util = new ModUtil(
+  private static log = new ModUtil(
     logging.getLogger('SecManagerPrometheusModule'),
-  );
-  private static log = this.util.log;
+  ).log;
+
   private static client = new SecretsManagerClient({
     region: process.env.AWS_REGION,
     retryStrategy: new ConfiguredRetryStrategy(
@@ -183,20 +185,20 @@ export class SecManagerPrometheusModule {
       // return success if
 
       promUpdateMap.size
-        ? this.util.log(
-          'info',
-          'mapSecretValues',
-          'Mapped secret values from Secrets Manager',
-          {mappedSecrets: promUpdateMap.size},
-        )
-        : this.util.log(
-          'error',
-          'mapSecretValues',
-          "'No secrets found with autoalarm tags'",
-          {cause: allSecrets},
-        );
+        ? this.log(
+            'info',
+            'mapSecretValues',
+            'Mapped secret values from Secrets Manager',
+            {mappedSecrets: promUpdateMap.size},
+          )
+        : this.log(
+            'error',
+            'mapSecretValues',
+            'No secrets found with autoalarm tags',
+            {secretsRetrieved: allSecrets},
+          );
     } catch (err) {
-      this.util.log(
+      this.log(
         'error',
         'mapSecretValues',
         'Failed to map secret values from Secrets Manager',
@@ -210,25 +212,40 @@ export class SecManagerPrometheusModule {
    * Fetch all ARNs and corresponding autoalarm tags.r
    * @private
    */
-  private static async fetchSecretTags(promHostInfoMap: PromHostInfoMap) {
+  private static async fetchSecretTags(
+    promHostInfoMap: PromHostInfoMap,
+    tagKeys: string[],
+  ) {
     const allSecrets: SecretListEntry[] = [];
     let nextToken: string | undefined = undefined;
 
     // Loop through secrets to get all secrets and tags
     try {
+      const input: ListSecretsCommandInput = {
+        MaxResults: 100,
+        NextToken: nextToken,
+        Filters: [
+          // FiltersListType
+          {
+            // Filter
+            Key: 'tag-key',
+            Values: [
+              // FilterValuesStringList
+              ...tagKeys,
+            ],
+          },
+        ],
+      };
       do {
         const response: ListSecretsCommandOutput = await this.client.send(
-          new ListSecretsCommand({
-            MaxResults: 100,
-            NextToken: nextToken,
-          }),
+          new ListSecretsCommand(input),
         );
 
         allSecrets.push(...(response.SecretList ?? []));
         nextToken = response.NextToken;
       } while (nextToken);
     } catch (err) {
-      this.util.log(
+      this.log(
         'error',
         'fetchAutoAlarmSecrets',
         'Failed to fetch secrets from Secrets Manager',
@@ -251,7 +268,7 @@ export class SecManagerPrometheusModule {
         nextToken = response.NextToken;
       } while (nextToken);
     } catch (err) {
-      this.util.log(
+      this.log(
         'error',
         'fetchSecretTags',
         'Failed to fetch secrets from Secrets Manager',
@@ -260,15 +277,9 @@ export class SecManagerPrometheusModule {
       throw err;
     }
 
-    // Massage secrets into a shape we can use to inject into promUpdatesMap and filter out non-autolarm secrets
+    //reduce tags to only autoalarm tags and retype to TagV2[] since we know they exist.
     allSecrets.forEach((secret) => {
-      // reduce secrets to only autoalarm tagged secrets
-      const autoAlarmTags = secret.Tags?.reduce<TagV2[]>((acc, tag) => {
-        if (tag.Key?.includes('autoalarm:')) {
-          acc.push(tag as TagV2);
-        }
-        return acc;
-      }, []);
+      const autoAlarmTags = ModUtil.parseTags(secret.Tags!);
 
       // If there are any autoalarm tags, add the secret to the promHostInfoMap
       autoAlarmTags?.length
@@ -277,7 +288,7 @@ export class SecManagerPrometheusModule {
     });
 
     // Return isSuccess and the secretsWithTags if there are autoalarm secrets
-    this.util.log(
+    this.log(
       'info',
       'fetchSecretTags',
       'Fetched secrets from Secrets Manager',
@@ -289,7 +300,7 @@ export class SecManagerPrometheusModule {
    * Helper function to fetch default values for Prometheus configs based on engine type
    * @private
    */
-    // Helper function to fetch default values for Prometheus configs based on engine type
+  // Helper function to fetch default values for Prometheus configs based on engine type
   private static fetchDefaultConfigs = (engine: string) => {
     //fetch prometheus alarm configs for oracle, mysql, or postgres using engine type
     return engine === 'mysql'
@@ -311,7 +322,7 @@ export class SecManagerPrometheusModule {
       const configs = this.fetchDefaultConfigs(engine);
 
       if (!configs) {
-        this.util.log('error', 'buildNamespaceDetailsMap', 'No configs found');
+        this.log('error', 'buildNamespaceDetailsMap', 'No configs found');
         throw new Error(`Could not fetch configs for engine: ${engine}`);
       }
 
@@ -323,7 +334,7 @@ export class SecManagerPrometheusModule {
         });
       });
     }
-    this.util.log(
+    this.log(
       'info',
       'buildNamespaceDetailsMap',
       'Successfully built namespace details map',
@@ -353,7 +364,7 @@ export class SecManagerPrometheusModule {
         ampRules: ampRules,
       });
     }
-    this.util.log(
+    this.log(
       'info',
       'addAmpRulesToMap',
       'Successfully processed host rules/tag overrides if present',
@@ -395,16 +406,16 @@ export class SecManagerPrometheusModule {
     const expressions: string[] | undefined = config.defaults
       .prometheusExpression
       ? ((() => {
-        return [
-          config.defaults.warningThreshold,
-          config.defaults.criticalThreshold,
-        ].map((severity) =>
-          config.defaults.prometheusExpression
-            ?.replace('/_STATISTIC/', `${config.defaults.statistic}`)
-            .replace('/_THRESHOLD/', `${severity}`)
-            .replace('/_HOST/', `${hostID}`),
-        );
-      })() as string[])
+          return [
+            config.defaults.warningThreshold,
+            config.defaults.criticalThreshold,
+          ].map((severity) =>
+            config.defaults.prometheusExpression
+              ?.replace('/_STATISTIC/', `${config.defaults.statistic}`)
+              .replace('/_THRESHOLD/', `${severity}`)
+              .replace('/_HOST/', `${hostID}`),
+          );
+        })() as string[])
       : undefined;
 
     // if we don't have any expressions, return false
@@ -432,21 +443,119 @@ export class SecManagerPrometheusModule {
   }
 
   /**
-   * Compare configs/AMP Rules in PromUpdateMap against NamespaceDetailsMap
-   * Update NamespaceDetailsMap with new/updated rules, groups, and namespaces
-   * @returns {{isUpdated: boolean; dynamoUpdates: PromUpdateMap}}
-   * - Object indicating if updates were made and the updated NamespaceDetailsMap
-   * // TODO: if we add or remove rules,
+   * Compares NameSpaceDetailsMap against PromUpdateMap to find added/removed rules
+   * @param namespaceDetailsMap - Current namespace configurations
+   * @param promUpdateMap - Updated prometheus configurations from hosts
+   * @param ruleGroupName - Optional: Name for the rule group (defaults to 'default')
+   * @returns Object containing added rules, removed rules, and updated namespace map
    */
+  private static compareNamespaceRules(
+    namespaceDetailsMap: NamespaceDetailsMap,
+    promUpdateMap: PromUpdateMap,
+    ruleGroupName: string = 'default',
+  ): CompareResult {
+    const result: CompareResult = {
+      addedRules: [],
+      removedRules: [],
+      updatedNamespaceDetailsMap: new Map(namespaceDetailsMap), // Clone the map
+    };
+
+    // Process each engine/namespace
+    for (const [engine, hostInfoMap] of promUpdateMap) {
+      // Collect all unique rules from all hosts for this engine
+      const engineRules = collectEngineRules(hostInfoMap);
+
+      // Get existing namespace config or create new one
+      const existingConfig = namespaceDetailsMap.get(engine) || {groups: []};
+      const existingRules = extractRulesFromGroups(existingConfig.groups);
+
+      // Compare rules
+      const {added, removed} = compareRuleSets(existingRules, engineRules);
+
+      // Add to results if there are changes
+      if (added.length > 0) {
+        result.addedRules.push({
+          namespace: engine,
+          rules: added,
+        });
+      }
+
+      if (removed.length > 0) {
+        result.removedRules.push({
+          namespace: engine,
+          rules: removed,
+        });
+      }
+
+      // Update the namespace details map with new rules
+      if (engineRules.length > 0 || existingConfig.groups.length > 0) {
+        result.updatedNamespaceDetailsMap.set(engine, {
+          groups: [
+            {
+              name: ruleGroupName,
+              rules: engineRules,
+            },
+          ],
+        });
+      } else {
+        // Remove namespace if no rules exist
+        result.updatedNamespaceDetailsMap.delete(engine);
+      }
+    }
+
+    // Check for removed namespaces (in namespaceDetailsMap but not in promUpdateMap)
+    for (const [namespace, config] of namespaceDetailsMap) {
+      if (!promUpdateMap.has(namespace)) {
+        const existingRules = extractRulesFromGroups(config.groups);
+        if (existingRules.length > 0) {
+          result.removedRules.push({
+            namespace,
+            rules: existingRules,
+          });
+          result.updatedNamespaceDetailsMap.delete(namespace);
+        }
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Checks an event par against any existing Prometheus updates
+   *
+   */
+  private static checkEventAgainstPromUpdates(
+    eventParseResult: EventParseResult,
+    promUpdatesMap: PromUpdateMap,
+  ): {shouldSkip: boolean} {
+    // Check if the eventParseResult is already in the PromUpdatesMap
+    for (const [engine] of promUpdatesMap.keys()) {
+      if (!promUpdatesMap.get(engine)!.get(eventParseResult.id)) {
+
+      }
+    }
+
+
+    // If the eventParseResult is already in the PromUpdatesMap, check tag values against the existing entries
+  }
 
   /**
    * Public static method which is called in main-handler to manage DB prometheus alarms
    * @see {@link EventParseResult} for more details on the structure of this object.
    * @param eventPairs - contains an array of SQS records and their parsed event results.
    */
+  //TODO: return object {isSuccess: boolean, dynamoUpdates: PromUpdateMap} to send to main handler for updating DynamoDB
+  // so we don't have collisions with other service modules or in this one.
+  // we should also grab all the dynamo entries in the main handler and pass them to this function to avoid multiple fetches.
   public static async managePromDbAlarms(
     eventPairs: RecordMatchPairsArray,
-  ): Promise<boolean> {
+    dynamoTable,
+  ): Promise<
+    AlarmUpdateResult<{
+      isSuccess: boolean;
+      dynamoUpdates?: PromUpdateMap;
+    }>
+  > {
     // Define prometheus workspace ID and prometheus updates map
     const prometheusWorkspaceId = process.env.PROMETHEUS_WORKSPACE_ID;
 
@@ -462,7 +571,10 @@ export class SecManagerPrometheusModule {
         'managePromDbAlarms',
         'Prometheus workspace ID is not set in environment variables.',
       );
-      return false;
+      return {
+        isSuccess: false,
+        res: 'Prometheus workspace ID is not set.',
+      };
     }
 
     /**
@@ -473,17 +585,55 @@ export class SecManagerPrometheusModule {
     for (const pair of eventPairs) {
       const {eventParseResult} = pair;
 
+      // Skip any created events as they have no tags so we can't check the PromUpdatesMap
+      if (eventParseResult.isCreated) {
+        this.log('trace', 'managePromDbAlarms', 'Skipping created event', {
+          eventParseResult,
+        });
+        continue;
+      }
+
+      // Check if current index is not the first. If so, check against updates already made
+      eventPairs.indexOf(pair) < 1 && !pair.eventParseResult.isDestroyed
+        ? (() => {
+            // Check if the eventParseResult is already in the promUpdatesMap
+            const existingUpdate = this.checkEventAgainstPromUpdates(
+              eventParseResult,
+              promUpdatesMap,
+            );
+          })()
+        : void 0;
+
       // Check for Destroyed events first and grab alarm info from DynamoDB if so.
-      const destroyed = eventParseResult.isDestroyed ? this.dynamoDBFetch(eventParseResult.id) : void 0;
+      const destroyed = eventParseResult.isDestroyed
+        ? this.dynamoDBFetch(eventParseResult.id)
+        : void 0;
 
       // If destroyed update the promUpdatesMap with the destroyed info from DynamoDB
-      if (destroyed) {
-        promUpdatesMap.set(destroyedInfo.engine!, new Map());
-        promUpdatesMap.get(destroyedInfo.engine!)!.set(destroyedInfo.arn!, {
-          host: destroyedInfo.host,
+      if (destroyed && destroyed.alarmsFound) {
+        // Check to see if our map has been set. If not, set it.
+        promUpdatesMap.get(destroyed.engine!)
+          ? promUpdatesMap.set(destroyed.engine!, new Map())
+          : void 0;
+
+        // Add the destroyed info to the promUpdatesMap
+        promUpdatesMap.get(destroyed.engine!)!.set(destroyed.arn!, {
+          host: destroyed.host,
           isDisabled: true, // Assume not disabled for destroyed events
         });
       }
+
+      /**
+       * get all configs and parse out the tag keys
+       * @returns Array<string> of tag keys for the configs, e.g. ['autoalarm:enabled', 'autoalarm:cpu', 'autoalarm:4xx']
+       */
+      const tagKeys = [
+        ...ModUtil.getTagKeysForConfig([
+          this.oracleDBConfigs,
+          this.mysqlConfigs,
+          this.postgresConfigs,
+        ]),
+      ];
 
       // TODO: check if we are not at the first index of the eventPairs array.
       // If we are not, we should check tags the PromUpdatesMap to see if our tag values match any existing entries.
@@ -496,7 +646,7 @@ export class SecManagerPrometheusModule {
       /**
        * 1. fetch a list of secrets with autolarm tags and then attempt to map secret values for host and engine
        */
-      await this.fetchSecretTags(promHostInfoMap);
+      await this.fetchSecretTags(promHostInfoMap, tagKeys);
       await this.mapSecretValues(promHostInfoMap, promUpdatesMap);
 
       // clean up promHostInfoMap now that we moved the secrets to the prometheus updates map

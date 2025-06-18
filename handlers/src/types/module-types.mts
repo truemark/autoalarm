@@ -63,3 +63,14 @@ export interface AlarmUpdateOptions<T extends boolean> {
     tags: T extends true ? TagsObject : undefined;
   };
 }
+
+/**
+ * Interface for the result of a service module operation.Add commentMore actions
+ * {template Data} - Generic type for various results on a function by function basis.
+ */
+
+export interface AlarmUpdateResult<Data = undefined> {
+  isSuccess: boolean;
+  res: Error | string;
+  data?: Data;
+}
