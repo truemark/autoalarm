@@ -1,5 +1,8 @@
-import {TagV2} from './index.mjs';
+import {MetricAlarmConfig, TagV2} from './index.mjs';
 
+/**
+ * This is old logic that is used for prometheus alarm config storage in Ec2 Modules.
+ */
 export interface PrometheusAlarmConfig {
   instanceId: string; // ID of the instance
   type: string; // The type or classification of the alarm
@@ -27,12 +30,12 @@ export interface AMPRule {
   timeSeries?: string;
   labels?: {
     severity: string;
-    [key: string]: string;
+    [key: string]: string; // Use as needed
   };
   annotations?: {
     summary: string;
     description: string;
-    [key: string]: string;
+    [key: string]: string; // Use as needed
   };
 }
 
@@ -59,6 +62,12 @@ export interface NamespaceConfig<N = string> {
 }
 
 /**
+ * Represents a mapping of namespace details for Prometheus configurations.
+ * Provides fast lookup without more tedious object traversal.
+ */
+export interface NamespaceDetailsMap extends Map<string, NamespaceConfig> {}
+
+/**
  * Represents the database engine type for Prometheus logic
  */
 export type DbEngine = 'ORACLE' | 'MYSQL' | 'POSTGRES';
@@ -66,6 +75,7 @@ export type DbEngine = 'ORACLE' | 'MYSQL' | 'POSTGRES';
 /**
  * Represents a mapping of Prometheus event sorting values for each engine (used as a namespace).
  * flexibility in specifying different engines across different services for strong typing.
+ * Object properties are loose here to account for building the map over execution time.
  */
 export interface PromHostInfoMap
   extends Map<
@@ -74,9 +84,20 @@ export interface PromHostInfoMap
       hostID?: string;
       isDisabled?: boolean;
       tags?: TagV2[];
-      ampRule?: AMPRule;
+      configs?: MetricAlarmConfig[];
+      ampRules?: AMPRule[];
     }
   > {}
+
+/**
+ * This utility type makes all properties of PromHostInfoMap required if M is provided. Once we arrive at
+ * more mature stages of prometheus logic we can enforce all properties as required.
+ * @template M - The type to be made required, defaults to undefined - intended to be PromHostInfoMap.
+ * M is not required but if type is used, all properties are required EXCEPT configs and ampRule.
+ */
+export type RequiredPromHostInfo<M = undefined> = M extends undefined
+  ? Required<Omit<PromHostInfoMap, 'configs' | 'ampRule'>>
+  : Required<PromHostInfoMap>;
 
 /**
  * Represents a mapping of mass Prometheus updates.

@@ -16,15 +16,16 @@ import {
   AlarmUpdateResult,
   ServiceEventMap,
   RecordMatchPairsArray,
-  AMPRule,
+  NamespaceDetailsMap,
   PromUpdateMap,
   PromHostInfoMap,
-  TagV2, MetricAlarmConfig
+  TagV2, MetricAlarmConfig, NameSpaceDetails, RequiredPromHostInfo
 } from '../types/index.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import * as logging from '@nr1e/logging';
 import {parseMetricAlarmOptions} from '../alarm-configs/utils/index.mjs';
 import {buildAMPRule} from '../alarm-configs/utils/prometheus-tools-v2.mjs';
+import {string} from 'valibot';
 
 export class SecManagerPrometheusModule {
   private static oracleDBConfigs = PROMETHEUS_ORACLEDB_CONFIGS;
@@ -297,37 +298,66 @@ export class SecManagerPrometheusModule {
   private static async buildNamespaceDetailsMap(
     promUpdateMap: PromUpdateMap,
   ): Promise<AlarmUpdateResult> {
-    // Loop through each key (engine) in the prometheus update map
-    const allEngines = Array.from(promUpdateMap.keys());
-    const engineConfigs = new Map<string, any[]>();
 
-    for (const engine of allEngines) {
+    for (const [engine, hostInfoMap] of promUpdateMap.entries()) {
+
       const configs = this.fetchDefaultConfigs(engine);
+
       if (!configs) {
         return {
           isSuccess: false,
           res: new Error(`Could not fetch configs for engine: ${engine}`),
         };
       }
-      engineConfigs.set(engine, configs);
-    }
 
-    // process all engines/namespaces
-    for (const [engine, hostInfoMap] of promUpdateMap.entries()) {
-      const configs = engineConfigs.get(engine)!;
+      // add default configs to each host in each namespace(engine)
+        hostInfoMap.forEach((info, arn) => {
+            hostInfoMap.set(arn, {
+            ...info,
+            configs: configs,
+            });
+        });
 
-      // Process all hosts for each engine present in promUpdateMap
-      for (const [arn, hostInfo] of hostInfoMap.entries()) {
-        this.processHostRules(engine, arn, hostInfo, configs);
-      }
+      // Get AMP Rules for each host in each namespace(engine)
+      const result = this.processHostRules(engine, hostInfoMap);
+
+
+
     }
 
     return {
       isSuccess: true,
       res: 'Successfully built namespace details map',
     };
+  }
+
+  private static processHostRules(
+    engine: string,
+    hostInfo: PromHostInfoMap,
+  ): void {
+    // Build Array Object to hold configs for tag overrides
+    const arn: string = hostInfo.keys().next().value!;
+    const configs = hostInfo.get(arn)?.configs;
+    const processedConfigs = this.applyTagOverrides(hostInfo.get(arn)?.tags!, configs);
+
+    // Generate Prometheus expressions and rules for each config
+    for (const config of processedConfigs) {
+
+        const result = buildAMPRule(
+          engine,
+          hostInfo.get(arn)!.hostID as string, //we know this is safe as we filtered out any missing values earlier
+          config,
+          config.defaults.prometheusExpression,
+        );
+        const ampRules = result.data?.ampRules
 
 
+        // Add the rule to the hostInfoMap
+      hostInfo.set(arn, {
+        ...hostInfo.get(arn),
+      ampRules: ampRules
+      });
+    }
   }
 
   private static applyTagOverrides(tags: TagV2[], configs: any[]): any[] {
@@ -341,106 +371,6 @@ export class SecManagerPrometheusModule {
 
       return configCopy;
     });
-  }
-
-  private static processHostRules(
-    engine: string,
-    arn: string,
-    hostInfo: PromHostInfoMap,
-    configs: MetricAlarmConfig[]
-  ): void {
-    // Build Array Object to hold configs for tag overrides
-    const processedConfigs = this.applyTagOverrides(hostInfo.get(arn)?.tags!, configs);
-
-    // Generate Prometheus expressions and rules for each config
-    for (const config of processedConfigs) {
-      const severities = [
-        { threshold: config.defaults.warningThreshold, type: 'warning' },
-        { threshold: config.defaults.criticalThreshold, type: 'critical' }
-      ];
-
-      for (const { threshold, type } of severities) {
-        const configs = this.fetchDefaultConfigs(
-          engine,
-        );
-
-        const rule = buildAMPRule(
-          engine,
-          hostInfo.get(arn)?.hostID!,
-          config,
-          type,
-        );
-
-        // ✅ Use unique key per rule
-        const ruleKey = `${arn}-${config.tagKey}-${type}`;
-        nameSpaceDetailsMap.set(ruleKey, {
-          hostID: hostInfo.hostID,
-          isDisabled: hostInfo.isDisabled,
-          ampRule: rule.data?.ampRule,
-        });
-      }
-    }
-  }
-
-
-
-
-private static temp(){
-      // Get each ARN and host info in the engine map
-      const hostInfoMap = promUpdateMap.get(key)!;
-      const arns = Array.from(hostInfoMap.keys());
-
-      arns.map((arn) => {
-        // Reassign configs defaults if corresponding tag key is found
-        configs.forEach((config) => {
-          const tags = hostInfoMap.get(arn)?.tags || [];
-
-          const match = tags.find((tag) => tag.Key.includes(config.tagKey));
-          config.defaults = parseMetricAlarmOptions(
-            match?.value ?? '',
-            config.defaults,
-          );
-        });
-
-        // build the prometheus query for each config
-        configs.forEach((config) => {
-          for (const severity of [
-            config.defaults.warningThreshold,
-            config.defaults.criticalThreshold,
-          ]) {
-            config.defaults
-              .prometheusExpression!.replace(
-                '/_STATISTIC/',
-                `${config.defaults.statistic}`,
-              )
-              .replace('/_THRESHOLD/', `${severity}`)
-              .replace('/_HOST/', `${promUpdateMap.get(key)?.hostID}`);
-
-            // build and add rule to the namespace details map
-            const rule = buildAMPRule(
-              promUpdateMap.get(key)!.engine!,
-              promUpdateMap.get(key)!.hostID!,
-              config,
-              config.defaults.prometheusExpression!,
-              severity === config.defaults.warningThreshold
-                ? 'warning'
-                : 'critical',
-            );
-
-            nameSpaceDetailsMap.set(promUpdateMap.get(key)!.engine!, {
-              hostID: promUpdateMap.get(key)!.hostID,
-              isDisabled: promUpdateMap.get(key)!.isDisabled,
-              ampRule: rule.data!.ampRule,
-            });
-          }
-        });
-      });
-    }
-
-    return {
-      isSuccess: true,
-      res: 'Successfully built namespace details map',
-    };
   }
 
   /**
@@ -457,6 +387,7 @@ private static temp(){
     // Instantiate default namespaceUpdateMap to build rules file for each engine
     const promHostInfoMap: PromHostInfoMap = new Map();
     const promUpdatesMap: PromUpdateMap = new Map();
+    const namespaceDetailsMap: NamespaceDetailsMap = new Map();
 
     // Validate that the prometheus workspace ID is set
     if (!prometheusWorkspaceId) {
@@ -501,16 +432,6 @@ private static temp(){
         return false;
       }
     }
-
-    /**
-     * All following events are UntagResource and TagResource type events.
-     *   1. Get the secret ARN from the eventParseResult and fetch tags for every secret that is staged with autoalarm tags.
-     *   2. Get host and engine secret from every autoalarm tagged secret. Log warning if host or engine is not found with for later debug.
-     *   3. Get configs and build nameSpaceUpdate object (NameSpaceDetails Interface) @see {@link NameSpaceDetails}.
-     *   4. Compare each rule group in the nameSpaceUpdate map with the existing presentNameSpaceRules map.
-     *   5. If any divergence is found any rule group, update the prometheus rules for the entire rule group.
-     *   6. replace  with latest updates for following event lookup.
-     */
 
     // fetch a list of secrets with autolarm tags and then attempt to map secret values for host and engine
     const autoAlarmSecrets = await this.fetchAutoAlarmSecrets(promHostInfoMap);
@@ -582,7 +503,7 @@ private static temp(){
     })
 
     // First, let's build the PromUpdatesMap with the alert rules for each engine/host
-    const nsExists = nameSpaceExists(
+
 
 
 

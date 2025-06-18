@@ -44,8 +44,10 @@ export {
   NamespaceConfig,
   DbEngine,
   NameSpaceDetails,
+  NamespaceDetailsMap,
   PromHostInfoMap,
-  PromUpdateMap
+  PromUpdateMap,
+  RequiredPromHostInfo
 
 } from './prometheus-types.mjs';
 

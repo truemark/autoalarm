@@ -29,6 +29,7 @@ import {
   NameSpaceDetails,
   RuleGroup
 } from '../../types/index.mjs';
+import {Alarm} from 'aws-cdk-lib/aws-cloudwatch';
 
 const log: logging.Logger = logging.getLogger('ec2-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -161,16 +162,18 @@ export function buildAMPRule(
   hostID: string,
   config: MetricAlarmConfig,
   expr: string,
-  severity: 'warning' | 'critical',
-): AlarmUpdateResult<{ampRule: AMPRule}> {
+): AlarmUpdateResult<{ampRules: AMPRule[]}> {
+  const ampRules = [];
 
-  const alertName = buildAlarmName(
-    config,
-    engine,
-    hostID,
-    severity === 'warning' ? AlarmClassification.Warning : AlarmClassification.Critical,
-    'static',
-  );
+  for (const severity of [AlarmClassification.Critical, AlarmClassification.Warning]){
+    const alertName = buildAlarmName(
+      config,
+      engine,
+      hostID,
+      severity,
+      'static',
+    );
+
 
   const rule: AMPRule = {
     alertName: alertName,
@@ -183,12 +186,15 @@ export function buildAMPRule(
       summary: `AutoAlarm for ${hostID}. Managed with tag: autoalarm:${config.tagKey}`,
       description: `${severity} monitor for ${hostID}. Monitoring ${config.metricName} for ${config.defaults.period} minutes. Periods`,
     },
-  };
+  }
+
+  ampRules.push(rule);
+  }
 
   return {
     isSuccess: true,
     res: 'Successfully built AMPRule',
-    data: {ampRule: rule},
+    data: {ampRules: ampRules},
   };
 }
 
