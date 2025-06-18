@@ -162,7 +162,7 @@ export function buildAMPRule(
   hostID: string,
   config: MetricAlarmConfig,
   expr: string,
-): AlarmUpdateResult<{ampRules: AMPRule[]}> {
+): AMPRule[] {
   const ampRules = [];
 
   for (const severity of [AlarmClassification.Critical, AlarmClassification.Warning]){
@@ -191,11 +191,13 @@ export function buildAMPRule(
   ampRules.push(rule);
   }
 
-  return {
-    isSuccess: true,
-    res: 'Successfully built AMPRule',
-    data: {ampRules: ampRules},
-  };
+  log
+    .info()
+    .str('function', 'buildAMPRule')
+    .str('hostID', hostID)
+    .msg(`Built ${ampRules.length} AMPRules for hostID: ${hostID}`);
+
+  return ampRules
 }
 
 /**

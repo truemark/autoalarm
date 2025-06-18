@@ -2,8 +2,6 @@ import {Tag as awsTag} from '@aws-sdk/client-cloudwatch';
 
 // Type definitions for autoalarm service modules
 
-import {SQSRecord} from 'aws-lambda';
-
 export interface EC2AlarmManagerObject {
   instanceID: string;
   tags: TagRecord;
@@ -31,16 +29,6 @@ export interface AnomalyAlarmProps {
   evaluationPeriods: number;
   period: number;
   extendedStatistic: string;
-}
-
-/**
- * Interface for the result of a service module operation.
- * {template Data} - Generic type for various results on a function by function basis.
- */
-export interface AlarmUpdateResult<Data = undefined> {
-  isSuccess: boolean;
-  res: Error | string;
-  data?: Data;
 }
 
 /**

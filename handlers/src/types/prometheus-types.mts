@@ -63,6 +63,7 @@ export interface NamespaceConfig<N = string> {
 
 /**
  * Represents a mapping of namespace details for Prometheus configurations.
+ * key: namespace name or the engine name (e.g., 'ORACLE', 'MYSQL', 'POSTGRES')
  * Provides fast lookup without more tedious object traversal.
  */
 export interface NamespaceDetailsMap extends Map<string, NamespaceConfig> {}
@@ -81,23 +82,13 @@ export interface PromHostInfoMap
   extends Map<
     string,
     {
-      hostID?: string;
+      host?: string;
       isDisabled?: boolean;
       tags?: TagV2[];
       configs?: MetricAlarmConfig[];
       ampRules?: AMPRule[];
     }
   > {}
-
-/**
- * This utility type makes all properties of PromHostInfoMap required if M is provided. Once we arrive at
- * more mature stages of prometheus logic we can enforce all properties as required.
- * @template M - The type to be made required, defaults to undefined - intended to be PromHostInfoMap.
- * M is not required but if type is used, all properties are required EXCEPT configs and ampRule.
- */
-export type RequiredPromHostInfo<M = undefined> = M extends undefined
-  ? Required<Omit<PromHostInfoMap, 'configs' | 'ampRule'>>
-  : Required<PromHostInfoMap>;
 
 /**
  * Represents a mapping of mass Prometheus updates.
