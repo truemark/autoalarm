@@ -196,7 +196,7 @@ export const RDS_CONFIGS: MetricAlarmConfig[] = [
     tagKey: 'swap-usage',
     metricName: 'SwapUsage',
     metricNamespace: 'AWS/RDS',
-    defaultCreate: true,
+    defaultCreate: false,
     anomaly: false,
     defaults: {
       warningThreshold: 100000000,
