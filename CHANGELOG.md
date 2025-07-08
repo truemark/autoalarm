@@ -1,5 +1,11 @@
 # AutoAlarm Changelog
 
+## v1.14.1
+#### Fixed:
+- Fixed a bug in the default configs for EC2 storage alarms where the comparison operator and thresholds are inverse of 
+What they should be for linux hosts when creating alarms for windows hosts. 
+
+
 ## v1.13.2
 ### Fixed: 
 - Fixed logic that would process SQS create events for alarms that were not tagged at creation for autoalarm. During 
