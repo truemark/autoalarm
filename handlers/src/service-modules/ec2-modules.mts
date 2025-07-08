@@ -405,9 +405,9 @@ async function handleAlarmCreation(
        */
       if (isWindows) {
         config.metricName = 'LogicalDisk % Free Space';
-        config.defaults.warningThreshold = 15;
-        config.defaults.criticalThreshold = 10;
-        config.defaults.comparisonOperator =
+        updatedDefaults.warningThreshold = 15;
+        updatedDefaults.criticalThreshold = 10;
+        updatedDefaults.comparisonOperator =
           ComparisonOperator.LessThanThreshold;
       }
 
