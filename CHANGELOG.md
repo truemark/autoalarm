@@ -1,6 +1,6 @@
 # AutoAlarm Changelog
 
-## v1.14.1
+## v1.13.3
 #### Fixed:
 - Fixed a bug in the default configs for EC2 storage alarms where the comparison operator and thresholds are inverse of 
 What they should be for linux hosts when creating alarms for windows hosts. 
