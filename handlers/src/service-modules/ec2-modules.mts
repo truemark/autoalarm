@@ -3,6 +3,7 @@ import {
   DescribeTagsCommand,
   EC2Client,
 } from '@aws-sdk/client-ec2';
+import {ComparisonOperator} from '@aws-sdk/client-cloudwatch';
 import {
   CloudWatchClient,
   DeleteAlarmsCommand,
@@ -350,6 +351,9 @@ async function handleAlarmCreation(
     alarmType === 'anomaly' ? handleAnomalyAlarms : handleStaticAlarms;
 
   switch (true) {
+    /**
+     * memory case handles both windows and linux instances.
+     */
     case config.tagKey.includes('memory'): {
       // Set the correct metric name before making the CloudWatch call
       config.metricName = isWindows
@@ -389,11 +393,23 @@ async function handleAlarmCreation(
       }
       break;
     }
+
+    /**
+     * storage case handles both windows and linux instances.
+     */
     case config.tagKey.includes('storage'): {
-      // Set the correct metric name before making the CloudWatch call
-      config.metricName = isWindows
-        ? 'LogicalDisk % Free Space'
-        : 'disk_used_percent';
+      /**
+       * Set the correct metric name before making the CloudWatch call
+       * Set thresholds based on the OS type
+       * set correct comparison operator based on the OS type
+       */
+      if (isWindows) {
+        config.metricName = 'LogicalDisk % Free Space';
+        config.defaults.warningThreshold = 15;
+        config.defaults.criticalThreshold = 10;
+        config.defaults.comparisonOperator =
+          ComparisonOperator.LessThanThreshold;
+      }
 
       const storagePaths = await getStoragePathsFromCloudWatch(
         instanceId,
