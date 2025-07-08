@@ -323,7 +323,7 @@ All Anomaly alarm tags contain 'anomaly' in tag name.
 
 #### Statistic:
 
-**Note**: AWS has limitations on the acceptible characters for the statistic value. you cannot use spaces, '%', or '(/)'.
+**Note**: AWS has limitations on the acceptable characters for the statistic value. you cannot use spaces, '%', or '(/)'.
 All stats must be the statistic followed by a number or two numbers separated by a colon. For example, `p95` or `TM2:98`.
 
 You can use the following statistics for alarms - https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Statistics-definitions.html.
