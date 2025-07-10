@@ -1,17 +1,17 @@
 import {
   CloudWatchClient,
+  ComparisonOperator,
   DeleteAlarmsCommand,
   DescribeAlarmsCommand,
   DescribeAlarmsCommandOutput,
   MetricAlarm,
-  MetricDataQuery,
   PutAnomalyDetectorCommand,
   PutAnomalyDetectorCommandInput,
   PutMetricAlarmCommand,
   PutMetricAlarmCommandInput,
   Statistic,
 } from '@aws-sdk/client-cloudwatch';
-import {ComparisonOperator} from 'aws-cdk-lib/aws-cloudwatch';
+
 import {
   MetricAlarmConfig,
   MetricAlarmOptions,
@@ -212,6 +212,66 @@ function validatePeriod(period: number) {
   }
 }
 
+function validateAnomalyCompOperator(
+  operator: ComparisonOperator,
+): ComparisonOperator {
+  if (operator.toLowerCase().includes('greater')) {
+    const replacedOperator = ComparisonOperator.GreaterThanUpperThreshold;
+
+    log
+      .warn()
+      .str('function', 'validateAnomalyCompOperator')
+      .str('Comparison Operator', `${operator}`)
+      .str('Replaced Operator', replacedOperator)
+      .msg(
+        'Comparison Operator is not valid for anomaly detection alarms. Corrected to most closely matched valid operator',
+      );
+
+    return replacedOperator;
+  }
+
+  if (operator.toLowerCase() === 'lessthanthreshold') {
+    const replacedOperator = ComparisonOperator.LessThanLowerThreshold;
+
+    log
+      .warn()
+      .str('function', 'validateAnomalyCompOperator')
+      .str('Comparison Operator', `${operator}`)
+      .str('Replaced Operator', replacedOperator)
+      .msg(
+        'Comparison Operator is not valid for anomaly detection alarms. Corrected to most closely matched valid operator',
+      );
+
+    return replacedOperator;
+  }
+
+  if (operator.toLowerCase() === 'lessthanorequaltothreshold') {
+    const replacedOperator =
+      ComparisonOperator.LessThanLowerOrGreaterThanUpperThreshold;
+
+    log
+      .warn()
+      .str('function', 'validateAnomalyCompOperator')
+      .str('Comparison Operator', `${operator}`)
+      .str('Replaced Operator', replacedOperator)
+      .msg(
+        'Comparison Operator is not valid for anomaly detection alarms. Corrected to most closely matched valid operator',
+      );
+
+    return replacedOperator;
+  }
+
+  log
+    .warn()
+    .str('Function: ', 'validateAnomalyCompOperator')
+    .str('Opertor', operator)
+    .msg(
+      'Invalid operator for an anomaly detection alarms. Cloudwatch will return an error',
+    );
+
+  return operator;
+}
+
 async function handleAnomalyDetectionWorkflow(
   alarmName: string,
   updatedDefaults: MetricAlarmOptions,
@@ -235,11 +295,6 @@ async function handleAnomalyDetectionWorkflow(
       Configuration: {MetricTimezone: 'UTC'},
     };
 
-    log
-      .debug()
-      .str('function', 'handleAnomalyDetectionWorkflow')
-      .obj('AnomalyDetectorInput', anomalyDetectorInput)
-      .msg('Sending PutAnomalyDetectorCommand');
     const response = await cloudWatchClient.send(
       new PutAnomalyDetectorCommand(anomalyDetectorInput),
     );
@@ -250,32 +305,33 @@ async function handleAnomalyDetectionWorkflow(
       .obj('response', response)
       .msg('Successfully created or updated anomaly detector');
 
-    const metrics: MetricDataQuery[] = [
-      {
-        Id: 'primaryMetric',
-        MetricStat: {
-          Metric: {
-            Namespace: config.metricNamespace,
-            MetricName: config.metricName,
-            Dimensions: [...dimensions],
-          },
-          Period: updatedDefaults.period,
-          Stat: updatedDefaults.statistic,
-        },
-      },
-      {
-        Id: 'anomalyDetectionBand',
-        Expression: `ANOMALY_DETECTION_BAND(primaryMetric, ${threshold})`,
-      },
-    ];
-
-    const alarmInput = {
+    const alarmInput: PutMetricAlarmCommandInput = {
       AlarmName: alarmName,
-      ComparisonOperator:
-        updatedDefaults.comparisonOperator as ComparisonOperator,
+      ThresholdMetricId: 'ANOMALY_DETECTION_BAND',
+      ComparisonOperator: validateAnomalyCompOperator(
+        updatedDefaults.comparisonOperator,
+      ),
       EvaluationPeriods: updatedDefaults.evaluationPeriods,
-      Metrics: metrics,
-      ThresholdMetricId: 'anomalyDetectionBand',
+      DatapointsToAlarm: updatedDefaults.dataPointsToAlarm,
+      MetricName: config.metricName,
+      Namespace: config.metricNamespace,
+      Period: updatedDefaults.period,
+      ...([
+        'p',
+        'tm',
+        'tc',
+        'ts',
+        'wm',
+        'IQM',
+        'WM',
+        'PR',
+        'TC',
+        'TM',
+        'TS',
+      ].some((prefix) => updatedDefaults.statistic!.startsWith(prefix))
+        ? {ExtendedStatistic: updatedDefaults.statistic}
+        : {Statistic: updatedDefaults.statistic as Statistic}),
+      Threshold: threshold,
       ActionsEnabled: false,
       Tags: [{Key: 'severity', Value: classification}],
       TreatMissingData: updatedDefaults.missingDataTreatment,
@@ -329,7 +385,7 @@ export async function handleAnomalyAlarms(
 
   // If no thresholds are set, log and exit early
   if (!warningThresholdSet && !criticalThresholdSet && !config.defaultCreate) {
-    const alarmPrefix = `AutoAlarm-ALB-${serviceIdentifier}-${config.metricName}-anomaly-`;
+    const alarmPrefix = `AutoAlarm-${service}-${serviceIdentifier}-${config.metricName}-anomaly-`;
     log
       .info()
       .str('function', 'handleAnomalyAlarms')
@@ -474,11 +530,6 @@ async function handleStaticThresholdWorkflow(
       TreatMissingData: updatedDefaults.missingDataTreatment,
     };
 
-    log
-      .debug()
-      .str('function', 'handleStaticThresholdWorkflow')
-      .obj('AlarmInput', alarmInput)
-      .msg('Sending PutMetricAlarmCommand');
     const response = await cloudWatchClient.send(
       new PutMetricAlarmCommand(alarmInput),
     );
