@@ -411,6 +411,10 @@ async function handleAlarmCreation(
           ComparisonOperator.LessThanThreshold;
       }
 
+      if (!isWindows) {
+        config.metricName = 'disk_used_percent';
+      }
+
       const storagePaths = await getStoragePathsFromCloudWatch(
         instanceId,
         config.metricName,

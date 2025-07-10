@@ -1,4 +1,11 @@
 # AutoAlarm Changelog
+## v1.13.5
+### Fixed: 
+- Fixed a bug where EC2 storage alarms worked for windows guests but not for linux. 
+
+### Changed: 
+- Removed cdk.out and node files from IDE indexing. 
+
 
 ## v1.13.3
 #### Fixed:
