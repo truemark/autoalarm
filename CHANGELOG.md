@@ -1,4 +1,10 @@
 # AutoAlarm Changelog
+
+## v.13.7
+### Fixed
+- Fixed a bug that resulted in Anomaly Alarms not catching some configuration parameters for dataPointsToAlarm and 
+  evaluation periods. 
+
 ## v1.13.5
 ### Fixed: 
 - Fixed a bug where EC2 storage alarms worked for windows guests but not for linux. 

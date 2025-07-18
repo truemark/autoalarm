@@ -4,14 +4,14 @@ import {
   DescribeAlarmsCommand,
   DescribeAlarmsCommandOutput,
   MetricAlarm,
-  MetricDataQuery,
   PutAnomalyDetectorCommand,
   PutAnomalyDetectorCommandInput,
   PutMetricAlarmCommand,
   PutMetricAlarmCommandInput,
   Statistic,
+  MetricDataQuery,
 } from '@aws-sdk/client-cloudwatch';
-import {ComparisonOperator} from 'aws-cdk-lib/aws-cloudwatch';
+
 import {
   MetricAlarmConfig,
   MetricAlarmOptions,
@@ -235,11 +235,6 @@ async function handleAnomalyDetectionWorkflow(
       Configuration: {MetricTimezone: 'UTC'},
     };
 
-    log
-      .debug()
-      .str('function', 'handleAnomalyDetectionWorkflow')
-      .obj('AnomalyDetectorInput', anomalyDetectorInput)
-      .msg('Sending PutAnomalyDetectorCommand');
     const response = await cloudWatchClient.send(
       new PutAnomalyDetectorCommand(anomalyDetectorInput),
     );
@@ -269,11 +264,11 @@ async function handleAnomalyDetectionWorkflow(
       },
     ];
 
-    const alarmInput = {
+    const alarmInput: PutMetricAlarmCommandInput = {
       AlarmName: alarmName,
-      ComparisonOperator:
-        updatedDefaults.comparisonOperator as ComparisonOperator,
+      ComparisonOperator: updatedDefaults.comparisonOperator,
       EvaluationPeriods: updatedDefaults.evaluationPeriods,
+      DatapointsToAlarm: updatedDefaults.dataPointsToAlarm,
       Metrics: metrics,
       ThresholdMetricId: 'anomalyDetectionBand',
       ActionsEnabled: false,
@@ -329,7 +324,7 @@ export async function handleAnomalyAlarms(
 
   // If no thresholds are set, log and exit early
   if (!warningThresholdSet && !criticalThresholdSet && !config.defaultCreate) {
-    const alarmPrefix = `AutoAlarm-ALB-${serviceIdentifier}-${config.metricName}-anomaly-`;
+    const alarmPrefix = `AutoAlarm-${service}-${serviceIdentifier}-${config.metricName}-anomaly-`;
     log
       .info()
       .str('function', 'handleAnomalyAlarms')
@@ -474,11 +469,6 @@ async function handleStaticThresholdWorkflow(
       TreatMissingData: updatedDefaults.missingDataTreatment,
     };
 
-    log
-      .debug()
-      .str('function', 'handleStaticThresholdWorkflow')
-      .obj('AlarmInput', alarmInput)
-      .msg('Sending PutMetricAlarmCommand');
     const response = await cloudWatchClient.send(
       new PutMetricAlarmCommand(alarmInput),
     );
