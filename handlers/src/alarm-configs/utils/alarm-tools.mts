@@ -1,6 +1,5 @@
 import {
   CloudWatchClient,
-  ComparisonOperator,
   DeleteAlarmsCommand,
   DescribeAlarmsCommand,
   DescribeAlarmsCommandOutput,
@@ -10,6 +9,7 @@ import {
   PutMetricAlarmCommand,
   PutMetricAlarmCommandInput,
   Statistic,
+  MetricDataQuery,
 } from '@aws-sdk/client-cloudwatch';
 
 import {
@@ -212,66 +212,6 @@ function validatePeriod(period: number) {
   }
 }
 
-function validateAnomalyCompOperator(
-  operator: ComparisonOperator,
-): ComparisonOperator {
-  if (operator.toLowerCase().includes('greater')) {
-    const replacedOperator = ComparisonOperator.GreaterThanUpperThreshold;
-
-    log
-      .warn()
-      .str('function', 'validateAnomalyCompOperator')
-      .str('Comparison Operator', `${operator}`)
-      .str('Replaced Operator', replacedOperator)
-      .msg(
-        'Comparison Operator is not valid for anomaly detection alarms. Corrected to most closely matched valid operator',
-      );
-
-    return replacedOperator;
-  }
-
-  if (operator.toLowerCase() === 'lessthanthreshold') {
-    const replacedOperator = ComparisonOperator.LessThanLowerThreshold;
-
-    log
-      .warn()
-      .str('function', 'validateAnomalyCompOperator')
-      .str('Comparison Operator', `${operator}`)
-      .str('Replaced Operator', replacedOperator)
-      .msg(
-        'Comparison Operator is not valid for anomaly detection alarms. Corrected to most closely matched valid operator',
-      );
-
-    return replacedOperator;
-  }
-
-  if (operator.toLowerCase() === 'lessthanorequaltothreshold') {
-    const replacedOperator =
-      ComparisonOperator.LessThanLowerOrGreaterThanUpperThreshold;
-
-    log
-      .warn()
-      .str('function', 'validateAnomalyCompOperator')
-      .str('Comparison Operator', `${operator}`)
-      .str('Replaced Operator', replacedOperator)
-      .msg(
-        'Comparison Operator is not valid for anomaly detection alarms. Corrected to most closely matched valid operator',
-      );
-
-    return replacedOperator;
-  }
-
-  log
-    .warn()
-    .str('Function: ', 'validateAnomalyCompOperator')
-    .str('Opertor', operator)
-    .msg(
-      'Invalid operator for an anomaly detection alarms. Cloudwatch will return an error',
-    );
-
-  return operator;
-}
-
 async function handleAnomalyDetectionWorkflow(
   alarmName: string,
   updatedDefaults: MetricAlarmOptions,
@@ -305,33 +245,32 @@ async function handleAnomalyDetectionWorkflow(
       .obj('response', response)
       .msg('Successfully created or updated anomaly detector');
 
+    const metrics: MetricDataQuery[] = [
+      {
+        Id: 'primaryMetric',
+        MetricStat: {
+          Metric: {
+            Namespace: config.metricNamespace,
+            MetricName: config.metricName,
+            Dimensions: [...dimensions],
+          },
+          Period: updatedDefaults.period,
+          Stat: updatedDefaults.statistic,
+        },
+      },
+      {
+        Id: 'anomalyDetectionBand',
+        Expression: `ANOMALY_DETECTION_BAND(primaryMetric, ${threshold})`,
+      },
+    ];
+
     const alarmInput: PutMetricAlarmCommandInput = {
       AlarmName: alarmName,
-      ThresholdMetricId: 'ANOMALY_DETECTION_BAND',
-      ComparisonOperator: validateAnomalyCompOperator(
-        updatedDefaults.comparisonOperator,
-      ),
+      ComparisonOperator: updatedDefaults.comparisonOperator,
       EvaluationPeriods: updatedDefaults.evaluationPeriods,
       DatapointsToAlarm: updatedDefaults.dataPointsToAlarm,
-      MetricName: config.metricName,
-      Namespace: config.metricNamespace,
-      Period: updatedDefaults.period,
-      ...([
-        'p',
-        'tm',
-        'tc',
-        'ts',
-        'wm',
-        'IQM',
-        'WM',
-        'PR',
-        'TC',
-        'TM',
-        'TS',
-      ].some((prefix) => updatedDefaults.statistic!.startsWith(prefix))
-        ? {ExtendedStatistic: updatedDefaults.statistic}
-        : {Statistic: updatedDefaults.statistic as Statistic}),
-      Threshold: threshold,
+      Metrics: metrics,
+      ThresholdMetricId: 'anomalyDetectionBand',
       ActionsEnabled: false,
       Tags: [{Key: 'severity', Value: classification}],
       TreatMissingData: updatedDefaults.missingDataTreatment,
