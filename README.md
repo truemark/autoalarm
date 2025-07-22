@@ -64,8 +64,20 @@ cd cdk ; cdk deploy AutoAlarm
 
 ## Usage
 
-The system is event-driven, responding to state change notifications and tag modification events. To manage alarms,
-ensure your supported resources are tagged according to the schema defined below.
+### AutoAlarm Tag Values and Alarm Creation Behavior
+
+AutoAlarm comes with default alarm configurations for various metrics. These default alarms are created when the
+corresponding tags are not present on the resources. The default alarms are designed to provide basic monitoring
+out-of-the-box. However, it is recommended to customize the alarms based on your specific requirements.
+
+- To enable AutoAlarm default alarms or configure any default on non-default alarm, ensure that the `autoalarm:enabled`
+  tag is set to `true` on the resource.
+- To disable AutoAlarm default alarms and/or delete all existing autoalarm alarms, set the `autoalarm:enabled` tag to
+  `false` on the resource.
+- To customize the default alarms, add the appropriate tags with the desired values to the resource.
+- To enable specific non-default alarms, add the corresponding tags with the desired values to the resource.
+
+To manage alarms, ensure your supported resources are tagged according to the schema defined below.
 
 #### Enable AutoAlarm - Required on any instance or service to use tag configurations for Alarm Management
 | Tag                 | Enabled Value | Disabled Value |
@@ -233,47 +245,28 @@ Some Metrics require the CloudWatch Agent to be installed on the host.
 | `autoalarm:tunnel-state`         | "0/0/300/1/Maximum/1/LessThanThreshold/ignore"      | No                 | Yes                         |
 | `autoalarm:tunnel-state-anomaly` | "-/-/300/1/Average/1/LessThanLowerThreshold/ignore" | No                 | Yes                         |
 
-### Default AutoAlarm Alarm Behavior
 
-AutoAlarm comes with default alarm configurations for various metrics. These default alarms are created when the
-corresponding tags are not present on the resources. The default alarms are designed to provide basic monitoring
-out-of-the-box. However, it is recommended to customize the alarms based on your specific requirements.
-
-- To enable AutoAlarm default alarms or configure any default on non-default alarm, ensure that the `autoalarm:enabled`
-  tag is set to `true` on the resource.
-- To disable AutoAlarm default alarms and/or delete all existing autoalarm alarms, set the `autoalarm:enabled` tag to
-  `false` on the resource.
-- To customize the default alarms, add the appropriate tags with the desired values to the resource.
-- To enable specific non-default alarms, add the corresponding tags with the desired values to the resource.
-
-
-## AutoAlarm Tag Values and Behaviour
-
-#### Default Values
-
-AutoAlarm comes with predefined default values for various alarms. These defaults are designed to provide general
-monitoring out-of-the-box. However, it is crucial that any enabled alarms are reviewed to ensure they align with the
-specific needs of your application and environment. Default alarms can be created by setting the `autoalarm:enabled` tag
-to `true` on the resource.
-
-### Customizing Alarms with Tags
+### Guide to Customizing Alarms with Tags
 
 When setting up non-default alarms with tags, you must provide at least the first two values (warning and critical
 thresholds) for the tag to function correctly. If these thresholds are not supplied, the alarm will not be created
 unless defaults are defined in the table below.
 
-Prometheus alarms will only pull Warning and critical thresholds and periods from the tags. All other values are specfic
+Prometheus alarms will only pull Warning and critical thresholds and periods from the tags. All other values are specific
 to CloudWatch alarms and are not used in Prometheus alarms.
 
 The following schema is used to define tag values for all Alarm Management tags:
 
-```plaintext
-Warning Threshold / Critical Threshold / Period / Evaluation Periods / Statistic / Datapoints to Alarm / ComparisonOperator / Missing Data Treatment
-```
+| Tag Key                      | Tag Value                                                                                                                                              |
+|------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `autoalarm:some-metric-type` | `Warning Threshold / Critical Threshold / Period / Evaluation Periods / Statistic / Datapoints to Alarm / ComparisonOperator / Missing Data Treatment` |
 
 **Example:**
 
-`autoalarm:cpu=80/95/60/5/Maximum/5/GreaterThanThreshold/ignore`
+| Tag Key         | Tag Value                                          |
+|-----------------|----------------------------------------------------|
+| `autoalarm:cpu` | `80/95/60/5/Maximum/5/GreaterThanThreshold/ignore` |
+
 
 #### Static Threshold vs Anomaly Detection Alarms
 
