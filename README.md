@@ -67,15 +67,15 @@ cd cdk ; cdk deploy AutoAlarm
 The system is event-driven, responding to state change notifications and tag modification events. To manage alarms,
 ensure your supported resources are tagged according to the schema defined below.
 
-### AutoAlarm Tag Configuration for Supported Resources
-
-Threshold values that contain '-' are undefined and will default to not creating the alarm if the warning and critical
-threshold values are not provided in the tag value when setting the tag on the resource.
-
 #### Enable AutoAlarm - Required on any instance or service to use tag configurations for Alarm Management
 | Tag                 | Enabled Value | Disabled Value |
 | ------------------- | ------------- | -------------- |
 | `autoalarm:enabled` | `true`        | `false`        |
+
+### AutoAlarm Tag Configuration for Supported Resources
+
+Threshold values that contain '-' are undefined and will default to not creating the alarm if the warning and critical
+threshold values are not provided in the tag value when setting the tag on the resource.
 
 #### Application Load Balancer (ALB)
 
@@ -379,15 +379,7 @@ You can use the following statistics for alarms - https://docs.aws.amazon.com/Am
 ### Overview
 
 The ReAlarm function is an AWS Lambda-based handler designed to monitor and reset CloudWatch alarms that are in an
-"ALARM" state. It is an optional part of the AutoAlarm system, aimed at ensuring alarms are not missed or ignored. This
-functionality is built with complex maintenance and infrastructure in mind and is a stop gap to prevent critical alarms
-from being missed or ignored by causing said alarms to re-alert on a schedule. ReAlarm can be enabled or disabled globally.
-Additionally, Alarms can individually be tagged to be excluded from the ReAlarm function.
-
-### Special Note:
-
-ReAlarm is hardcoded to NOT reset alarms associated with AutoScaling actions. This is to prevent the function from
-interfering with scaling operations.
+"ALARM" state. It is an optional part of the AutoAlarm system, aimed at ensuring alarms are not missed or ignored.
 
 ### Default Values
 
@@ -401,42 +393,29 @@ ReAlarm's behavior can be configured on a per-alarm basis using tags.
     - The ReAlarm schedule by default runs every 120 minutes.
     - ReAlarm can be customized to run at different intervals on a per-alarm basis by setting the `autoalarm:re-alarm-minutes`
       tag to a whole number value.
-
-### Customizing ReAlarm with Tags
-
-In addition to global controls, individual alarms can be excluded from being reset by ReAlarm. This is done using a specific tag:
-
-- **Tag to Exclude Alarms from ReAlarm**:
+- **Disable ReAlarm for a Resource**:
     - Alarms can be tagged with `autoalarm:re-alarm-enabled=false` to exclude them from the ReAlarm process.
     - When this tag is present on an alarm, ReAlarm will skip resetting it, regardless of its state.
     - This is useful for alarms that should be managed manually or have specific conditions that should not trigger ReAlarm.
 
-#### Example:
+#### Tag to Customize ReAlarm Schedule: 
 
-1. To prevent ReAlarm from resetting a particular alarm, add the following tag:
+| Tag                          | Value (whole minutes as an integer) | 
+|------------------------------|-------------------------------------|
+| `autoalarm:re-alarm-minutes` | `30`                                |
 
-    - **Key**: `autoalarm:re-alarm-enabled`
-    - **Value**: `false`
+#### Tag to Exclude Alarms from ReAlarm:
 
-2. **Tagging via AWS Console**:
-
-    - Navigate to the CloudWatch alarm.
-    - Under the "Tags" section, add a new tag:
-        - **Key**: `autoalarm:re-alarm-enabled`
-        - **Value**: `false`
-
-3. **Tagging via AWS CLI**:
-    ```bash
-    aws cloudwatch tag-resource --resource-arn arn:aws:cloudwatch:region:account-id:alarm/alarm-name --tags Key=autoalarm:re-alarm-disabled,Value=true
-    ```
+| Tag                          | Value   | 
+| ---------------------------- | ------- |
+| `autoalarm:re-alarm-enabled` | `false` |
 
 By configuring ReAlarm both globally and on a per-alarm basis, users have the flexibility to manage alarm behavior according to their needs, ensuring critical alerts are revisited without excessive manual intervention.
 
-## Limitations
+#### Special Note:
 
-- Currently, supports EC2 instances, Application Load Balancers (support does not currently extend to Network Load Balancers), Target Groups, SQS, Transit Gateway, VPN, Route53Resolver, CloudFront, RDS, RDS Clusters, Step Functions, and OpenSearch. Extension to other services like ECS would require modifications to the Lambda function and CDK setup.
-- Tag-based configuration may not be suitable for all use cases. Customization options are limited to the supported tags.
-- Some alarms and rules are created by default even without tags, such as CPU utilization alarms, and can only be
-  modified with the use of tags. Otherwise, they will be created with default values.
+ReAlarm is hardcoded to NOT reset alarms associated with AutoScaling actions. This is to prevent the function from
+interfering with scaling operations.
 
-Please refer to the code files provided for more detailed information on the implementation and usage of the AutoAlarm system.
+## Additional References:
+- For a more thorough breakdown of Design and Architecture, please see ARCHITECTURE.md.
