@@ -66,25 +66,27 @@ cd cdk ; cdk deploy AutoAlarm
 
 ### AutoAlarm Tag Values and Alarm Creation Behavior
 
-AutoAlarm comes with default alarm configurations for various metrics. These default alarms are created when the
-corresponding tags are not present on the resources. The default alarms are designed to provide basic monitoring
-out-of-the-box. However, it is recommended to customize the alarms based on your specific requirements.
+## Default Alarm Configuration
 
-- To enable AutoAlarm default alarms or configure any default on non-default alarm, ensure that the `autoalarm:enabled`
-  tag is set to `true` on the resource.
-- To disable AutoAlarm default alarms and/or delete all existing autoalarm alarms, set the `autoalarm:enabled` tag to
-  `false` on the resource.
-- To customize the default alarms, add the appropriate tags with the desired values to the resource.
-- To enable specific non-default alarms, add the corresponding tags with the desired values to the resource.
+AutoAlarm provides out-of-the-box monitoring with sensible defaults while allowing full customization through resource tags.
 
-To manage alarms, ensure your supported resources are tagged according to the schema defined below.
+### Managing AutoAlarm
 
-#### Enable AutoAlarm - Required on any instance or service to use tag configurations for Alarm Management
-| Tag                 | Enabled Value | Disabled Value |
-| ------------------- | ------------- | -------------- |
-| `autoalarm:enabled` | `true`        | `false`        |
+| Tag Key             | Tag Value | Result                                                                                                              |
+|---------------------|-----------|---------------------------------------------------------------------------------------------------------------------|
+| `autoalarm:enabled` | `true`    | Enabled AutoAlarm Alarm Management for a resource and creates all default alarms - ***Required to use AutoAlarm**   |
+| `autoalarm:enabled` | `false`   | Deletes all AutoAlarm managed alarms (both default and custom alarms). Alternatively, the tag can simply be removed |
 
-### AutoAlarm Tag Configuration for Supported Resources
+
+### Configuration Priority
+
+1. **Tagged values** - Always take precedence
+2. **Default values** - Applied when tags are absent or when some values are missing from the tag value in which case autoalarm will pull the default for that value. 
+3. **No alarm** - Alarms are not created when the `autoalarm:enabled` tag is not present or set to false and/or a non-default alarm is not defined in a tag.
+
+Resources must be tagged according to the schema defined below to enable alarm management.
+
+## AutoAlarm Tag Configuration for Supported Resources
 
 Threshold values that contain '-' are undefined and will default to not creating the alarm if the warning and critical
 threshold values are not provided in the tag value when setting the tag on the resource.
@@ -92,7 +94,7 @@ threshold values are not provided in the tag value when setting the tag on the r
 #### Application Load Balancer (ALB)
 
 | Tag                               | Default Value                                          | Enabled By Default | Standard CloudWatch Metrics |
-| --------------------------------- | ------------------------------------------------------ | ------------------ | --------------------------- |
+|-----------------------------------|--------------------------------------------------------|--------------------|-----------------------------|
 | `autoalarm:4xx-count`             | "-/-/60/2/Sum/2/GreaterThanThreshold/ignore"           | No                 | Yes                         |
 | `autoalarm:4xx-count-anomaly`     | "2/5/300/1/Average/1/GreaterThanUpperThreshold/ignore" | No                 | Yes                         |
 | `autoalarm:5xx-count`             | "-/-/60/2/Sum/2/GreaterThanThreshold/ignore"           | No                 | Yes                         |
@@ -103,7 +105,7 @@ threshold values are not provided in the tag value when setting the tag on the r
 #### CloudFront
 
 | Tag                            | Default Value                                          | Enabled By Default | Standard CloudWatch Metrics |
-| ------------------------------ | ------------------------------------------------------ | ------------------ | --------------------------- |
+|--------------------------------|--------------------------------------------------------|--------------------|-----------------------------|
 | `autoalarm:4xx-errors`         | "100/300/300/1/Sum/1/GreaterThanThreshold/ignore"      | No                 | Yes                         |
 | `autoalarm:4xx-errors-anomaly` | "-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore" | No                 | Yes                         |
 | `autoalarm:5xx-errors`         | "10/50/300/1/Sum/1/GreaterThanThreshold/ignore"        | Yes                | Yes                         |
@@ -180,7 +182,7 @@ threshold values are not provided in the tag value when setting the tag on the r
 #### RDS Clusters
 
 | Tag                                | Default Value                                          | Enabled By Default | Standard CloudWatch Metrics |
-|------------------------------------|--------------------------------------------------------|--------------------| --------------------------- |
+|------------------------------------|--------------------------------------------------------|--------------------|-----------------------------|
 | `autoalarm:db-connections-anomaly` | "2/5/600/5/Average/5/GreaterThanUpperThreshold/ignore" | Yes                | Yes                         |
 | `autoalarm:failover-state`         | "0/1/60/1/Maximum/1/GreaterThanThreshold/notBreaching" | No                 | Yes                         |
 | `autoalarm:replica-lag-anomaly`    | "2/5/120/1/Average/1/GreaterThanUpperThreshold/ignore" | No                 | Yes                         |
@@ -197,7 +199,7 @@ threshold values are not provided in the tag value when setting the tag on the r
 #### SQS
 
 | Tag                                       | Default Value                                          | Enabled By Default | Standard CloudWatch Metrics |
-| ----------------------------------------- | ------------------------------------------------------ | ------------------ | --------------------------- |
+|-------------------------------------------|--------------------------------------------------------|--------------------|-----------------------------|
 | `autoalarm:age-of-oldest-message`         | "-/-/300/1/Maximum/1/GreaterThanThreshold/ignore"      | No                 | Yes                         |
 | `autoalarm:age-of-oldest-message-anomaly` | "-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore" | No                 | Yes                         |
 | `autoalarm:empty-receives`                | "-/-/300/1/Sum/1/GreaterThanThreshold/ignore"          | No                 | Yes                         |
@@ -218,7 +220,7 @@ threshold values are not provided in the tag value when setting the tag on the r
 #### Step Functions
 
 | Tag                                      | Default Value                                         | Enabled By Default | Standard CloudWatch Metrics |
-| ---------------------------------------- | ----------------------------------------------------- | ------------------ | --------------------------- |
+|------------------------------------------|-------------------------------------------------------|--------------------|-----------------------------|
 | `autoalarm:executions-failed`            | "-/1/60/1/Sum/1/GreaterThanThreshold/ignore"          | Yes                | Yes                         |
 | `autoalarm:executions-failed-anomaly`    | "-/-/60/1/Average/1/GreaterThanUpperThreshold/ignore" | No                 | Yes                         |
 | `autoalarm:executions-timed-out`         | "-/1/60/1/Sum/1/GreaterThanThreshold/ignore"          | Yes                | Yes                         |
@@ -228,7 +230,7 @@ threshold values are not provided in the tag value when setting the tag on the r
 #### Target Groups (TG)
 
 | Tag                               | Default Value                                          | Enabled By Default | Standard CloudWatch Metrics |
-| --------------------------------- |--------------------------------------------------------| ------------------ | --------------------------- |
+|-----------------------------------|--------------------------------------------------------|--------------------|-----------------------------|
 | `autoalarm:4xx-count`             | "-/-/60/2/Sum/1/GreaterThanThreshold/ignore"           | No                 | Yes                         |
 | `autoalarm:4xx-count-anomaly`     | "-/-/60/2/Average/1/GreaterThanUpperThreshold/ignore"  | No                 | Yes                         |
 | `autoalarm:5xx-count`             | "-/-/60/2/Sum/1/GreaterThanThreshold/ignore"           | No                 | Yes                         |
@@ -241,7 +243,7 @@ threshold values are not provided in the tag value when setting the tag on the r
 #### Transit Gateway (TGW)
 
 | Tag                           | Default Value                                          | Enabled By Default | Standard CloudWatch Metrics |
-| ----------------------------- | ------------------------------------------------------ | ------------------ | --------------------------- |
+|-------------------------------|--------------------------------------------------------|--------------------|-----------------------------|
 | `autoalarm:bytes-in`          | "-/-/300/1/Maximum/1/GreaterThanThreshold/ignore"      | No                 | Yes                         |
 | `autoalarm:bytes-in-anomaly`  | "-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore" | No                 | Yes                         |
 | `autoalarm:bytes-out`         | "-/-/300/1/Sum/1/GreaterThanThreshold/ignore"          | No                 | Yes                         |
@@ -250,69 +252,70 @@ threshold values are not provided in the tag value when setting the tag on the r
 #### VPN
 
 | Tag                              | Default Value                                       | Enabled By Default | Standard CloudWatch Metrics |
-| -------------------------------- | --------------------------------------------------- | ------------------ | --------------------------- |
+|----------------------------------|-----------------------------------------------------|--------------------|-----------------------------|
 | `autoalarm:tunnel-state`         | "0/0/300/1/Maximum/1/LessThanThreshold/ignore"      | No                 | Yes                         |
 | `autoalarm:tunnel-state-anomaly` | "-/-/300/1/Average/1/LessThanLowerThreshold/ignore" | No                 | Yes                         |
 
 
-### Guide to Customizing Alarms with Tags
+## Guide to Customizing Alarms with Tags
 
 When setting up non-default alarms with tags, you must provide at least the first two values (warning and critical
 thresholds) for the tag to function correctly. If these thresholds are not supplied, the alarm will not be created
-unless defaults are defined in the table below.
+unless defaults are defined in the tables above and the alarm is enabled by default.
 
 Prometheus alarms will only pull Warning and critical thresholds and periods from the tags. All other values are specific
 to CloudWatch alarms and are not used in Prometheus alarms.
 
 The following schema is used to define tag values for all Alarm Management tags:
 
-| Tag Key                      | Tag Value                                                                                                                                              |
-|------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `autoalarm:some-metric-type` | `Warning Threshold / Critical Threshold / Period / Evaluation Periods / Statistic / Datapoints to Alarm / ComparisonOperator / Missing Data Treatment` |
+| Tag Key                              | Tag Value                                                                                                                                              |
+|--------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `autoalarm:some-metric-type`         | `Warning Threshold / Critical Threshold / Period / Evaluation Periods / Statistic / Datapoints to Alarm / ComparisonOperator / Missing Data Treatment` |
+| `autoalarm:some-metric-type-anomaly` | `Warning Threshold / Critical Threshold / Period / Evaluation Periods / Statistic / Datapoints to Alarm / ComparisonOperator / Missing Data Treatment` |
 
 **Example:**
 
-| Tag Key         | Tag Value                                          |
-|-----------------|----------------------------------------------------|
-| `autoalarm:cpu` | `80/95/60/5/Maximum/5/GreaterThanThreshold/ignore` |
+| Tag Key                 | Tag Value                                                |
+|-------------------------|----------------------------------------------------------|
+| `autoalarm:cpu`         | `80/95/60/5/Maximum/5/GreaterThanThreshold/ignore`       |
+| `autoalarm:cpu-anomaly` | `2/3/60/5/Maximum/5/GreaterThanUpperThreshold/breaching` |
 
 
-#### Static Threshold vs Anomaly Detection Alarms
+## Alarm Types
 
-All Anomaly alarm tags contain 'anomaly' in tag name.
+### Static Threshold Alarms
+- Trigger when metrics cross fixed values
+- Best for metrics with consistent, predictable ranges
 
-**Static Threshold Alarms**:
-
-- Triggered when a metric crosses a fixed value.
-    - Warning and Critical threshold represent the fixed threshold value.
-- Suitable for metrics with consistent ranges.
-
-**Anomaly Detection Alarms**:
-
-- Triggered when a metric deviates from a dynamic range based on historical data.
-    - Warning and Critical threshold represent the number of standard deviations outside the band or range of the
-      anomaly model.
-- For times when you want to detect outliers in your metrics and alarm on them.
+### Anomaly Detection Alarms
+- Trigger when metrics deviate from historical patterns
+- Use tag names containing 'anomaly'
+- Threshold values represent standard deviations from the baseline
 
 ### Supported Tag Values
 
-#### Warning and Critical Thresholds:
+#### Threshold Configuration
 
-- **Warning Threshold**: Numeric value at which a warning alarm is triggered.
-- **Critical Threshold**: Numeric value at which a critical alarm is triggered.
+| Parameter | Static Threshold Alarms | Anomaly Detection Alarms |
+|-----------|------------------------|--------------------------|
+| **Warning Threshold** | Numeric value that triggers warning (e.g., `80` for 80% CPU) | Number of standard deviations from baseline (e.g., `2`) |
+| **Critical Threshold** | Numeric value that triggers critical alert (e.g., `95` for 95% CPU) | Number of standard deviations from baseline (e.g., `3`) |
 
-#### Period:
+#### Timing Configuration
 
-- **Evaluation Period Duration**: The number of seconds over which the data is evaluated to determine if the alarm.
-  Must be 10 seconds, 30 seconds, or a multiple of 60 seconds.
+| Parameter               | Description                                               | Valid Values                                                           | Example           |
+|-------------------------|-----------------------------------------------------------|------------------------------------------------------------------------|-------------------|
+| **Period**              | Duration in seconds for data evaluation                   | • 10 seconds<br>• 30 seconds<br>• Multiples of 60 (60, 120, 180, etc.) | `300` (5 minutes) |
+| **Datapoints to Alarm** | Number of breaching data points required to trigger alarm | Any positive integer                                                   | `2`               |
+| **Number of Periods**   | Total evaluation periods to consider                      | Any positive integer                                                   | `3`               |
 
-#### Data Points to Alarm:
+- **Understanding Datapoints vs Periods**
 
-- **Datapoints to Alarm**: The number of data points that must be breaching to trigger the alarm.
-
-#### Number of Periods:
-
-- **Datapoints to Alarm**: The number of data points that must be breaching to trigger the alarm.
+| Scenario        | Period | Datapoints to Alarm | Number of Periods | Result                                                    |
+|-----------------|--------|---------------------|-------------------|-----------------------------------------------------------|
+| Quick Response  | 60s    | 1                   | 1                 | Alarm triggers after 1 breach in 1 minute                 |
+| Sustained Issue | 300s   | 2                   | 3                 | Alarm triggers when 2 out of 3 five-minute periods breach |
+| Highly Tolerant | 60s    | 5                   | 10                | Alarm triggers when 5 out of 10 one-minute periods breach |
 
 #### Statistic:
 
@@ -321,60 +324,41 @@ All stats must be the statistic followed by a number or two numbers separated by
 
 You can use the following statistics for alarms - https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Statistics-definitions.html.
 
-- **SampleCount** is the number of data points during the period.
-- **Sum** is the sum of the values of all data points collected during the period.
-- **Average** is the value of `Sum/SampleCount` during the specified period.
-- **Minimum** is the lowest value observed during the specified period.
-- **Maximum** is the highest value observed during the specified period.
-- **Percentile (p)** indicates the relative standing of a value in a dataset. For example, `p95` is the 95th percentile
-  and means that 95 percent of the data within the period is lower than this value, and 5 percent of the data is higher
-  than this value. Percentiles help you get a better understanding of the distribution of your metric data.
-- **Trimmed mean (TM)** is the mean of all values that are between two specified boundaries. Values outside the
-  boundaries are ignored when the mean is calculated. You define the boundaries as one or two numbers between 0 and 100,
-  up to 10 decimal places. The numbers can be absolute values or percentages. For example, `tm90` calculates the average
-  after removing the 10% of data points with the highest values. `TM(2%:98%)` calculates the average after removing the 2%
-  lowest data points and the 2% highest data points. `TM(150:1000)` calculates the average after removing all data points
-  that are lower than or equal to 150, or higher than 1000.
-- **Interquartile mean (IQM)** is the trimmed mean of the interquartile range, or the middle 50% of values. It is
-  equivalent to `TM(25%:75%)`.
-- **Winsorized mean (WM)** is similar to trimmed mean. However, with winsorized mean, the values that are outside the
-  boundary are not ignored, but instead are considered to be equal to the value at the edge of the appropriate boundary.
-  After this normalization, the average is calculated. You define the boundaries as one or two numbers between 0 and 100,
-  up to 10 decimal places. For example, `wm98` calculates the average while treating the 2% of the highest values to be
-  equal to the value at the 98th percentile. `WM(10%:90%)` calculates the average while treating the highest 10% of data
-  points to be the value of the 90% boundary, and treating the lowest 10% of data points to be the value of the 10% boundary.
-- **Percentile rank (PR)** is the percentage of values that meet a fixed threshold. For example, `PR(:300)` returns the
-  percentage of data points that have a value of 300 or less. `PR(100:2000)` returns the percentage of data points that
-  have a value between 100 and 2000. Percentile rank is exclusive on the lower bound and inclusive on the upper bound.
-- **Trimmed count (TC)** is the number of data points in the chosen range for a trimmed mean statistic. For example,
-  `tc90` returns the number of data points not including any data points that fall in the highest 10% of the values.
-  `TC(0.005:0.030)` returns the number of data points with values between 0.005 (exclusive) and 0.030 (inclusive).
-- **Trimmed sum (TS)** is the sum of the values of data points in a chosen range for a trimmed mean statistic. It is
-  equivalent to `(Trimmed Mean) * (Trimmed count)`. For example, `ts90` returns the sum of the data points not including
-  any data points that fall in the highest 10% of the values. `TS(80%:)` returns the sum of the data point values, not
-  including any data points with values in the lowest 80% of the range of values.
+| Statistic              | Tag Value                      | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+|------------------------|--------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **SampleCount**        | `SampleCount`                  | The number of data points during the period                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| **Sum**                | `Sum`                          | The sum of the values of all data points collected during the period                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| **Average**            | `Average`                      | The value of Sum/SampleCount during the specified period                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| **Minimum**            | `Minimum`                      | The lowest value observed during the specified period                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| **Maximum**            | `Maximum`                      | The highest value observed during the specified period                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| **Percentile**         | `p95`, `p99`, `p99.5`          | Indicates the relative standing of a value in a dataset. For example, p95 is the 95th percentile and means that 95 percent of the data within the period is lower than this value, and 5 percent of the data is higher than this value. Percentiles help you get a better understanding of the distribution of your metric data                                                                                                                                                                                                                                                                                                                                                                            |
+| **Trimmed Mean**       | `tm90`, `TM2:98`, `TM150:1000` | The mean of all values that are between two specified boundaries. Values outside the boundaries are ignored when the mean is calculated. You define the boundaries as one or two numbers between 0 and 100, up to 10 decimal places. The numbers can be absolute values or percentages. For example, tm90 calculates the average after removing the 10% of data points with the highest values. TM(2%:98%) calculates the average after removing the 2% lowest data points and the 2% highest data points. TM(150:1000) calculates the average after removing all data points that are lower than or equal to 150, or higher than 1000                                                                     |
+| **Interquartile Mean** | `IQM`                          | The trimmed mean of the interquartile range, or the middle 50% of values. It is equivalent to TM(25%:75%)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| **Winsorized Mean**    | `wm98`, `WM10:90`              | Similar to trimmed mean. However, with winsorized mean, the values that are outside the boundary are not ignored, but instead are considered to be equal to the value at the edge of the appropriate boundary. After this normalization, the average is calculated. You define the boundaries as one or two numbers between 0 and 100, up to 10 decimal places. For example, wm98 calculates the average while treating the 2% of the highest values to be equal to the value at the 98th percentile. WM(10%:90%) calculates the average while treating the highest 10% of data points to be the value of the 90% boundary, and treating the lowest 10% of data points to be the value of the 10% boundary |
+| **Percentile Rank**    | `PR:300`, `PR100:2000`         | The percentage of values that meet a fixed threshold. For example, PR(:300) returns the percentage of data points that have a value of 300 or less. PR(100:2000) returns the percentage of data points that have a value between 100 and 2000. Percentile rank is exclusive on the lower bound and inclusive on the upper bound                                                                                                                                                                                                                                                                                                                                                                            |
+| **Trimmed Count**      | `tc90`, `TC0.005:0.030`        | The number of data points in the chosen range for a trimmed mean statistic. For example, tc90 returns the number of data points not including any data points that fall in the highest 10% of the values. TC(0.005:0.030) returns the number of data points with values between 0.005 (exclusive) and 0.030 (inclusive)                                                                                                                                                                                                                                                                                                                                                                                    |
+| **Trimmed Sum**        | `ts90`, `TS80:`                | The sum of the values of data points in a chosen range for a trimmed mean statistic. It is equivalent to (Trimmed Mean) × (Trimmed count). For example, ts90 returns the sum of the data points not including any data points that fall in the highest 10% of the values. TS(80%:) returns the sum of the data point values, not including any data points with values in the lowest 80% of the range of values                                                                                                                                                                                                                                                                                            |
 
 #### Missing Data Treatment
 
-- missing
-- ignore
-- breaching
-- notBreaching
+| Tag Value      | Behavior                       |
+|----------------|--------------------------------|
+| `missing`      | Data point is missing          |
+| `ignore`       | Current alarm state maintained |
+| `breaching`    | Treated as threshold breach    |
+| `notBreaching` | Treated as within threshold    |
 
 #### Valid Comparison Operators
 
-**Static Threshold Alarms**
-
-- `GreaterThanOrEqualToThreshold`
-- `GreaterThanThreshold`
-- `LessThanThreshold`
-- `LessThanOrEqualToThreshold`
-
-**Anomaly Detection Alarms**
-
-- `GreaterThanUpperThreshold`
-- `LessThanLowerOrGreaterThanUpperThreshold`
-- `LessThanLowerThreshold`
+| Alarm Type | Comparison Operator | Description |
+|------------|-------------------|-------------|
+| **Static Threshold** | `GreaterThanOrEqualToThreshold` | Alarm when metric ≥ threshold |
+| **Static Threshold** | `GreaterThanThreshold` | Alarm when metric > threshold |
+| **Static Threshold** | `LessThanThreshold` | Alarm when metric < threshold |
+| **Static Threshold** | `LessThanOrEqualToThreshold` | Alarm when metric ≤ threshold |
+| **Anomaly Detection** | `GreaterThanUpperThreshold` | Alarm when metric exceeds upper band |
+| **Anomaly Detection** | `LessThanLowerOrGreaterThanUpperThreshold` | Alarm when metric is outside the band (either direction) |
+| **Anomaly Detection** | `LessThanLowerThreshold` | Alarm when metric falls below lower band |
 
 ## ReAlarm Tag Configuration and Behavior:
 
@@ -400,19 +384,12 @@ ReAlarm's behavior can be configured on a per-alarm basis using tags.
     - When this tag is present on an alarm, ReAlarm will skip resetting it, regardless of its state.
     - This is useful for alarms that should be managed manually or have specific conditions that should not trigger ReAlarm.
 
-#### Tag to Customize ReAlarm Schedule: 
+#### Tag to Customize ReAlarm: 
 
-| Tag                          | Value (whole minutes as an integer) | 
-|------------------------------|-------------------------------------|
-| `autoalarm:re-alarm-minutes` | `30`                                |
-
-#### Tag to Exclude Alarms from ReAlarm:
-
-| Tag                          | Value   | 
-| ---------------------------- | ------- |
-| `autoalarm:re-alarm-enabled` | `false` |
-
-By configuring ReAlarm both globally and on a per-alarm basis, users have the flexibility to manage alarm behavior according to their needs, ensuring critical alerts are revisited without excessive manual intervention.
+| Tag                          | Value             | Description                     |
+|------------------------------|-------------------|---------------------------------|
+| `autoalarm:re-alarm-enabled` | `false`           | Disable ReAlarm for this alarm  |
+| `autoalarm:re-alarm-minutes` | `30`, `60`, `240` | Custom reset interval (minutes) |
 
 #### Special Note:
 
