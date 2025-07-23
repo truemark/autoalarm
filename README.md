@@ -86,7 +86,14 @@ AutoAlarm provides out-of-the-box monitoring with sensible defaults while allowi
 
 Resources must be tagged according to the schema defined below to enable alarm management.
 
-## AutoAlarm Tag Configuration for Supported Resources
+## AutoAlarm Default Tag Configuration for Supported Resources
+
+The following schema is used to define tag values for all Alarm Management tags:
+
+| Tag Key                              | Tag Value                                                                                                                                              |
+|--------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `autoalarm:some-metric-type`         | `Warning Threshold / Critical Threshold / Period / Evaluation Periods / Statistic / Datapoints to Alarm / ComparisonOperator / Missing Data Treatment` |
+| `autoalarm:some-metric-type-anomaly` | `Warning Threshold / Critical Threshold / Period / Evaluation Periods / Statistic / Datapoints to Alarm / ComparisonOperator / Missing Data Treatment` |
 
 Threshold values that contain '-' are undefined and will default to not creating the alarm if the warning and critical
 threshold values are not provided in the tag value when setting the tag on the resource.
@@ -259,19 +266,12 @@ threshold values are not provided in the tag value when setting the tag on the r
 
 ## Guide to Customizing Alarms with Tags
 
-When setting up non-default alarms with tags, you must provide at least the first two values (warning and critical
+When setting up non-default alarms with tags, you must provide at least one of the first two values (warning and critical
 thresholds) for the tag to function correctly. If these thresholds are not supplied, the alarm will not be created
 unless defaults are defined in the tables above and the alarm is enabled by default.
 
 Prometheus alarms will only pull Warning and critical thresholds and periods from the tags. All other values are specific
 to CloudWatch alarms and are not used in Prometheus alarms.
-
-The following schema is used to define tag values for all Alarm Management tags:
-
-| Tag Key                              | Tag Value                                                                                                                                              |
-|--------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `autoalarm:some-metric-type`         | `Warning Threshold / Critical Threshold / Period / Evaluation Periods / Statistic / Datapoints to Alarm / ComparisonOperator / Missing Data Treatment` |
-| `autoalarm:some-metric-type-anomaly` | `Warning Threshold / Critical Threshold / Period / Evaluation Periods / Statistic / Datapoints to Alarm / ComparisonOperator / Missing Data Treatment` |
 
 **Example:**
 
