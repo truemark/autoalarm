@@ -218,7 +218,7 @@ export const RDS_CONFIGS: MetricAlarmConfig[] = [
     defaultCreate: true,
     anomaly: false,
     defaults: {
-      warningThreshold: 0,
+      warningThreshold: null,
       criticalThreshold: 0,
       period: 60,
       evaluationPeriods: 2,

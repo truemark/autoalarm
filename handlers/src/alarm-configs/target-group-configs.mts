@@ -140,5 +140,22 @@ export const TARGET_GROUP_CONFIGS: MetricAlarmConfig[] = [
       missingDataTreatment: 'ignore',
     },
   },
+  {
+    tagKey: 'healthy-host-count',
+    metricName: 'HealthyHostCount',
+    metricNamespace: 'AWS/ApplicationELB',
+    defaultCreate: true,
+    anomaly: false,
+    defaults: {
+      warningThreshold: null,
+      criticalThreshold: 1,
+      period: 60,
+      evaluationPeriods: 2,
+      statistic: 'Maximum',
+      dataPointsToAlarm: 2,
+      comparisonOperator: ComparisonOperator.LessThanThreshold,
+      missingDataTreatment: 'ignore',
+    },
+  },
   // add more as needed
 ] as const;

@@ -21,7 +21,7 @@ import {TreatMissingData} from 'aws-cdk-lib/aws-cloudwatch';
  */
 export const TRANSIT_GATEWAY_CONFIGS: MetricAlarmConfig[] = [
   {
-    tagKey: 'bytesin',
+    tagKey: 'bytes-in',
     metricName: 'BytesIn',
     metricNamespace: 'AWS/TransitGateway',
     defaultCreate: true,
@@ -38,7 +38,7 @@ export const TRANSIT_GATEWAY_CONFIGS: MetricAlarmConfig[] = [
     },
   },
   {
-    tagKey: 'bytesin-anomaly',
+    tagKey: 'bytes-in-anomaly',
     metricName: 'BytesIn',
     metricNamespace: 'AWS/TransitGateway',
     defaultCreate: false,
@@ -55,7 +55,7 @@ export const TRANSIT_GATEWAY_CONFIGS: MetricAlarmConfig[] = [
     },
   },
   {
-    tagKey: 'bytesout',
+    tagKey: 'bytes-out',
     metricName: 'BytesOut',
     metricNamespace: 'AWS/TransitGateway',
     defaultCreate: true,
@@ -72,7 +72,7 @@ export const TRANSIT_GATEWAY_CONFIGS: MetricAlarmConfig[] = [
     },
   },
   {
-    tagKey: 'bytesout-anomaly',
+    tagKey: 'bytes-out-anomaly',
     metricName: 'BytesOut',
     metricNamespace: 'AWS/TransitGateway',
     defaultCreate: false,
