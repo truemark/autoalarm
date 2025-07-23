@@ -4,62 +4,61 @@
 
 ### Prerequisites
 
-Before you begin, ensure you have the following:
+#### **Before you begin, ensure you have the following:**
+  - **AWS CLI**: Installed and configured with appropriate access to your AWS account.
+  - **AWS CDK**
+  - **Node.js**: Version 22.x+.
+  - **Git**
+  - **pnpm**: Version 9.1.4 or later.
 
-1. **AWS CLI**: Installed and configured with appropriate access to your AWS account.
-2. **AWS CDK**
-3. **Node.js**: Version 22.x+.
-4. **Git**
-5. **pnpm**: Version 9.1.4 or later.
 
-To set up and deploy the AutoAlarm project, follow these steps:
+#### **To set up and deploy the AutoAlarm project, follow these steps:**
+  - **Clone the Repository**
 
-1. **Clone the Repository**
+  Start by cloning the project repository to your local machine:
 
-    Start by cloning the project repository to your local machine:
+  ```bash
+  git clone https://github.com/truemark/autoalarm.git
+  cd autoalarm
+  ```
 
-```bash
-git clone https://github.com/truemark/autoalarm.git
-cd autoalarm
-```
+  - **Install Dependencies**
 
-2. **Install Dependencies**
+    ```bash
+    pnpm install
+    ```
 
-```bash
-pnpm install
-```
+  - **Configure Region**
 
-3. **Configure Region**
+    ```bash
+    export AWS_REGION=<region>
+    ```
 
-```bash
-export AWS_REGION=<region>
-```
+  - **Configure Keys and Session Token**
 
-4. **Configure Keys and Session Token**
+    ```bash
+    export AWS_ACCESS_KEY_ID="<access-key-id"
+    export AWS_SECRET_ACCESS_KEY="<secret-access-key>"
+    export AWS_SESSION_TOKEN="<aws-session-token>"
+    ```
 
-```bash
-export AWS_ACCESS_KEY_ID="<access-key-id"
-export AWS_SECRET_ACCESS_KEY="<secret-access-key>"
-export AWS_SESSION_TOKEN="<aws-session-token>"
-```
+  - **Bootstrap the CDK**
 
-5. **Bootstrap the CDK**
+    ```bash
+    cdk bootstrap
+    ```
 
-```bash
-cdk bootstrap
-```
+  - **Build the Project**
 
-6. **Build the Project**
+      ```bash
+      pnpm build
+      ```
 
-```bash
-pnpm build
-```
+  - **Deploy the Stack**
 
-7. **Deploy the Stack**
-
-```bash
-cd cdk ; cdk deploy AutoAlarm
-```
+      ```bash
+      cd cdk ; cdk deploy AutoAlarm
+      ```
 
 
 ## Usage
@@ -299,9 +298,9 @@ to CloudWatch alarms and are not used in Prometheus alarms.
 
 #### Threshold Configuration
 
-| Parameter | Static Threshold Alarms | Anomaly Detection Alarms |
-|-----------|------------------------|--------------------------|
-| **Warning Threshold** | Numeric value that triggers warning (e.g., `80` for 80% CPU) | Number of standard deviations from baseline (e.g., `2`) |
+| Parameter              | Static Threshold Alarms                                             | Anomaly Detection Alarms                                |
+|------------------------|---------------------------------------------------------------------|---------------------------------------------------------|
+| **Warning Threshold**  | Numeric value that triggers warning (e.g., `80` for 80% CPU)        | Number of standard deviations from baseline (e.g., `2`) |
 | **Critical Threshold** | Numeric value that triggers critical alert (e.g., `95` for 95% CPU) | Number of standard deviations from baseline (e.g., `3`) |
 
 ### Timing Configuration
@@ -346,9 +345,9 @@ to CloudWatch alarms and are not used in Prometheus alarms.
 
 #### Threshold Configuration
 
-| Parameter | Static Threshold Alarms | Anomaly Detection Alarms |
-|-----------|------------------------|--------------------------|
-| **Warning Threshold** | Numeric value that triggers warning (e.g., `80` for 80% CPU) | Number of standard deviations from baseline (e.g., `2`) |
+| Parameter              | Static Threshold Alarms                                             | Anomaly Detection Alarms                                |
+|------------------------|---------------------------------------------------------------------|---------------------------------------------------------|
+| **Warning Threshold**  | Numeric value that triggers warning (e.g., `80` for 80% CPU)        | Number of standard deviations from baseline (e.g., `2`) |
 | **Critical Threshold** | Numeric value that triggers critical alert (e.g., `95` for 95% CPU) | Number of standard deviations from baseline (e.g., `3`) |
 
 #### Timing Configuration
@@ -400,15 +399,15 @@ You can use the following statistics for alarms - https://docs.aws.amazon.com/Am
 
 #### Valid Comparison Operators
 
-| Alarm Type | Comparison Operator | Description |
-|------------|-------------------|-------------|
-| **Static Threshold** | `GreaterThanOrEqualToThreshold` | Alarm when metric ≥ threshold |
-| **Static Threshold** | `GreaterThanThreshold` | Alarm when metric > threshold |
-| **Static Threshold** | `LessThanThreshold` | Alarm when metric < threshold |
-| **Static Threshold** | `LessThanOrEqualToThreshold` | Alarm when metric ≤ threshold |
-| **Anomaly Detection** | `GreaterThanUpperThreshold` | Alarm when metric exceeds upper band |
+| Alarm Type            | Comparison Operator                        | Description                                              |
+|-----------------------|--------------------------------------------|----------------------------------------------------------|
+| **Static Threshold**  | `GreaterThanOrEqualToThreshold`            | Alarm when metric ≥ threshold                            |
+| **Static Threshold**  | `GreaterThanThreshold`                     | Alarm when metric > threshold                            |
+| **Static Threshold**  | `LessThanThreshold`                        | Alarm when metric < threshold                            |
+| **Static Threshold**  | `LessThanOrEqualToThreshold`               | Alarm when metric ≤ threshold                            |
+| **Anomaly Detection** | `GreaterThanUpperThreshold`                | Alarm when metric exceeds upper band                     |
 | **Anomaly Detection** | `LessThanLowerOrGreaterThanUpperThreshold` | Alarm when metric is outside the band (either direction) |
-| **Anomaly Detection** | `LessThanLowerThreshold` | Alarm when metric falls below lower band |
+| **Anomaly Detection** | `LessThanLowerThreshold`                   | Alarm when metric falls below lower band                 |
 
 ## ReAlarm Tag Configuration and Behavior:
 
