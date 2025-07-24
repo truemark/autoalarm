@@ -1,75 +1,51 @@
 # AutoAlarm Project README
 
-## Deployment Process
+## Table of Contents
 
-### Prerequisites
+- [Overview](#overview)
+- [Managing AutoAlarm](#managing-autoalarm)
+- [Overriding Default Alarm Values with Tags](#overriding-default-alarm-values-with-tags)
+    - [Tag Value Structure](#tag-value-structure)
+- [Supported Services and Default Alarm Configurations](#supported-services-and-default-alarm-configurations)
+    - [Application Load Balancer (ALB)](#application-load-balancer-alb)
+    - [CloudFront](#cloudfront)
+    - [EC2](#ec2)
+    - [OpenSearch](#opensearch)
+    - [RDS](#rds)
+    - [RDS Clusters](#rds-clusters)
+    - [Route53Resolver](#route53resolver)
+    - [SQS](#sqs)
+    - [Step Functions](#step-functions)
+    - [Target Groups (TG)](#target-groups-tg)
+    - [Transit Gateway (TGW)](#transit-gateway-tgw)
+    - [VPN](#vpn)
+- [Guide to Customizing Alarms with Tags](#guide-to-customizing-alarms-with-tags)
+    - [Alarm Types](#alarm-types)
+        - [Static Threshold Alarms](#static-threshold-alarms)
+        - [Anomaly Detection Alarms](#anomaly-detection-alarms)
+- [Supported Tag Values](#supported-tag-values)
+    - [Threshold Configuration](#threshold-configuration)
+    - [Timing Configuration](#timing-configuration)
+    - [Understanding Datapoints vs Periods](#understanding-datapoints-vs-periods)
+    - [Statistic](#statistic)
+    - [Missing Data Treatment](#missing-data-treatment)
+    - [Valid Comparison Operators](#valid-comparison-operators)
+- [Using the Nullish Character ("-") and Implicit Values in AutoAlarm](#using-the-nullish-character---and-implicit-values-in-autoalarm)
+    - [Key Concepts](#key-concepts)
+    - [Examples](#examples)
+- [ReAlarm Tag Configuration and Behavior](#realarm-tag-configuration-and-behavior)
+    - [Overview](#overview-1)
+    - [Default Values](#default-values)
+    - [Configure ReAlarm Behavior with Tags](#configure-realarm-behavior-with-tags)
+        - [Special Note](#special-note)
+- [Additional References](#additional-references)
 
-#### **Before you begin, ensure you have the following:**
-  - **AWS CLI**: Installed and configured with appropriate access to your AWS account.
-  - **AWS CDK**
-  - **Node.js**: Version 22.x+.
-  - **Git**
-  - **pnpm**: Version 9.1.4 or later.
+## Overview:
+AutoAlarm provides out-of-the-box monitoring with sensible defaults while allowing full customization through resource tags. In addition to default alarms, 
+AutoAlarm allows operations teams to customize alarms and monitoring when necessary using a simple tagging strategy.
 
-
-#### **To set up and deploy the AutoAlarm project, follow these steps:**
-  - **Clone the Repository**
-
-  Start by cloning the project repository to your local machine:
-
-  ```bash
-  git clone https://github.com/truemark/autoalarm.git
-  cd autoalarm
-  ```
-
-  - **Install Dependencies**
-
-    ```bash
-    pnpm install
-    ```
-
-  - **Configure Region**
-
-    ```bash
-    export AWS_REGION=<region>
-    ```
-
-  - **Configure Keys and Session Token**
-
-    ```bash
-    export AWS_ACCESS_KEY_ID="<access-key-id"
-    export AWS_SECRET_ACCESS_KEY="<secret-access-key>"
-    export AWS_SESSION_TOKEN="<aws-session-token>"
-    ```
-
-  - **Bootstrap the CDK**
-
-    ```bash
-    cdk bootstrap
-    ```
-
-  - **Build the Project**
-
-      ```bash
-      pnpm build
-      ```
-
-  - **Deploy the Stack**
-
-      ```bash
-      cd cdk ; cdk deploy AutoAlarm
-      ```
-
-
-## Usage
-
-### AutoAlarm Tag Values and Alarm Creation Behavior
-
-## Default Alarm Configuration
-
-AutoAlarm provides out-of-the-box monitoring with sensible defaults while allowing full customization through resource tags.
-
-### Managing AutoAlarm
+##  Managing AutoAlarm
+- To enabled AutoAlarm for a service instance, tag an instance as follows:  
 
 | Tag Key             | Tag Value | Result                                                                                                              |
 |---------------------|-----------|---------------------------------------------------------------------------------------------------------------------|
@@ -77,193 +53,214 @@ AutoAlarm provides out-of-the-box monitoring with sensible defaults while allowi
 | `autoalarm:enabled` | `false`   | Deletes all AutoAlarm managed alarms (both default and custom alarms). Alternatively, the tag can simply be removed |
 
 
-### Configuration Priority
+## Overriding Default Alarm Values with Tags
+- Each alarm configuration supported by AutoAlarm has a default configuration. Furthermore, each service has alarms that are automatically included by default 
+  any time the `autoalarm:enabled` tag is set to `true`. In scenarios where a user needs to change the default values on the default alarms or enable alarms
+  that are not included by default, these alarms can be configured using a tagging schema with specific tag keys and values as defined below: 
 
-1. **Tagged values** - Always take precedence
-2. **Default values** - Applied when tags are absent or when some values are missing from the tag value in which case autoalarm will pull the default for that value. 
-3. **No alarm** - Alarms are not created when the `autoalarm:enabled` tag is not present or set to false and/or a non-default alarm is not defined in a tag.
+### Tag Value Structure
 
-Resources must be tagged according to the schema defined below to enable alarm management.
+Each tag value consists of 8 parameters separated by `/`:
 
-## AutoAlarm Default Tag Configuration for Supported Resources
+| Position | Parameter           | Example                | Description                       |
+|----------|---------------------|------------------------|-----------------------------------|
+| 1        | Warning Threshold   | `66` or `-`            | Threshold value or `-` to disable |
+| 2        | Critical Threshold  | `89` or `-`            | Threshold value or `-` to disable |
+| 3        | Period              | `120`                  | Seconds per evaluation period     |
+| 4        | Evaluation Periods  | `15`                   | Number of periods to evaluate     |
+| 5        | Statistic           | `Average`              | Metric statistic type             |
+| 6        | Datapoints to Alarm | `12`                   | Required breaching datapoints     |
+| 7        | Comparison Operator | `GreaterThanThreshold` | How to compare against threshold  |
+| 8        | Alarm Action        | `breaching`            | Missing Data Treatment            |
 
-The following schema is used to define tag values for all Alarm Management tags:
+**Example Breakdown:**
+```
+        Tag Key                                        Tag Value
+┌────────────────────────┐   ┌─────────────────────────────────────────────────────────────┐                                          
+autoalarm:some-metric-type = 66/89/120/15/Average/12/GreaterThanOrEqualToThreshold/breaching
+                             │  │   │  │     │    │           │                       │
+                             │  │   │  │     │    │           │                       └────➤ TreatMissingData: breaching
+                             │  │   │  │     │    │           └────────────────────────────➤ ComparisonOperator: >=
+                             │  │   │  │     │    └────────────────────────────────────────➤ DatapointsToAlarm: 12
+                             │  │   │  │     └─────────────────────────────────────────────➤ Statistic: Average
+                             │  │   │  └───────────────────────────────────────────────────➤ Eval Periods: 15
+                             │  │   └──────────────────────────────────────────────────────➤ Period: 120 sec
+                             │  └──────────────────────────────────────────────────────────➤ Critical Alarm Threshold: 89
+                             └─────────────────────────────────────────────────────────────➤ Warning Alarm Threshold: 66
+```
 
-| Tag Key                              | Tag Value                                                                                                                                              |
-|--------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `autoalarm:some-metric-type`         | `Warning Threshold / Critical Threshold / Period / Evaluation Periods / Statistic / Datapoints to Alarm / ComparisonOperator / Missing Data Treatment` |
-| `autoalarm:some-metric-type-anomaly` | `Warning Threshold / Critical Threshold / Period / Evaluation Periods / Statistic / Datapoints to Alarm / ComparisonOperator / Missing Data Treatment` |
 
-Threshold values that contain '-' are undefined and will default to not creating the alarm if the warning and critical
-threshold values are not provided in the tag value when setting the tag on the resource.
+## Supported Services and Default Alarm Configurations
+Threshold values that contain '-' are undefined and will default to not creating the alarm for that threshold (Warning or Critical). If neither the warning and critical
+threshold values are provided in the tag value when setting the tag on the resource, no alarm will be created.
 
 
 #### Application Load Balancer (ALB)
 
-| Tag                               |  Warning Threshold  | Critical Threshold | Period | Evaluation Periods | Statistic | Datapoints to Alarm | Comparison Operator       | Missing Data Treatment | Complete Tag Value                                     | Alarm Created by Default | Standard CloudWatch |
-|-----------------------------------|---------------------|--------------------|--------|--------------------|-----------|---------------------|---------------------------|------------------------|--------------------------------------------------------|--------------------------|---------------------|
-| `autoalarm:4xx-count`             |  -                  | -                  | 60     | 2                  | Sum       | 2                   | GreaterThanThreshold      | ignore                 | `-/-/60/2/Sum/2/GreaterThanThreshold/ignore`           | No                       | Yes                 |
-| `autoalarm:4xx-count-anomaly`     |  2                  | 5                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `2/5/300/1/Average/1/GreaterThanUpperThreshold/ignore` | No                       | Yes                 |
-| `autoalarm:5xx-count`             |  -                  | -                  | 60     | 2                  | Sum       | 2                   | GreaterThanThreshold      | ignore                 | `-/-/60/2/Sum/2/GreaterThanThreshold/ignore`           | No                       | Yes                 |
-| `autoalarm:5xx-count-anomaly`     |  2                  | 5                  | 300    | 2                  | Average   | 2                   | GreaterThanUpperThreshold | ignore                 | `2/5/300/2/Average/2/GreaterThanUpperThreshold/ignore` | Yes                      | Yes                 |
-| `autoalarm:request-count`         |  -                  | -                  | 60     | 2                  | Sum       | 2                   | GreaterThanThreshold      | ignore                 | `-/-/60/2/Sum/2/GreaterThanThreshold/ignore`           | No                       | Yes                 |
-| `autoalarm:request-count-anomaly` |  3                  | 5                  | 300    | 2                  | Average   | 2                   | GreaterThanUpperThreshold | ignore                 | `3/5/300/2/Average/2/GreaterThanUpperThreshold/ignore` | No                       | Yes                 |
+| Tag                               | Alarm Created by Default | Standard CloudWatch |  Warning Threshold  | Critical Threshold | Period | Evaluation Periods | Statistic | Datapoints to Alarm | Comparison Operator       | Missing Data Treatment | Complete Tag Value                                     |
+|-----------------------------------|--------------------------|---------------------|---------------------|--------------------|--------|--------------------|-----------|---------------------|---------------------------|------------------------|--------------------------------------------------------|
+| `autoalarm:4xx-count`             | No                       | Yes                 |  -                  | -                  | 60     | 2                  | Sum       | 2                   | GreaterThanThreshold      | ignore                 | `-/-/60/2/Sum/2/GreaterThanThreshold/ignore`           |
+| `autoalarm:4xx-count-anomaly`     | No                       | Yes                 |  2                  | 5                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `2/5/300/1/Average/1/GreaterThanUpperThreshold/ignore` |
+| `autoalarm:5xx-count`             | No                       | Yes                 |  -                  | -                  | 60     | 2                  | Sum       | 2                   | GreaterThanThreshold      | ignore                 | `-/-/60/2/Sum/2/GreaterThanThreshold/ignore`           |
+| `autoalarm:5xx-count-anomaly`     | Yes                      | Yes                 |  2                  | 5                  | 300    | 2                  | Average   | 2                   | GreaterThanUpperThreshold | ignore                 | `2/5/300/2/Average/2/GreaterThanUpperThreshold/ignore` |
+| `autoalarm:request-count`         | No                       | Yes                 |  -                  | -                  | 60     | 2                  | Sum       | 2                   | GreaterThanThreshold      | ignore                 | `-/-/60/2/Sum/2/GreaterThanThreshold/ignore`           |
+| `autoalarm:request-count-anomaly` | No                       | Yes                 |  3                  | 5                  | 300    | 2                  | Average   | 2                   | GreaterThanUpperThreshold | ignore                 | `3/5/300/2/Average/2/GreaterThanUpperThreshold/ignore` |
 
 #### CloudFront
 
-| Tag                            | Warning Threshold | Critical Threshold | Period | Evaluation Periods | Statistic | Datapoints to Alarm | Comparison Operator       | Missing Data Treatment | Complete Tag Value                                     | Alarm Created by Default | Standard CloudWatch |
-|--------------------------------|-------------------|--------------------|--------|--------------------|-----------|---------------------|---------------------------|------------------------|--------------------------------------------------------|--------------------------|---------------------|
-| `autoalarm:4xx-errors`         | 100               | 300                | 300    | 1                  | Sum       | 1                   | GreaterThanThreshold      | ignore                 | `100/300/300/1/Sum/1/GreaterThanThreshold/ignore`      | No                       | Yes                 |
-| `autoalarm:4xx-errors-anomaly` | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore` | No                       | Yes                 |
-| `autoalarm:5xx-errors`         | 10                | 50                 | 300    | 1                  | Sum       | 1                   | GreaterThanThreshold      | ignore                 | `10/50/300/1/Sum/1/GreaterThanThreshold/ignore`        | Yes                      | Yes                 |
-| `autoalarm:5xx-errors-anomaly` | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore` | No                       | Yes                 |
+| Tag                            | Alarm Created by Default | Standard CloudWatch | Warning Threshold | Critical Threshold | Period | Evaluation Periods | Statistic | Datapoints to Alarm | Comparison Operator       | Missing Data Treatment | Complete Tag Value                                     |
+|--------------------------------|--------------------------|---------------------|-------------------|--------------------|--------|--------------------|-----------|---------------------|---------------------------|------------------------|--------------------------------------------------------|
+| `autoalarm:4xx-errors`         | No                       | Yes                 | 100               | 300                | 300    | 1                  | Sum       | 1                   | GreaterThanThreshold      | ignore                 | `100/300/300/1/Sum/1/GreaterThanThreshold/ignore`      |
+| `autoalarm:4xx-errors-anomaly` | No                       | Yes                 | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore` |
+| `autoalarm:5xx-errors`         | Yes                      | Yes                 | 10                | 50                 | 300    | 1                  | Sum       | 1                   | GreaterThanThreshold      | ignore                 | `10/50/300/1/Sum/1/GreaterThanThreshold/ignore`        |
+| `autoalarm:5xx-errors-anomaly` | No                       | Yes                 | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore` |
 
 #### EC2
 
-| Tag                             | Warning Threshold | Critical Threshold | Period | Evaluation Periods | Statistic | Datapoints to Alarm | Comparison Operator       | Missing Data Treatment | Complete Tag Value                                     | Alarm Created by Default | Standard CloudWatch                            |
-|---------------------------------|-------------------|--------------------|--------|--------------------|-----------|---------------------|---------------------------|------------------------|--------------------------------------------------------|--------------------------|------------------------------------------------|
-| `autoalarm:cpu`                 | 95                | 98                 | 60     | 5                  | Maximum   | 5                   | GreaterThanThreshold      | ignore                 | `95/98/60/5/Maximum/5/GreaterThanThreshold/ignore`     | Yes                      | Yes                                            |
-| `autoalarm:cpu-anomaly`         | 2                 | 5                  | 60     | 5                  | Average   | 5                   | GreaterThanUpperThreshold | ignore                 | `2/5/60/5/Average/5/GreaterThanUpperThreshold/ignore`  | No                       | Yes                                            |
-| `autoalarm:memory`              | 95                | 98                 | 60     | 10                 | Maximum   | 10                  | GreaterThanThreshold      | ignore                 | `95/98/60/10/Maximum/10/GreaterThanThreshold/ignore`   | Yes                      | No (Requires CloudWatch Agent Install on Host) |
-| `autoalarm:memory-anomaly`      | 2                 | 5                  | 300    | 2                  | Average   | 2                   | GreaterThanUpperThreshold | ignore                 | `2/5/300/2/Average/2/GreaterThanUpperThreshold/ignore` | No                       | No (Requires CloudWatch Agent Install on Host) |
-| `autoalarm:storage`             | 90                | 95                 | 60     | 2                  | Maximum   | 1                   | GreaterThanThreshold      | ignore                 | `90/95/60/2/Maximum/1/GreaterThanThreshold/ignore`     | Yes                      | No (Requires CloudWatch Agent Install on Host) |
-| `autoalarm:storage-anomaly`     | 2                 | 3                  | 60     | 2                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `2/3/60/2/Average/1/GreaterThanUpperThreshold/ignore`  | No                       | No (Requires CloudWatch Agent Install on Host) |
-| `autoalarm:network-in`          | -                 | -                  | 60     | 5                  | Sum       | 5                   | LessThanThreshold         | ignore                 | `-/-/60/5/Sum/5/LessThanThreshold/ignore`              | No                       | Yes                                            |
-| `autoalarm:network-in-anomaly`  | 2                 | 5                  | 60     | 5                  | Average   | 5                   | LessThanLowerThreshold    | ignore                 | `2/5/60/5/Average/5/LessThanLowerThreshold/ignore`     | No                       | Yes                                            |
-| `autoalarm:network-out`         | -                 | -                  | 60     | 5                  | Sum       | 5                   | LessThanThreshold         | ignore                 | `-/-/60/5/Sum/5/LessThanThreshold/ignore`              | No                       | Yes                                            |
-| `autoalarm:network-out-anomaly` | 2                 | 5                  | 60     | 5                  | Sum       | 5                   | LessThanLowerThreshold    | ignore                 | `2/5/60/5/Sum/5/LessThanLowerThreshold/ignore`         | No                       | Yes                                            |
+| Tag                             | Alarm Created by Default | Standard CloudWatch                            | Warning Threshold | Critical Threshold | Period | Evaluation Periods | Statistic | Datapoints to Alarm | Comparison Operator       | Missing Data Treatment | Complete Tag Value                                     |
+|---------------------------------|--------------------------|------------------------------------------------|-------------------|--------------------|--------|--------------------|-----------|---------------------|---------------------------|------------------------|--------------------------------------------------------|
+| `autoalarm:cpu`                 | Yes                      | Yes                                            | 95                | 98                 | 60     | 5                  | Maximum   | 5                   | GreaterThanThreshold      | ignore                 | `95/98/60/5/Maximum/5/GreaterThanThreshold/ignore`     |
+| `autoalarm:cpu-anomaly`         | No                       | Yes                                            | 2                 | 5                  | 60     | 5                  | Average   | 5                   | GreaterThanUpperThreshold | ignore                 | `2/5/60/5/Average/5/GreaterThanUpperThreshold/ignore`  |
+| `autoalarm:memory`              | Yes                      | No (Requires CloudWatch Agent Install on Host) | 95                | 98                 | 60     | 10                 | Maximum   | 10                  | GreaterThanThreshold      | ignore                 | `95/98/60/10/Maximum/10/GreaterThanThreshold/ignore`   |
+| `autoalarm:memory-anomaly`      | No                       | No (Requires CloudWatch Agent Install on Host) | 2                 | 5                  | 300    | 2                  | Average   | 2                   | GreaterThanUpperThreshold | ignore                 | `2/5/300/2/Average/2/GreaterThanUpperThreshold/ignore` |
+| `autoalarm:storage`             | Yes                      | No (Requires CloudWatch Agent Install on Host) | 90                | 95                 | 60     | 2                  | Maximum   | 1                   | GreaterThanThreshold      | ignore                 | `90/95/60/2/Maximum/1/GreaterThanThreshold/ignore`     |
+| `autoalarm:storage-anomaly`     | No                       | No (Requires CloudWatch Agent Install on Host) | 2                 | 3                  | 60     | 2                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `2/3/60/2/Average/1/GreaterThanUpperThreshold/ignore`  |
+| `autoalarm:network-in`          | No                       | Yes                                            | -                 | -                  | 60     | 5                  | Sum       | 5                   | LessThanThreshold         | ignore                 | `-/-/60/5/Sum/5/LessThanThreshold/ignore`              |
+| `autoalarm:network-in-anomaly`  | No                       | Yes                                            | 2                 | 5                  | 60     | 5                  | Average   | 5                   | LessThanLowerThreshold    | ignore                 | `2/5/60/5/Average/5/LessThanLowerThreshold/ignore`     |
+| `autoalarm:network-out`         | No                       | Yes                                            | -                 | -                  | 60     | 5                  | Sum       | 5                   | LessThanThreshold         | ignore                 | `-/-/60/5/Sum/5/LessThanThreshold/ignore`              |
+| `autoalarm:network-out-anomaly` | No                       | Yes                                            | 2                 | 5                  | 60     | 5                  | Sum       | 5                   | LessThanLowerThreshold    | ignore                 | `2/5/60/5/Sum/5/LessThanLowerThreshold/ignore`         |
 
 #### OpenSearch
 
-| Tag                                     | Warning Threshold | Critical Threshold | Period | Evaluation Periods | Statistic | Datapoints to Alarm | Comparison Operator           | Missing Data Treatment | Complete Tag Value                                      | Alarm Created by Default | Standard CloudWatch |
-|-----------------------------------------|-------------------|--------------------|--------|--------------------|-----------|---------------------|-------------------------------|------------------------|---------------------------------------------------------|--------------------------|---------------------|
-| `autoalarm:4xx-errors`                  | 100               | 300                | 300    | 1                  | Sum       | 1                   | GreaterThanThreshold          | ignore                 | `100/300/300/1/Sum/1/GreaterThanThreshold/ignore`       | No                       | Yes                 |
-| `autoalarm:4xx-errors-anomaly`          | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold     | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore`  | No                       | Yes                 |
-| `autoalarm:5xx-errors`                  | 10                | 50                 | 300    | 1                  | Sum       | 1                   | GreaterThanThreshold          | ignore                 | `10/50/300/1/Sum/1/GreaterThanThreshold/ignore`         | Yes                      | Yes                 |
-| `autoalarm:5xx-errors-anomaly`          | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold     | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore`  | No                       | Yes                 |
-| `autoalarm:cpu`                         | 98                | 98                 | 300    | 1                  | Maximum   | 1                   | GreaterThanThreshold          | ignore                 | `98/98/300/1/Maximum/1/GreaterThanThreshold/ignore`     | Yes                      | Yes                 |
-| `autoalarm:cpu-anomaly`                 | 2                 | 2                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold     | ignore                 | `2/2/300/1/Average/1/GreaterThanUpperThreshold/ignore`  | No                       | Yes                 |
-| `autoalarm:iops-throttle`               | 5                 | 10                 | 300    | 1                  | Sum       | 1                   | GreaterThanThreshold          | ignore                 | `5/10/300/1/Sum/1/GreaterThanThreshold/ignore`          | Yes                      | Yes                 |
-| `autoalarm:iops-throttle-anomaly`       | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold     | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore`  | No                       | Yes                 |
-| `autoalarm:jvm-memory`                  | 85                | 92                 | 300    | 1                  | Maximum   | 1                   | GreaterThanThreshold          | ignore                 | `85/92/300/1/Maximum/1/GreaterThanThreshold/ignore`     | Yes                      | Yes                 |
-| `autoalarm:jvm-memory-anomaly`          | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold     | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore`  | No                       | Yes                 |
-| `autoalarm:read-latency`                | 0.03              | 0.08               | 60     | 2                  | Maximum   | 2                   | GreaterThanThreshold          | ignore                 | `0.03/0.08/60/2/Maximum/2/GreaterThanThreshold/ignore`  | Yes                      | Yes                 |
-| `autoalarm:read-latency-anomaly`        | 2                 | 6                  | 300    | 2                  | Average   | 2                   | GreaterThanUpperThreshold     | ignore                 | `2/6/300/2/Average/2/GreaterThanUpperThreshold/ignore`  | No                       | Yes                 |
-| `autoalarm:search-latency`              | 1                 | 2                  | 300    | 2                  | Average   | 2                   | GreaterThanThreshold          | ignore                 | `1/2/300/2/Average/2/GreaterThanThreshold/ignore`       | Yes                      | Yes                 |
-| `autoalarm:search-latency-anomaly`      | -                 | -                  | 300    | 2                  | Average   | 2                   | GreaterThanUpperThreshold     | ignore                 | `-/-/300/2/Average/2/GreaterThanUpperThreshold/ignore`  | Yes                      | Yes                 |
-| `autoalarm:snapshot-failure`            | -                 | 1                  | 300    | 1                  | Sum       | 1                   | GreaterThanOrEqualToThreshold | ignore                 | `-/1/300/1/Sum/1/GreaterThanOrEqualToThreshold/ignore`  | Yes                      | Yes                 |
-| `autoalarm:storage`                     | 10000             | 5000               | 300    | 2                  | Average   | 2                   | LessThanThreshold             | ignore                 | `10000/5000/300/2/Average/2/LessThanThreshold/ignore`   | Yes                      | Yes                 |
-| `autoalarm:storage-anomaly`             | 2                 | 3                  | 300    | 2                  | Average   | 2                   | GreaterThanUpperThreshold     | ignore                 | `2/3/300/2/Average/2/GreaterThanUpperThreshold/ignore`  | Yes                      | Yes                 |
-| `autoalarm:throughput-throttle`         | 40                | 60                 | 60     | 2                  | Sum       | 2                   | GreaterThanThreshold          | ignore                 | `40/60/60/2/Sum/2/GreaterThanThreshold/ignore`          | No                       | Yes                 |
-| `autoalarm:throughput-throttle-anomaly` | 3                 | 5                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold     | ignore                 | `3/5/300/1/Average/1/GreaterThanUpperThreshold/ignore`  | No                       | Yes                 |
-| `autoalarm:write-latency`               | 84                | 100                | 60     | 2                  | Maximum   | 2                   | GreaterThanThreshold          | ignore                 | `84/100/60/2/Maximum/2/GreaterThanThreshold/ignore`     | Yes                      | Yes                 |
-| `autoalarm:write-latency-anomaly`       | -                 | -                  | 60     | 2                  | Average   | 2                   | GreaterThanUpperThreshold     | ignore                 | `-/-/60/2/Average/2/GreaterThanUpperThreshold/ignore`   | No                       | Yes                 |
-| `autoalarm:yellow-cluster`              | -                 | 1                  | 300    | 1                  | Maximum   | 1                   | GreaterThanThreshold          | ignore                 | `-/1/300/1/Maximum/1/GreaterThanThreshold/ignore`       | Yes                      | Yes                 |
-| `autoalarm:red-cluster`                 | -                 | 1                  | 60     | 1                  | Maximum   | 1                   | GreaterThanThreshold          | ignore                 | `-/1/60/1/Maximum/1/GreaterThanThreshold/ignore`        | Yes                      | Yes                 |
-| `autoalarm:index-writes-blocked`        | -                 | 1                  | 600    | 1                  | Maximum   | 1                   | GreaterThanThreshold          | notBreaching           | `-/1/600/1/Maximum/1/GreaterThanThreshold/notBreaching` | No                       | Yes                 |
+| Tag                                     | Alarm Created by Default | Standard CloudWatch | Warning Threshold | Critical Threshold | Period | Evaluation Periods | Statistic | Datapoints to Alarm | Comparison Operator           | Missing Data Treatment | Complete Tag Value                                      |
+|-----------------------------------------|--------------------------|---------------------|-------------------|--------------------|--------|--------------------|-----------|---------------------|-------------------------------|------------------------|---------------------------------------------------------|
+| `autoalarm:4xx-errors`                  | No                       | Yes                 | 100               | 300                | 300    | 1                  | Sum       | 1                   | GreaterThanThreshold          | ignore                 | `100/300/300/1/Sum/1/GreaterThanThreshold/ignore`       |
+| `autoalarm:4xx-errors-anomaly`          | No                       | Yes                 | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold     | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore`  |
+| `autoalarm:5xx-errors`                  | Yes                      | Yes                 | 10                | 50                 | 300    | 1                  | Sum       | 1                   | GreaterThanThreshold          | ignore                 | `10/50/300/1/Sum/1/GreaterThanThreshold/ignore`         |
+| `autoalarm:5xx-errors-anomaly`          | No                       | Yes                 | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold     | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore`  |
+| `autoalarm:cpu`                         | Yes                      | Yes                 | 98                | 98                 | 300    | 1                  | Maximum   | 1                   | GreaterThanThreshold          | ignore                 | `98/98/300/1/Maximum/1/GreaterThanThreshold/ignore`     |
+| `autoalarm:cpu-anomaly`                 | No                       | Yes                 | 2                 | 2                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold     | ignore                 | `2/2/300/1/Average/1/GreaterThanUpperThreshold/ignore`  |
+| `autoalarm:iops-throttle`               | Yes                      | Yes                 | 5                 | 10                 | 300    | 1                  | Sum       | 1                   | GreaterThanThreshold          | ignore                 | `5/10/300/1/Sum/1/GreaterThanThreshold/ignore`          |
+| `autoalarm:iops-throttle-anomaly`       | No                       | Yes                 | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold     | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore`  |
+| `autoalarm:jvm-memory`                  | Yes                      | Yes                 | 85                | 92                 | 300    | 1                  | Maximum   | 1                   | GreaterThanThreshold          | ignore                 | `85/92/300/1/Maximum/1/GreaterThanThreshold/ignore`     |
+| `autoalarm:jvm-memory-anomaly`          | No                       | Yes                 | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold     | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore`  |
+| `autoalarm:read-latency`                | Yes                      | Yes                 | 0.03              | 0.08               | 60     | 2                  | Maximum   | 2                   | GreaterThanThreshold          | ignore                 | `0.03/0.08/60/2/Maximum/2/GreaterThanThreshold/ignore`  |
+| `autoalarm:read-latency-anomaly`        | No                       | Yes                 | 2                 | 6                  | 300    | 2                  | Average   | 2                   | GreaterThanUpperThreshold     | ignore                 | `2/6/300/2/Average/2/GreaterThanUpperThreshold/ignore`  |
+| `autoalarm:search-latency`              | Yes                      | Yes                 | 1                 | 2                  | 300    | 2                  | Average   | 2                   | GreaterThanThreshold          | ignore                 | `1/2/300/2/Average/2/GreaterThanThreshold/ignore`       |
+| `autoalarm:search-latency-anomaly`      | Yes                      | Yes                 | -                 | -                  | 300    | 2                  | Average   | 2                   | GreaterThanUpperThreshold     | ignore                 | `-/-/300/2/Average/2/GreaterThanUpperThreshold/ignore`  |
+| `autoalarm:snapshot-failure`            | Yes                      | Yes                 | -                 | 1                  | 300    | 1                  | Sum       | 1                   | GreaterThanOrEqualToThreshold | ignore                 | `-/1/300/1/Sum/1/GreaterThanOrEqualToThreshold/ignore`  |
+| `autoalarm:storage`                     | Yes                      | Yes                 | 10000             | 5000               | 300    | 2                  | Average   | 2                   | LessThanThreshold             | ignore                 | `10000/5000/300/2/Average/2/LessThanThreshold/ignore`   |
+| `autoalarm:storage-anomaly`             | Yes                      | Yes                 | 2                 | 3                  | 300    | 2                  | Average   | 2                   | GreaterThanUpperThreshold     | ignore                 | `2/3/300/2/Average/2/GreaterThanUpperThreshold/ignore`  |
+| `autoalarm:throughput-throttle`         | No                       | Yes                 | 40                | 60                 | 60     | 2                  | Sum       | 2                   | GreaterThanThreshold          | ignore                 | `40/60/60/2/Sum/2/GreaterThanThreshold/ignore`          |
+| `autoalarm:throughput-throttle-anomaly` | No                       | Yes                 | 3                 | 5                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold     | ignore                 | `3/5/300/1/Average/1/GreaterThanUpperThreshold/ignore`  |
+| `autoalarm:write-latency`               | Yes                      | Yes                 | 84                | 100                | 60     | 2                  | Maximum   | 2                   | GreaterThanThreshold          | ignore                 | `84/100/60/2/Maximum/2/GreaterThanThreshold/ignore`     |
+| `autoalarm:write-latency-anomaly`       | No                       | Yes                 | -                 | -                  | 60     | 2                  | Average   | 2                   | GreaterThanUpperThreshold     | ignore                 | `-/-/60/2/Average/2/GreaterThanUpperThreshold/ignore`   |
+| `autoalarm:yellow-cluster`              | Yes                      | Yes                 | -                 | 1                  | 300    | 1                  | Maximum   | 1                   | GreaterThanThreshold          | ignore                 | `-/1/300/1/Maximum/1/GreaterThanThreshold/ignore`       |
+| `autoalarm:red-cluster`                 | Yes                      | Yes                 | -                 | 1                  | 60     | 1                  | Maximum   | 1                   | GreaterThanThreshold          | ignore                 | `-/1/60/1/Maximum/1/GreaterThanThreshold/ignore`        |
+| `autoalarm:index-writes-blocked`        | No                       | Yes                 | -                 | 1                  | 600    | 1                  | Maximum   | 1                   | GreaterThanThreshold          | notBreaching           | `-/1/600/1/Maximum/1/GreaterThanThreshold/notBreaching` |
 
 #### RDS
 
-| Tag                                  | Warning Threshold | Critical Threshold | Period | Evaluation Periods | Statistic | Datapoints to Alarm | Comparison Operator       | Missing Data Treatment | Complete Tag Value                                                | Alarm Created by Default | Standard CloudWatch |
-|--------------------------------------|-------------------|--------------------|--------|--------------------|-----------|---------------------|---------------------------|------------------------|-------------------------------------------------------------------|--------------------------|---------------------|
-| `autoalarm:cpu`                      | 90                | 95                 | 60     | 10                 | Maximum   | 8                   | GreaterThanThreshold      | ignore                 | `90/95/60/10/Maximum/8/GreaterThanThreshold/ignore`               | No                       | Yes                 |
-| `autoalarm:db-connections-anomaly`   | 2                 | 5                  | 60     | 20                 | Maximum   | 16                  | GreaterThanUpperThreshold | ignore                 | `2/5/60/20/Maximum/16/GreaterThanUpperThreshold/ignore`           | Yes                      | Yes                 |
-| `autoalarm:dbload-anomaly`           | 2                 | 5                  | 60     | 25                 | Maximum   | 20                  | GreaterThanUpperThreshold | ignore                 | `2/5/60/25/Maximum/20/GreaterThanUpperThreshold/ignore`           | Yes                      | Yes                 |
-| `autoalarm:deadlocks`                | -                 | 0                  | 60     | 2                  | Sum       | 2                   | GreaterThanThreshold      | ignore                 | `-/0/60/2/Sum/2/GreaterThanThreshold/ignore`                      | Yes                      | Yes                 |
-| `autoalarm:disk-queue-depth`         | 4                 | 8                  | 60     | 20                 | Maximum   | 15                  | GreaterThanThreshold      | ignore                 | `4/8/60/20/Maximum/15/GreaterThanThreshold/ignore`                | No                       | Yes                 |
-| `autoalarm:disk-queue-depth-anomaly` | 2                 | 4                  | 60     | 12                 | Sum       | 9                   | GreaterThanUpperThreshold | ignore                 | `2/4/60/12/Sum/9/GreaterThanUpperThreshold/ignore`                | Yes                      | Yes                 |
-| `autoalarm:freeable-memory`          | 512000000         | 256000000          | 300    | 3                  | Minimum   | 2                   | LessThanThreshold         | ignore                 | `512000000/256000000/300/3/Minimum/2/LessThanThreshold/ignore`    | No                       | Yes                 |
-| `autoalarm:freeable-memory-anomaly`  | 2                 | 3                  | 300    | 3                  | Minimum   | 2                   | LessThanLowerThreshold    | ignore                 | `2/3/300/3/Minimum/2/LessThanLowerThreshold/ignore`               | Yes                      | Yes                 |
-| `autoalarm:replica-lag`              | 60                | 300                | 120    | 1                  | Maximum   | 1                   | GreaterThanThreshold      | ignore                 | `60/300/120/1/Maximum/1/GreaterThanThreshold/ignore`              | Yes                      | Yes                 |
-| `autoalarm:replica-lag-anomaly`      | 2                 | 5                  | 120    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `2/5/120/1/Average/1/GreaterThanUpperThreshold/ignore`            | Yes                      | Yes                 |
-| `autoalarm:swap-usage`               | 100000000         | 256000000          | 300    | 3                  | Maximum   | 3                   | GreaterThanThreshold      | ignore                 | `100000000/256000000/300/3/Maximum/3/GreaterThanThreshold/ignore` | Yes                      | Yes                 |
-| `autoalarm:write-latency`            | 0.5               | 1                  | 60     | 12                 | Maximum   | 9                   | GreaterThanUpperThreshold | ignore                 | `0.5/1/60/12/Maximum/9/GreaterThanUpperThreshold/ignore`          | No                       | Yes                 |
-| `autoalarm:write-latency-anomaly`    | 2                 | 4                  | 60     | 12                 | Maximum   | 9                   | GreaterThanUpperThreshold | ignore                 | `2/4/60/12/Maximum/9/GreaterThanUpperThreshold/ignore`            | No                       | Yes                 |
-| `autoalarm:write-througput-anomaly`  | 2                 | 4                  | 60     | 12                 | Maximum   | 9                   | GreaterThanUpperThreshold | ignore                 | `2/4/60/12/Maximum/9/GreaterThanUpperThreshold/ignore`            | No                       | Yes                 |
-| `autoalarm:read-latency`             | 1                 | 2                  | 60     | 12                 | Maximum   | 9                   | GreaterThanThreshold      | ignore                 | `1/2/60/12/Maximum/9/GreaterThanThreshold/ignore`                 | No                       | Yes                 |
-| `autoalarm:read-latency-anomaly`     | 2                 | 4                  | 60     | 12                 | Maximum   | 9                   | GreaterThanUpperThreshold | ignore                 | `2/4/60/12/Maximum/9/GreaterThanUpperThreshold/ignore`            | No                       | Yes                 |
-| `autoalarm:read-throughput-anomaly`  | 2                 | 4                  | 60     | 12                 | Maximum   | 9                   | GreaterThanThreshold      | ignore                 | `2/4/60/12/Maximum/9/GreaterThanThreshold/ignore`                 | No                       | Yes                 |
+| Tag                                  | Alarm Created by Default | Standard CloudWatch | Warning Threshold | Critical Threshold | Period | Evaluation Periods | Statistic | Datapoints to Alarm | Comparison Operator       | Missing Data Treatment | Complete Tag Value                                                |
+|--------------------------------------|--------------------------|---------------------|-------------------|--------------------|--------|--------------------|-----------|---------------------|---------------------------|------------------------|-------------------------------------------------------------------|
+| `autoalarm:cpu`                      | No                       | Yes                 | 90                | 95                 | 60     | 10                 | Maximum   | 8                   | GreaterThanThreshold      | ignore                 | `90/95/60/10/Maximum/8/GreaterThanThreshold/ignore`               |
+| `autoalarm:db-connections-anomaly`   | Yes                      | Yes                 | 2                 | 5                  | 60     | 20                 | Maximum   | 16                  | GreaterThanUpperThreshold | ignore                 | `2/5/60/20/Maximum/16/GreaterThanUpperThreshold/ignore`           |
+| `autoalarm:dbload-anomaly`           | Yes                      | Yes                 | 2                 | 5                  | 60     | 25                 | Maximum   | 20                  | GreaterThanUpperThreshold | ignore                 | `2/5/60/25/Maximum/20/GreaterThanUpperThreshold/ignore`           |
+| `autoalarm:deadlocks`                | Yes                      | Yes                 | -                 | 0                  | 60     | 2                  | Sum       | 2                   | GreaterThanThreshold      | ignore                 | `-/0/60/2/Sum/2/GreaterThanThreshold/ignore`                      |
+| `autoalarm:disk-queue-depth`         | No                       | Yes                 | 4                 | 8                  | 60     | 20                 | Maximum   | 15                  | GreaterThanThreshold      | ignore                 | `4/8/60/20/Maximum/15/GreaterThanThreshold/ignore`                |
+| `autoalarm:disk-queue-depth-anomaly` | Yes                      | Yes                 | 2                 | 4                  | 60     | 12                 | Sum       | 9                   | GreaterThanUpperThreshold | ignore                 | `2/4/60/12/Sum/9/GreaterThanUpperThreshold/ignore`                |
+| `autoalarm:freeable-memory`          | No                       | Yes                 | 512000000         | 256000000          | 300    | 3                  | Minimum   | 2                   | LessThanThreshold         | ignore                 | `512000000/256000000/300/3/Minimum/2/LessThanThreshold/ignore`    |
+| `autoalarm:freeable-memory-anomaly`  | Yes                      | Yes                 | 2                 | 3                  | 300    | 3                  | Minimum   | 2                   | LessThanLowerThreshold    | ignore                 | `2/3/300/3/Minimum/2/LessThanLowerThreshold/ignore`               |
+| `autoalarm:replica-lag`              | Yes                      | Yes                 | 60                | 300                | 120    | 1                  | Maximum   | 1                   | GreaterThanThreshold      | ignore                 | `60/300/120/1/Maximum/1/GreaterThanThreshold/ignore`              |
+| `autoalarm:replica-lag-anomaly`      | Yes                      | Yes                 | 2                 | 5                  | 120    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `2/5/120/1/Average/1/GreaterThanUpperThreshold/ignore`            |
+| `autoalarm:swap-usage`               | Yes                      | Yes                 | 100000000         | 256000000          | 300    | 3                  | Maximum   | 3                   | GreaterThanThreshold      | ignore                 | `100000000/256000000/300/3/Maximum/3/GreaterThanThreshold/ignore` |
+| `autoalarm:write-latency`            | No                       | Yes                 | 0.5               | 1                  | 60     | 12                 | Maximum   | 9                   | GreaterThanUpperThreshold | ignore                 | `0.5/1/60/12/Maximum/9/GreaterThanUpperThreshold/ignore`          |
+| `autoalarm:write-latency-anomaly`    | No                       | Yes                 | 2                 | 4                  | 60     | 12                 | Maximum   | 9                   | GreaterThanUpperThreshold | ignore                 | `2/4/60/12/Maximum/9/GreaterThanUpperThreshold/ignore`            |
+| `autoalarm:write-througput-anomaly`  | No                       | Yes                 | 2                 | 4                  | 60     | 12                 | Maximum   | 9                   | GreaterThanUpperThreshold | ignore                 | `2/4/60/12/Maximum/9/GreaterThanUpperThreshold/ignore`            |
+| `autoalarm:read-latency`             | No                       | Yes                 | 1                 | 2                  | 60     | 12                 | Maximum   | 9                   | GreaterThanThreshold      | ignore                 | `1/2/60/12/Maximum/9/GreaterThanThreshold/ignore`                 |
+| `autoalarm:read-latency-anomaly`     | No                       | Yes                 | 2                 | 4                  | 60     | 12                 | Maximum   | 9                   | GreaterThanUpperThreshold | ignore                 | `2/4/60/12/Maximum/9/GreaterThanUpperThreshold/ignore`            |
+| `autoalarm:read-throughput-anomaly`  | No                       | Yes                 | 2                 | 4                  | 60     | 12                 | Maximum   | 9                   | GreaterThanThreshold      | ignore                 | `2/4/60/12/Maximum/9/GreaterThanThreshold/ignore`                 |
 
 
 
 #### RDS Clusters
 
-| Tag                                | Warning Threshold | Critical Threshold | Period | Evaluation Periods | Statistic | Datapoints to Alarm | Comparison Operator       | Missing Data Treatment | Complete Tag Value                                     | Alarm Created by Default | Standard CloudWatch |
-|------------------------------------|-------------------|--------------------|--------|--------------------|-----------|---------------------|---------------------------|------------------------|--------------------------------------------------------|--------------------------|---------------------|
-| `autoalarm:db-connections-anomaly` | 2                 | 5                  | 600    | 5                  | Average   | 5                   | GreaterThanUpperThreshold | ignore                 | `2/5/600/5/Average/5/GreaterThanUpperThreshold/ignore` | Yes                      | Yes                 |
-| `autoalarm:failover-state`         | 0                 | 1                  | 60     | 1                  | Maximum   | 1                   | GreaterThanThreshold      | notBreaching           | `0/1/60/1/Maximum/1/GreaterThanThreshold/notBreaching` | No                       | Yes                 |
-| `autoalarm:replica-lag-anomaly`    | 2                 | 5                  | 120    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `2/5/120/1/Average/1/GreaterThanUpperThreshold/ignore` | No                       | Yes                 |
+| Tag                                | Alarm Created by Default | Standard CloudWatch | Warning Threshold | Critical Threshold | Period | Evaluation Periods | Statistic | Datapoints to Alarm | Comparison Operator       | Missing Data Treatment | Complete Tag Value                                     |
+|------------------------------------|--------------------------|---------------------|-------------------|--------------------|--------|--------------------|-----------|---------------------|---------------------------|------------------------|--------------------------------------------------------|
+| `autoalarm:db-connections-anomaly` | Yes                      | Yes                 | 2                 | 5                  | 600    | 5                  | Average   | 5                   | GreaterThanUpperThreshold | ignore                 | `2/5/600/5/Average/5/GreaterThanUpperThreshold/ignore` |
+| `autoalarm:failover-state`         | No                       | Yes                 | 0                 | 1                  | 60     | 1                  | Maximum   | 1                   | GreaterThanThreshold      | notBreaching           | `0/1/60/1/Maximum/1/GreaterThanThreshold/notBreaching` |
+| `autoalarm:replica-lag-anomaly`    | No                       | Yes                 | 2                 | 5                  | 120    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `2/5/120/1/Average/1/GreaterThanUpperThreshold/ignore` |
 
 #### Route53Resolver
 
-| Tag                                       | Warning Threshold | Critical Threshold | Period | Evaluation Periods | Statistic | Datapoints to Alarm | Comparison Operator       | Missing Data Treatment | Complete Tag Value                                        | Alarm Created by Default | Standard CloudWatch |
-|-------------------------------------------|-------------------|--------------------|--------|--------------------|-----------|---------------------|---------------------------|------------------------|-----------------------------------------------------------|--------------------------|---------------------|
-| `autoalarm:inbound-query-volume`          | 1500000           | 2000000            | 300    | 1                  | Sum       | 1                   | GreaterThanThreshold      | ignore                 | `1500000/2000000/300/1/Sum/1/GreaterThanThreshold/ignore` | Yes                      | Yes                 |
-| `autoalarm:inbound-query-volume-anomaly`  | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore`    | No                       | Yes                 |
-| `autoalarm:outbound-query-volume`         | 1500000           | 2000000            | 300    | 1                  | Sum       | 1                   | GreaterThanThreshold      | ignore                 | `1500000/2000000/300/1/Sum/1/GreaterThanThreshold/ignore` | No                       | Yes                 |
-| `autoalarm:outbound-query-volume-anomaly` | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore`    | No                       | Yes                 |
+| Tag                                       | Alarm Created by Default | Standard CloudWatch | Warning Threshold | Critical Threshold | Period | Evaluation Periods | Statistic | Datapoints to Alarm | Comparison Operator       | Missing Data Treatment | Complete Tag Value                                        |
+|-------------------------------------------|--------------------------|---------------------|-------------------|--------------------|--------|--------------------|-----------|---------------------|---------------------------|------------------------|-----------------------------------------------------------|
+| `autoalarm:inbound-query-volume`          | Yes                      | Yes                 | 1500000           | 2000000            | 300    | 1                  | Sum       | 1                   | GreaterThanThreshold      | ignore                 | `1500000/2000000/300/1/Sum/1/GreaterThanThreshold/ignore` |
+| `autoalarm:inbound-query-volume-anomaly`  | No                       | Yes                 | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore`    |
+| `autoalarm:outbound-query-volume`         | No                       | Yes                 | 1500000           | 2000000            | 300    | 1                  | Sum       | 1                   | GreaterThanThreshold      | ignore                 | `1500000/2000000/300/1/Sum/1/GreaterThanThreshold/ignore` |
+| `autoalarm:outbound-query-volume-anomaly` | No                       | Yes                 | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore`    |
 
 #### SQS
 
-| Tag                                       | Warning Threshold | Critical Threshold | Period | Evaluation Periods | Statistic | Datapoints to Alarm | Comparison Operator       | Missing Data Treatment | Complete Tag Value                                     | Alarm Created By Default | Standard CloudWatch |
-|-------------------------------------------|-------------------|--------------------|--------|--------------------|-----------|---------------------|---------------------------|------------------------|--------------------------------------------------------|--------------------------|---------------------|
-| `autoalarm:age-of-oldest-message`         | -                 | -                  | 300    | 1                  | Maximum   | 1                   | GreaterThanThreshold      | ignore                 | `-/-/300/1/Maximum/1/GreaterThanThreshold/ignore`      | No                       | Yes                 |
-| `autoalarm:age-of-oldest-message-anomaly` | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore` | No                       | Yes                 |
-| `autoalarm:empty-receives`                | -                 | -                  | 300    | 1                  | Sum       | 1                   | GreaterThanThreshold      | ignore                 | `-/-/300/1/Sum/1/GreaterThanThreshold/ignore`          | No                       | Yes                 |
-| `autoalarm:empty-receives-anomaly`        | -                 | -                  | 300    | 1                  | Sum       | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/300/1/Sum/1/GreaterThanUpperThreshold/ignore`     | No                       | Yes                 |
-| `autoalarm:messages-deleted`              | -                 | -                  | 300    | 1                  | Sum       | 1                   | GreaterThanThreshold      | ignore                 | `-/-/300/1/Sum/1/GreaterThanThreshold/ignore`          | No                       | Yes                 |
-| `autoalarm:messages-deleted-anomaly`      | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore` | No                       | Yes                 |
-| `autoalarm:messages-not-visible`          | -                 | -                  | 300    | 1                  | Maximum   | 1                   | GreaterThanThreshold      | ignore                 | `-/-/300/1/Maximum/1/GreaterThanThreshold/ignore`      | No                       | Yes                 |
-| `autoalarm:messages-not-visible-anomaly`  | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore` | No                       | Yes                 |
-| `autoalarm:messages-received`             | -                 | -                  | 300    | 1                  | Sum       | 1                   | GreaterThanThreshold      | ignore                 | `-/-/300/1/Sum/1/GreaterThanThreshold/ignore`          | No                       | Yes                 |
-| `autoalarm:messages-received-anomaly`     | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore` | No                       | Yes                 |
-| `autoalarm:messages-sent`                 | -                 | -                  | 300    | 1                  | Sum       | 1                   | GreaterThanThreshold      | ignore                 | `-/-/300/1/Sum/1/GreaterThanThreshold/ignore`          | No                       | Yes                 |
-| `autoalarm:messages-sent-anomaly`         | 1                 | 1                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `1/1/300/1/Average/1/GreaterThanUpperThreshold/ignore` | No                       | Yes                 |
-| `autoalarm:messages-visible`              | -                 | -                  | 300    | 1                  | Maximum   | 1                   | GreaterThanThreshold      | ignore                 | `-/-/300/1/Maximum/1/GreaterThanThreshold/ignore`      | No                       | Yes                 |
-| `autoalarm:messages-visible-anomaly`      | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore` | Yes                      | Yes                 |
-| `autoalarm:sent-message-size`             | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanThreshold      | ignore                 | `-/-/300/1/Average/1/GreaterThanThreshold/ignore`      | No                       | Yes                 |
-| `autoalarm:sent-message-size-anomaly`     | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore` | No                       | Yes                 |
+| Tag                                       | Alarm Created By Default | Standard CloudWatch | Warning Threshold | Critical Threshold | Period | Evaluation Periods | Statistic | Datapoints to Alarm | Comparison Operator       | Missing Data Treatment | Complete Tag Value                                     |
+|-------------------------------------------|--------------------------|---------------------|-------------------|--------------------|--------|--------------------|-----------|---------------------|---------------------------|------------------------|--------------------------------------------------------|
+| `autoalarm:age-of-oldest-message`         | No                       | Yes                 | -                 | -                  | 300    | 1                  | Maximum   | 1                   | GreaterThanThreshold      | ignore                 | `-/-/300/1/Maximum/1/GreaterThanThreshold/ignore`      |
+| `autoalarm:age-of-oldest-message-anomaly` | No                       | Yes                 | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore` |
+| `autoalarm:empty-receives`                | No                       | Yes                 | -                 | -                  | 300    | 1                  | Sum       | 1                   | GreaterThanThreshold      | ignore                 | `-/-/300/1/Sum/1/GreaterThanThreshold/ignore`          |
+| `autoalarm:empty-receives-anomaly`        | No                       | Yes                 | -                 | -                  | 300    | 1                  | Sum       | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/300/1/Sum/1/GreaterThanUpperThreshold/ignore`     |
+| `autoalarm:messages-deleted`              | No                       | Yes                 | -                 | -                  | 300    | 1                  | Sum       | 1                   | GreaterThanThreshold      | ignore                 | `-/-/300/1/Sum/1/GreaterThanThreshold/ignore`          |
+| `autoalarm:messages-deleted-anomaly`      | No                       | Yes                 | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore` |
+| `autoalarm:messages-not-visible`          | No                       | Yes                 | -                 | -                  | 300    | 1                  | Maximum   | 1                   | GreaterThanThreshold      | ignore                 | `-/-/300/1/Maximum/1/GreaterThanThreshold/ignore`      |
+| `autoalarm:messages-not-visible-anomaly`  | No                       | Yes                 | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore` |
+| `autoalarm:messages-received`             | No                       | Yes                 | -                 | -                  | 300    | 1                  | Sum       | 1                   | GreaterThanThreshold      | ignore                 | `-/-/300/1/Sum/1/GreaterThanThreshold/ignore`          |
+| `autoalarm:messages-received-anomaly`     | No                       | Yes                 | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore` |
+| `autoalarm:messages-sent`                 | No                       | Yes                 | -                 | -                  | 300    | 1                  | Sum       | 1                   | GreaterThanThreshold      | ignore                 | `-/-/300/1/Sum/1/GreaterThanThreshold/ignore`          |
+| `autoalarm:messages-sent-anomaly`         | No                       | Yes                 | 1                 | 1                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `1/1/300/1/Average/1/GreaterThanUpperThreshold/ignore` |
+| `autoalarm:messages-visible`              | No                       | Yes                 | -                 | -                  | 300    | 1                  | Maximum   | 1                   | GreaterThanThreshold      | ignore                 | `-/-/300/1/Maximum/1/GreaterThanThreshold/ignore`      |
+| `autoalarm:messages-visible-anomaly`      | Yes                      | Yes                 | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore` |
+| `autoalarm:sent-message-size`             | No                       | Yes                 | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanThreshold      | ignore                 | `-/-/300/1/Average/1/GreaterThanThreshold/ignore`      |
+| `autoalarm:sent-message-size-anomaly`     | No                       | Yes                 | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore` |
 
 #### Step Functions
 
-| Tag                                      | Warning Threshold | Critical Threshold | Period | Evaluation Periods | Statistic | Datapoints to Alarm | Comparison Operator       | Missing Data Treatment | Complete Tag Value                                    | Alarm Created by Default | Standard CloudWatch |
-|------------------------------------------|-------------------|--------------------|--------|--------------------|-----------|---------------------|---------------------------|------------------------|-------------------------------------------------------|--------------------------|---------------------|
-| `autoalarm:executions-failed`            | -                 | 1                  | 60     | 1                  | Sum       | 1                   | GreaterThanThreshold      | ignore                 | `-/1/60/1/Sum/1/GreaterThanThreshold/ignore`          | Yes                      | Yes                 |
-| `autoalarm:executions-failed-anomaly`    | -                 | -                  | 60     | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/60/1/Average/1/GreaterThanUpperThreshold/ignore` | No                       | Yes                 |
-| `autoalarm:executions-timed-out`         | -                 | 1                  | 60     | 1                  | Sum       | 1                   | GreaterThanThreshold      | ignore                 | `-/1/60/1/Sum/1/GreaterThanThreshold/ignore`          | Yes                      | Yes                 |
-| `autoalarm:executions-timed-out-anomaly` | -                 | -                  | 60     | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/60/1/Average/1/GreaterThanUpperThreshold/ignore` | No                       | Yes                 |
+| Tag                                      | Alarm Created by Default | Standard CloudWatch | Warning Threshold | Critical Threshold | Period | Evaluation Periods | Statistic | Datapoints to Alarm | Comparison Operator       | Missing Data Treatment | Complete Tag Value                                    |
+|------------------------------------------|--------------------------|---------------------|-------------------|--------------------|--------|--------------------|-----------|---------------------|---------------------------|------------------------|-------------------------------------------------------|
+| `autoalarm:executions-failed`            | Yes                      | Yes                 | -                 | 1                  | 60     | 1                  | Sum       | 1                   | GreaterThanThreshold      | ignore                 | `-/1/60/1/Sum/1/GreaterThanThreshold/ignore`          |
+| `autoalarm:executions-failed-anomaly`    | No                       | Yes                 | -                 | -                  | 60     | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/60/1/Average/1/GreaterThanUpperThreshold/ignore` |
+| `autoalarm:executions-timed-out`         | Yes                      | Yes                 | -                 | 1                  | 60     | 1                  | Sum       | 1                   | GreaterThanThreshold      | ignore                 | `-/1/60/1/Sum/1/GreaterThanThreshold/ignore`          |
+| `autoalarm:executions-timed-out-anomaly` | No                       | Yes                 | -                 | -                  | 60     | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/60/1/Average/1/GreaterThanUpperThreshold/ignore` |
 
 
 #### Target Groups (TG)
 
-| Tag                               | Warning Threshold | Critical Threshold | Period | Evaluation Periods | Statistic | Datapoints to Alarm | Comparison Operator       | Missing Data Treatment | Complete Tag Value                                     | Alarm Created by Default | Standard CloudWatch |
-|-----------------------------------|-------------------|--------------------|--------|--------------------|-----------|---------------------|---------------------------|------------------------|--------------------------------------------------------|--------------------------|---------------------|
-| `autoalarm:4xx-count`             | -                 | -                  | 60     | 2                  | Sum       | 1                   | GreaterThanThreshold      | ignore                 | `-/-/60/2/Sum/1/GreaterThanThreshold/ignore`           | No                       | Yes                 |
-| `autoalarm:4xx-count-anomaly`     | -                 | -                  | 60     | 2                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/60/2/Average/1/GreaterThanUpperThreshold/ignore`  | No                       | Yes                 |
-| `autoalarm:5xx-count`             | -                 | -                  | 60     | 2                  | Sum       | 1                   | GreaterThanThreshold      | ignore                 | `-/-/60/2/Sum/1/GreaterThanThreshold/ignore`           | No                       | Yes                 |
-| `autoalarm:5xx-count-anomaly`     | 3                 | 6                  | 60     | 2                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `3/6/60/2/Average/1/GreaterThanUpperThreshold/ignore`  | Yes                      | Yes                 |
-| `autoalarm:response-time`         | 3                 | 5                  | 60     | 2                  | p90       | 2                   | GreaterThanThreshold      | ignore                 | `3/5/60/2/p90/2/GreaterThanThreshold/ignore`           | No                       | Yes                 |
-| `autoalarm:response-time-anomaly` | 2                 | 5                  | 300    | 2                  | Average   | 2                   | GreaterThanUpperThreshold | ignore                 | `2/5/300/2/Average/2/GreaterThanUpperThreshold/ignore` | No                       | Yes                 |
-| `autoalarm:unhealthy-host-count`  | -                 | 1                  | 60     | 2                  | Maximum   | 2                   | GreaterThanThreshold      | ignore                 | `-/1/60/2/Maximum/2/GreaterThanThreshold/ignore`       | Yes                      | Yes                 |
-| `autoalarm:healthy-host-count` *  | -                 | 1                  | 60     | 2                  | Maximum   | 2                   | LessThanThreshold         | ignore                 | `-/1/60/2/Maximum/2/LessThanThreshold/ignore`          | Yes                      | Yes                 |
+| Tag                               | Alarm Created by Default | Standard CloudWatch | Warning Threshold | Critical Threshold | Period | Evaluation Periods | Statistic | Datapoints to Alarm | Comparison Operator       | Missing Data Treatment | Complete Tag Value                                     |
+|-----------------------------------|--------------------------|---------------------|-------------------|--------------------|--------|--------------------|-----------|---------------------|---------------------------|------------------------|--------------------------------------------------------|
+| `autoalarm:4xx-count`             | No                       | Yes                 | -                 | -                  | 60     | 2                  | Sum       | 1                   | GreaterThanThreshold      | ignore                 | `-/-/60/2/Sum/1/GreaterThanThreshold/ignore`           |
+| `autoalarm:4xx-count-anomaly`     | No                       | Yes                 | -                 | -                  | 60     | 2                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/60/2/Average/1/GreaterThanUpperThreshold/ignore`  |
+| `autoalarm:5xx-count`             | No                       | Yes                 | -                 | -                  | 60     | 2                  | Sum       | 1                   | GreaterThanThreshold      | ignore                 | `-/-/60/2/Sum/1/GreaterThanThreshold/ignore`           |
+| `autoalarm:5xx-count-anomaly`     | Yes                      | Yes                 | 3                 | 6                  | 60     | 2                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `3/6/60/2/Average/1/GreaterThanUpperThreshold/ignore`  |
+| `autoalarm:response-time`         | No                       | Yes                 | 3                 | 5                  | 60     | 2                  | p90       | 2                   | GreaterThanThreshold      | ignore                 | `3/5/60/2/p90/2/GreaterThanThreshold/ignore`           |
+| `autoalarm:response-time-anomaly` | No                       | Yes                 | 2                 | 5                  | 300    | 2                  | Average   | 2                   | GreaterThanUpperThreshold | ignore                 | `2/5/300/2/Average/2/GreaterThanUpperThreshold/ignore` |
+| `autoalarm:unhealthy-host-count`  | Yes                      | Yes                 | -                 | 1                  | 60     | 2                  | Maximum   | 2                   | GreaterThanThreshold      | ignore                 | `-/1/60/2/Maximum/2/GreaterThanThreshold/ignore`       |
+| `autoalarm:healthy-host-count` *  | Yes                      | Yes                 | -                 | 1                  | 60     | 2                  | Maximum   | 2                   | LessThanThreshold         | ignore                 | `-/1/60/2/Maximum/2/LessThanThreshold/ignore`          |
 
 
 
 #### Transit Gateway (TGW)
 
-| Tag                           | Warning Threshold | Critical Threshold | Period | Evaluation Periods | Statistic | Datapoints to Alarm | Comparison Operator       | Missing Data Treatment | Complete Tag Value                                     | Alarm Created by Default | Standard CloudWatch |
-|-------------------------------|-------------------|--------------------|--------|--------------------|-----------|---------------------|---------------------------|------------------------|--------------------------------------------------------|--------------------------|---------------------|
-| `autoalarm:bytes-in`          | -                 | -                  | 300    | 1                  | Maximum   | 1                   | GreaterThanThreshold      | ignore                 | `-/-/300/1/Maximum/1/GreaterThanThreshold/ignore`      | No                       | Yes                 |
-| `autoalarm:bytes-in-anomaly`  | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore` | No                       | Yes                 |
-| `autoalarm:bytes-out`         | -                 | -                  | 300    | 1                  | Sum       | 1                   | GreaterThanThreshold      | ignore                 | `-/-/300/1/Sum/1/GreaterThanThreshold/ignore`          | No                       | Yes                 |
-| `autoalarm:bytes-out-anomaly` | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore` | No                       | Yes                 |
+| Tag                           | Alarm Created by Default | Standard CloudWatch | Warning Threshold | Critical Threshold | Period | Evaluation Periods | Statistic | Datapoints to Alarm | Comparison Operator       | Missing Data Treatment | Complete Tag Value                                     |
+|-------------------------------|--------------------------|---------------------|-------------------|--------------------|--------|--------------------|-----------|---------------------|---------------------------|------------------------|--------------------------------------------------------|
+| `autoalarm:bytes-in`          | No                       | Yes                 | -                 | -                  | 300    | 1                  | Maximum   | 1                   | GreaterThanThreshold      | ignore                 | `-/-/300/1/Maximum/1/GreaterThanThreshold/ignore`      |
+| `autoalarm:bytes-in-anomaly`  | No                       | Yes                 | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore` |
+| `autoalarm:bytes-out`         | No                       | Yes                 | -                 | -                  | 300    | 1                  | Sum       | 1                   | GreaterThanThreshold      | ignore                 | `-/-/300/1/Sum/1/GreaterThanThreshold/ignore`          |
+| `autoalarm:bytes-out-anomaly` | No                       | Yes                 | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore` |
 
 #### VPN
 
-| Tag                              | Warning Threshold | Critical Threshold | Period | Evaluation Periods | Statistic | Datapoints to Alarm | Comparison Operator    | Missing Data Treatment | Complete Tag Value                                  | Alarm Created by Default | Standard CloudWatch |
-|----------------------------------|-------------------|--------------------|--------|--------------------|-----------|---------------------|------------------------|------------------------|-----------------------------------------------------|--------------------------|---------------------|
-| `autoalarm:tunnel-state`         | 0                 | 0                  | 300    | 1                  | Maximum   | 1                   | LessThanThreshold      | ignore                 | `0/0/300/1/Maximum/1/LessThanThreshold/ignore`      | No                       | Yes                 |
-| `autoalarm:tunnel-state-anomaly` | -                 | -                  | 300    | 1                  | Average   | 1                   | LessThanLowerThreshold | ignore                 | `-/-/300/1/Average/1/LessThanLowerThreshold/ignore` | No                       | Yes                 |
+| Tag                              | Alarm Created by Default | Standard CloudWatch | Warning Threshold | Critical Threshold | Period | Evaluation Periods | Statistic | Datapoints to Alarm | Comparison Operator    | Missing Data Treatment | Complete Tag Value                                  |
+|----------------------------------|--------------------------|---------------------|-------------------|--------------------|--------|--------------------|-----------|---------------------|------------------------|------------------------|-----------------------------------------------------|
+| `autoalarm:tunnel-state`         | No                       | Yes                 | 0                 | 0                  | 300    | 1                  | Maximum   | 1                   | LessThanThreshold      | ignore                 | `0/0/300/1/Maximum/1/LessThanThreshold/ignore`      |
+| `autoalarm:tunnel-state-anomaly` | No                       | Yes                 | -                 | -                  | 300    | 1                  | Average   | 1                   | LessThanLowerThreshold | ignore                 | `-/-/300/1/Average/1/LessThanLowerThreshold/ignore` |
 
 
 ## Guide to Customizing Alarms with Tags
@@ -275,28 +272,20 @@ unless defaults are defined in the tables above and the alarm is enabled by defa
 Prometheus alarms will only pull Warning and critical thresholds and periods from the tags. All other values are specific
 to CloudWatch alarms and are not used in Prometheus alarms.
 
-**Example:**
+### Alarm Types
 
-| Tag Key                 | Tag Value                                                |
-|-------------------------|----------------------------------------------------------|
-| `autoalarm:cpu`         | `80/95/60/5/Maximum/5/GreaterThanThreshold/ignore`       |
-| `autoalarm:cpu-anomaly` | `2/3/60/5/Maximum/5/GreaterThanUpperThreshold/breaching` |
-
-
-## Alarm Types
-
-### Static Threshold Alarms
+#### Static Threshold Alarms
 - Trigger when metrics cross fixed values
 - Best for metrics with consistent, predictable ranges
 
-### Anomaly Detection Alarms
+#### Anomaly Detection Alarms
 - Trigger when metrics deviate from historical patterns
 - Use tag names containing 'anomaly'
 - Threshold values represent standard deviations from the baseline
 
-### Supported Tag Values
+## Supported Tag Values
 
-#### Threshold Configuration
+### Threshold Configuration
 
 | Parameter              | Static Threshold Alarms                                             | Anomaly Detection Alarms                                |
 |------------------------|---------------------------------------------------------------------|---------------------------------------------------------|
@@ -309,56 +298,9 @@ to CloudWatch alarms and are not used in Prometheus alarms.
 |-------------------------|-----------------------------------------------------------|------------------------------------------------------------------------|-------------------|
 | **Period**              | Duration in seconds for data evaluation                   | • 10 seconds<br>• 30 seconds<br>• Multiples of 60 (60, 120, 180, etc.) | `300` (5 minutes) |
 | **Datapoints to Alarm** | Number of breaching data points required to trigger alarm | Any positive integer                                                   | `2`               |
-| **Number of Periods**   | Total evaluation periods to consider                      | Any positive integer                                                   | `3`               |
-
-
-
-## Guide to Customizing Alarms with Tags
-
-When setting up non-default alarms with tags, you must provide at least one of the first two values (warning and critical
-thresholds) for the tag to function correctly. If these thresholds are not supplied, the alarm will not be created
-unless defaults are defined in the tables above and the alarm is enabled by default.
-
-Prometheus alarms will only pull Warning and critical thresholds and periods from the tags. All other values are specific
-to CloudWatch alarms and are not used in Prometheus alarms.
-
-**Example:**
-
-| Tag Key                 | Tag Value                                                |
-|-------------------------|----------------------------------------------------------|
-| `autoalarm:cpu`         | `80/95/60/5/Maximum/5/GreaterThanThreshold/ignore`       |
-| `autoalarm:cpu-anomaly` | `2/3/60/5/Maximum/5/GreaterThanUpperThreshold/breaching` |
-
-
-## Alarm Types
-
-### Static Threshold Alarms
-- Trigger when metrics cross fixed values
-- Best for metrics with consistent, predictable ranges
-
-### Anomaly Detection Alarms
-- Trigger when metrics deviate from historical patterns
-- Use tag names containing 'anomaly'
-- Threshold values represent standard deviations from the baseline
-
-### Supported Tag Values
-
-#### Threshold Configuration
-
-| Parameter              | Static Threshold Alarms                                             | Anomaly Detection Alarms                                |
-|------------------------|---------------------------------------------------------------------|---------------------------------------------------------|
-| **Warning Threshold**  | Numeric value that triggers warning (e.g., `80` for 80% CPU)        | Number of standard deviations from baseline (e.g., `2`) |
-| **Critical Threshold** | Numeric value that triggers critical alert (e.g., `95` for 95% CPU) | Number of standard deviations from baseline (e.g., `3`) |
-
-#### Timing Configuration
-
-| Parameter               | Description                                               | Valid Values                                                           | Example           |
-|-------------------------|-----------------------------------------------------------|------------------------------------------------------------------------|-------------------|
-| **Period**              | Duration in seconds for data evaluation                   | • 10 seconds<br>• 30 seconds<br>• Multiples of 60 (60, 120, 180, etc.) | `300` (5 minutes) |
-| **Datapoints to Alarm** | Number of breaching data points required to trigger alarm | Any positive integer                                                   | `2`               |
 | **Evaluation Periods**  | Total evaluation periods to consider                      | Any positive integer                                                   | `3`               |
 
-- **Understanding Datapoints vs Periods**
+#### Understanding Datapoints vs Periods
 
 | Scenario        | Period | Datapoints to Alarm | Number of Periods | Result                                                    |
 |-----------------|--------|---------------------|-------------------|-----------------------------------------------------------|
@@ -366,7 +308,7 @@ to CloudWatch alarms and are not used in Prometheus alarms.
 | Sustained Issue | 300s   | 2                   | 3                 | Alarm triggers when 2 out of 3 five-minute periods breach |
 | Highly Tolerant | 60s    | 5                   | 10                | Alarm triggers when 5 out of 10 one-minute periods breach |
 
-#### Statistic:
+### Statistic:
 
 **Note**: AWS has limitations on the acceptable characters for the statistic value. you cannot use spaces, '%', or '(/)'.
 All stats must be the statistic followed by a number or two numbers separated by a colon. For example, `p95` or `TM2:98`.
@@ -388,7 +330,7 @@ You can use the following statistics for alarms - https://docs.aws.amazon.com/Am
 | **Trimmed Count**      | `tc90`, `TC0.005:0.030`        | Number of data points within trimmed mean boundaries                                       |
 | **Trimmed Sum**        | `ts90`, `TS80:`                | Sum of data points within trimmed mean boundaries (TM × TC)                                |
 
-#### Missing Data Treatment
+### Missing Data Treatment
 
 | Tag Value      | Behavior                       |
 |----------------|--------------------------------|
@@ -397,7 +339,8 @@ You can use the following statistics for alarms - https://docs.aws.amazon.com/Am
 | `breaching`    | Treated as threshold breach    |
 | `notBreaching` | Treated as within threshold    |
 
-#### Valid Comparison Operators
+### Valid Comparison Operators
+*Note: Ensure that a valid Comparison Opperator is used between static threshold and anomaly alarms.
 
 | Alarm Type            | Comparison Operator                        | Description                                              |
 |-----------------------|--------------------------------------------|----------------------------------------------------------|
@@ -408,6 +351,31 @@ You can use the following statistics for alarms - https://docs.aws.amazon.com/Am
 | **Anomaly Detection** | `GreaterThanUpperThreshold`                | Alarm when metric exceeds upper band                     |
 | **Anomaly Detection** | `LessThanLowerOrGreaterThanUpperThreshold` | Alarm when metric is outside the band (either direction) |
 | **Anomaly Detection** | `LessThanLowerThreshold`                   | Alarm when metric falls below lower band                 |
+
+## Using the Nullish Character ("-") and Implicit Values in AutoAlarm
+
+AutoAlarm supports shorthand notation to simplify tag configuration:
+
+### Key Concepts
+
+- **Nullish Character (`-`)**: Disables alarm creation for warning or critical thresholds when used in place of a value.
+
+- **Implicit Values**: Omit values you don't want to change from the [defaults](#supported-services-and-default-alarm-configurations).
+  Use empty positions (`//`) to skip to later parameters while keeping defaults for earlier ones.
+
+### Examples
+*Note: When using implicit values, ensure that each implicit parameter leading up to the custom parameter is properly seperated by a `/`. See [Tag Value Structure](#Tag-Value-Structure)
+
+| Tag Key                        | Tag Value                                                         | Result                                                                            |
+|--------------------------------|-------------------------------------------------------------------|-----------------------------------------------------------------------------------|
+| `autoalarm:storage`            | `66/89/120/15/Average/12/GreaterThanOrEqualToThreshold/breaching` | Fully customized warning and critical alarms                                      |
+| `autoalarm:cpu`                | `-/95/60/5/Maximum/5/GreaterThanThreshold/ignore`                 | Warning alarm disabled with `-`, critical alarm customized                        |
+| `autoalarm:memory`             | `-/-`                                                             | Both alarms disabled (useful for overriding default Alarms)                       |
+| `autoalarm:4xx-errors`         | `//3/Minimum///notBreaching`                                      | Only period (3) and statistic (Minimum) customized, uses defaults for thresholds  |
+| `autoalarm:5xx-errors`         | `-/73///7/`                                                       | Warning disabled, critical threshold=73, datapoints=7, other values from defaults |
+| `autoalarm:4xx-errors-anomaly` | `3/-/`                                                            | Warning threshold=3, critical alarm disabled, remaining values from defaults      |
+
+**Note**: Empty positions between slashes (`//`) preserve the default values for those parameters while allowing you to customize later parameters.
 
 ## ReAlarm Tag Configuration and Behavior:
 
@@ -433,7 +401,7 @@ ReAlarm's behavior can be configured on a per-alarm basis using tags.
     - When this tag is present on an alarm, ReAlarm will skip resetting it, regardless of its state.
     - This is useful for alarms that should be managed manually or have specific conditions that should not trigger ReAlarm.
 
-#### Tag to Customize ReAlarm: 
+**Example**
 
 | Tag                          | Value             | Description                     |
 |------------------------------|-------------------|---------------------------------|
@@ -446,4 +414,5 @@ ReAlarm is hardcoded to NOT reset alarms associated with AutoScaling actions. Th
 interfering with scaling operations.
 
 ## Additional References:
-- For a more thorough breakdown of Design and Architecture, please see ARCHITECTURE.md.
+- For Deployment and install instructions, please see [DEPLOYMENT.md](DEPLOYMENT.md)
+- For a more thorough breakdown of Design and Architecture, please see [ARCHITECTURE.MD](ARCHITECTURE.md).
