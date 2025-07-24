@@ -364,7 +364,8 @@ AutoAlarm supports shorthand notation to simplify tag configuration:
   Use empty positions (`//`) to skip to later parameters while keeping defaults for earlier ones.
 
 ### Examples
-*Note: When using implicit values, ensure that each implicit parameter leading up to the custom parameter is properly seperated by a `/`. See [Tag Value Structure](#Tag-Value-Structure)
+*Note: When using implicit values, ensure that each implicit parameter leading up to the custom parameter is properly seperated by a `/`. See [Tag Value Structure](#Tag-Value-Structure). 
+Empty positions between slashes (`//`) preserve the default values for those parameters while allowing you to customize later parameters.
 
 | Tag Key                        | Tag Value                                                         | Result                                                                            |
 |--------------------------------|-------------------------------------------------------------------|-----------------------------------------------------------------------------------|
@@ -375,7 +376,6 @@ AutoAlarm supports shorthand notation to simplify tag configuration:
 | `autoalarm:5xx-errors`         | `-/73///7/`                                                       | Warning disabled, critical threshold=73, datapoints=7, other values from defaults |
 | `autoalarm:4xx-errors-anomaly` | `3/-/`                                                            | Warning threshold=3, critical alarm disabled, remaining values from defaults      |
 
-**Note**: Empty positions between slashes (`//`) preserve the default values for those parameters while allowing you to customize later parameters.
 
 ## ReAlarm Tag Configuration and Behavior:
 
