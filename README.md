@@ -297,7 +297,7 @@ to CloudWatch alarms and are not used in Prometheus alarms.
 | Parameter               | Description                                               | Valid Values                                                           | Example           |
 |-------------------------|-----------------------------------------------------------|------------------------------------------------------------------------|-------------------|
 | **Period**              | Duration in seconds for data evaluation                   | • 10 seconds<br>• 30 seconds<br>• Multiples of 60 (60, 120, 180, etc.) | `300` (5 minutes) |
-| **Datapoints to Alarm** | Number of breaching data points required to trigger alarm | Any positive integer                                                   | `2`               |
+| **Datapoints to Alarm** | Number of breaching data points required to trigger alarm | Any positive integer. Must be Equal to or less than evaluation periods | `2`               |
 | **Evaluation Periods**  | Total evaluation periods to consider                      | Any positive integer                                                   | `3`               |
 
 #### Understanding Datapoints vs Periods
@@ -340,7 +340,7 @@ You can use the following statistics for alarms - https://docs.aws.amazon.com/Am
 | `notBreaching` | Treated as within threshold    |
 
 ### Valid Comparison Operators
-*Note: Ensure that a valid Comparison Opperator is used between static threshold and anomaly alarms.
+*Note: Ensure that a valid Comparison Operator is used between static threshold and anomaly alarms.
 
 | Alarm Type            | Comparison Operator                        | Description                                              |
 |-----------------------|--------------------------------------------|----------------------------------------------------------|
@@ -373,7 +373,7 @@ Empty positions between slashes (`//`) preserve the default values for those par
 | `autoalarm:cpu`                | `-/95/60/5/Maximum/5/GreaterThanThreshold/ignore`                 | Warning alarm disabled with `-`, critical alarm customized                        |
 | `autoalarm:memory`             | `-/-`                                                             | Both alarms disabled (useful for overriding default Alarms)                       |
 | `autoalarm:4xx-errors`         | `//3/Minimum///notBreaching`                                      | Only period (3) and statistic (Minimum) customized, uses defaults for thresholds  |
-| `autoalarm:5xx-errors`         | `-/73///7/`                                                       | Warning disabled, critical threshold=73, datapoints=7, other values from defaults |
+| `autoalarm:5xx-errors`         | `-/73////3`                                                       | Warning disabled, critical threshold=73, datapoints=7, other values from defaults |
 | `autoalarm:4xx-errors-anomaly` | `3/-/`                                                            | Warning threshold=3, critical alarm disabled, remaining values from defaults      |
 
 
