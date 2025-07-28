@@ -367,15 +367,15 @@ AutoAlarm supports shorthand notation to simplify tag configuration:
 *Note: When using implicit values, ensure that each implicit parameter leading up to the custom parameter is properly seperated by a `/`. See [Tag Value Structure](#Tag-Value-Structure). 
 Empty positions between slashes (`//`) preserve the default values for those parameters while allowing you to customize later parameters.
 
-| Tag Key                        | Tag Value                                                         | Result                                                                            |
-|--------------------------------|-------------------------------------------------------------------|-----------------------------------------------------------------------------------|
-| `autoalarm:storage`            | `66/89/120/15/Average/12/GreaterThanOrEqualToThreshold/breaching` | Fully customized warning and critical alarms                                      |
-| `autoalarm:cpu`                | `-/95/60/5/Maximum/5/GreaterThanThreshold/ignore`                 | Warning alarm disabled with `-`, critical alarm customized                        |
-| `autoalarm:memory`             | `-/-`                                                             | Both alarms disabled (useful for overriding default Alarms)                       |
-| `autoalarm:4xx-errors`         | `//3/Minimum///notBreaching`                                      | Only period (3) and statistic (Minimum) customized, uses defaults for thresholds  |
-| `autoalarm:5xx-errors`         | `-/73////3`                                                       | Warning disabled, critical threshold=73, datapoints=7, other values from defaults |
-| `autoalarm:4xx-errors-anomaly` | `3/-/`                                                            | Warning threshold=3, critical alarm disabled, remaining values from defaults      |
-
+| Tag Key                        | Tag Value                                                         | Result                                                                                                            |
+|--------------------------------|-------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------|
+| `autoalarm:storage`            | `66/89/120/15/Average/12/GreaterThanOrEqualToThreshold/breaching` | Fully customized warning and critical alarms                                                                      |
+| `autoalarm:cpu`                | `-/95/60/5/Maximum/5/GreaterThanThreshold/ignore`                 | Warning alarm disabled with `-`, critical alarm customized                                                        |
+| `autoalarm:memory`             | `-/-`                                                             | Both alarms disabled (useful for overriding default Alarms)                                                       |
+| `autoalarm:4xx-errors`         | `//3/Minimum///notBreaching`                                      | Only period (3) and statistic (Minimum) customized, uses defaults for thresholds                                  |
+| `autoalarm:5xx-errors`         | `-/73////3`                                                       | Warning disabled, critical threshold=73, datapoints=7, other values from defaults                                 |
+| `autoalarm:4xx-errors-anomaly` | `3/-/`                                                            | Warning threshold=3, critical alarm disabled, remaining values from defaults                                      |
+| `autoalarm:network-in-anomaly` | `/`                                                               | Creates a non-default alarm with default values. Useful shorthand for deploying non default alarms with defaults. |
 
 ## ReAlarm Tag Configuration and Behavior:
 
