@@ -266,8 +266,8 @@ threshold values are provided in the tag value when setting the tag on the resou
 ## Guide to Customizing Alarms with Tags
 
 When setting up non-default alarms with tags, you must provide at least one of the first two values (warning and critical
-thresholds) for the tag to function correctly. If these thresholds are not supplied, the alarm will not be created
-unless defaults are defined in the tables above and the alarm is enabled by default.
+thresholds) for the tag to function correctly if the default thresholds do not contain values. Otherwise, these alarms
+will not be created.
 
 Prometheus alarms will only pull Warning and critical thresholds and periods from the tags. All other values are specific
 to CloudWatch alarms and are not used in Prometheus alarms.
