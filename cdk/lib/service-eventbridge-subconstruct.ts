@@ -188,8 +188,7 @@ export class EventRules extends Construct {
               'autoalarm:network-in-anomaly',
               'autoalarm:network-in',
               'autoalarm:network-out-anomaly',
-              'autoalarm:network-out'
-
+              'autoalarm:network-out',
             ],
           },
         },
