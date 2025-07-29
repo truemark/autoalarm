@@ -72,7 +72,7 @@ export const SQS_CONFIGS: MetricAlarmConfig[] = [
     },
   },
   {
-    tagKey: 'empty-recieves-anomaly',
+    tagKey: 'empty-receives-anomaly',
     metricName: 'NumberOfEmptyReceive',
     metricNamespace: 'AWS/SQS',
     defaultCreate: false,
