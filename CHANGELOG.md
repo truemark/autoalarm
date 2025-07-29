@@ -1,6 +1,10 @@
 # AutoAlarm Changelog
 
-## v.13.7
+## v1.13.10
+### Fixed
+- Fixed missing event bridge rules for network-in and network-out tag changes on EC2 instances. 
+
+## v1.13.7
 ### Fixed
 - Fixed a bug that resulted in Anomaly Alarms not catching some configuration parameters for dataPointsToAlarm and 
   evaluation periods. 
