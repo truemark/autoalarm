@@ -30,7 +30,7 @@
   "devDependencies": {
     "concurrently": "^9.2.0",
     "prettier": "^3.5.0",
-    "tsx": "^4.19.3",
+    "tsx": "^4.20.5",
     "valibot": "^1.0.0"
   },
   "dependencies": {
