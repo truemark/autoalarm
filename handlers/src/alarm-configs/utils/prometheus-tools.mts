@@ -29,7 +29,7 @@ import * as https from 'https';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {defaultProvider} from '@aws-sdk/credential-provider-node';
 import {buildAlarmName, parseMetricAlarmOptions} from './index.mjs';
-import * as AlarmConfigs from '../index.mjs';
+import * as AlarmConfigs from '../_index.mjs';
 
 const log: logging.Logger = logging.getLogger('ec2-modules');
 const retryStrategy = new ConfiguredRetryStrategy(20);

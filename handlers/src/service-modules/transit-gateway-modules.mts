@@ -14,7 +14,7 @@ import {
   getCWAlarmsForInstance,
   parseMetricAlarmOptions,
 } from '../alarm-configs/utils/index.mjs';
-import {TRANSIT_GATEWAY_CONFIGS} from '../alarm-configs/index.mjs';
+import {TRANSIT_GATEWAY_CONFIGS} from '../alarm-configs/_index.mjs';
 
 const log: logging.Logger = logging.getLogger('transit-gateway-modules');
 const region: string = process.env.AWS_REGION || '';

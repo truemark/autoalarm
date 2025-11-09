@@ -7,6 +7,7 @@ type ServiceName =
   | 'alb'
   | 'cloudfront'
   | 'ec2'
+  | 'ecs'
   | 'opensearch'
   | 'rds'
   | 'rdscluster'
@@ -45,6 +46,7 @@ export class EventRules extends Construct {
       'alb',
       'cloudfront',
       'ec2',
+      'ecs',
       'opensearch',
       'rds',
       'rdscluster',
@@ -216,6 +218,48 @@ export class EventRules extends Construct {
     });
 
     this.serviceRules.set('ec2', ec2Rules);
+  }
+
+  private addEcsRules() {
+    const ecsRules = this.serviceRules.get('ecs') || [];
+
+    ecsRules.push({
+      ecsStateRule: new Rule(this, 'EcsStateRule', {
+        eventPattern: {
+          source: ['aws.ecs'],
+          detailType: ['AWS API Call via CloudTrail'],
+          detail: {
+            eventSource: ['ecs.amazonaws.com'],
+            eventName: ['CreateCluster', 'DeleteCluster'],
+          },
+        },
+        description: 'Routes ECS state change events to AutoAlarm',
+      }),
+    });
+    this.serviceRules.set('ecs', ecsRules);
+
+    ecsRules.push({
+      ecsTagRule: new Rule(this, 'EcsTagRule', {
+        eventPattern: {
+          source: ['aws.ecs'],
+          detailType: ['AWS API Call via CloudTrail'],
+          detail: {
+            'service': ['ecs'],
+            'resource-type': ['cluster'],
+            'changed-tag-keys': [
+              'autoalarm:enabled',
+              'autoalarm:incoming-bytes',
+              'autoalarm:incoming-bytes-anomaly',
+              'autoalarm:cpu-utilization',
+              'autoalarm:cpu-utilization-anomaly',
+              'autoalarm:memory-utilization',
+              'autoalarm:memory-utilization-anomaly',
+              'autoalarm:incoming-log-events',
+              'autoalarm:incoming-log-events-anomaly',
+            ],
+        }
+      }
+    }
   }
 
   private addOpenSearchRules() {

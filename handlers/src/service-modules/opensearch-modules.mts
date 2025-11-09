@@ -14,7 +14,7 @@ import {
   CloudWatchClient,
   DeleteAlarmsCommand,
 } from '@aws-sdk/client-cloudwatch';
-import {OPENSEARCH_CONFIGS} from '../alarm-configs/index.mjs';
+import {OPENSEARCH_CONFIGS} from '../alarm-configs/_index.mjs';
 
 const log: logging.Logger = logging.getLogger('opensearch-modules');
 const region: string = process.env.AWS_REGION || '';
