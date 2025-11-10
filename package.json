@@ -28,13 +28,13 @@
     "watch": "concurrently \"pnpm:watch-handlers\" \"pnpm:watch-cdk\" -c blue,green"
   },
   "devDependencies": {
-    "concurrently": "^9.2.0",
-    "prettier": "^3.5.0",
-    "tsx": "^4.19.3",
-    "valibot": "^1.0.0"
+    "concurrently": "^9.2.1",
+    "prettier": "^3.6.2",
+    "tsx": "^4.20.6",
+    "valibot": "^1.1.0"
   },
   "dependencies": {
-    "@aws-sdk/credential-provider-node": "^3.744.0",
+    "@aws-sdk/credential-provider-node": "^3.928.0",
     "@aws-sdk/protocol-http": "^3.374.0",
     "@aws-sdk/signature-v4": "^3.374.0",
     "aws4": "^1.13.2"

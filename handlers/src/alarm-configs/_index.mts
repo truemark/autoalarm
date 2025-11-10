@@ -4,6 +4,7 @@
 export {ALB_CONFIGS} from './alb-configs.mjs';
 export {CLOUDFRONT_CONFIGS} from './cloudfront-configs.mjs';
 export {EC2_CONFIGS} from './ec2-configs.mjs';
+export {ECS_CONFIGS} from './ecs-configs.mjs';
 export {OPENSEARCH_CONFIGS} from './opensearch-configs.mjs';
 export {RDS_CLUSTER_CONFIGS} from './rds-cluster-configs.mjs';
 export {RDS_CONFIGS} from './rds-configs.mjs';

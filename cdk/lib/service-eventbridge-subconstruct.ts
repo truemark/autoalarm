@@ -71,6 +71,7 @@ export class EventRules extends Construct {
     this.addAlbRules();
     this.addCloudFrontRules();
     this.addEc2Rules();
+    this.addEcsRules();
     this.addOpenSearchRules();
     this.addRdsRules();
     this.addRdsClusterRules();
@@ -230,36 +231,13 @@ export class EventRules extends Construct {
           detailType: ['AWS API Call via CloudTrail'],
           detail: {
             eventSource: ['ecs.amazonaws.com'],
-            eventName: ['CreateCluster', 'DeleteCluster'],
+            eventName: ['CreateCluster', 'DeleteCluster', 'TagResource'],
           },
         },
-        description: 'Routes ECS state change events to AutoAlarm',
+        description: 'Routes ECS state change and tag events to AutoAlarm',
       }),
     });
     this.serviceRules.set('ecs', ecsRules);
-
-    ecsRules.push({
-      ecsTagRule: new Rule(this, 'EcsTagRule', {
-        eventPattern: {
-          source: ['aws.ecs'],
-          detailType: ['AWS API Call via CloudTrail'],
-          detail: {
-            'service': ['ecs'],
-            'resource-type': ['cluster'],
-            'changed-tag-keys': [
-              'autoalarm:enabled',
-              'autoalarm:incoming-bytes',
-              'autoalarm:incoming-bytes-anomaly',
-              'autoalarm:cpu-utilization',
-              'autoalarm:cpu-utilization-anomaly',
-              'autoalarm:memory-utilization',
-              'autoalarm:memory-utilization-anomaly',
-              'autoalarm:incoming-log-events',
-              'autoalarm:incoming-log-events-anomaly',
-            ],
-        }
-      }
-    }
   }
 
   private addOpenSearchRules() {

@@ -53,14 +53,3 @@ Use SSM to run commands on your EC2 instances to install the CloudWatch Agent.
 7. Specify the **optionalConfigurationLocation** with the name of the SSM parameter where your configuration is saved.
 8. Uncheck `Enable an S3 bucket` in Output options.
 9. Select your targets and run the command.
-
-__________________________________________________________________________________________________________________________________________________________________________
-
-
-### AutoAlarm Workflow:
-- Create sqs queue for ecs events*
-- create EventBridge Rule to trigger lambda function for ecs
-- Create alarm config for Ecs
-- Create module for ecs
-- integrate ecs event filtering into main lambda function
-- update readme

@@ -201,13 +201,13 @@ async function checkAndManageSFNStatusAlarms(
     .msg('Finished alarm management process');
 }
 
-export async function manageInactiveRDSAlarms(sfnArn: string): Promise<void> {
+export async function manageInactiveSFNAlarms(sfnArn: string): Promise<void> {
   try {
     await deleteExistingAlarms('SFN', sfnArn);
   } catch (e) {
     log
       .error()
-      .str('function', 'manageInactiveRDSAlarms')
+      .str('function', 'manageInactiveSFNAlarms')
       .err(e)
       .msg(`Error deleting SFN alarms: ${e}`);
   }
@@ -431,7 +431,7 @@ export async function parseSFNEventAndCreateAlarms(
       .str('function', 'parseSFNEventAndCreateAlarms')
       .str('sfnArn', sfnArn)
       .msg('Starting to manage inactive SFN alarms');
-    await manageInactiveRDSAlarms(sfnArn);
+    await manageInactiveSFNAlarms(sfnArn);
   }
 
   return {sfnArn, eventType, tags};
