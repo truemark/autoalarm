@@ -9,6 +9,7 @@ export {
   liveStates,
   deadStates,
 } from './ec2-modules.mjs';
+export {parseECSEventAndCreateAlarms} from './ecs-modules.mjs';
 export {parseALBEventAndCreateAlarms} from './alb-modules.mjs';
 export {parseTGEventAndCreateAlarms} from './targetgroup-modules.mjs';
 export {parseSQSEventAndCreateAlarms} from './sqs-modules.mjs';

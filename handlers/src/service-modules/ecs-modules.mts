@@ -1,6 +1,6 @@
 import {ECSClient, ListTagsForResourceCommand} from '@aws-sdk/client-ecs';
 import * as logging from '@nr1e/logging';
-import { Tag} from '../types/index.mjs';
+import {Tag} from '../types/index.mjs';
 import {
   CloudWatchClient,
   DeleteAlarmsCommand,
