@@ -11,8 +11,7 @@ import {
   DeleteAlarmsCommand,
 } from '@aws-sdk/client-cloudwatch';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
-import {  SQSRecord,
-} from 'aws-lambda';
+import {SQSRecord} from 'aws-lambda';
 import {
   deleteExistingAlarms,
   buildAlarmName,
@@ -23,6 +22,7 @@ import {
 } from '../alarm-configs/utils/index.mjs';
 import {ECS_CONFIGS} from '../alarm-configs/_index.mjs';
 import {IBlueprintRef} from 'aws-cdk-lib/aws-bedrock';
+import {Dimension} from '../types/module-types.mjs';
 
 const log: logging.Logger = logging.getLogger('ecs-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -31,6 +31,7 @@ const ecsClient = new ECSClient({
   region: region,
   retryStrategy: retryStrategy,
 });
+
 const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   region: region,
   retryStrategy: retryStrategy,
@@ -38,10 +39,10 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
 
 const metricConfigs = ECS_CONFIGS;
 
-export async function fetchEcsTags(sfnArn: string): Promise<Tag> {
+export async function fetchEcsTags(ecsArn: string): Promise<Tag> {
   try {
     const command = new ListTagsForResourceCommand({
-      resourceArn: sfnArn,
+      resourceArn: ecsArn,
     });
     const response = await ecsClient.send(command);
     const tags: Tag = {};
@@ -55,163 +56,122 @@ export async function fetchEcsTags(sfnArn: string): Promise<Tag> {
     log
       .info()
       .str('function', 'fetchEcsTags')
-      .str('sfnArn', sfnArn)
+      .str('ecsArn', ecsArn)
       .str('tags', JSON.stringify(tags))
-      .msg('Fetched tags for SFN Arn');
+      .msg('Fetched tags for ECS Arn');
     return tags;
   } catch (error) {
     log
       .error()
       .str('function', 'fetchEcsTags')
-      .str('sfnArn', sfnArn)
+      .str('ecsArn', ecsArn)
       .err(error)
-      .msg('Error fetching tags for SFN Arn');
+      .msg('Error fetching tags for ECS Arn');
     return {};
   }
 }
 
 async function checkAndManageEcsStatusAlarms(
   ecsArn: string,
+  clusterName: string,
   tags: Tag,
 ): Promise<void> {
+
+  const dimensions = [{Name: 'ClusterName', Value: clusterName}]; // Or ServiceName depending on resource type
+
   log
     .info()
     .str('function', 'checkAndManageEcsStatusAlarms')
     .str('ecsArn', ecsArn)
-    .msg('Starting alarm management process');
+    .msg('Managing ECS alarms');
 
-  const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
-  if (!isAlarmEnabled) {
-    log
-      .info()
-      .str('function', 'checkAndManageEcsStatusAlarms')
-      .str('sfnArn', ecsArn)
-      .msg('Alarm creation disabled by tag settings');
-    await deleteExistingAlarms('SFN', ecsArn);
-    return;
-  }
+  const alarmsToKeep = await createOrUpdateAlarms(
+    ecsArn,
+    tags,
+    'ECS',
+    dimensions,
+  );
 
+  await deleteUnneededAlarms(ecsArn, alarmsToKeep, 'ECS');
+
+  log
+    .info()
+    .str('function', 'checkAndManageEcsStatusAlarms')
+    .num('alarmsManaged', alarmsToKeep.size)
+    .msg('Alarm management complete');
+}
+
+async function createOrUpdateAlarms(
+  resourceArn: string,
+  tags: Tag,
+  serviceType: string,
+  dimensions: Dimension[],
+): Promise<Set<string>> {
   const alarmsToKeep = new Set<string>();
 
   for (const config of metricConfigs) {
-    log
-      .info()
-      .str('function', 'checkAndManageEcsStatusAlarms')
-      .obj('config', config)
-      .str('sfnArn', ecsArn)
-      .msg('Processing metric configuration');
-
     const tagValue = tags[`autoalarm:${config.tagKey}`];
+
+    if (!config.defaultCreate && tagValue === undefined) {
+      continue;
+    }
+
     const updatedDefaults = parseMetricAlarmOptions(
       tagValue || '',
       config.defaults,
     );
-    if (config.defaultCreate || tagValue !== undefined) {
-      if (config.tagKey.includes('anomaly')) {
-        log
-          .info()
-          .str('function', 'checkAndManageEcsStatusAlarms')
-          .str('ecsArn', ecsArn)
-          .msg('Tag key indicates anomaly alarm. Handling anomaly alarms');
-        const anomalyAlarms = await handleAnomalyAlarms(
-          config,
-          'ECS',
-          ecsArn,
-          [{Name: 'StateMachineArn', Value: ecsArn}],
-          updatedDefaults,
-        );
-        anomalyAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
-      } else {
-        log
-          .info()
-          .str('function', 'checkAndManageEcsStatusAlarms')
-          .str('sfnArn', ecsArn)
-          .msg('Tag key indicates static alarm. Handling static alarms');
-        const staticAlarms = await handleStaticAlarms(
-          config,
-          'SFN',
-          ecsArn,
-          [{Name: 'StateMachineArn', Value: ecsArn}],
-          updatedDefaults,
-        );
-        staticAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
-      }
-    } else {
-      log
-        .info()
-        .str('function', 'checkAndManageEcsStatusAlarms')
-        .str('sfnArn', ecsArn)
-        .str(
-          'alarm prefix: ',
-          buildAlarmName(
-            config,
-            'SFN',
-            ecsArn,
-            AlarmClassification.Warning,
-            'static',
-          ).replace('Warning', ''),
-        )
-        .msg(
-          'No default or overridden alarm values. Marking alarms for deletion.',
-        );
-    }
-  }
-  // Delete alarms that are not in the alarmsToKeep set
-  const existingAlarms = await getCWAlarmsForInstance('SFN', ecsArn);
 
-  // Log the full structure of retrieved alarms for debugging
-  log
-    .info()
-    .str('function', 'checkAndManageEcsStatusAlarms')
-    .obj('raw existing alarms', existingAlarms)
-    .msg('Fetched existing alarms before filtering');
+    const alarmHandler = config.tagKey.includes('anomaly')
+      ? handleAnomalyAlarms
+      : handleStaticAlarms;
 
-  // Log the expected pattern
-  const expectedPattern = `AutoAlarm-SFN-${ecsArn}`;
-  log
-    .info()
-    .str('function', 'checkAndManageEcsStatusAlarms')
-    .str('expected alarm pattern', expectedPattern)
-    .msg('Verifying alarms against expected naming pattern');
+    const alarmNames = await alarmHandler(
+      config,
+      serviceType,
+      resourceArn,
+      dimensions,
+      updatedDefaults,
+    );
 
-  // Check and log if alarms match expected pattern
-  existingAlarms.forEach((alarm) => {
-    const matchesPattern = alarm.includes(expectedPattern);
+    alarmNames.forEach((name) => alarmsToKeep.add(name));
+
     log
-      .info()
-      .str('function', 'checkAndManageEcsStatusAlarms')
-      .str('alarm name', alarm)
-      .bool('matches expected pattern', matchesPattern)
-      .msg('Evaluating alarm name match');
-  });
+      .debug()
+      .str('metricType', config.tagKey)
+      .num('alarmsCreated', alarmNames.length)
+      .msg('Processed metric configuration');
+  }
 
-  // Filter alarms that need deletion
+  return alarmsToKeep;
+}
+
+async function deleteUnneededAlarms(
+  resourceArn: string,
+  alarmsToKeep: Set<string>,
+  serviceType: string,
+): Promise<void> {
+  const existingAlarms = await getCWAlarmsForInstance(serviceType, resourceArn);
   const alarmsToDelete = existingAlarms.filter(
     (alarm) => !alarmsToKeep.has(alarm),
   );
 
-  log
-    .info()
-    .str('function', 'checkAndManageEcsStatusAlarms')
-    .obj('alarms to delete', alarmsToDelete)
-    .msg('Deleting alarms that are no longer needed');
+  if (alarmsToDelete.length === 0) {
+    return;
+  }
 
   await cloudWatchClient.send(
-    new DeleteAlarmsCommand({
-      AlarmNames: [...alarmsToDelete],
-    }),
+    new DeleteAlarmsCommand({AlarmNames: alarmsToDelete}),
   );
 
   log
     .info()
-    .str('function', 'checkAndManageEcsStatusAlarms')
-    .str('sfnArn', ecsArn)
-    .msg('Finished alarm management process');
+    .num('deletedCount', alarmsToDelete.length)
+    .msg('Deleted obsolete alarms');
 }
 
-export async function manageInactiveECSAlarms(sfnArn: string): Promise<void> {
+export async function manageInactiveECSAlarms(ecsArn: string): Promise<void> {
   try {
-    await deleteExistingAlarms('SFN', sfnArn);
+    await deleteExistingAlarms('ECS', ecsArn);
   } catch (e) {
     log
       .error()
@@ -230,7 +190,9 @@ export async function manageInactiveECSAlarms(sfnArn: string): Promise<void> {
  * @param {SQSRecord>} eventObj - A JSON-serializable object to search for an ECS ARN.
  * @returns {Record<string, string> | undefined} The extracted ECS ARN and Cluster Name, or undefined if not found.
  */
-function findECSClusterInfo(eventObj: SQSRecord): Record<string, string> | undefined {
+function findECSClusterInfo(
+  eventObj: SQSRecord,
+): {arn: string; clusterName: string} | undefined {
   const eventString = JSON.stringify(eventObj.body);
 
   // 1) Find where the ARN starts.
@@ -251,7 +213,7 @@ function findECSClusterInfo(eventObj: SQSRecord): Record<string, string> | undef
       .error()
       .str('function', 'findECSClusterInfo')
       .obj('eventObj', eventObj)
-      .msg('No ending quote found for SFN ARN');
+      .msg('No ending quote found for ECS ARN');
     return void 0;
   }
 
@@ -264,32 +226,34 @@ function findECSClusterInfo(eventObj: SQSRecord): Record<string, string> | undef
     .str('arn', arn)
     .str('startIndex', startIndex.toString())
     .str('endIndex', endIndex.toString())
-    .msg('Extracted SFN ARN');
+    .msg('Extracted ECS ARN');
 
   // 4) Extract Cluster name from ARN and return
   return {
     arn: arn,
-    clusterName: arn.split('/')[1].replace('"', '').trim()
+    clusterName: arn.split('/')[1].replace('"', '').trim(),
   };
-
 }
 
 /**
  * Fetches services which are needed for the cloudwatch ecs memory dimensions
  * @param cluster
  */
-async function  fetchEcsServices(cluster: string, nextToken?: string | undefined ): Promise<string[] | undefined> {
+async function fetchEcsServices(
+  cluster: string,
+  nextToken?: string | undefined,
+): Promise<string[] | undefined> {
   // Place holder for return token if result remain after the previous api call
   const input = {
     cluster: cluster,
-    nextToken: nextToken
-  }
+    nextToken: nextToken,
+  };
 
   // get response and then store in services string[]
   let services: string[] = [];
   const response: ListServicesCommandOutput = await ecsClient.send(
-    new ListServicesCommand(input)
-  )
+    new ListServicesCommand(input),
+  );
 
   services.push(...response.serviceArns!);
 
@@ -302,181 +266,114 @@ async function  fetchEcsServices(cluster: string, nextToken?: string | undefined
   }
 
   // If no next token, return all discovered services or undefined if services is empty
-  return services.every((service) => service != void 0)
-    ? services
-      : void 0
+  return services.every((service) => service != void 0) ? services : void 0;
 }
 
 export async function parseECSEventAndCreateAlarms(
   event: SQSRecord,
-): Promise<{
-  sfnArn: string;
-  eventType: string;
-  tags: Record<string, string>;
-} | void> {
-  let sfnArn: string | Error = '';
-  let eventType: string = '';
-  let tags: Record<string, string> = {};
+): Promise<void> {
+  // Parse event body into json for later processing
+  const body = JSON.parse(event.body);
+  let eventType: 'Destroyed' | 'Created' | 'TagChange';
 
-  switch (event.body['detail-type']) { // TODO:
-    case 'Tag Change on Resource':
-      sfnArn = findECSClusterInfo(event);
-      if (!sfnArn) {
-        log
-          .error()
-          .str('function', 'parseSFNEventAndCreateAlarms')
-          .obj('event', event)
-          .msg('No SFN ARN found in event for tag change event');
-        throw new Error('No SFN ARN found in event');
-      }
-      eventType = 'TagChange';
-      tags = event.detail.tags || {};
-      log
-        .info()
-        .str('function', 'parseSFNEventAndCreateAlarms')
-        .str('eventType', 'TagChange')
-        .str('sfnArn', sfnArn)
-        .str('changedTags', JSON.stringify(event.detail['changed-tag-keys']))
-        .msg('Processing Tag Change event');
+  // Step 1: Determine Event Type and Extract ECS ARN and ClusterName
+  const clusterInfo = findECSClusterInfo(event);
+  const ecsArn = clusterInfo?.arn;
+  const clusterName = clusterInfo?.clusterName;
 
-      if (sfnArn) {
-        tags = await fetchEcsTags(sfnArn);
-        log
-          .info()
-          .str('function', 'parseSFNEventAndCreateAlarms')
-          .str('sfnArn', sfnArn)
-          .str('tags', JSON.stringify(tags))
-          .msg('Fetched tags for new TagChange event');
-      } else {
-        log
-          .error()
-          .str('function', 'parseSFNEventAndCreateAlarms')
-          .str('eventType', 'TagChance')
-          .msg('SFN ARN not found in Tag Change event');
-        throw new Error('SFN ARN not found in Tag Change event');
-      }
-      break;
-
-    case 'AWS API Call via CloudTrail':
-      switch (event.detail.eventName) {
-        case 'CreateStateMachine':
-          sfnArn = findECSClusterInfo(event);
-          if (!sfnArn) {
-            log
-              .error()
-              .str('function', 'parseSFNEventAndCreateAlarms')
-              .obj('event', event)
-              .msg('No SFN ARN found in event for CreateStateMachine event');
-            throw new Error(
-              'No SFN ARN found in event for AWS API Call via CloudTrail event',
-            );
-          }
-          eventType = 'Create';
-          log
-            .info()
-            .str('function', 'parseSFNEventAndCreateAlarms')
-            .str('eventType', 'Create')
-            .str('sfnArn', sfnArn)
-            .str('requestId', event.detail.requestID)
-            .msg('Processing CreateStateMachine event');
-          if (sfnArn) {
-            tags = await fetchEcsTags(sfnArn);
-            log
-              .info()
-              .str('function', 'parseSFNEventAndCreateAlarms')
-              .str('sfnArn', sfnArn)
-              .str('tags', JSON.stringify(tags))
-              .msg('Fetched tags for new CreateStateMachine event');
-          } else {
-            log
-              .error()
-              .str('function', 'parseSFNEventAndCreateAlarms')
-              .str('eventType', 'Create')
-              .msg('SFN ARN not found in CreateStateMachine event');
-            throw new Error('SFN ARN not found in CreateStateMachine event');
-          }
-          break;
-
-        case 'DeleteStateMachine':
-          sfnArn = findECSClusterInfo(event);
-          if (!sfnArn) {
-            log
-              .error()
-              .str('function', 'parseSFNEventAndCreateAlarms')
-              .obj('event', event)
-              .msg('No SFN ARN found in event for DeleteStateMachine event');
-            throw new Error(
-              'No SFN ARN found in event for AWS API Call via CloudTrail event',
-            );
-          }
-          eventType = 'Delete';
-          log
-            .info()
-            .str('function', 'parseSFNEventAndCreateAlarms')
-            .str('eventType', 'Delete')
-            .str('sfnArn', sfnArn)
-            .str('requestId', event.detail.requestID)
-            .msg('Processing DeleteStateMachine event');
-          break;
-
-        default:
-          log
-            .error()
-            .str('function', 'parseSFNEventAndCreateAlarms')
-            .str('eventName', event.detail.eventName)
-            .str('requestId', event.detail.requestID)
-            .msg('Unexpected CloudTrail event type');
-          throw new Error('Unexpected CloudTrail event type');
-      }
-      break;
-
-    default:
-      log
-        .error()
-        .str('function', 'parseSFNEventAndCreateAlarms')
-        .str('detail-type', event['detail-type'])
-        .msg('Unexpected event type');
-      throw new Error('Unexpected event type');
-  }
-
-  if (!sfnArn) {
+  if (!ecsArn || !clusterName) {
     log
       .error()
-      .str('function', 'parseSFNEventAndCreateAlarms')
-      .str('sfnArn', sfnArn)
-      .msg('sfnArn is empty');
-    throw new Error('sfnArn is empty');
+      .str('function', 'parseECSEventAndCreateAlarms')
+      .obj('event', event)
+      .msg('No ECS ARN or ClusterName found in event');
+    throw new Error('No ECS ARN or ClusterName found in event');
   }
 
   log
     .info()
-    .str('function', 'parseSFNEventAndCreateAlarms')
-    .str('sfnArn', sfnArn)
-    .str('eventType', eventType)
-    .msg('Finished processing SFN event');
+    .str('function', 'parseECSEventAndCreateAlarms')
+    .str('ecsArn', ecsArn)
+    .str('clusterName', clusterName)
+    .msg('Extracted ECS ARN and ClusterName');
 
-  if (sfnArn && (eventType === 'Create' || eventType === 'TagChange')) {
-    log
-      .info()
-      .str('function', 'parseSFNEventAndCreateAlarms')
-      .str('sfnArn', sfnArn)
-      .str('tags', JSON.stringify(tags))
-      .str(
-        'autoalarm:enabled',
-        tags['autoalarm:enabled']
-          ? tags['autoalarm:enabled']
-          : 'autoalarm tag does not exist',
-      )
-      .msg('Starting to manage SFN alarms');
-    await checkAndManageEcsStatusAlarms(sfnArn, tags);
-  } else if (eventType === 'Delete') {
-    log
-      .info()
-      .str('function', 'parseSFNEventAndCreateAlarms')
-      .str('sfnArn', sfnArn)
-      .msg('Starting to manage inactive SFN alarms');
-    await manageInactiveECSAlarms(sfnArn);
+  // If delete cluster return early after deleting alarms
+  if (body['eventName'] === 'DeleteCluster') {
+    try {
+      log
+        .info()
+        .str('function', 'parseECSEventAndCreateAlarms')
+        .obj('event', event)
+        .msg('DeleteCluster event detected. Deleting alarms');
+      await deleteExistingAlarms('ECS', ecsArn);
+      return;
+    } catch (error) {
+      log
+        .error()
+        .str('function', 'parseECSEventAndCreateAlarms')
+        .obj('event', event)
+        .err(error)
+        .msg(`Error deleting ECS alarms`);
+      throw new Error(`Error deleting ECS alarms`);
+    }
   }
 
-  return {sfnArn, eventType, tags};
+  // Step 2: fetch tags from event payload and parse out autoalarm tags
+  const tags = await fetchEcsTags(ecsArn);
+
+  // Check if AutoAlarm is enabled and capture all autoalarm tags from tags object
+  const autoAlarmTags = Object.entries(tags).reduce(
+    (acc, [key, value]) => {
+      if (key.startsWith('autoalarm:')) {
+        acc[key] = value;
+      }
+      return acc;
+    },
+    {} as Record<string, string>,
+  );
+
+  // Early return and deletion of alarms if autoalarm is disabled.
+  if (
+    autoAlarmTags['autoalarm:enabled'] &&
+    autoAlarmTags['autoalarm:enabled'] === 'false'
+  ) {
+    log
+      .info()
+      .str('function', 'parseECSEventAndCreateAlarms')
+      .obj('event', event)
+      .msg('Autoalarm is disabled. Deleting alarms');
+    await deleteExistingAlarms('ECS', ecsArn);
+    return;
+  }
+
+  // throw error if no autoalarm tags found
+  if (Object.keys(autoAlarmTags).length === 0) {
+    log
+      .info()
+      .str('function', 'parseECSEventAndCreateAlarms')
+      .obj('event', event)
+      .msg('No autoalarm tags found in event. Terminating early');
+    return;
+  }
+
+  // Step 3: manage alarms:
+  try {
+    log
+      .info()
+      .str('function', 'parseECSEventAndCreateAlarms')
+      .str('ecsArn', ecsArn)
+      .str('tags', JSON.stringify(tags))
+      .obj('event', event)
+      .msg('Starting to manage ECS alarms');
+    await checkAndManageEcsStatusAlarms(ecsArn, clusterName, tags);
+  } catch (error) {
+    log
+      .error()
+      .str('function', 'parseECSEventAndCreateAlarms')
+      .obj('event', event)
+      .err(error)
+      .msg(`Error managing ECS alarms}`);
+    throw new Error(`Error managing ECS alarms:`);
+  }
+  return
 }
