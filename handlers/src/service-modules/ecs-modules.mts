@@ -1,11 +1,6 @@
-import {
-  ECSClient,
-  ListTagsForResourceCommand,
-  ListServicesCommand,
-  ListServicesCommandOutput,
-} from '@aws-sdk/client-ecs';
+import {ECSClient, ListTagsForResourceCommand} from '@aws-sdk/client-ecs';
 import * as logging from '@nr1e/logging';
-import {AlarmClassification, Tag} from '../types/index.mjs';
+import { Tag} from '../types/index.mjs';
 import {
   CloudWatchClient,
   DeleteAlarmsCommand,
@@ -14,14 +9,12 @@ import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {SQSRecord} from 'aws-lambda';
 import {
   deleteExistingAlarms,
-  buildAlarmName,
   handleAnomalyAlarms,
   handleStaticAlarms,
   getCWAlarmsForInstance,
   parseMetricAlarmOptions,
 } from '../alarm-configs/utils/index.mjs';
 import {ECS_CONFIGS} from '../alarm-configs/_index.mjs';
-import {IBlueprintRef} from 'aws-cdk-lib/aws-bedrock';
 import {Dimension} from '../types/module-types.mjs';
 
 const log: logging.Logger = logging.getLogger('ecs-modules');
@@ -39,26 +32,51 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
 
 const metricConfigs = ECS_CONFIGS;
 
+interface ECSClusterInfo {
+  arn: string;
+  clusterName: string;
+}
+
+function extractECSClusterInfo(
+  eventObj: SQSRecord,
+): ECSClusterInfo | undefined {
+  const body = JSON.parse(eventObj.body);
+  const arn = body['resourceArn'] ? body['resourceArn'] : body['clusterArn'];
+
+  if (arn?.startsWith('arn:aws:ecs')) {
+    log
+      .info()
+      .str('function', 'extractECSClusterInfo')
+      .str('arn', arn)
+      .msg('Extracted ECS cluster info from structured event');
+    return {
+      arn,
+      clusterName: arn.split(':cluster/')[1],
+    };
+  }
+
+  return void 0;
+}
+
 export async function fetchEcsTags(ecsArn: string): Promise<Tag> {
   try {
-    const command = new ListTagsForResourceCommand({
-      resourceArn: ecsArn,
-    });
+    const command = new ListTagsForResourceCommand({resourceArn: ecsArn});
     const response = await ecsClient.send(command);
-    const tags: Tag = {};
 
+    const tags: Tag = {};
     response.tags?.forEach((tag) => {
-      if (tag.key && tag.value) {
+      if (tag.key && tag.value && tag.key.startsWith('autoalarm:')) {
         tags[tag.key] = tag.value;
       }
     });
 
     log
-      .info()
+      .debug()
       .str('function', 'fetchEcsTags')
       .str('ecsArn', ecsArn)
-      .str('tags', JSON.stringify(tags))
-      .msg('Fetched tags for ECS Arn');
+      .num('tagCount', Object.keys(tags).length)
+      .msg('Fetched ECS tags');
+
     return tags;
   } catch (error) {
     log
@@ -66,22 +84,21 @@ export async function fetchEcsTags(ecsArn: string): Promise<Tag> {
       .str('function', 'fetchEcsTags')
       .str('ecsArn', ecsArn)
       .err(error)
-      .msg('Error fetching tags for ECS Arn');
+      .msg('Error fetching ECS tags');
     return {};
   }
 }
 
-async function checkAndManageEcsStatusAlarms(
+async function manageEcsAlarms(
   ecsArn: string,
   clusterName: string,
   tags: Tag,
 ): Promise<void> {
-
   const dimensions = [{Name: 'ClusterName', Value: clusterName}]; // Or ServiceName depending on resource type
 
   log
     .info()
-    .str('function', 'checkAndManageEcsStatusAlarms')
+    .str('function', 'manageEcsAlarms')
     .str('ecsArn', ecsArn)
     .msg('Managing ECS alarms');
 
@@ -96,7 +113,7 @@ async function checkAndManageEcsStatusAlarms(
 
   log
     .info()
-    .str('function', 'checkAndManageEcsStatusAlarms')
+    .str('function', 'manageEcsAlarms')
     .num('alarmsManaged', alarmsToKeep.size)
     .msg('Alarm management complete');
 }
@@ -169,177 +186,100 @@ async function deleteUnneededAlarms(
     .msg('Deleted obsolete alarms');
 }
 
-export async function manageInactiveECSAlarms(ecsArn: string): Promise<void> {
-  try {
-    await deleteExistingAlarms('ECS', ecsArn);
-  } catch (e) {
-    log
-      .error()
-      .str('function', 'manageInactiveECSAlarms')
-      .err(e)
-      .msg(`Error deleting ECS alarms: ${e}`);
-  }
-}
-
 /**
- * Searches the provided object for the first occurrence of an ECS ARN and cluster name.
- * Serializes the object to a JSON string, looks for the substring "arn:aws:ECS",
- * and then extracts everything up to the next quotation mark.
- * Logs an error and returns an empty string if no valid ECS ARN can be found.
- *
- * @param {SQSRecord>} eventObj - A JSON-serializable object to search for an ECS ARN.
- * @returns {Record<string, string> | undefined} The extracted ECS ARN and Cluster Name, or undefined if not found.
+ * entry point to module to manage ecs alarms
  */
-function findECSClusterInfo(
-  eventObj: SQSRecord,
-): {arn: string; clusterName: string} | undefined {
-  const eventString = JSON.stringify(eventObj.body);
-
-  // 1) Find where the ARN starts.
-  const startIndex = eventString.indexOf('arn:aws:ecs');
-  if (startIndex === -1) {
-    log
-      .error()
-      .str('function', 'findECSClusterInfo')
-      .obj('eventObj', eventObj)
-      .msg('No ECS ARN found in event');
-    return void 0;
-  }
-
-  // 2) Find the next quote after that.
-  const endIndex = eventString.indexOf('"', startIndex);
-  if (endIndex === -1) {
-    log
-      .error()
-      .str('function', 'findECSClusterInfo')
-      .obj('eventObj', eventObj)
-      .msg('No ending quote found for ECS ARN');
-    return void 0;
-  }
-
-  // 3) Extract the ARN
-  const arn = eventString.substring(startIndex, endIndex);
-
-  log
-    .info()
-    .str('function', 'findECSClusterInfo')
-    .str('arn', arn)
-    .str('startIndex', startIndex.toString())
-    .str('endIndex', endIndex.toString())
-    .msg('Extracted ECS ARN');
-
-  // 4) Extract Cluster name from ARN and return
-  return {
-    arn: arn,
-    clusterName: arn.split('/')[1].replace('"', '').trim(),
-  };
-}
-
 export async function parseECSEventAndCreateAlarms(
   event: SQSRecord,
 ): Promise<void> {
-  // Parse event body into json for later processing
   const body = JSON.parse(event.body);
-  let eventType: 'Destroyed' | 'Created' | 'TagChange';
 
-  // Step 1: Determine Event Type and Extract ECS ARN and ClusterName
-  const clusterInfo = findECSClusterInfo(event);
-  const ecsArn = clusterInfo?.arn;
-  const clusterName = clusterInfo?.clusterName;
+  // Step 1: Extract cluster info
+  const clusterInfo = extractECSClusterInfo(event);
 
-  if (!ecsArn || !clusterName) {
+  if (!clusterInfo) {
     log
       .error()
       .str('function', 'parseECSEventAndCreateAlarms')
-      .obj('event', event)
-      .msg('No ECS ARN or ClusterName found in event');
-    throw new Error('No ECS ARN or ClusterName found in event');
+      .msg('Failed to extract ECS cluster info from event');
+    throw new Error('No valid ECS cluster info found in event');
   }
+
+  const {arn: ecsArn, clusterName} = clusterInfo;
 
   log
     .info()
     .str('function', 'parseECSEventAndCreateAlarms')
+    .str('eventName', body.eventName)
     .str('ecsArn', ecsArn)
     .str('clusterName', clusterName)
-    .msg('Extracted ECS ARN and ClusterName');
+    .msg('Processing ECS event');
 
-  // If delete cluster return early after deleting alarms
-  if (body['eventName'] === 'DeleteCluster') {
+  // Step 2: Handle cluster deletion
+  if (body.eventName === 'DeleteCluster') {
     try {
       log
         .info()
         .str('function', 'parseECSEventAndCreateAlarms')
-        .obj('event', event)
-        .msg('DeleteCluster event detected. Deleting alarms');
+        .str('ecsArn', ecsArn)
+        .msg('Deleting alarms for deleted cluster');
       await deleteExistingAlarms('ECS', ecsArn);
       return;
     } catch (error) {
       log
         .error()
         .str('function', 'parseECSEventAndCreateAlarms')
-        .obj('event', event)
+        .str('ecsArn', ecsArn)
         .err(error)
-        .msg(`Error deleting ECS alarms`);
-      throw new Error(`Error deleting ECS alarms`);
+        .msg('Error deleting ECS alarms for deleted cluster');
+      throw new Error(
+        `Failed to delete alarms for cluster ${clusterName}: ${error}`,
+      );
     }
   }
 
-  // Step 2: fetch tags from event payload and parse out autoalarm tags
+  // Step 3: Fetch and filter tags
   const tags = await fetchEcsTags(ecsArn);
+  const autoAlarmTags = await fetchEcsTags(ecsArn);
 
-  // Check if AutoAlarm is enabled and capture all autoalarm tags from tags object
-  const autoAlarmTags = Object.entries(tags).reduce(
-    (acc, [key, value]) => {
-      if (key.startsWith('autoalarm:')) {
-        acc[key] = value;
-      }
-      return acc;
-    },
-    {} as Record<string, string>,
-  );
-
-  // Early return and deletion of alarms if autoalarm is disabled.
-  if (
-    autoAlarmTags['autoalarm:enabled'] &&
-    autoAlarmTags['autoalarm:enabled'] === 'false'
-  ) {
+  if (Object.keys(tags).length === 0) {
     log
       .info()
       .str('function', 'parseECSEventAndCreateAlarms')
-      .obj('event', event)
-      .msg('Autoalarm is disabled. Deleting alarms');
+      .str('ecsArn', ecsArn)
+      .msg('No autoalarm tags found - skipping alarm management');
+    return;
+  }
+
+  // Check if AutoAlarm is explicitly disabled
+  if (autoAlarmTags['autoalarm:enabled'] === 'false') {
+    log
+      .info()
+      .str('function', 'parseECSEventAndCreateAlarms')
+      .str('ecsArn', ecsArn)
+      .msg('AutoAlarm disabled - deleting existing alarms');
     await deleteExistingAlarms('ECS', ecsArn);
     return;
   }
 
-  // throw error if no autoalarm tags found
-  if (Object.keys(autoAlarmTags).length === 0) {
-    log
-      .info()
-      .str('function', 'parseECSEventAndCreateAlarms')
-      .obj('event', event)
-      .msg('No autoalarm tags found in event. Terminating early');
-    return;
-  }
-
-  // Step 3: manage alarms:
+  // Step 4: Manage alarms
   try {
     log
       .info()
       .str('function', 'parseECSEventAndCreateAlarms')
       .str('ecsArn', ecsArn)
-      .str('tags', JSON.stringify(tags))
-      .obj('event', event)
-      .msg('Starting to manage ECS alarms');
-    await checkAndManageEcsStatusAlarms(ecsArn, clusterName, tags);
+      .num('autoAlarmTagCount', Object.keys(autoAlarmTags).length)
+      .msg('Managing ECS cluster alarms');
+    await manageEcsAlarms(ecsArn, clusterName, tags);
   } catch (error) {
     log
       .error()
       .str('function', 'parseECSEventAndCreateAlarms')
-      .obj('event', event)
+      .str('ecsArn', ecsArn)
       .err(error)
-      .msg(`Error managing ECS alarms}`);
-    throw new Error(`Error managing ECS alarms:`);
+      .msg('Error managing ECS alarms');
+    throw new Error(
+      `Failed to manage alarms for cluster ${clusterName}: ${error}`,
+    );
   }
-  return
 }
