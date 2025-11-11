@@ -235,40 +235,6 @@ function findECSClusterInfo(
   };
 }
 
-/**
- * Fetches services which are needed for the cloudwatch ecs memory dimensions
- * @param cluster
- */
-async function fetchEcsServices(
-  cluster: string,
-  nextToken?: string | undefined,
-): Promise<string[] | undefined> {
-  // Place holder for return token if result remain after the previous api call
-  const input = {
-    cluster: cluster,
-    nextToken: nextToken,
-  };
-
-  // get response and then store in services string[]
-  let services: string[] = [];
-  const response: ListServicesCommandOutput = await ecsClient.send(
-    new ListServicesCommand(input),
-  );
-
-  services.push(...response.serviceArns!);
-
-  // Recursive loop if next token exists
-  if (response.nextToken) {
-    const nextServices = await fetchEcsServices(cluster, response.nextToken);
-    if (nextServices) {
-      services.push(...nextServices);
-    }
-  }
-
-  // If no next token, return all discovered services or undefined if services is empty
-  return services.every((service) => service != void 0) ? services : void 0;
-}
-
 export async function parseECSEventAndCreateAlarms(
   event: SQSRecord,
 ): Promise<void> {
