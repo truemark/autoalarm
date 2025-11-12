@@ -1,5 +1,10 @@
 # AutoAlarm Changelog
 
+## v1.14.1
+
+### Changes
+- Issue-198: added support for ECS tag based alarm management. 
+
 ## v1.13.11
 
 ### Fixed
