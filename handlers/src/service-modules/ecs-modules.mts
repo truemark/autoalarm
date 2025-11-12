@@ -279,6 +279,7 @@ export async function parseECSEventAndCreateAlarms(
       .str('function', 'parseECSEventAndCreateAlarms')
       .str('ecsArn', ecsArn)
       .msg('No autoalarm tags found - skipping alarm management');
+    await deleteExistingAlarms('ECS', ecsArn);
     return;
   }
 

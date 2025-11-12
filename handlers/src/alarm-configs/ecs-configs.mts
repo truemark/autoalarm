@@ -55,7 +55,7 @@ export const ECS_CONFIGS: MetricAlarmConfig[] = [
     },
   },
   {
-    tagKey: 'cpu-utilization',
+    tagKey: 'cpu',
     metricName: 'CPUUtilization',
     metricNamespace: 'AWS/ECS',
     defaultCreate: true,
