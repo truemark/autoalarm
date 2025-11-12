@@ -37,53 +37,57 @@ interface ECSClusterInfo {
   clusterName: string;
 }
 
-function extractECSClusterInfo(
-  body: unknown,
-): ECSClusterInfo | undefined {
-  // Type guard to check if body matches CloudTrail structure
-
-  const arn =
-    body.detail['requestParameters'].resourceArn  ??
-    body.detail.requestParameters.clusterArn;
-
-  if (!arn || typeof arn !== 'string') {
+function extractECSClusterInfo(eventBody: string): ECSClusterInfo | undefined {
+  // 1) Find where the ARN starts.
+  const startIndex = eventBody.indexOf('arn:aws:ecs');
+  if (startIndex === -1) {
     log
-      .warn()
-      .str('function', 'extractECSClusterInfo')
-      .msg('No ARN found in requestParameters');
-    return undefined;
+      .error()
+      .str('function', 'findECSClusterInfo')
+      .str('eventObj', eventBody)
+      .msg('No ECS ARN found in event');
+    return void 0;
   }
 
-  if (!arn.startsWith('arn:aws:ecs')) {
+  // 2) Find the next quote after that.
+  const endIndex = eventBody.indexOf('"', startIndex);
+  if (endIndex === -1) {
     log
-      .warn()
-      .str('function', 'extractECSClusterInfo')
+      .error()
+      .str('function', 'findECSClusterInfo')
+      .str('eventObj', eventBody)
+      .msg('No ending quote found for ECS ARN');
+    return void 0;
+  }
+
+  // 3) Extract the ARN
+  const arn = eventBody.substring(startIndex, endIndex).trim();
+
+  // 4) Extract Cluster name from ARN
+  const arnParts = arn.split('/');
+  if (arnParts.length < 2) {
+    log
+      .error()
+      .str('function', 'findECSClusterInfo')
       .str('arn', arn)
-      .msg('ARN is not an ECS resource');
-    return undefined;
+      .msg('Invalid ECS ARN format - missing cluster name');
+    return void 0;
   }
 
-  const clusterName = arn.split(':cluster/')[1];
-
-  if (!clusterName) {
-    log
-      .warn()
-      .str('function', 'extractECSClusterInfo')
-      .str('arn', arn)
-      .msg('Could not extract cluster name from ARN');
-    return undefined;
-  }
+  const clusterName = arnParts[1].replace('"', '').trim();
 
   log
     .info()
-    .str('function', 'extractECSClusterInfo')
+    .str('function', 'findECSClusterInfo')
     .str('arn', arn)
     .str('clusterName', clusterName)
-    .msg('Extracted ECS cluster info from structured event');
+    .msg('Extracted ECS ARN and cluster name');
 
-  return { arn, clusterName };
+  return {
+    arn: arn,
+    clusterName: clusterName,
+  };
 }
-
 
 export async function fetchEcsTags(ecsArn: string): Promise<Tag> {
   try {
@@ -222,7 +226,7 @@ export async function parseECSEventAndCreateAlarms(
   const body = JSON.parse(record.body);
 
   // Step 1: Extract cluster info
-  const clusterInfo = extractECSClusterInfo(body);
+  const clusterInfo = extractECSClusterInfo(record.body);
 
   if (!clusterInfo) {
     log

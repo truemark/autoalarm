@@ -142,6 +142,21 @@ export class AutoAlarm extends Construct {
       }),
     );
 
+    // Attach policies for ECS:
+    autoAlarmExecutionRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: [
+          'ecs:ListClusters',
+          'ecs:ListServices',
+          'ecs:DescribeClusters',
+          'ecs:DescribeServices',
+          'ecs:ListTagsForResource',
+        ],
+        resources: ['*'],
+      }),
+    );
+
     // Attach policies for CloudWatch Logs
     autoAlarmExecutionRole.addToPolicy(
       new PolicyStatement({
