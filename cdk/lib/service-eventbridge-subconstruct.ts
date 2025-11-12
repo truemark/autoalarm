@@ -231,7 +231,12 @@ export class EventRules extends Construct {
           detailType: ['AWS API Call via CloudTrail'],
           detail: {
             eventSource: ['ecs.amazonaws.com'],
-            eventName: ['CreateCluster', 'DeleteCluster', 'TagResource'],
+            eventName: [
+              'CreateCluster',
+              'DeleteCluster',
+              'TagResource',
+              'UntagResource',
+            ],
           },
         },
         description: 'Routes ECS state change and tag events to AutoAlarm',
