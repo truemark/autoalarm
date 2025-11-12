@@ -259,9 +259,9 @@ export const handler: Handler = async (
     log.trace().obj('body', event).msg('Processing message body');
 
     try {
-      // TODO Fix the ugliness below. Future modules should be simple if statments
-      if (event.body['source'] === 'aws.ecs') {
-        await ServiceModules.parseECSEventAndCreateAlarms(event);
+      // TODO Fix the ugliness below. Future modules should be simple if statements
+      if (event.source === 'aws.ecs') {
+        await ServiceModules.parseECSEventAndCreateAlarms(record);
         continue;
       }
 

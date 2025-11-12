@@ -38,25 +38,52 @@ interface ECSClusterInfo {
 }
 
 function extractECSClusterInfo(
-  eventObj: SQSRecord,
+  body: unknown,
 ): ECSClusterInfo | undefined {
-  const body = JSON.parse(eventObj.body);
-  const arn = body['resourceArn'] ? body['resourceArn'] : body['clusterArn'];
+  // Type guard to check if body matches CloudTrail structure
 
-  if (arn?.startsWith('arn:aws:ecs')) {
+  const arn =
+    body.detail['requestParameters'].resourceArn  ??
+    body.detail.requestParameters.clusterArn;
+
+  if (!arn || typeof arn !== 'string') {
     log
-      .info()
+      .warn()
       .str('function', 'extractECSClusterInfo')
-      .str('arn', arn)
-      .msg('Extracted ECS cluster info from structured event');
-    return {
-      arn,
-      clusterName: arn.split(':cluster/')[1],
-    };
+      .msg('No ARN found in requestParameters');
+    return undefined;
   }
 
-  return void 0;
+  if (!arn.startsWith('arn:aws:ecs')) {
+    log
+      .warn()
+      .str('function', 'extractECSClusterInfo')
+      .str('arn', arn)
+      .msg('ARN is not an ECS resource');
+    return undefined;
+  }
+
+  const clusterName = arn.split(':cluster/')[1];
+
+  if (!clusterName) {
+    log
+      .warn()
+      .str('function', 'extractECSClusterInfo')
+      .str('arn', arn)
+      .msg('Could not extract cluster name from ARN');
+    return undefined;
+  }
+
+  log
+    .info()
+    .str('function', 'extractECSClusterInfo')
+    .str('arn', arn)
+    .str('clusterName', clusterName)
+    .msg('Extracted ECS cluster info from structured event');
+
+  return { arn, clusterName };
 }
+
 
 export async function fetchEcsTags(ecsArn: string): Promise<Tag> {
   try {
@@ -190,12 +217,12 @@ async function deleteUnneededAlarms(
  * entry point to module to manage ecs alarms
  */
 export async function parseECSEventAndCreateAlarms(
-  event: SQSRecord,
+  record: SQSRecord,
 ): Promise<void> {
-  const body = JSON.parse(event.body);
+  const body = JSON.parse(record.body);
 
   // Step 1: Extract cluster info
-  const clusterInfo = extractECSClusterInfo(event);
+  const clusterInfo = extractECSClusterInfo(body);
 
   if (!clusterInfo) {
     log
