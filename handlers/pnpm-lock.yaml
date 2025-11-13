@@ -71,6 +71,9 @@ importers:
       '@aws-sdk/util-dynamodb':
         specifier: ^3.799.0
         version: 3.799.0(@aws-sdk/client-dynamodb@3.799.0)
+      '@eslint/js':
+        specifier: ^9.39.1
+        version: 9.39.1
       '@nr1e/commons':
         specifier: 0.0.2-alpha.9
         version: 0.0.2-alpha.9
@@ -92,6 +95,11 @@ importers:
       aws-cdk-lib:
         specifier: ^2.194.0
         version: 2.194.0(constructs@10.4.2)
+      "js\n":
+        specifier: |
+          link:@eslint/js
+        version: |
+          link:@eslint/js
       js-yaml:
         specifier: ^4.1.0
         version: 4.1.0
@@ -678,6 +686,10 @@ packages:
 
   '@eslint/js@9.25.1':
     resolution: {integrity: sha512-dEIwmjntEx8u3Uvv+kr3PDeeArL8Hw07H9kyYxCjnM9pBjfEhk6uLXSchxxzgiwtRhhzVzqmUSDFBOi1TuZ7qg==}
+    engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+
+  '@eslint/js@9.39.1':
+    resolution: {integrity: sha512-S26Stp4zCy88tH94QbBv3XCuzRQiZ9yXofEILmglYTh/Ug/a9/umqvgFtYBAo3Lp0nsI/5/qH1CCrbdK3AP1Tw==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
 
   '@eslint/object-schema@2.1.6':
@@ -4193,6 +4205,8 @@ snapshots:
       - supports-color
 
   '@eslint/js@9.25.1': {}
+
+  '@eslint/js@9.39.1': {}
 
   '@eslint/object-schema@2.1.6': {}
 
