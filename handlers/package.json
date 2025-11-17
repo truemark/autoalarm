@@ -43,6 +43,7 @@
     "js-yaml": "^4.1.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.25.1",
     "@types/aws-lambda": "^8.10.149",
     "@types/aws4": "^1.11.6",
     "@types/node": "20.8.2",

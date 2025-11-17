@@ -367,6 +367,10 @@ export const handler: Handler = async (
           await ServiceModules.parseSFNEventAndCreateAlarms(event);
           break;
 
+        case 'aws.logs':
+          await ServiceModules.parseLogGroupEventAndCreateAlarms(record);
+          break;
+
         case 'aws.tag':
           // add ec2 tag events to another array for processing.
           if (
