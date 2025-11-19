@@ -59,6 +59,13 @@ export async function fetchLogGroupTags(
     }
   }
 
+  log
+    .debug()
+    .str('function', 'fetchLogGroupTags')
+    .str('inputArn', arn)
+    .obj('Filtered AutoAlarm tags', tags)
+    .msg('ListTagsForResource complete');
+
   return tags;
 }
 
