@@ -1,9 +1,8 @@
 # AutoAlarm Changelog
 
-## v1.14.1
-
-### Changes
-- Issue-198: added support for ECS tag based alarm management. 
+## v1.13.12
+### Fixed
+- Fixed a deprecated lib version for truemark-cdk-lib which contains an update for a deprecated lambda property. Addresses issue-200. 
 
 ## v1.13.11
 
