@@ -1,5 +1,9 @@
 # AutoAlarm Changelog
 
+## v1.14.1
+### Added
+- Added support for loggroup monitoring via alarm based tag management. 
+
 ## v1.13.12
 ### Fixed
 - Fixed a deprecated lib version for truemark-cdk-lib which contains an update for a deprecated lambda property. Addresses issue-200. 

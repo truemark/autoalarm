@@ -139,6 +139,14 @@ threshold values are provided in the tag value when setting the tag on the resou
 | `autoalarm:memory`              | Yes                      | Yes                        | 95                | 98                 | 60     | 10                 | Maximum   | 10                  | GreaterThanThreshold      | ignore                 | `95/98/60/10/Maximum/10/GreaterThanThreshold/ignore`   |
 | `autoalarm:memory-anomaly`      | No                       | Yes                        | 2                 | 5                  | 300    | 2                  | Average   | 2                   | GreaterThanUpperThreshold | ignore                 | `2/5/300/2/Average/2/GreaterThanUpperThreshold/ignore` |
 
+#### LogGroups
+
+| Tag                                | Alarm Created by Default | Standard CloudWatch Metric | Warning Threshold      | Critical Threshold        | Period | Evaluation Periods | Statistic | Datapoints to Alarm | Comparison Operator       | Missing Data Treatment | Complete Tag Value                                     |
+|------------------------------------|--------------------------|----------------------------|------------------------|---------------------------|--------|--------------------|-----------|---------------------|---------------------------|------------------------|--------------------------------------------------------|
+| `autoalarm:incoming-bytes`         | No                       | Yes                        | undefined/Requires tag | undefined/Requires tag    | 300    | 1                  | Maximum   | 1                   | LessThanThreshold         | ignore                 | `-/-/300/1/Maximum/1/LessThanThreshold/ignore`         |
+| `autoalarm:incoming-bytes-anomaly` | No                       | Yes                        | undefined/Requires tag | undefined/Requires tag    | 300    | 1                  | Maximum   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/300/1/Maximum/1/GreaterThanUpperThreshold/ignore` |
+
+
 #### OpenSearch
 
 | Tag                                     | Alarm Created by Default | Standard CloudWatch Metric | Warning Threshold | Critical Threshold | Period | Evaluation Periods | Statistic | Datapoints to Alarm | Comparison Operator           | Missing Data Treatment | Complete Tag Value                                      |
