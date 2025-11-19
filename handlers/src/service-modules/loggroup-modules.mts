@@ -34,13 +34,23 @@ const metricConfigs = LOGGROUP_CONFIGS;
 export async function fetchLogGroupTags(
   arn: string,
 ): Promise<Record<string, string>> {
+
+  const resourceArn = arn.replace(/:\*$/, '');
+
+  log
+    .debug()
+    .str('function', 'fetchLogGroupTags')
+    .str('inputArn', arn)
+    .str('resourceArn', resourceArn)
+    .msg('Calling ListTagsForResource');
+
   const resp = await logsClient.send(
     new ListTagsForResourceCommand({
-      resourceArn: arn,
+      resourceArn,
     }),
   );
 
-  const tags: Tag = {};
+  const tags: Record<string, string> = {};
   for (const [key, value] of Object.entries(resp.tags ?? {})) {
     if (key.startsWith('autoalarm:')) {
       tags[key] = value ?? '';
@@ -225,10 +235,20 @@ export async function parseLogGroupEventAndCreateAlarms(
   record: SQSRecord,
 ): Promise<void> {
   const body = JSON.parse(record.body);
+  const detail = body.detail;
 
-  const eventName = body.detail?.eventName;
-  const logGroupName: string | undefined =
-    body.detail?.requestParameters?.logGroupName;
+  const eventName = detail?.eventName;
+
+  let logGroupName: string | undefined =
+    detail?.requestParameters?.logGroupName;
+
+  if (!logGroupName && detail?.requestParameters?.resourceArn) {
+    const resourceArn: string = detail.requestParameters.resourceArn;
+    const afterLogGroup = resourceArn.split(':log-group:')[1];
+    if (afterLogGroup) {
+      logGroupName = afterLogGroup.replace(/:\*$/, '');
+    }
+  }
 
   if (!logGroupName) {
     log
