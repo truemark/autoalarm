@@ -14,7 +14,7 @@ import {
   getCWAlarmsForInstance,
   parseMetricAlarmOptions,
 } from '../alarm-configs/utils/index.mjs';
-import {SQS_CONFIGS} from '../alarm-configs/index.mjs';
+import {SQS_CONFIGS} from '../alarm-configs/_index.mjs';
 
 const log: logging.Logger = logging.getLogger('sqs-modules');
 const region: string = process.env.AWS_REGION || '';

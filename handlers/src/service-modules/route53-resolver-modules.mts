@@ -17,7 +17,7 @@ import {
   getCWAlarmsForInstance,
   parseMetricAlarmOptions,
 } from '../alarm-configs/utils/index.mjs';
-import {ROUTE53_RESOLVER_CONFIGS} from '../alarm-configs/index.mjs';
+import {ROUTE53_RESOLVER_CONFIGS} from '../alarm-configs/_index.mjs';
 
 const log: logging.Logger = logging.getLogger('route53-resolver-modules');
 const region: string = process.env.AWS_REGION || '';
