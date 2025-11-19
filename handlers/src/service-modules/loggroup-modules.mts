@@ -102,6 +102,12 @@ async function createOrUpdateLogGroupAlarms(
   logGroupName: string,
   tags: Tag,
 ): Promise<Set<string>> {
+  log
+    .debug()
+    .str('function', 'createOrUpdateLogGroupAlarms')
+    .str('logGroupName', logGroupName)
+    .msg('Creating/updating log group alarms');
+
   const alarmsToKeep = new Set<string>();
 
   const dimensions: Dimension[] = [{Name: 'LogGroupName', Value: logGroupName}];
@@ -119,7 +125,22 @@ async function createOrUpdateLogGroupAlarms(
     );
 
     const isAnomaly = config.tagKey.includes('anomaly') || config.anomaly;
+
+    log
+      .info()
+      .str('function', 'createOrUpdateLogGroupAlarms')
+      .str('logGroupName', logGroupName)
+      .bool('isAnomaly', isAnomaly)
+      .msg('Determined alarm type based on tag key and configuration');
+
     const alarmHandler = isAnomaly ? handleAnomalyAlarms : handleStaticAlarms;
+
+    log
+      .info()
+      .str('function', 'createOrUpdateLogGroupAlarms')
+      .str('logGroupName', logGroupName)
+      .str('metricType', config.tagKey)
+      .msg('Starting alarm handler');
 
     const alarmNames = await alarmHandler(
       config,
@@ -206,7 +227,7 @@ function extractLogGroupIdentifiers(
   const arn = eventBody.substring(startIndex, endIndex).trim();
 
   // 4) Extract Cluster name from ARN
-  const arnParts = arn.split('/');
+  const arnParts = arn.split('log-group:');
   if (arnParts.length < 2) {
     log
       .error()
@@ -238,35 +259,79 @@ export async function parseLogGroupEventAndCreateAlarms(
   const detail = body.detail;
   const eventName = detail?.eventName;
   const logGroupInfo = extractLogGroupIdentifiers(record.body);
+  let arn: string = '';
+  let resourceName: string = '';
+
+  if (logGroupInfo) {
+    arn = logGroupInfo.arn;
+    resourceName = logGroupInfo.resourceName;
+  }
 
   if (!logGroupInfo) {
     log
       .error()
       .str('function', 'parseLogGroupEventAndCreateAlarms')
       .str('eventName', eventName)
-      .msg('Failed to extract log group identifiers');
-    throw new Error('Failed to extract log group identifiers', {cause: record});
+      .msg(
+        'Failed to extract log group identifiers. Trying manual json mapping',
+      );
+
+    try {
+      resourceName = body.detail.requestParameters.logGroupName;
+      arn = `arn:aws:logs:${body.region}:${body.account}:log-group:${resourceName}`;
+      log
+        .info()
+        .str('function', 'parseLogGroupEventAndCreateAlarms')
+        .str('eventName', eventName)
+        .str('logGroupArn', arn)
+        .str('logGroupName', resourceName)
+        .msg('Extracted LogGroup ARN and LogGroup name');
+    } catch {
+      log
+        .error()
+        .str('function', 'parseLogGroupEventAndCreateAlarms')
+        .str('eventName', eventName)
+        .msg('Failed to extract log group identifiers');
+      throw new Error('Failed to extract log group identifiers', {
+        cause: record,
+      });
+    }
   }
 
   log
     .info()
     .str('function', 'parseLogGroupEventAndCreateAlarms')
     .str('eventName', eventName)
-    .str('logGroupArn', logGroupInfo.arn)
-    .str('logGroupName', logGroupInfo.resourceName)
+    .str('logGroupArn', arn)
+    .str('logGroupName', resourceName)
     .msg('Processing log group event');
 
+  // Early alarm deletion if delete event
+  if (eventName === 'DeleteLogGroup') {
+    log
+      .info()
+      .str('function', 'parseLogGroupEventAndCreateAlarms')
+      .str('eventName', eventName)
+      .msg('Processing delete log group event');
+
+    const allAlarms = await getCWAlarmsForInstance('Logs', arn);
+    await cloudWatchClient.send(
+      new DeleteAlarmsCommand({AlarmNames: allAlarms}),
+    );
+    return;
+  }
+
   // For non-delete events, fetch tags and filter out AutoAlarm Tags
-  const tags = await fetchLogGroupTags(logGroupInfo.arn);
+  const tags = await fetchLogGroupTags(arn);
 
   // No AutoAlarm tags at all → delete any existing alarms and stop.
   if (Object.keys(tags).length === 0) {
     log
       .info()
       .str('function', 'parseLogGroupEventAndCreateAlarms')
-      .str('logGroupArn', logGroupInfo.arn)
+      .str('logGroupArn', arn)
       .msg('No autoalarm tags found - deleting any existing alarms');
-    await deleteExistingAlarms('Logs', logGroupInfo.arn);
+    await deleteExistingAlarms('LOGS', arn);
     return;
   }
 
@@ -275,28 +340,24 @@ export async function parseLogGroupEventAndCreateAlarms(
     log
       .info()
       .str('function', 'parseLogGroupEventAndCreateAlarms')
-      .str('logGroupArn', logGroupInfo.arn)
+      .str('logGroupArn', arn)
       .msg('autoalarm:enabled=false - deleting existing alarms');
-    await deleteExistingAlarms('Logs', logGroupInfo.arn);
+    await deleteExistingAlarms('Logs', arn);
     return;
   }
 
   // AutoAlarm enabled and tags present → reconcile alarms.
   try {
-    await manageLogGroupAlarms(
-      logGroupInfo.arn,
-      logGroupInfo.resourceName,
-      tags,
-    );
+    await manageLogGroupAlarms(arn, resourceName, tags);
   } catch (error) {
     log
       .error()
       .str('function', 'parseLogGroupEventAndCreateAlarms')
-      .str('logGroupArn', logGroupInfo.arn)
+      .str('logGroupArn', arn)
       .err(error)
       .msg('Error managing log group alarms');
     throw new Error(
-      `Failed to manage alarms for log group ${logGroupInfo.resourceName}: ${error}`,
+      `Failed to manage alarms for log group ${resourceName}: ${error}`,
     );
   }
 }
