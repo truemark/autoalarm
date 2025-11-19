@@ -17,7 +17,7 @@ import {
   parseMetricAlarmOptions,
   deleteExistingAlarms,
 } from '../alarm-configs/utils/index.mjs';
-import {LOGGROUP_CONFIGS} from '../alarm-configs/Loggroup-config.mjs';
+import {LOGGROUP_CONFIGS} from '../alarm-configs/loggroup-configs.mjs';
 import {Dimension} from '../types/module-types.mjs';
 
 const log: logging.Logger = logging.getLogger('loggroup-modules');
@@ -34,7 +34,6 @@ const metricConfigs = LOGGROUP_CONFIGS;
 export async function fetchLogGroupTags(
   arn: string,
 ): Promise<Record<string, string>> {
-
   const resourceArn = arn.replace(/:\*$/, '');
 
   log
