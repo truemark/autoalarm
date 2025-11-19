@@ -165,6 +165,7 @@ export class AutoAlarm extends Construct {
           'logs:CreateLogGroup',
           'logs:CreateLogStream',
           'logs:PutLogEvents',
+          'logs:ListTagsForResource',
         ],
         resources: ['*'],
       }),
