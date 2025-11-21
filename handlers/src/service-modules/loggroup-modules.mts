@@ -262,6 +262,18 @@ export async function parseLogGroupEventAndCreateAlarms(
   let arn: string = '';
   let resourceName: string = '';
 
+  // Early return and log if we're dealing with logstreams:
+  if (body.detail.eventName.includes('LogStream')) {
+    log
+      .info()
+      .str('function', 'parseLogGroupEventAndCreateAlarms')
+      .str('eventName', eventName)
+      .msg(
+        'Log stream event. No Alarm management necessary, please tag LogGroup instead of LogStream for autoalarm management',
+      );
+    return;
+  }
+
   if (logGroupInfo) {
     arn = logGroupInfo.arn;
     resourceName = logGroupInfo.resourceName;
