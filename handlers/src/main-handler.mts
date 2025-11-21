@@ -265,6 +265,11 @@ export const handler: Handler = async (
         continue;
       }
 
+      if (event.source === 'aws.logs') {
+        await ServiceModules.parseLogGroupEventAndCreateAlarms(record);
+        continue;
+      }
+
       switch (event.source) {
         case 'aws.cloudfront':
           await ServiceModules.parseCloudFrontEventAndCreateAlarms(event);

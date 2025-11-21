@@ -8,6 +8,7 @@ type ServiceName =
   | 'cloudfront'
   | 'ec2'
   | 'ecs'
+  | 'logs'
   | 'opensearch'
   | 'rds'
   | 'rdscluster'
@@ -47,6 +48,7 @@ export class EventRules extends Construct {
       'cloudfront',
       'ec2',
       'ecs',
+      'logs',
       'opensearch',
       'rds',
       'rdscluster',
@@ -72,6 +74,7 @@ export class EventRules extends Construct {
     this.addCloudFrontRules();
     this.addEc2Rules();
     this.addEcsRules();
+    this.addLogGroupRules();
     this.addOpenSearchRules();
     this.addRdsRules();
     this.addRdsClusterRules();
@@ -243,6 +246,33 @@ export class EventRules extends Construct {
       }),
     });
     this.serviceRules.set('ecs', ecsRules);
+  }
+
+  private addLogGroupRules() {
+    const logGroupRules = this.serviceRules.get('logs') || [];
+
+    logGroupRules.push({
+      logGroupStateRule: new Rule(this, 'LogGroupStateRule', {
+        eventPattern: {
+          source: ['aws.logs'],
+          detailType: ['AWS API Call via CloudTrail'],
+          detail: {
+            eventSource: ['logs.amazonaws.com'],
+            // Include create/delete + tag/untag events
+            eventName: [
+              'CreateLogGroup',
+              'DeleteLogGroup',
+              'TagResource',
+              'UntagResource',
+            ],
+          },
+        },
+        description:
+          'Routes CloudWatch Logs create/delete/tag/untag events to AutoAlarm',
+      }),
+    });
+
+    this.serviceRules.set('logs', logGroupRules);
   }
 
   private addOpenSearchRules() {
