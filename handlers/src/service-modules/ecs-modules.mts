@@ -82,8 +82,7 @@ function extractECSClusterInfo(eventBody: string): ECSClusterInfo | undefined {
   // Checks if extracted ARN is a service ARN
   const prefix = arnParts[0];
   const rawClusterName = arnParts[1];
-  const isService = arnParts.length >= 3 &&
-    prefix.endsWith(':service');
+  const isService = arnParts.length >= 3 && prefix.endsWith(':service');
 
   const clusterName = rawClusterName.replace('"', '').trim();
   const serviceName = isService
@@ -258,7 +257,7 @@ export async function parseECSEventAndCreateAlarms(
     throw new Error('No valid ECS cluster info found in event');
   }
 
-  if(!clusterInfo.isService || !clusterInfo.serviceName) {
+  if (!clusterInfo.isService || !clusterInfo.serviceName) {
     log
       .info()
       .str('function', 'parseECSEventAndCreateAlarms')
