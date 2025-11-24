@@ -63,6 +63,9 @@ function extractECSClusterInfo(eventBody: string): ECSClusterInfo | undefined {
   // 3) Extract the ARN
   const arn = eventBody.substring(startIndex, endIndex).trim();
 
+  // TODO: start here to build the array, grab the len of the arn and then split by '/' and if the length matches the service pattern length
+  //  then we can determine if its a cluster or a service and then extract the name accordingly.
+  //  you'll need to change the return object and then backport that into parseECSEventAndCreateAlarms
   // 4) Extract Cluster name from ARN
   const arnParts = arn.split('/');
   if (arnParts.length < 2) {
