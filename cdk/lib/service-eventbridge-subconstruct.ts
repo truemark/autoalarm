@@ -235,7 +235,7 @@ export class EventRules extends Construct {
           detail: {
             eventSource: ['ecs.amazonaws.com'],
             eventName: [
-              'DeleteService',
+              'StopTask',
               'CreateService',
               'TagResource',
               'UntagResource',

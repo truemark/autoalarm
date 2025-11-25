@@ -82,7 +82,7 @@ function extractECSClusterInfo(eventBody: string): ECSClusterInfo | undefined {
   // Checks if extracted ARN is a service ARN
   const prefix = arnParts[0];
   const rawClusterName = arnParts[1];
-  const isService = arnParts.length >= 3 && prefix.endsWith(':service');
+  const isService = arnParts.length >= 3 && prefix.endsWith(':task');
 
   const clusterName = rawClusterName.replace('"', '').trim();
   const serviceName = isService
@@ -245,6 +245,12 @@ export async function parseECSEventAndCreateAlarms(
   record: SQSRecord,
 ): Promise<void> {
   const body = JSON.parse(record.body);
+
+  log
+    .info()
+    .str('function', 'parseECSEventAndCreateAlarms')
+    .str('eventName', body.eventName)
+    .msg('Processing ECS event');
 
   // Step 1: Extract cluster info
   const clusterInfo = extractECSClusterInfo(record.body);
