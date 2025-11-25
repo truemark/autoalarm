@@ -33,89 +33,63 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
 
 const metricConfigs = ECS_CONFIGS;
 
-interface ECSTaskInfo {
-  arn: string;
+interface ECSServiceInfo {
+  serviceArn: string;
+  serviceName: string;
   clusterName: string;
-  taskId: string;
 }
 
-/**
- * Extract ECS task information from the raw event body.
- *
- * We scan for ECS ARNs and return the first one that matches the
- * ECS task ARN pattern:
- *   arn:aws:ecs:region:account:task/clusterName/taskId
- */
-function extractECSTaskInfo(eventBody: string): ECSTaskInfo | undefined {
+function extractECSServiceInfo(eventBody: string): ECSServiceInfo | undefined {
   let searchIndex = 0;
-  let sawAnyEcsArn = false;
 
   while (true) {
     const startIndex = eventBody.indexOf('arn:aws:ecs', searchIndex);
     if (startIndex === -1) {
-      if (!sawAnyEcsArn) {
-        log
-          .error()
-          .str('function', 'extractECSTaskInfo')
-          .str('eventObj', eventBody)
-          .msg('No ECS ARN found in event');
-      } else {
-        log
-          .info()
-          .str('function', 'extractECSTaskInfo')
-          .str('eventObj', eventBody)
-          .msg('No ECS task ARN found in event');
-      }
+      log
+        .error()
+        .str('function', 'extractECSServiceInfo')
+        .msg('No ECS ARN found in event');
       return void 0;
     }
-
-    sawAnyEcsArn = true;
 
     const endIndex = eventBody.indexOf('"', startIndex);
     if (endIndex === -1) {
       log
         .error()
-        .str('function', 'extractECSTaskInfo')
-        .str('eventObj', eventBody)
+        .str('function', 'extractECSServiceInfo')
         .msg('No ending quote found for ECS ARN');
       return void 0;
     }
 
-    // Extract the candidate ARN
     const arn = eventBody.substring(startIndex, endIndex).trim();
-
     const arnParts = arn.split('/');
+
     if (arnParts.length < 3) {
-      // Not a task-style ARN (e.g., cluster/ or task-definition/)
       searchIndex = endIndex + 1;
       continue;
     }
 
-    // arnParts[0] example: "arn:aws:ecs:us-west-2:123456789012:task"
     const prefix = arnParts[0];
-    if (!prefix.endsWith(':task')) {
+    if (!prefix.endsWith(':service')) {
       searchIndex = endIndex + 1;
       continue;
     }
 
-    const rawClusterName = arnParts[1];
-    const rawTaskId = arnParts[2];
-
-    const clusterName = rawClusterName.replace('"', '').trim();
-    const taskId = rawTaskId.replace('"', '').trim();
+    const clusterName = arnParts[1].replace('"', '').trim();
+    const serviceName = arnParts[2].replace('"', '').trim();
 
     log
       .info()
-      .str('function', 'extractECSTaskInfo')
-      .str('arn', arn)
+      .str('function', 'extractECSServiceInfo')
+      .str('serviceArn', arn)
       .str('clusterName', clusterName)
-      .str('taskId', taskId)
-      .msg('Extracted ECS task ARN info');
+      .str('serviceName', serviceName)
+      .msg('Extracted ECS service info');
 
     return {
-      arn,
+      serviceArn: arn,
+      serviceName,
       clusterName,
-      taskId,
     };
   }
 }
@@ -152,39 +126,36 @@ export async function fetchEcsTags(ecsArn: string): Promise<Tag> {
 }
 
 async function manageEcsAlarms(
-  ecsArn: string,
+  serviceArn: string,
   clusterName: string,
-  taskId: string,
+  serviceName: string,
   tags: Tag,
 ): Promise<void> {
   const dimensions: Dimension[] = [
     {Name: 'ClusterName', Value: clusterName},
-    // CloudWatch ECS metrics use "ServiceName" as a dimension.
-    // Even though we are storing a taskId value here, the dimension
-    // NAME must remain "ServiceName" so metrics continue to match.
-    {Name: 'ServiceName', Value: taskId},
+    {Name: 'ServiceName', Value: serviceName},
   ];
 
   log
     .info()
     .str('function', 'manageEcsAlarms')
-    .str('ecsArn', ecsArn)
-    .msg('Managing ECS task alarms');
+    .str('serviceArn', serviceArn)
+    .msg('Managing ECS service alarms');
 
   const alarmsToKeep = await createOrUpdateAlarms(
-    ecsArn,
+    serviceArn,
     tags,
     'ECS',
     dimensions,
   );
 
-  await deleteUnneededAlarms(ecsArn, alarmsToKeep, 'ECS');
+  await deleteUnneededAlarms(serviceArn, alarmsToKeep, 'ECS');
 
   log
     .info()
     .str('function', 'manageEcsAlarms')
     .num('alarmsManaged', alarmsToKeep.size)
-    .msg('ECS task alarm management complete');
+    .msg('ECS service alarm management complete');
 }
 
 async function createOrUpdateAlarms(
@@ -252,106 +223,112 @@ async function deleteUnneededAlarms(
   log
     .info()
     .num('deletedCount', alarmsToDelete.length)
-    .msg('Deleted obsolete ECS task alarms');
+    .msg('Deleted obsolete ECS service alarms');
 }
 
 /**
- * Entry point to module to manage ECS task alarms.
+ * Entry point to module to manage ECS service alarms.
  */
 export async function parseECSEventAndCreateAlarms(
   record: SQSRecord,
 ): Promise<void> {
   const body = JSON.parse(record.body);
+  const eventName = body.detail?.eventName;
 
-  log
-    .info()
-    .str('function', 'parseECSEventAndCreateAlarms')
-    .str('eventName', body.eventName)
-    .msg('Processing ECS event');
+  const serviceInfo = extractECSServiceInfo(record.body);
 
-  // Step 1: Extract task info from ARN(s) in the event body
-  const taskInfo = extractECSTaskInfo(record.body);
-
-  if (!taskInfo) {
+  if (!serviceInfo) {
     log
       .error()
       .str('function', 'parseECSEventAndCreateAlarms')
-      .msg('Failed to extract ECS task info from event');
-    throw new Error('No valid ECS task info found in event');
+      .msg('Failed to extract ECS service info from event');
+    throw new Error('No valid ECS service info found in event');
   }
 
-  const {arn: ecsArn, clusterName, taskId} = taskInfo;
+  const {serviceArn, serviceName, clusterName} = serviceInfo;
 
   log
     .info()
     .str('function', 'parseECSEventAndCreateAlarms')
-    .str('eventName', body.eventName)
-    .str('ecsArn', ecsArn)
+    .str('eventName', eventName)
+    .str('serviceArn', serviceArn)
+    .str('serviceName', serviceName)
     .str('clusterName', clusterName)
-    .str('taskId', taskId)
-    .msg('Processing ECS task event');
+    .msg('Processing ECS service event');
 
-  // Step 2: Handle task stop (delete alarms for the stopped task)
-  if (body.eventName === 'StopTask') {
+  if (eventName === 'DeleteService') {
     try {
       log
         .info()
         .str('function', 'parseECSEventAndCreateAlarms')
-        .str('ecsArn', ecsArn)
-        .msg('Deleting alarms for stopped ECS task');
-      await deleteExistingAlarms('ECS', ecsArn);
+        .str('serviceArn', serviceArn)
+        .msg('Deleting alarms for deleted ECS service');
+      await deleteExistingAlarms('ECS', serviceArn);
       return;
     } catch (error) {
       log
         .error()
         .str('function', 'parseECSEventAndCreateAlarms')
-        .str('ecsArn', ecsArn)
+        .str('serviceArn', serviceArn)
         .err(error)
-        .msg('Error deleting ECS alarms for stopped task');
-      throw new Error(`Failed to delete alarms for task ${taskId}: ${error}`);
+        .msg('Error deleting ECS alarms for deleted service');
+      throw new Error(
+        `Failed to delete alarms for service ${serviceName}: ${error}`,
+      );
     }
   }
 
-  // Step 3: Fetch and filter tags on the ECS task
-  const tags = await fetchEcsTags(ecsArn);
+  const tags = await fetchEcsTags(serviceArn);
 
   if (Object.keys(tags).length === 0) {
     log
       .info()
       .str('function', 'parseECSEventAndCreateAlarms')
-      .str('ecsArn', ecsArn)
-      .msg('No autoalarm tags found on task - skipping alarm management');
-    await deleteExistingAlarms('ECS', ecsArn);
+      .str('serviceArn', serviceArn)
+      .msg('No autoalarm tags found - skipping alarm management');
+    await deleteExistingAlarms('ECS', serviceArn);
     return;
   }
 
-  // Check if AutoAlarm is explicitly disabled
   if (tags['autoalarm:enabled'] === 'false') {
     log
       .info()
       .str('function', 'parseECSEventAndCreateAlarms')
-      .str('ecsArn', ecsArn)
-      .msg('AutoAlarm disabled for task - deleting existing alarms');
-    await deleteExistingAlarms('ECS', ecsArn);
+      .str('serviceArn', serviceArn)
+      .msg('AutoAlarm disabled - deleting existing alarms');
+    await deleteExistingAlarms('ECS', serviceArn);
     return;
   }
 
-  // Step 4: Manage alarms for the tagged ECS task
+  if (!tags['autoalarm:enabled']) {
+    log
+      .info()
+      .str('function', 'parseECSEventAndCreateAlarms')
+      .str('serviceArn', serviceArn)
+      .msg(
+        'autoalarm:enabled tag not found - skipping alarm management and deleting existing alarms',
+      );
+    await deleteExistingAlarms('ECS', serviceArn);
+    return;
+  }
+
   try {
     log
       .info()
       .str('function', 'parseECSEventAndCreateAlarms')
-      .str('ecsArn', ecsArn)
+      .str('serviceArn', serviceArn)
       .num('autoAlarmTagCount', Object.keys(tags).length)
-      .msg('Managing ECS task alarms');
-    await manageEcsAlarms(ecsArn, clusterName, taskId, tags);
+      .msg('Managing ECS service alarms');
+    await manageEcsAlarms(serviceArn, clusterName, serviceName, tags);
   } catch (error) {
     log
       .error()
       .str('function', 'parseECSEventAndCreateAlarms')
-      .str('ecsArn', ecsArn)
+      .str('serviceArn', serviceArn)
       .err(error)
-      .msg('Error managing ECS task alarms');
-    throw new Error(`Failed to manage alarms for ECS task ${taskId}: ${error}`);
+      .msg('Error managing ECS service alarms');
+    throw new Error(
+      `Failed to manage alarms for service ${serviceName}: ${error}`,
+    );
   }
 }
