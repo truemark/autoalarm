@@ -40,70 +40,81 @@ interface ECSClusterInfo {
 }
 
 function extractECSClusterInfo(eventBody: string): ECSClusterInfo | undefined {
-  // 1) Find where the ARN starts.
-  const startIndex = eventBody.indexOf('arn:aws:ecs');
-  if (startIndex === -1) {
-    log
-      .error()
-      .str('function', 'findECSClusterInfo')
-      .str('eventObj', eventBody)
-      .msg('No ECS ARN found in event');
-    return void 0;
-  }
+  // We scan for ECS ARNs and return the first one that matches the
+  // ECS task ARN pattern: arn:aws:ecs:region:account:task/clusterName/taskId
 
-  // 2) Find the next quote after that.
-  const endIndex = eventBody.indexOf('"', startIndex);
-  if (endIndex === -1) {
-    log
-      .error()
-      .str('function', 'findECSClusterInfo')
-      .str('eventObj', eventBody)
-      .msg('No ending quote found for ECS ARN');
-    return void 0;
-  }
+  let searchIndex = 0;
+  let sawAnyEcsArn = false;
 
-  // 3) Extract the ARN
-  const arn = eventBody.substring(startIndex, endIndex).trim();
+  while (true) {
+    const startIndex = eventBody.indexOf('arn:aws:ecs', searchIndex);
+    if (startIndex === -1) {
+      if (!sawAnyEcsArn) {
+        log
+          .error()
+          .str('function', 'findECSClusterInfo')
+          .str('eventObj', eventBody)
+          .msg('No ECS ARN found in event');
+      } else {
+        log
+          .info()
+          .str('function', 'findECSClusterInfo')
+          .str('eventObj', eventBody)
+          .msg('No ECS task ARN found in event');
+      }
+      return void 0;
+    }
 
-  // TODO: start here to build the array, grab the len of the arn and then split by '/' and if the length matches the service pattern length
-  //  then we can determine if its a cluster or a service and then extract the name accordingly.
-  //  you'll need to change the return object and then backport that into parseECSEventAndCreateAlarms
-  // 4) Extract Cluster name from ARN
-  const arnParts = arn.split('/');
-  if (arnParts.length < 2) {
+    sawAnyEcsArn = true;
+
+    const endIndex = eventBody.indexOf('"', startIndex);
+    if (endIndex === -1) {
+      log
+        .error()
+        .str('function', 'findECSClusterInfo')
+        .str('eventObj', eventBody)
+        .msg('No ending quote found for ECS ARN');
+      return void 0;
+    }
+
+    // Extract the candidate ARN
+    const arn = eventBody.substring(startIndex, endIndex).trim();
+
+    const arnParts = arn.split('/');
+    if (arnParts.length < 3) {
+      // Not a task-style ARN (e.g., could be cluster/ or task-definition/)
+      searchIndex = endIndex + 1;
+      continue;
+    }
+
+    const prefix = arnParts[0]; // e.g. "arn:aws:ecs:us-west-2:acct:task"
+    if (!prefix.endsWith(':task')) {
+      searchIndex = endIndex + 1;
+      continue;
+    }
+
+    const rawClusterName = arnParts[1];
+    const rawTaskId = arnParts[2];
+
+    const clusterName = rawClusterName.replace('"', '').trim();
+    const serviceName = rawTaskId.replace('"', '').trim(); // reusing "serviceName" field for taskId
+
     log
-      .error()
+      .info()
       .str('function', 'findECSClusterInfo')
       .str('arn', arn)
-      .msg('Invalid ECS ARN format - missing cluster name');
-    return void 0;
+      .str('clusterName', clusterName)
+      .str('serviceName', serviceName)
+      .bool('isService', true)
+      .msg('Extracted ECS task ARN info');
+
+    return {
+      arn,
+      clusterName,
+      isService: true,
+      serviceName,
+    };
   }
-
-  // Checks if extracted ARN is a service ARN
-  const prefix = arnParts[0];
-  const rawClusterName = arnParts[1];
-  const isService = arnParts.length >= 3 && prefix.endsWith(':task');
-
-  const clusterName = rawClusterName.replace('"', '').trim();
-  const serviceName = isService
-    ? arnParts[2].replace('"', '').trim()
-    : undefined;
-
-  log
-    .info()
-    .str('function', 'findECSClusterInfo')
-    .str('arn', arn)
-    .str('clusterName', clusterName)
-    .str('serviceName', serviceName || '')
-    .bool('isService', isService)
-    .msg('Extracted ECS ARN info');
-
-  return {
-    arn: arn,
-    clusterName: clusterName,
-    isService,
-    serviceName,
-  };
 }
 
 export async function fetchEcsTags(ecsArn: string): Promise<Tag> {
@@ -284,7 +295,7 @@ export async function parseECSEventAndCreateAlarms(
     .msg('Processing ECS event');
 
   // Step 2: Handle cluster deletion
-  if (body.eventName === 'DeleteService') {
+  if (body.eventName === 'StopTask') {
     try {
       log
         .info()
