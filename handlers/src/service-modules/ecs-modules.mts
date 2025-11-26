@@ -39,59 +39,62 @@ interface ECSServiceInfo {
   clusterName: string;
 }
 
-function extractECSServiceInfo(eventBody: string): ECSServiceInfo | undefined {
-  let searchIndex = 0;
+function extractECSServiceInfo(
+  eventBody: string,
+  accountId: string,
+): ECSServiceInfo | undefined {
+  const searchIndex = 0;
+  const region: string = process.env.AWS_REGION!;
 
-  while (true) {
-    const startIndex = eventBody.indexOf('arn:aws:ecs', searchIndex);
-    if (startIndex === -1) {
-      log
-        .error()
-        .str('function', 'extractECSServiceInfo')
-        .msg('No ECS ARN found in event');
-      return void 0;
-    }
-
-    const endIndex = eventBody.indexOf('"', startIndex);
-    if (endIndex === -1) {
-      log
-        .error()
-        .str('function', 'extractECSServiceInfo')
-        .msg('No ending quote found for ECS ARN');
-      return void 0;
-    }
-
-    const arn = eventBody.substring(startIndex, endIndex).trim();
-    const arnParts = arn.split('/');
-
-    if (arnParts.length < 3) {
-      searchIndex = endIndex + 1;
-      continue;
-    }
-
-    const prefix = arnParts[0];
-    if (!prefix.endsWith(':service')) {
-      searchIndex = endIndex + 1;
-      continue;
-    }
-
-    const clusterName = arnParts[1].replace('"', '').trim();
-    const serviceName = arnParts[2].replace('"', '').trim();
-
+  const startIndex = eventBody.indexOf(
+    `arn:aws:ecs:${region}:${accountId}:service`,
+    searchIndex,
+  );
+  if (startIndex === -1) {
     log
-      .info()
+      .error()
       .str('function', 'extractECSServiceInfo')
-      .str('serviceArn', arn)
-      .str('clusterName', clusterName)
-      .str('serviceName', serviceName)
-      .msg('Extracted ECS service info');
-
-    return {
-      serviceArn: arn,
-      serviceName,
-      clusterName,
-    };
+      .msg('No ECS Service ARN found in event');
+    return void 0;
   }
+
+  const endIndex = eventBody.indexOf('"', startIndex);
+  if (endIndex === -1) {
+    log
+      .error()
+      .str('function', 'extractECSServiceInfo')
+      .msg('No ending quote found for ECS ARN');
+    return void 0;
+  }
+
+  const arn = eventBody.substring(startIndex, endIndex).trim();
+  const arnParts = arn.split('/');
+
+  if (arnParts.length < 3) {
+    log
+      .error()
+      .str('function', 'extractECSServiceInfo')
+      .str('arn', arn)
+      .msg('Invalid ECS service ARN format - missing cluster or service name');
+    return void 0;
+  }
+
+  const clusterName = arnParts[1].trim();
+  const serviceName = arnParts[2].trim();
+
+  log
+    .info()
+    .str('function', 'extractECSServiceInfo')
+    .str('serviceArn', arn)
+    .str('clusterName', clusterName)
+    .str('serviceName', serviceName)
+    .msg('Extracted ECS service info');
+
+  return {
+    serviceArn: arn,
+    serviceName,
+    clusterName,
+  };
 }
 
 export async function fetchEcsTags(ecsArn: string): Promise<Tag> {
@@ -231,11 +234,12 @@ async function deleteUnneededAlarms(
  */
 export async function parseECSEventAndCreateAlarms(
   record: SQSRecord,
+  accountId: string,
 ): Promise<void> {
   const body = JSON.parse(record.body);
   const eventName = body.detail?.eventName;
 
-  const serviceInfo = extractECSServiceInfo(record.body);
+  const serviceInfo = extractECSServiceInfo(record.body, accountId);
 
   if (!serviceInfo) {
     log

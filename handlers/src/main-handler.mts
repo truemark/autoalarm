@@ -261,7 +261,10 @@ export const handler: Handler = async (
     try {
       // TODO Fix the ugliness below. Future modules should be simple if statements
       if (event.source === 'aws.ecs') {
-        await ServiceModules.parseECSEventAndCreateAlarms(record);
+        await ServiceModules.parseECSEventAndCreateAlarms(
+          record,
+          process.env.ACCT_ID!,
+        );
         continue;
       }
 
