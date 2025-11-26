@@ -231,9 +231,9 @@ function extractLogGroupIdentifiers(
   if (arnParts.length < 2) {
     log
       .error()
-      .str('function', 'findECSClusterInfo')
+      .str('function', 'extractLogGroupIdentifiers')
       .str('arn', arn)
-      .msg('Invalid ECS ARN format - missing cluster name');
+      .msg('Invalid LogGroup ARN format - missing cluster name');
     return void 0;
   }
 
