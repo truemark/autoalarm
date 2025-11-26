@@ -226,7 +226,7 @@ function extractLogGroupIdentifiers(
   // 3) Extract the ARN
   const arn = eventBody.substring(startIndex, endIndex).trim();
 
-  // 4) Extract Cluster name from ARN
+  // 4) Extract LogGroup name from ARN
   const arnParts = arn.split('log-group:');
   if (arnParts.length < 2) {
     log

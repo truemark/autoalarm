@@ -39,7 +39,11 @@ export class AutoAlarm extends Construct {
     /**
      * Create Node function definition
      */
-    this.lambdaFunction = this.createFunction(role, prometheusWorkspaceId);
+    this.lambdaFunction = this.createFunction(
+      role,
+      prometheusWorkspaceId,
+      accountId,
+    );
 
     /**
      * Create all the queues for all the services that AutoAlarm supports
@@ -286,6 +290,7 @@ export class AutoAlarm extends Construct {
   private createFunction(
     role: IRole,
     prometheusWorkspaceId: string,
+    accountId: string,
   ): ExtendedNodejsFunction {
     // Create the main function
     return new ExtendedNodejsFunction(this, 'mainFunction', {
@@ -304,6 +309,7 @@ export class AutoAlarm extends Construct {
       role: role,
       environment: {
         PROMETHEUS_WORKSPACE_ID: prometheusWorkspaceId,
+        ACCT_ID: accountId,
       },
       bundling: {
         nodeModules: ['@smithy/util-retry'],
