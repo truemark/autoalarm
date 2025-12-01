@@ -22,3 +22,4 @@ export {parseRDSEventAndCreateAlarms} from './rds-modules.mjs';
 export {parseRDSClusterEventAndCreateAlarms} from './rds-cluster-modules.mjs';
 export {parseSFNEventAndCreateAlarms} from './step-function-modules.mjs';
 export {parseLogGroupEventAndCreateAlarms} from './loggroup-modules.mjs';
+export {parseDynamoDBEventAndCreateAlarms} from './dynamodb-modules.mjs';

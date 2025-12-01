@@ -94,6 +94,7 @@ export class SqsHandlerSubConstruct extends Construct {
     const autoAlarmQueues = [
       'AutoAlarm-Alb',
       'AutoAlarm-Cloudfront',
+      'AutoAlarm-DynamoDB',
       'AutoAlarm-Ec2',
       'AutoAlarm-Ecs',
       'AutoAlarm-Logs',
