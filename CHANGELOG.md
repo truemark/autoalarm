@@ -1,5 +1,21 @@
 # AutoAlarm Changelog
 
+## v1.14.2
+### Added
+- Refactored ECS module to properly support task-level monitoring instead of service-level monitoring while maintaining CloudWatch compatibility.
+- Updated ARN parsing logic to scan for and extract the correct ECS task ARN rather than cluster or service ARNs.
+- Simplified ECS event handling to focus entirely on task creation, tagging, untagging, and StopTask events.
+- Cleaned up unused service/cluster logic to reduce noise and improve clarity, while retaining required CloudWatch metric dimensions (ClusterName and ServiceName) for backward compatibility.
+- Improved internal naming consistency (taskId, extractECSTaskInfo, task-focused log messages).
+
+## v1.14.1
+### Added
+- Added support for loggroup monitoring via alarm based tag management. 
+
+## v1.13.12
+### Fixed
+- Fixed a deprecated lib version for truemark-cdk-lib which contains an update for a deprecated lambda property. Addresses issue-200. 
+
 ## v1.13.11
 
 ### Fixed

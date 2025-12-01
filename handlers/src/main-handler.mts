@@ -257,7 +257,22 @@ export const handler: Handler = async (
     const event = JSON.parse(record.body);
 
     log.trace().obj('body', event).msg('Processing message body');
+
     try {
+      // TODO Fix the ugliness below. Future modules should be simple if statements
+      if (event.source === 'aws.ecs') {
+        await ServiceModules.parseECSEventAndCreateAlarms(
+          record,
+          process.env.ACCT_ID!,
+        );
+        continue;
+      }
+
+      if (event.source === 'aws.logs') {
+        await ServiceModules.parseLogGroupEventAndCreateAlarms(record);
+        continue;
+      }
+
       switch (event.source) {
         case 'aws.cloudfront':
           await ServiceModules.parseCloudFrontEventAndCreateAlarms(event);

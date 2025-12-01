@@ -20,7 +20,7 @@ import {
   parseMetricAlarmOptions,
 } from '../alarm-configs/utils/index.mjs';
 import * as arnparser from '@aws-sdk/util-arn-parser';
-import {TARGET_GROUP_CONFIGS} from '../alarm-configs/index.mjs';
+import {TARGET_GROUP_CONFIGS} from '../alarm-configs/_index.mjs';
 
 const log: logging.Logger = logging.getLogger('targetgroup-modules');
 const region: string = process.env.AWS_REGION || '';

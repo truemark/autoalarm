@@ -9,6 +9,7 @@ export {
   liveStates,
   deadStates,
 } from './ec2-modules.mjs';
+export {parseECSEventAndCreateAlarms} from './ecs-modules.mjs';
 export {parseALBEventAndCreateAlarms} from './alb-modules.mjs';
 export {parseTGEventAndCreateAlarms} from './targetgroup-modules.mjs';
 export {parseSQSEventAndCreateAlarms} from './sqs-modules.mjs';
@@ -20,3 +21,4 @@ export {parseCloudFrontEventAndCreateAlarms} from './cloudfront-modules.mjs';
 export {parseRDSEventAndCreateAlarms} from './rds-modules.mjs';
 export {parseRDSClusterEventAndCreateAlarms} from './rds-cluster-modules.mjs';
 export {parseSFNEventAndCreateAlarms} from './step-function-modules.mjs';
+export {parseLogGroupEventAndCreateAlarms} from './loggroup-modules.mjs';

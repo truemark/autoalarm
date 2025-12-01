@@ -24,7 +24,7 @@ import {
   queryPrometheusForService,
   parseMetricAlarmOptions,
 } from '../alarm-configs/utils/index.mjs';
-import {EC2_CONFIGS} from '../alarm-configs/index.mjs';
+import {EC2_CONFIGS} from '../alarm-configs/_index.mjs';
 import {
   MetricAlarmConfig,
   MetricAlarmOptions,
