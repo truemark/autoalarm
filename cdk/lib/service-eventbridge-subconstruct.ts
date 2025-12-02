@@ -189,7 +189,6 @@ export class EventRules extends Construct {
             eventName: [
               'CreateTable',
               'DeleteTable',
-              'UpdateTable',
               'TagResource',
               'UntagResource',
             ],
