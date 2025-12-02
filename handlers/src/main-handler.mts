@@ -273,6 +273,14 @@ export const handler: Handler = async (
         continue;
       }
 
+      if (event.source === 'aws.dynamodb') {
+        await ServiceModules.parseDynamoDBEventAndCreateAlarms(
+          record,
+          process.env.ACCT_ID!,
+        );
+        continue;
+      }
+
       switch (event.source) {
         case 'aws.cloudfront':
           await ServiceModules.parseCloudFrontEventAndCreateAlarms(event);

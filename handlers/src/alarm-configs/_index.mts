@@ -15,3 +15,4 @@ export {TARGET_GROUP_CONFIGS} from './target-group-configs.mjs';
 export {TRANSIT_GATEWAY_CONFIGS} from './transit-gateway-configs.mjs';
 export {VPN_CONFIGS} from './vpn-configs.mjs';
 export {LOGGROUP_CONFIGS} from './loggroup-configs.mjs';
+export {DYNAMODB_CONFIGS} from './dynamodb-configs.mjs';
