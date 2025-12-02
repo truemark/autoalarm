@@ -115,15 +115,6 @@ threshold values are provided in the tag value when setting the tag on the resou
 | `autoalarm:5xx-errors`         | Yes                      | Yes                        | 10                | 50                 | 300    | 1                  | Sum       | 1                   | GreaterThanThreshold      | ignore                 | `10/50/300/1/Sum/1/GreaterThanThreshold/ignore`        |
 | `autoalarm:5xx-errors-anomaly` | No                       | Yes                        | -                 | -                  | 300    | 1                  | Average   | 1                   | GreaterThanUpperThreshold | ignore                 | `-/-/300/1/Average/1/GreaterThanUpperThreshold/ignore` |
 
-#### DynamoDB
-
-| Tag                                           | Alarm Created by Default | Standard CloudWatch Metric | Warning Threshold | Critical Threshold | Period | Evaluation Periods | Statistic | Datapoints to Alarm | Comparison Operator  | Missing Data Treatment | Complete Tag Value                                   |
-|-----------------------------------------------|--------------------------|----------------------------|-------------------|--------------------|--------|--------------------|-----------|---------------------|----------------------|------------------------|------------------------------------------------------|
-| `autoalarm:successful-request-latency`        | Yes                      | Yes                        | 100               | 200                | 60     | 5                  | Average   | 3                   | GreaterThanThreshold | ignore                 | `100/200/60/5/Average/3/GreaterThanThreshold/ignore` |
-| `autoalarm:throttled-requests`                | Yes                      | Yes                        | 1                 | 5                  | 60     | 5                  | Sum       | 1                   | GreaterThanThreshold | ignore                 | `1/5/60/5/Sum/1/GreaterThanThreshold/ignore`         |
-| `autoalarm:system-errors`                     | Yes                      | Yes                        | 1                 | 5                  | 60     | 5                  | Sum       | 1                   | GreaterThanThreshold | ignore                 | `1/5/60/5/Sum/1/GreaterThanThreshold/ignore`         |
-| `autoalarm:conditional-check-failed-requests` | No                       | Yes                        | 10                | 50                 | 60     | 5                  | Sum       | 3                   | GreaterThanThreshold | ignore                 | `10/50/60/5/Sum/3/GreaterThanThreshold/ignore`       |
-
 #### EC2
 
 | Tag                             | Alarm Created by Default | Standard CloudWatch Metric                     | Warning Threshold | Critical Threshold | Period | Evaluation Periods | Statistic | Datapoints to Alarm | Comparison Operator       | Missing Data Treatment | Complete Tag Value                                     |
