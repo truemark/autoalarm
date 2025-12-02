@@ -6,7 +6,6 @@ import {NoBreachingExtendedQueue} from './extended-libs-subconstruct';
 type ServiceName =
   | 'alb'
   | 'cloudfront'
-  | 'dynamodb'
   | 'ec2'
   | 'ecs'
   | 'logs'
@@ -47,7 +46,6 @@ export class EventRules extends Construct {
     const services: ServiceName[] = [
       'alb',
       'cloudfront',
-      'dynamodb',
       'ec2',
       'ecs',
       'logs',
@@ -74,7 +72,6 @@ export class EventRules extends Construct {
      */
     this.addAlbRules();
     this.addCloudFrontRules();
-    this.addDynamoDbRules();
     this.addEc2Rules();
     this.addEcsRules();
     this.addLogGroupRules();
@@ -173,32 +170,6 @@ export class EventRules extends Construct {
     });
 
     this.serviceRules.set('cloudfront', cloudFrontRules);
-  }
-
-  private addDynamoDbRules() {
-    const dynamoRules = this.serviceRules.get('dynamodb') || [];
-
-    // Single state / lifecycle rule: create/delete + tag/untag/update via CloudTrail
-    dynamoRules.push({
-      dynamodbStateRule: new Rule(this, 'DynamoDbStateRule', {
-        eventPattern: {
-          source: ['aws.dynamodb'],
-          detailType: ['AWS API Call via CloudTrail'],
-          detail: {
-            eventSource: ['dynamodb.amazonaws.com'],
-            eventName: [
-              'CreateTable',
-              'DeleteTable',
-              'TagResource',
-              'UntagResource',
-            ],
-          },
-        },
-        description: 'Routes DynamoDB table state and tag events to AutoAlarm',
-      }),
-    });
-
-    this.serviceRules.set('dynamodb', dynamoRules);
   }
 
   private addEc2Rules() {

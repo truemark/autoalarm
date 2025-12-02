@@ -129,15 +129,6 @@ export class AutoAlarm extends Construct {
       }),
     );
 
-    // Attach policies for DynamoDB
-    autoAlarmExecutionRole.addToPolicy(
-      new PolicyStatement({
-        effect: Effect.ALLOW,
-        actions: ['dynamodb:ListTagsOfResource'],
-        resources: ['*'],
-      }),
-    );
-
     // Attach policies for EC2 and CloudWatch
     autoAlarmExecutionRole.addToPolicy(
       new PolicyStatement({
