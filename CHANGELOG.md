@@ -1,5 +1,9 @@
 # AutoAlarm Changelog
 
+## v1.14.3
+### Added
+- github workflows added
+
 ## v1.14.2
 ### Added
 - Refactored ECS module to properly support task-level monitoring instead of service-level monitoring while maintaining CloudWatch compatibility.
