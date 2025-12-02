@@ -1,0 +1,29 @@
+name: Mirror to Bitbucket (API Token)
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout GitHub repo
+        uses: actions/checkout@v4
+
+      - name: Add Bitbucket remote using API token
+        run: |
+          git remote add bitbucket "https://x-bitbucket-api-token-auth:${BITBUCKET_API_TOKEN}@bitbucket.org/${BITBUCKET_REPO}.git"
+          git remote -v
+        env:
+          BITBUCKET_API_TOKEN: ${{ secrets.BITBUCKET_API_TOKEN }}
+          BITBUCKET_REPO: ${{ secrets.BITBUCKET_REPO }}
+
+      - name: Push main to Bitbucket
+        run: |
+          git push bitbucket main:main --force
+        env:
+          BITBUCKET_API_TOKEN: ${{ secrets.BITBUCKET_API_TOKEN }}
+          BITBUCKET_REPO: ${{ secrets.BITBUCKET_REPO }}
