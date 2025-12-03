@@ -14,24 +14,27 @@ jobs:
       - name: Checkout GitHub repo
         uses: actions/checkout@v4
         with:
+          # Full history is useful if you want a proper mirror
           fetch-depth: 0
 
-      - name: Configure Git
+      - name: Configure Git identity
         run: |
           git config --global user.name "GitHub Actions Bot"
           git config --global user.email "actions@github.com"
 
       - name: Add Bitbucket remote using API token
         env:
-          BITBUCKET_API_TOKEN: \${{ secrets.BITBUCKET_API_TOKEN }}
-          BITBUCKET_REPO: \${{ secrets.BITBUCKET_REPO }}
+          BITBUCKET_API_TOKEN: ${{ secrets.BITBUCKET_API_TOKEN }}
+          BITBUCKET_REPO: ${{ secrets.BITBUCKET_REPO }} # e.g. workspace/repo-slug
         run: |
-          git remote add bitbucket "https://x-token-auth:\${BITBUCKET_API_TOKEN}@bitbucket.org/\${BITBUCKET_REPO}.git"
+          git remote add bitbucket "https://x-token-auth:${BITBUCKET_API_TOKEN}@bitbucket.org/${BITBUCKET_REPO}.git"
           git remote -v
 
       - name: Push triggering branch to Bitbucket
+        env:
+          BITBUCKET_API_TOKEN: ${{ secrets.BITBUCKET_API_TOKEN }}
         run: |
-          echo "GITHUB_REF=\${GITHUB_REF}"
-          BRANCH_NAME=\${GITHUB_REF#refs/heads/}
-          echo "Pushing branch: \${BRANCH_NAME}"
-          git push bitbucket "\${BRANCH_NAME}:\${BRANCH_NAME}" --force
+          echo "GITHUB_REF=${GITHUB_REF}"
+          BRANCH_NAME=${GITHUB_REF#refs/heads/}
+          echo "Pushing branch: ${BRANCH_NAME}"
+          git push bitbucket "${BRANCH_NAME}:${BRANCH_NAME}" --force
