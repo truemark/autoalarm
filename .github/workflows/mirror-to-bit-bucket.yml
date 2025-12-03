@@ -24,14 +24,14 @@ jobs:
 
       - name: Add Bitbucket remote using API token
         env:
+          BITBUCKET_USERNAME: ${{ secrets.BITBUCKET_USERNAME }}         # e.g. v-jgilgen
           BITBUCKET_API_TOKEN: ${{ secrets.BITBUCKET_API_TOKEN }}
-          BITBUCKET_REPO: ${{ secrets.BITBUCKET_REPO }} # e.g. workspace/repo-slug
-  run: |
-    git remote add bitbucket "https://${BITBUCKET_API_TOKEN}@bitbucket.org/${BITBUCKET_REPO}.git"
-    git remote -v
+          BITBUCKET_REPO: ${{ secrets.BITBUCKET_REPO }}                 # e.g. youngliving/autoalarm-cdk-deploy
+        run: |
+          git remote add bitbucket "https://${BITBUCKET_USERNAME}:${BITBUCKET_API_TOKEN}@bitbucket.org/${BITBUCKET_REPO}.git"
+          git remote -v
+
       - name: Push triggering branch to Bitbucket
-        env:
-          BITBUCKET_API_TOKEN: ${{ secrets.BITBUCKET_API_TOKEN }}
         run: |
           echo "GITHUB_REF=${GITHUB_REF}"
           BRANCH_NAME=${GITHUB_REF#refs/heads/}
