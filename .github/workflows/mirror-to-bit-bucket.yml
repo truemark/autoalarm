@@ -14,9 +14,7 @@ jobs:
       - name: Checkout GitHub repo
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Fetch full history for proper mirroring
-          # You can omit ref entirely; Actions checks out the triggering commit by default
-          # ref: ${{ github.ref }}
+          fetch-depth: 0
 
       - name: Configure Git
         run: |
@@ -25,16 +23,15 @@ jobs:
 
       - name: Add Bitbucket remote using API token
         env:
-          BITBUCKET_API_TOKEN: ${{ secrets.BITBUCKET_API_TOKEN }}
-          BITBUCKET_REPO: ${{ secrets.BITBUCKET_REPO }}   # e.g. "workspace/repo-slug"
+          BITBUCKET_API_TOKEN: \${{ secrets.BITBUCKET_API_TOKEN }}
+          BITBUCKET_REPO: \${{ secrets.BITBUCKET_REPO }}
         run: |
-          git remote add bitbucket "https://x-token-auth:${BITBUCKET_API_TOKEN}@bitbucket.org/${BITBUCKET_REPO}.git"
+          git remote add bitbucket "https://x-token-auth:\${BITBUCKET_API_TOKEN}@bitbucket.org/\${BITBUCKET_REPO}.git"
           git remote -v
 
       - name: Push triggering branch to Bitbucket
-        env:
-          BITBUCKET_API_TOKEN: ${{ secrets.BITBUCKET_API_TOKEN }}
         run: |
-          echo "GITHUB_REF=${GITHUB_REF}"
-          BRANCH_NAME=${GITHUB_REF#refs/heads/}
-          echo "Pushing branch: ${BRANCH_NAME}"
+          echo "GITHUB_REF=\${GITHUB_REF}"
+          BRANCH_NAME=\${GITHUB_REF#refs/heads/}
+          echo "Pushing branch: \${BRANCH_NAME}"
+          git push bitbucket "\${BRANCH_NAME}:\${BRANCH_NAME}" --force
