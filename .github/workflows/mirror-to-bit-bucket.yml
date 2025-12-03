@@ -37,3 +37,4 @@ jobs:
           git push bitbucket \$BRANCH_NAME:\$BRANCH_NAME --force
         env:
           BITBUCKET_API_TOKEN: \${{ secrets.BITBUCKET_API_TOKEN }}
+
