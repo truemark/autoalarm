@@ -38,4 +38,4 @@ jobs:
           echo "GITHUB_REF=${GITHUB_REF}"
           BRANCH_NAME=${GITHUB_REF#refs/heads/}
           echo "Pushing branch: ${BRANCH_NAME}"
-          git push bitbucket "${BRANCH_NAME}:${BRANCH_NAME}" --force
+          git push bitbucket "HEAD:${BRANCH_NAME}" --force
