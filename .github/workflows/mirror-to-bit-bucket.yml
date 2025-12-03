@@ -26,10 +26,9 @@ jobs:
         env:
           BITBUCKET_API_TOKEN: ${{ secrets.BITBUCKET_API_TOKEN }}
           BITBUCKET_REPO: ${{ secrets.BITBUCKET_REPO }} # e.g. workspace/repo-slug
-        run: |
-          git remote add bitbucket "https://x-token-auth:${BITBUCKET_API_TOKEN}@bitbucket.org/${BITBUCKET_REPO}.git"
-          git remote -v
-
+  run: |
+    git remote add bitbucket "https://v-jgilgen:${BITBUCKET_API_TOKEN}@bitbucket.org/${BITBUCKET_REPO}.git"
+    git remote -v
       - name: Push triggering branch to Bitbucket
         env:
           BITBUCKET_API_TOKEN: ${{ secrets.BITBUCKET_API_TOKEN }}
