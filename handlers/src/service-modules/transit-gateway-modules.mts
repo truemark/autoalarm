@@ -1,20 +1,20 @@
 import {EC2Client, DescribeTagsCommand} from '@aws-sdk/client-ec2';
 import * as logging from '@nr1e/logging';
-import {Tag} from './types.mjs';
-import {ConfiguredRetryStrategy} from '@smithy/util-retry';
-import {AlarmClassification} from './enums.mjs';
-import {
-  getCWAlarmsForInstance,
-  deleteExistingAlarms,
-  buildAlarmName,
-  handleAnomalyAlarms,
-  handleStaticAlarms,
-} from './alarm-tools.mjs';
+import {AlarmClassification, Tag} from '../types/index.mjs';
 import {
   CloudWatchClient,
   DeleteAlarmsCommand,
 } from '@aws-sdk/client-cloudwatch';
-import {MetricAlarmConfigs, parseMetricAlarmOptions} from './alarm-config.mjs';
+import {ConfiguredRetryStrategy} from '@smithy/util-retry';
+import {
+  deleteExistingAlarms,
+  buildAlarmName,
+  handleAnomalyAlarms,
+  handleStaticAlarms,
+  getCWAlarmsForInstance,
+  parseMetricAlarmOptions,
+} from '../alarm-configs/utils/index.mjs';
+import {TRANSIT_GATEWAY_CONFIGS} from '../alarm-configs/_index.mjs';
 
 const log: logging.Logger = logging.getLogger('transit-gateway-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -28,7 +28,7 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   retryStrategy: retryStrategy,
 });
 
-const metricConfigs = MetricAlarmConfigs['TransitGateway'];
+const metricConfigs = TRANSIT_GATEWAY_CONFIGS;
 
 export async function fetchTransitGatewayTags(
   transitGatewayId: string,
@@ -202,7 +202,6 @@ function extractTransitGatewayNameFromArn(arn: string): string {
   return match ? match[1] : '';
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function parseTransitGatewayEventAndCreateAlarms(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   event: any,

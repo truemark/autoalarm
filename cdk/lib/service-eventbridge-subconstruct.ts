@@ -7,6 +7,8 @@ type ServiceName =
   | 'alb'
   | 'cloudfront'
   | 'ec2'
+  | 'ecs'
+  | 'logs'
   | 'opensearch'
   | 'rds'
   | 'rdscluster'
@@ -45,6 +47,8 @@ export class EventRules extends Construct {
       'alb',
       'cloudfront',
       'ec2',
+      'ecs',
+      'logs',
       'opensearch',
       'rds',
       'rdscluster',
@@ -69,6 +73,8 @@ export class EventRules extends Construct {
     this.addAlbRules();
     this.addCloudFrontRules();
     this.addEc2Rules();
+    this.addEcsRules();
+    this.addLogGroupRules();
     this.addOpenSearchRules();
     this.addRdsRules();
     this.addRdsClusterRules();
@@ -185,6 +191,10 @@ export class EventRules extends Construct {
               'autoalarm:storage-anomaly',
               'autoalarm:memory-anomaly',
               'autoalarm:target',
+              'autoalarm:network-in-anomaly',
+              'autoalarm:network-in',
+              'autoalarm:network-out-anomaly',
+              'autoalarm:network-out',
             ],
           },
         },
@@ -212,6 +222,57 @@ export class EventRules extends Construct {
     });
 
     this.serviceRules.set('ec2', ec2Rules);
+  }
+
+  private addEcsRules() {
+    const ecsRules = this.serviceRules.get('ecs') || [];
+
+    ecsRules.push({
+      ecsStateRule: new Rule(this, 'EcsStateRule', {
+        eventPattern: {
+          source: ['aws.ecs'],
+          detailType: ['AWS API Call via CloudTrail'],
+          detail: {
+            eventSource: ['ecs.amazonaws.com'],
+            eventName: [
+              'DeleteService',
+              'CreateService',
+              'TagResource',
+              'UntagResource',
+            ],
+          },
+        },
+        description: 'Routes ECS state change and tag events to AutoAlarm',
+      }),
+    });
+    this.serviceRules.set('ecs', ecsRules);
+  }
+
+  private addLogGroupRules() {
+    const logGroupRules = this.serviceRules.get('logs') || [];
+
+    logGroupRules.push({
+      logGroupStateRule: new Rule(this, 'LogGroupStateRule', {
+        eventPattern: {
+          source: ['aws.logs'],
+          detailType: ['AWS API Call via CloudTrail'],
+          detail: {
+            eventSource: ['logs.amazonaws.com'],
+            // Include create/delete + tag/untag events
+            eventName: [
+              'CreateLogGroup',
+              'DeleteLogGroup',
+              'TagResource',
+              'UntagResource',
+            ],
+          },
+        },
+        description:
+          'Routes CloudWatch Logs create/delete/tag/untag events to AutoAlarm',
+      }),
+    });
+
+    this.serviceRules.set('logs', logGroupRules);
   }
 
   private addOpenSearchRules() {
@@ -242,7 +303,6 @@ export class EventRules extends Construct {
               'autoalarm:search-latency',
               'autoalarm:search-latency-anomaly',
               'autoalarm:snapshot-failure',
-              'autoalarm:snapshot-failure-anomaly',
               'autoalarm:storage',
               'autoalarm:storage-anomaly',
               'autoalarm:sys-memory-util',
@@ -252,9 +312,8 @@ export class EventRules extends Construct {
               'autoalarm:write-latency',
               'autoalarm:write-latency-anomaly',
               'autoalarm:yellow-cluster',
-              'autoalarm:yellow-cluster-anomaly',
               'autoalarm:red-cluster',
-              'autoalarm:red-cluster-anomaly',
+              'autoalarm:index-writes-blocked',
             ],
           },
         },
@@ -345,20 +404,10 @@ export class EventRules extends Construct {
             'resource-type': ['cluster'],
             'changed-tag-keys': [
               'autoalarm:enabled',
-              'autoalarm:cpu',
-              'autoalarm:cpu-anomaly',
-              'autoalarm:write-latency',
-              'autoalarm:write-latency-anomaly',
-              'autoalarm:read-latency',
-              'autoalarm:read-latency-anomaly',
-              'autoalarm:freeable-memory',
-              'autoalarm:freeable-memory-anomaly',
-              'autoalarm:db-connections',
               'autoalarm:db-connections-anomaly',
               'autoalarm:replica-lag',
               'autoalarm:replica-lag-anomaly',
               'autoalarm:failover-state',
-              'autoalarm:swap-usage-anomaly',
             ],
           },
         },
@@ -509,6 +558,7 @@ export class EventRules extends Construct {
               'autoalarm:response-time-anomaly',
               'autoalarm:4xx-count-anomaly',
               'autoalarm:5xx-count-anomaly',
+              'autoalarm:healthy-host-count',
             ],
           },
         },

@@ -1,10 +1,9 @@
 import {
   ListTagsForResourceCommand,
   Route53ResolverClient,
-} from '@aws-sdk/client-route53resolver'; // ES Module import
+} from '@aws-sdk/client-route53resolver';
 import * as logging from '@nr1e/logging';
-import {Tag} from './types.mjs';
-import {AlarmClassification} from './enums.mjs';
+import {AlarmClassification, Tag} from '../types/index.mjs';
 import {
   CloudWatchClient,
   DeleteAlarmsCommand,
@@ -16,8 +15,9 @@ import {
   handleAnomalyAlarms,
   handleStaticAlarms,
   getCWAlarmsForInstance,
-} from './alarm-tools.mjs';
-import {MetricAlarmConfigs, parseMetricAlarmOptions} from './alarm-config.mjs';
+  parseMetricAlarmOptions,
+} from '../alarm-configs/utils/index.mjs';
+import {ROUTE53_RESOLVER_CONFIGS} from '../alarm-configs/_index.mjs';
 
 const log: logging.Logger = logging.getLogger('route53-resolver-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -31,7 +31,7 @@ const cloudWatchClient = new CloudWatchClient({
   retryStrategy,
 });
 
-const metricConfigs = MetricAlarmConfigs['R53ResolverEndpoint'];
+const metricConfigs = ROUTE53_RESOLVER_CONFIGS;
 
 export async function fetchR53ResolverTags(endpointId: string): Promise<Tag> {
   try {

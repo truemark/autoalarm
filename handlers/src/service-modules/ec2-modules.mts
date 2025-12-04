@@ -3,6 +3,7 @@ import {
   DescribeTagsCommand,
   EC2Client,
 } from '@aws-sdk/client-ec2';
+import {ComparisonOperator} from '@aws-sdk/client-cloudwatch';
 import {
   CloudWatchClient,
   DeleteAlarmsCommand,
@@ -11,8 +12,6 @@ import {
 } from '@aws-sdk/client-cloudwatch';
 import * as logging from '@nr1e/logging';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
-import {ValidInstanceState} from './enums.mjs';
-import {PathMetrics, Tag, EC2AlarmManagerArray} from './types.mjs';
 import {
   deleteAlarm,
   doesAlarmExist,
@@ -20,18 +19,20 @@ import {
   handleAnomalyAlarms,
   handleStaticAlarms,
   massDeleteAlarms,
-} from './alarm-tools.mjs';
-import {
-  MetricAlarmConfig,
-  MetricAlarmConfigs,
-  MetricAlarmOptions,
-  parseMetricAlarmOptions,
-} from './alarm-config.mjs';
-import {
   batchPromRulesDeletion,
   batchUpdatePromRules,
   queryPrometheusForService,
-} from './prometheus-tools.mjs';
+  parseMetricAlarmOptions,
+} from '../alarm-configs/utils/index.mjs';
+import {EC2_CONFIGS} from '../alarm-configs/_index.mjs';
+import {
+  MetricAlarmConfig,
+  MetricAlarmOptions,
+  PathMetrics,
+  Tag,
+  EC2AlarmManagerArray,
+  ValidInstanceState,
+} from '../types/index.mjs';
 
 const log: logging.Logger = logging.getLogger('ec2-modules');
 export const prometheusWorkspaceId: string =
@@ -298,7 +299,7 @@ async function checkAndManageStatusAlarm(instanceId: string, tags: Tag) {
   }
 }
 
-const metricConfigs = MetricAlarmConfigs['EC2'];
+const metricConfigs = EC2_CONFIGS;
 
 export async function fetchInstanceTags(
   instanceId: string,
@@ -350,6 +351,9 @@ async function handleAlarmCreation(
     alarmType === 'anomaly' ? handleAnomalyAlarms : handleStaticAlarms;
 
   switch (true) {
+    /**
+     * memory case handles both windows and linux instances.
+     */
     case config.tagKey.includes('memory'): {
       // Set the correct metric name before making the CloudWatch call
       config.metricName = isWindows
@@ -389,11 +393,27 @@ async function handleAlarmCreation(
       }
       break;
     }
+
+    /**
+     * storage case handles both windows and linux instances.
+     */
     case config.tagKey.includes('storage'): {
-      // Set the correct metric name before making the CloudWatch call
-      config.metricName = isWindows
-        ? 'LogicalDisk % Free Space'
-        : 'disk_used_percent';
+      /**
+       * Set the correct metric name before making the CloudWatch call
+       * Set thresholds based on the OS type
+       * set correct comparison operator based on the OS type
+       */
+      if (isWindows) {
+        config.metricName = 'LogicalDisk % Free Space';
+        updatedDefaults.warningThreshold = 15;
+        updatedDefaults.criticalThreshold = 10;
+        updatedDefaults.comparisonOperator =
+          ComparisonOperator.LessThanThreshold;
+      }
+
+      if (!isWindows) {
+        config.metricName = 'disk_used_percent';
+      }
 
       const storagePaths = await getStoragePathsFromCloudWatch(
         instanceId,

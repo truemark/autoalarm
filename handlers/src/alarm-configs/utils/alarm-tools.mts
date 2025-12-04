@@ -4,17 +4,21 @@ import {
   DescribeAlarmsCommand,
   DescribeAlarmsCommandOutput,
   MetricAlarm,
-  MetricDataQuery,
   PutAnomalyDetectorCommand,
   PutAnomalyDetectorCommandInput,
   PutMetricAlarmCommand,
   PutMetricAlarmCommandInput,
   Statistic,
+  MetricDataQuery,
 } from '@aws-sdk/client-cloudwatch';
-import {MetricAlarmConfig, MetricAlarmOptions} from './alarm-config.mjs';
+
+import {
+  MetricAlarmConfig,
+  MetricAlarmOptions,
+  AlarmClassification,
+} from '../../types/index.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import * as logging from '@nr1e/logging';
-import {AlarmClassification} from './enums.mjs';
 
 const region: string = process.env.AWS_REGION || '';
 const retryStrategy = new ConfiguredRetryStrategy(20);
@@ -147,14 +151,14 @@ export function buildAlarmName(
   service: string,
   serviceIdentifier: string,
   classification: AlarmClassification,
-  alarmVarient: 'anomaly' | 'static',
+  alarmVariant: 'anomaly' | 'static',
   storagePath?: string,
 ) {
   if (storagePath) {
     const alarmName =
-      alarmVarient === 'anomaly'
-        ? `AutoAlarm-${service}-${serviceIdentifier}-${config.metricName}-${storagePath}-anomaly-${classification}`
-        : `AutoAlarm-${service}-${serviceIdentifier}-${config.metricName}-${storagePath}-${classification}`;
+      alarmVariant === 'anomaly'
+        ? `AutoAlarm-${service.toUpperCase()}-${serviceIdentifier}-${config.metricName}-${storagePath}-anomaly-${classification}`
+        : `AutoAlarm-${service.toUpperCase()}-${serviceIdentifier}-${config.metricName}-${storagePath}-${classification}`;
     log
       .info()
       .str('function', 'buildAlarmName')
@@ -163,9 +167,9 @@ export function buildAlarmName(
     return alarmName;
   } else {
     const alarmName =
-      alarmVarient === 'anomaly'
-        ? `AutoAlarm-${service}-${serviceIdentifier}-${config.metricName}-anomaly-${classification}`
-        : `AutoAlarm-${service}-${serviceIdentifier}-${config.metricName}-${classification}`;
+      alarmVariant === 'anomaly'
+        ? `AutoAlarm-${service.toUpperCase()}-${serviceIdentifier}-${config.metricName}-anomaly-${classification}`
+        : `AutoAlarm-${service.toUpperCase()}-${serviceIdentifier}-${config.metricName}-${classification}`;
     log
       .info()
       .str('function', 'buildAlarmName')
@@ -231,11 +235,6 @@ async function handleAnomalyDetectionWorkflow(
       Configuration: {MetricTimezone: 'UTC'},
     };
 
-    log
-      .debug()
-      .str('function', 'handleAnomalyDetectionWorkflow')
-      .obj('AnomalyDetectorInput', anomalyDetectorInput)
-      .msg('Sending PutAnomalyDetectorCommand');
     const response = await cloudWatchClient.send(
       new PutAnomalyDetectorCommand(anomalyDetectorInput),
     );
@@ -265,10 +264,11 @@ async function handleAnomalyDetectionWorkflow(
       },
     ];
 
-    const alarmInput = {
+    const alarmInput: PutMetricAlarmCommandInput = {
       AlarmName: alarmName,
       ComparisonOperator: updatedDefaults.comparisonOperator,
       EvaluationPeriods: updatedDefaults.evaluationPeriods,
+      DatapointsToAlarm: updatedDefaults.dataPointsToAlarm,
       Metrics: metrics,
       ThresholdMetricId: 'anomalyDetectionBand',
       ActionsEnabled: false,
@@ -303,6 +303,7 @@ async function handleAnomalyDetectionWorkflow(
   }
 }
 
+//TODO: Confirm that we do not need to differentiate between Standard Statistics and Extended Statistics
 export async function handleAnomalyAlarms(
   config: MetricAlarmConfig,
   service: string,
@@ -323,7 +324,7 @@ export async function handleAnomalyAlarms(
 
   // If no thresholds are set, log and exit early
   if (!warningThresholdSet && !criticalThresholdSet && !config.defaultCreate) {
-    const alarmPrefix = `AutoAlarm-ALB-${serviceIdentifier}-${config.metricName}-anomaly-`;
+    const alarmPrefix = `AutoAlarm-${service}-${serviceIdentifier}-${config.metricName}-anomaly-`;
     log
       .info()
       .str('function', 'handleAnomalyAlarms')
@@ -446,9 +447,19 @@ async function handleStaticThresholdWorkflow(
       MetricName: config.metricName,
       Namespace: config.metricNamespace,
       Period: updatedDefaults.period,
-      ...(['p', 'tm', 'tc', 'ts', 'wm', 'iqm'].some((prefix) =>
-        updatedDefaults.statistic.startsWith(prefix),
-      )
+      ...([
+        'p',
+        'tm',
+        'tc',
+        'ts',
+        'wm',
+        'IQM',
+        'WM',
+        'PR',
+        'TC',
+        'TM',
+        'TS',
+      ].some((prefix) => updatedDefaults.statistic!.startsWith(prefix))
         ? {ExtendedStatistic: updatedDefaults.statistic}
         : {Statistic: updatedDefaults.statistic as Statistic}),
       Threshold: threshold,
@@ -458,11 +469,6 @@ async function handleStaticThresholdWorkflow(
       TreatMissingData: updatedDefaults.missingDataTreatment,
     };
 
-    log
-      .debug()
-      .str('function', 'handleStaticThresholdWorkflow')
-      .obj('AlarmInput', alarmInput)
-      .msg('Sending PutMetricAlarmCommand');
     const response = await cloudWatchClient.send(
       new PutMetricAlarmCommand(alarmInput),
     );

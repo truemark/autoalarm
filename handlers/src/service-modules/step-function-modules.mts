@@ -1,20 +1,20 @@
 import {SFNClient, ListTagsForResourceCommand} from '@aws-sdk/client-sfn';
 import * as logging from '@nr1e/logging';
-import {Tag} from './types.mjs';
-import {ConfiguredRetryStrategy} from '@smithy/util-retry';
-import {AlarmClassification} from './enums.mjs';
-import {
-  getCWAlarmsForInstance,
-  deleteExistingAlarms,
-  buildAlarmName,
-  handleAnomalyAlarms,
-  handleStaticAlarms,
-} from './alarm-tools.mjs';
+import {AlarmClassification, Tag} from '../types/index.mjs';
 import {
   CloudWatchClient,
   DeleteAlarmsCommand,
 } from '@aws-sdk/client-cloudwatch';
-import {MetricAlarmConfigs, parseMetricAlarmOptions} from './alarm-config.mjs';
+import {ConfiguredRetryStrategy} from '@smithy/util-retry';
+import {
+  deleteExistingAlarms,
+  buildAlarmName,
+  handleAnomalyAlarms,
+  handleStaticAlarms,
+  getCWAlarmsForInstance,
+  parseMetricAlarmOptions,
+} from '../alarm-configs/utils/index.mjs';
+import {STEP_FUNCTION_CONFIGS} from '../alarm-configs/_index.mjs';
 
 const log: logging.Logger = logging.getLogger('step-function-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -28,7 +28,7 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   retryStrategy: retryStrategy,
 });
 
-const metricConfigs = MetricAlarmConfigs['StepFunctions'];
+const metricConfigs = STEP_FUNCTION_CONFIGS;
 
 export async function fetchSFNTags(sfnArn: string): Promise<Tag> {
   try {
@@ -201,13 +201,13 @@ async function checkAndManageSFNStatusAlarms(
     .msg('Finished alarm management process');
 }
 
-export async function manageInactiveRDSAlarms(sfnArn: string): Promise<void> {
+export async function manageInactiveSFNAlarms(sfnArn: string): Promise<void> {
   try {
     await deleteExistingAlarms('SFN', sfnArn);
   } catch (e) {
     log
       .error()
-      .str('function', 'manageInactiveRDSAlarms')
+      .str('function', 'manageInactiveSFNAlarms')
       .err(e)
       .msg(`Error deleting SFN alarms: ${e}`);
   }
@@ -431,7 +431,7 @@ export async function parseSFNEventAndCreateAlarms(
       .str('function', 'parseSFNEventAndCreateAlarms')
       .str('sfnArn', sfnArn)
       .msg('Starting to manage inactive SFN alarms');
-    await manageInactiveRDSAlarms(sfnArn);
+    await manageInactiveSFNAlarms(sfnArn);
   }
 
   return {sfnArn, eventType, tags};

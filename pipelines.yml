@@ -1,0 +1,112 @@
+mage: public.ecr.aws/truemark/aws-cdk:amazonlinux
+pipelines:
+  custom:
+    "CDK Deploy":
+      - variables:
+          - name: AWS_ACCOUNT_ID
+      - step:
+          name: CDK Deploy
+          oidc: true
+          services:
+            - docker
+          script:
+            - |
+              echo "=========================================="
+              echo ":rocket: CDK Deploy Pipeline Started"
+              echo ":alarm_clock: Start Time: $(date)"
+              echo "=========================================="
+              echo ":clipboard: Setting environment variables..."
+              export AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID}"
+              export AWS_DEFAULT_REGION="us-west-2"
+              export AWS_OIDC_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:role/bitbucket-autoalarm-direct-provisioner"
+              export AWS_ROLE_SESSION_NAME="autoalarm"
+              export AWS_WEB_IDENTITY_TOKEN="${BITBUCKET_STEP_OIDC_TOKEN}"
+              echo "  AWS_ACCOUNT_ID: ${AWS_ACCOUNT_ID}"
+              echo "  AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}"
+              echo "  AWS_OIDC_ROLE_ARN: ${AWS_OIDC_ROLE_ARN}"
+              echo ""
+              echo ":closed_lock_with_key: [$(date +%T)] Initializing AWS credentials..."
+              initialize
+              echo ":white_check_mark: [$(date +%T)] AWS credentials initialized"
+              echo ""
+              echo ":package: [$(date +%T)] Installing dependencies..."
+              pnpm i --frozen-lockfile
+              echo ":white_check_mark: [$(date +%T)] Dependencies installed"
+              echo ""
+              echo ":hammer: [$(date +%T)] Building project..."
+              pnpm run build
+              echo ":white_check_mark: [$(date +%T)] Build completed"
+              echo ""
+              echo ":cloud:  [$(date +%T)] Running CDK diff..."
+              pnpm cdk diff --require-approval never --all
+              echo ":white_check_mark: [$(date +%T)] CDK diff completed"
+              echo ""
+              echo "=========================================="
+              echo ":tada: CDK Deploy Pipeline Completed"
+              echo ":alarm_clock: End Time: $(date)"
+              echo "=========================================="
+    "CDK Deploy Multiple Accounts":
+      - variables:
+          - name: AWS_ACCOUNT_IDS   # Comma-separated list e.g. "111111111111,222222222222"
+      - step:
+          name: CDK Deploy to Multiple Accounts
+          oidc: true
+          services:
+            - docker
+          script:
+            - |
+              echo "=========================================="
+              echo ":rocket: CDK Multi-Account Deploy Pipeline Started"
+              echo ":alarm_clock: Start Time: $(date)"
+              echo "=========================================="
+              IFS=',' read -ra ACCOUNT_IDS <<< "$AWS_ACCOUNT_IDS"
+              TOTAL_ACCOUNTS=${#ACCOUNT_IDS[@]}
+              CURRENT=0
+              FAILED_ACCOUNTS=()
+              SUCCESSFUL_ACCOUNTS=()
+              echo ":clipboard: Total accounts to deploy: ${TOTAL_ACCOUNTS}"
+              echo ":clipboard: Accounts: ${AWS_ACCOUNT_IDS}"
+              echo ""
+              for AWS_ACCOUNT_ID in "${ACCOUNT_IDS[@]}"; do
+                CURRENT=$((CURRENT + 1))
+                echo "=========================================="
+                echo ":round_pushpin: Processing Account ${CURRENT}/${TOTAL_ACCOUNTS}: ${AWS_ACCOUNT_ID}"
+                echo "=========================================="
+                (
+                  # Set environment variables for the current account
+                  echo ":clipboard: [$(date +%T)] Setting environment variables..."
+                  export AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID}"
+                  export AWS_DEFAULT_REGION="us-west-2"
+                  export AWS_OIDC_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:role/bitbucket-autoalarm-direct-provisioner"
+                  export AWS_ROLE_SESSION_NAME="autoalarm"
+                  export AWS_WEB_IDENTITY_TOKEN="${BITBUCKET_STEP_OIDC_TOKEN}"
+                  echo "Deploying to account: $AWS_ACCOUNT_ID"
+                  echo ""
+                  echo ":closed_lock_with_key: [$(date +%T)] Initializing AWS credentials..."
+                  initialize
+                  echo ":white_check_mark: [$(date +%T)] AWS credentials initialized"
+                  echo ""
+                  echo ":package: [$(date +%T)] Installing dependencies for ${AWS_ACCOUNT_ID}..."
+                  # Run your deployment commands
+                  pnpm i --frozen-lockfile
+                  echo ":white_check_mark: [$(date +%T)] Dependencies installed"
+                  echo ""
+                  echo ":hammer: [$(date +%T)] Building project for ${AWS_ACCOUNT_ID}..."
+                  pnpm run build
+                  echo ":white_check_mark: [$(date +%T)] Build completed"
+                  echo ""
+                  echo ":cloud:  [$(date +%T)] Running CDK deploy for ${AWS_ACCOUNT_ID}..."
+                  cd cdk ; cdk deploy --require-approval never --all
+                  echo ":white_check_mark: [$(date +%T)] CDK deploy completed for ${AWS_ACCOUNT_ID}"
+                  echo ""
+                  echo ":broom: [$(date +%T)] Clearing AWS CLI cache..."
+                  # Optionally clear any cached AWS CLI credentials to force a fresh role assumption
+                  rm -rf ~/.aws/cli/cache
+                  echo ":white_check_mark: [$(date +%T)] Cache cleared"
+                ) || { echo ":x: [$(date +%T)] Deployment for account $AWS_ACCOUNT_ID failed"; }
+              done
+              echo ""
+              echo "=========================================="
+              echo ":tada: CDK Multi-Account Deploy Pipeline Completed"
+              echo ":alarm_clock: End Time: $(date)"
+              echo "=========================================="

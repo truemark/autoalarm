@@ -1,20 +1,20 @@
 import {SQSClient, ListQueueTagsCommand} from '@aws-sdk/client-sqs';
 import * as logging from '@nr1e/logging';
-import {Tag} from './types.mjs';
-import {AlarmClassification} from './enums.mjs';
-import {ConfiguredRetryStrategy} from '@smithy/util-retry';
-import {
-  getCWAlarmsForInstance,
-  deleteExistingAlarms,
-  buildAlarmName,
-  handleAnomalyAlarms,
-  handleStaticAlarms,
-} from './alarm-tools.mjs';
+import {AlarmClassification, Tag} from '../types/index.mjs';
 import {
   CloudWatchClient,
   DeleteAlarmsCommand,
 } from '@aws-sdk/client-cloudwatch';
-import {MetricAlarmConfigs, parseMetricAlarmOptions} from './alarm-config.mjs';
+import {ConfiguredRetryStrategy} from '@smithy/util-retry';
+import {
+  deleteExistingAlarms,
+  buildAlarmName,
+  handleAnomalyAlarms,
+  handleStaticAlarms,
+  getCWAlarmsForInstance,
+  parseMetricAlarmOptions,
+} from '../alarm-configs/utils/index.mjs';
+import {SQS_CONFIGS} from '../alarm-configs/_index.mjs';
 
 const log: logging.Logger = logging.getLogger('sqs-modules');
 const region: string = process.env.AWS_REGION || '';
@@ -28,7 +28,7 @@ const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   retryStrategy: retryStrategy,
 });
 
-const metricConfigs = MetricAlarmConfigs['SQS'];
+const metricConfigs = SQS_CONFIGS;
 
 export async function fetchSQSTags(queueUrl: string): Promise<Tag> {
   try {
@@ -205,7 +205,6 @@ function extractQueueName(queueUrl: string): string {
   return parts.at(-1)!;
 }
 
-// TODO Fix the use of any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function parseSQSEventAndCreateAlarms(event: any): Promise<{
   queueUrl: string;
@@ -219,7 +218,7 @@ export async function parseSQSEventAndCreateAlarms(event: any): Promise<{
   switch (event['detail-type']) {
     case 'AWS API Call via CloudTrail':
       switch (event.detail.eventName) {
-        case 'CreateQueue':
+        case 'CreateQueue': {
           queueUrl = event.detail.responseElements?.queueUrl;
           eventType = 'Create';
           log
@@ -229,6 +228,26 @@ export async function parseSQSEventAndCreateAlarms(event: any): Promise<{
             .str('queueUrl', queueUrl)
             .str('requestId', event.detail.requestID)
             .msg('Processing CreateQueue event');
+
+          /**
+           * TODO: Hot fix to prevent work when a queue is created without autoalarm:enabled, true
+           *  will be addressed in a more elegant way in future refactors.
+           */
+          const eventTags = event.detail.requestParameters.tags;
+          if (
+            !eventTags ||
+            !eventTags['autoalarm:enabled'] ||
+            eventTags['autoalarm:enabled'] !== 'true'
+          ) {
+            log
+              .warn()
+              .str('function', 'parseSQSEventAndCreateAlarms')
+              .obj('tags', event.detail.requestParameters)
+              .msg(
+                'sqs queue created without autoalarm:enabled tag, skipping alarm management',
+              );
+            return; // Skip alarm management if tag is not present
+          }
           if (queueUrl) {
             tags = await fetchSQSTags(queueUrl);
             log
@@ -246,6 +265,7 @@ export async function parseSQSEventAndCreateAlarms(event: any): Promise<{
             throw new Error('QueueUrl not found in CreateQueue event');
           }
           break;
+        }
 
         case 'DeleteQueue':
           queueUrl = event.detail.requestParameters?.queueUrl;

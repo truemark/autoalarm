@@ -39,7 +39,11 @@ export class AutoAlarm extends Construct {
     /**
      * Create Node function definition
      */
-    this.lambdaFunction = this.createFunction(role, prometheusWorkspaceId);
+    this.lambdaFunction = this.createFunction(
+      role,
+      prometheusWorkspaceId,
+      accountId,
+    );
 
     /**
      * Create all the queues for all the services that AutoAlarm supports
@@ -145,6 +149,21 @@ export class AutoAlarm extends Construct {
       }),
     );
 
+    // Attach policies for ECS:
+    autoAlarmExecutionRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: [
+          'ecs:ListClusters',
+          'ecs:ListServices',
+          'ecs:DescribeClusters',
+          'ecs:DescribeServices',
+          'ecs:ListTagsForResource',
+        ],
+        resources: ['*'],
+      }),
+    );
+
     // Attach policies for CloudWatch Logs
     autoAlarmExecutionRole.addToPolicy(
       new PolicyStatement({
@@ -153,6 +172,7 @@ export class AutoAlarm extends Construct {
           'logs:CreateLogGroup',
           'logs:CreateLogStream',
           'logs:PutLogEvents',
+          'logs:ListTagsForResource',
         ],
         resources: ['*'],
       }),
@@ -275,6 +295,7 @@ export class AutoAlarm extends Construct {
   private createFunction(
     role: IRole,
     prometheusWorkspaceId: string,
+    accountId: string,
   ): ExtendedNodejsFunction {
     // Create the main function
     return new ExtendedNodejsFunction(this, 'mainFunction', {
@@ -293,6 +314,7 @@ export class AutoAlarm extends Construct {
       role: role,
       environment: {
         PROMETHEUS_WORKSPACE_ID: prometheusWorkspaceId,
+        ACCT_ID: accountId,
       },
       bundling: {
         nodeModules: ['@smithy/util-retry'],
