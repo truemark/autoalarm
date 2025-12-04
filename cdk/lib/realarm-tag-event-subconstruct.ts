@@ -127,6 +127,7 @@ export class ReAlarmTagEventHandler extends Construct {
           'events:PutTargets',
           'events:DeleteRule',
           'events:RemoveTargets',
+          'events:DescribeRule',
         ],
         resources: [
           `arn:aws:events:${region}:${accountId}:rule/AutoAlarm-ReAlarm-*`,
@@ -140,6 +141,8 @@ export class ReAlarmTagEventHandler extends Construct {
         actions: [
           'cloudwatch:DescribeAlarms',
           'cloudwatch:ListTagsForResource',
+          'cloudwatch:TagResource',
+          'cloudwatch:UntagResource',
         ],
         resources: ['*'],
       }),
@@ -169,6 +172,10 @@ export class ReAlarmTagEventHandler extends Construct {
         resources: [queueArn],
       }),
     );
+
+    // Permission to add Lambda invoke permissions for EventBridge rules
+    // Note: When EventBridge creates a rule with Lambda target, it automatically requests permission
+    // The Producer Lambda already has wildcard permission for AutoAlarm-ReAlarm-* rules
 
     return reAlarmEventRuleLambdaExecutionRole;
   }
