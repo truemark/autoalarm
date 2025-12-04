@@ -68,6 +68,8 @@ export class SqsHandlerSubConstruct extends Construct {
       }),
     );
 
+    // Grant permissions get queue info from source event queues
+
     // Grant permissions to write logs to CloudWatch
     sqsHandlerExecutionRole.addToPolicy(
       new PolicyStatement({
