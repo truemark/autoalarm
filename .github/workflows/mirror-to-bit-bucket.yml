@@ -13,9 +13,7 @@ jobs:
     steps:
       - name: Checkout GitHub repo
         uses: actions/checkout@v4
-        with:
-          # Full history is useful if you want a proper mirror
-          fetch-depth: 0
+
 
       - name: Configure Git identity
         run: |
@@ -24,9 +22,9 @@ jobs:
 
       - name: Add Bitbucket remote using API token
         env:
-          BITBUCKET_USERNAME: ${{ secrets.BITBUCKET_USERNAME }}         # e.g. v-jgilgen
+          BITBUCKET_USERNAME: ${{ secrets.BITBUCKET_USERNAME }}         
           BITBUCKET_API_TOKEN: ${{ secrets.BITBUCKET_API_TOKEN }}
-          BITBUCKET_REPO: ${{ secrets.BITBUCKET_REPO }}                 # e.g. youngliving/autoalarm-cdk-deploy
+          BITBUCKET_REPO: ${{ secrets.BITBUCKET_REPO }}                
         run: |
           git remote add bitbucket "https://${BITBUCKET_USERNAME}:${BITBUCKET_API_TOKEN}@bitbucket.org/${BITBUCKET_REPO}.git"
           git remote -v
