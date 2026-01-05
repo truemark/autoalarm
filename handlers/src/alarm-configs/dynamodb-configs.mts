@@ -116,4 +116,28 @@ export const DYNAMODB_CONFIGS: MetricAlarmConfig[] = [
       missingDataTreatment: TreatMissingData.IGNORE,
     },
   },
+
+  /**
+   * IteratorAge
+   * Tracks lag between when a DynamoDB Stream record was written and when Lambda consumer read it.
+   * High iterator age indicates consumers are falling behind - critical if approaching 24hr retention.
+   * Note: Metric is in AWS/Lambda namespace, not DynamoDB.
+   */
+  {
+    tagKey: 'iterator-age',
+    metricName: 'IteratorAge',
+    metricNamespace: 'AWS/Lambda',
+    defaultCreate: false,
+    anomaly: false,
+    defaults: {
+      warningThreshold: 300000, // 5 minutes in milliseconds
+      criticalThreshold: 600000, // 10 minutes in milliseconds
+      period: 60,
+      evaluationPeriods: 5,
+      statistic: 'Maximum',
+      dataPointsToAlarm: 3,
+      comparisonOperator: ComparisonOperator.GreaterThanThreshold,
+      missingDataTreatment: TreatMissingData.IGNORE,
+    },
+  },
 ] as const;

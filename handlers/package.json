@@ -21,6 +21,7 @@
     "@aws-sdk/client-elastic-load-balancing-v2": "^3.799.0",
     "@aws-sdk/client-eventbridge": "^3.800.0",
     "@aws-sdk/client-kms": "^3.799.0",
+    "@aws-sdk/client-lambda": "^3.962.0",
     "@aws-sdk/client-opensearch": "^3.799.0",
     "@aws-sdk/client-rds": "^3.799.0",
     "@aws-sdk/client-route53resolver": "^3.799.0",

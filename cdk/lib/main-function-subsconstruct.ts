@@ -133,7 +133,16 @@ export class AutoAlarm extends Construct {
     autoAlarmExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
-        actions: ['dynamodb:ListTagsOfResource'],
+        actions: ['dynamodb:ListTagsOfResource', 'dynamodb:DescribeTable'],
+        resources: ['*'],
+      }),
+    );
+
+    // Attach policies for Lambda (for DynamoDB Stream consumers)
+    autoAlarmExecutionRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['lambda:ListEventSourceMappings'],
         resources: ['*'],
       }),
     );

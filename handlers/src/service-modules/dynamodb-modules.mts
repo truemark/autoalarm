@@ -1,7 +1,12 @@
 import {
   DynamoDBClient,
   ListTagsOfResourceCommand,
+  DescribeTableCommand,
 } from '@aws-sdk/client-dynamodb';
+import {
+  LambdaClient,
+  ListEventSourceMappingsCommand,
+} from '@aws-sdk/client-lambda';
 import * as logging from '@nr1e/logging';
 import {Tag} from '../types/index.mjs';
 import {
@@ -25,6 +30,11 @@ const region: string = process.env.AWS_REGION || '';
 const retryStrategy = new ConfiguredRetryStrategy(20);
 
 const dynamoDBClient = new DynamoDBClient({
+  region,
+  retryStrategy,
+});
+
+const lambdaClient = new LambdaClient({
   region,
   retryStrategy,
 });
@@ -124,6 +134,187 @@ export async function fetchDynamoDBTags(tableArn: string): Promise<Tag> {
       .msg('Error fetching DynamoDB tags');
     return {};
   }
+}
+
+/**
+ * Get the DynamoDB Stream ARN for a table if streams are enabled.
+ * Returns undefined if streams are not enabled.
+ */
+async function getTableStreamArn(
+  tableName: string,
+): Promise<string | undefined> {
+  try {
+    const command = new DescribeTableCommand({TableName: tableName});
+    const response = await dynamoDBClient.send(command);
+
+    const streamArn = response.Table?.LatestStreamArn;
+
+    if (streamArn) {
+      log
+        .info()
+        .str('function', 'getTableStreamArn')
+        .str('tableName', tableName)
+        .str('streamArn', streamArn)
+        .msg('Found DynamoDB Stream ARN');
+    } else {
+      log
+        .info()
+        .str('function', 'getTableStreamArn')
+        .str('tableName', tableName)
+        .msg('Table does not have streams enabled');
+    }
+
+    return streamArn;
+  } catch (error) {
+    log
+      .error()
+      .str('function', 'getTableStreamArn')
+      .str('tableName', tableName)
+      .err(error)
+      .msg('Error fetching table stream ARN');
+    return undefined;
+  }
+}
+
+/**
+ * Get all Lambda event source mappings (consumers) for a DynamoDB Stream.
+ * Only returns enabled mappings.
+ */
+async function getStreamConsumers(
+  streamArn: string,
+): Promise<Array<{functionArn: string; functionName: string; uuid: string}>> {
+  try {
+    const command = new ListEventSourceMappingsCommand({
+      EventSourceArn: streamArn,
+    });
+    const response = await lambdaClient.send(command);
+
+    const consumers =
+      response.EventSourceMappings?.filter(
+        (mapping) =>
+          mapping.State === 'Enabled' || mapping.State === 'Enabling',
+      ).map((mapping) => {
+        // Extract function name from ARN: arn:aws:lambda:region:account:function:FunctionName
+        const functionName = mapping.FunctionArn?.split(':').pop() || '';
+        return {
+          functionArn: mapping.FunctionArn || '',
+          functionName,
+          uuid: mapping.UUID || '',
+        };
+      }) || [];
+
+    log
+      .info()
+      .str('function', 'getStreamConsumers')
+      .str('streamArn', streamArn)
+      .num('consumerCount', consumers.length)
+      .msg('Found Lambda consumers for DynamoDB Stream');
+
+    return consumers;
+  } catch (error) {
+    log
+      .error()
+      .str('function', 'getStreamConsumers')
+      .str('streamArn', streamArn)
+      .err(error)
+      .msg('Error fetching stream consumers');
+    return [];
+  }
+}
+
+/**
+ * Manage IteratorAge alarms for DynamoDB Stream consumers (Lambda functions).
+ * Creates alarms for each enabled Lambda consumer of the stream.
+ */
+async function manageIteratorAgeAlarms(
+  tableArn: string,
+  tableName: string,
+  tags: Tag,
+): Promise<Set<string>> {
+  const alarmsToKeep = new Set<string>();
+
+  // Check if iterator-age monitoring is enabled
+  const iteratorAgeConfig = metricConfigs.find(
+    (config) => config.tagKey === 'iterator-age',
+  );
+
+  if (!iteratorAgeConfig) {
+    return alarmsToKeep;
+  }
+
+  const tagValue = tags['autoalarm:iterator-age'];
+  if (tagValue === undefined) {
+    log
+      .info()
+      .str('function', 'manageIteratorAgeAlarms')
+      .str('tableArn', tableArn)
+      .msg('iterator-age tag not present - skipping IteratorAge alarms');
+    return alarmsToKeep;
+  }
+
+  // Get stream ARN
+  const streamArn = await getTableStreamArn(tableName);
+  if (!streamArn) {
+    log
+      .info()
+      .str('function', 'manageIteratorAgeAlarms')
+      .str('tableName', tableName)
+      .msg('Table does not have streams enabled - skipping IteratorAge alarms');
+    return alarmsToKeep;
+  }
+
+  // Get consumers
+  const consumers = await getStreamConsumers(streamArn);
+  if (consumers.length === 0) {
+    log
+      .info()
+      .str('function', 'manageIteratorAgeAlarms')
+      .str('streamArn', streamArn)
+      .msg('No enabled Lambda consumers found - skipping IteratorAge alarms');
+    return alarmsToKeep;
+  }
+
+  // Parse alarm options
+  const updatedDefaults = parseMetricAlarmOptions(
+    tagValue,
+    iteratorAgeConfig.defaults,
+  );
+
+  // Create alarm for each consumer
+  for (const consumer of consumers) {
+    const dimensions: Dimension[] = [
+      {Name: 'FunctionName', Value: consumer.functionName},
+    ];
+
+    // Use table ARN + function name as identifier for alarm naming
+    const alarmIdentifier = `${tableArn}-${consumer.functionName}`;
+
+    log
+      .info()
+      .str('function', 'manageIteratorAgeAlarms')
+      .str('functionName', consumer.functionName)
+      .str('tableArn', tableArn)
+      .msg('Creating IteratorAge alarm for Lambda consumer');
+
+    const alarmNames = await handleStaticAlarms(
+      iteratorAgeConfig,
+      'DynamoDB',
+      alarmIdentifier,
+      dimensions,
+      updatedDefaults,
+    );
+
+    alarmNames.forEach((name) => alarmsToKeep.add(name));
+  }
+
+  log
+    .info()
+    .str('function', 'manageIteratorAgeAlarms')
+    .num('consumerCount', consumers.length)
+    .num('alarmsCreated', alarmsToKeep.size)
+    .msg('Completed IteratorAge alarm management');
+
+  return alarmsToKeep;
 }
 
 async function manageDynamoDBAlarms(
@@ -316,6 +507,21 @@ export async function parseDynamoDBEventAndCreateAlarms(
       .num('autoAlarmTagCount', Object.keys(tags).length)
       .msg('Managing DynamoDB table alarms');
     await manageDynamoDBAlarms(tableArn, tableName, tags);
+
+    // Manage IteratorAge alarms for stream consumers
+    const iteratorAgeAlarms = await manageIteratorAgeAlarms(
+      tableArn,
+      tableName,
+      tags,
+    );
+
+    if (iteratorAgeAlarms.size > 0) {
+      log
+        .info()
+        .str('function', 'parseDynamoDBEventAndCreateAlarms')
+        .num('iteratorAgeAlarms', iteratorAgeAlarms.size)
+        .msg('Created IteratorAge alarms for stream consumers');
+    }
   } catch (error) {
     log
       .error()
