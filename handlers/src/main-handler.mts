@@ -290,6 +290,29 @@ export const handler: Handler = async (
             event['detail-type'] === 'EC2 Instance State-change Notification'
           ) {
             ec2Events.push(event);
+          } else if (event['detail-type'] === 'AWS API Call via CloudTrail') {
+            // Handle CloudTrail API call events based on eventName
+            switch (event.detail.eventName) {
+              case 'CreateTransitGateway':
+              case 'DeleteTransitGateway':
+                await ServiceModules.parseTransitGatewayEventAndCreateAlarms(
+                  event,
+                );
+                break;
+              case 'CreateVpnConnection':
+              case 'DeleteVpnConnection':
+                await ServiceModules.parseVpnEventAndCreateAlarms(event);
+                break;
+              default:
+                log
+                  .error()
+                  .msg(
+                    `Unhandled CloudTrail event name for aws.ec2: ${event.detail.eventName}`,
+                  );
+                batchItemFailures.push({itemIdentifier: record.messageId});
+                batchItemBodies.push(record);
+                break;
+            }
           } else if (event.detail && event.detail.resourceType) {
             // Handle other EC2 events that have a resourceType defined
             switch (event.detail.resourceType) {
