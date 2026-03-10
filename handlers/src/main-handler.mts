@@ -290,6 +290,15 @@ export const handler: Handler = async (
             event['detail-type'] === 'EC2 Instance State-change Notification'
           ) {
             ec2Events.push(event);
+          } else if (
+            event.detail &&
+            event['detail-type'] === 'AWS API Call via CloudTrail' &&
+            event.detail.eventSource === 'ec2.amazonaws.com' &&
+            (event.detail.eventName === 'CreateVpnConnection' ||
+              event.detail.eventName === 'DeleteVpnConnection')
+          ) {
+            // CloudTrail VPN events have no detail.resourceType; route by detail-type and eventName
+            await ServiceModules.parseVpnEventAndCreateAlarms(event);
           } else if (event.detail && event.detail.resourceType) {
             // Handle other EC2 events that have a resourceType defined
             switch (event.detail.resourceType) {
