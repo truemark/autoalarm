@@ -22,7 +22,20 @@ const useReAlarmContext = app.node.tryGetContext('EnableReAlarm');
 const useReAlarm =
   useReAlarmContext !== undefined ? useReAlarmContext === 'true' : true;
 
+const enableNotificationsContext = app.node.tryGetContext(
+  'EnableNotifications',
+);
+const enableNotifications =
+  enableNotificationsContext !== undefined
+    ? enableNotificationsContext === 'true'
+    : false;
+const slackWebhookSsmPath = app.node.tryGetContext('SlackWebhookSsmPath');
+const runbookUrl = app.node.tryGetContext('RunbookUrl');
+
 new AutoAlarmStack(app, 'AutoAlarm', {
   prometheusWorkspaceId: prometheusWorkspaceId,
   enableReAlarm: useReAlarm,
+  enableNotifications: enableNotifications,
+  slackWebhookSsmPath: slackWebhookSsmPath,
+  runbookUrl: runbookUrl,
 });

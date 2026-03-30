@@ -6,10 +6,14 @@ import {Stack} from 'aws-cdk-lib';
 import {ReAlarmTagEventHandler} from './realarm-tag-event-subconstruct';
 import {EventRules} from './service-eventbridge-subconstruct';
 import {SqsHandlerSubConstruct} from './sqs-handler-subconstruct';
+import {NotificationSubConstruct} from './notification-subconstruct';
 
 interface AutoAlarmConstructProps {
   readonly prometheusWorkspaceId?: string;
   readonly enableReAlarm?: boolean;
+  readonly enableNotifications?: boolean;
+  readonly slackWebhookSsmPath?: string;
+  readonly runbookUrl?: string;
 }
 
 export class AutoAlarmConstruct extends Construct {
@@ -110,5 +114,18 @@ export class AutoAlarmConstruct extends Construct {
       'ServiceEventRules',
       this.sqsHandler.eventSourceQueues,
     );
+
+    const enableNotifications = props.enableNotifications ?? false;
+    if (enableNotifications) {
+      if (!props.slackWebhookSsmPath) {
+        throw new Error(
+          'slackWebhookSsmPath is required when enableNotifications is true',
+        );
+      }
+      new NotificationSubConstruct(this, 'Notification', {
+        slackWebhookSsmPath: props.slackWebhookSsmPath,
+        runbookUrl: props.runbookUrl,
+      });
+    }
   }
 }

@@ -8,6 +8,9 @@ export interface ExtendedAutoAlarmProps extends ExtendedStackProps {
   readonly prometheusWorkspaceId?: string;
   readonly enableReAlarm?: boolean;
   readonly reAlarmSchedule?: CronOptions;
+  readonly enableNotifications?: boolean;
+  readonly slackWebhookSsmPath?: string;
+  readonly runbookUrl?: string;
 }
 
 export class AutoAlarmStack extends ExtendedStack {
@@ -17,6 +20,9 @@ export class AutoAlarmStack extends ExtendedStack {
     new AutoAlarmConstruct(this, 'AutoAlarmConstruct', {
       prometheusWorkspaceId: props.prometheusWorkspaceId,
       enableReAlarm: props.enableReAlarm,
+      enableNotifications: props.enableNotifications,
+      slackWebhookSsmPath: props.slackWebhookSsmPath,
+      runbookUrl: props.runbookUrl,
     });
     this.outputParameter('Name', 'AutoAlarm');
     this.outputParameter('Version', version);
