@@ -266,6 +266,7 @@ async function handleAnomalyDetectionWorkflow(
 
     const alarmInput: PutMetricAlarmCommandInput = {
       AlarmName: alarmName,
+      AlarmDescription: `AutoAlarm ${classification} anomaly alarm | ${config.metricNamespace}/${config.metricName}`,
       ComparisonOperator: updatedDefaults.comparisonOperator,
       EvaluationPeriods: updatedDefaults.evaluationPeriods,
       DatapointsToAlarm: updatedDefaults.dataPointsToAlarm,
@@ -441,6 +442,7 @@ async function handleStaticThresholdWorkflow(
   try {
     const alarmInput: PutMetricAlarmCommandInput = {
       AlarmName: alarmName,
+      AlarmDescription: `AutoAlarm ${classification} alarm | ${config.metricNamespace}/${config.metricName}`,
       ComparisonOperator: updatedDefaults.comparisonOperator,
       EvaluationPeriods: updatedDefaults.evaluationPeriods,
       DatapointsToAlarm: updatedDefaults.dataPointsToAlarm,

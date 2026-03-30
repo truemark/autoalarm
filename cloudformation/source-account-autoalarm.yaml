@@ -1,0 +1,110 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  AutoAlarm Source Account Setup - Deploys OAM Link and EventBridge forwarding
+  rule for cross-account alarm enrichment. Deploy via CloudFormation StackSets
+  targeting your Organization OUs.
+
+Parameters:
+  SinkArn:
+    Type: String
+    Description: >
+      ARN of the OAM Sink in the hub/monitoring account.
+      Leave empty to skip OAM Link creation.
+    Default: ''
+
+  HubEventBusArn:
+    Type: String
+    Description: >
+      ARN of the AutoAlarm-Central EventBridge bus in the hub account.
+      Required for alarm event forwarding.
+
+  OamResourceTypes:
+    Type: CommaDelimitedList
+    Description: OAM resource types to share with the monitoring account.
+    Default: 'AWS::CloudWatch::Metric,AWS::Logs::LogGroup'
+
+  LogGroupFilter:
+    Type: String
+    Description: >
+      Optional log group name filter for OAM link (e.g., "/ecs/*,/aws/lambda/*").
+      Leave empty to share all log groups.
+    Default: ''
+
+Conditions:
+  CreateOamLink: !Not [!Equals [!Ref SinkArn, '']]
+
+Resources:
+  # --- OAM Link ---
+  OamLink:
+    Type: AWS::Oam::Link
+    Condition: CreateOamLink
+    Properties:
+      LabelTemplate: '$AccountName'
+      ResourceTypes: !Ref OamResourceTypes
+      SinkIdentifier: !Ref SinkArn
+
+  # --- EventBridge Forwarding ---
+
+  # IAM role for EventBridge to forward events to hub account bus
+  EventBridgeForwardingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: AutoAlarm-EventBridge-Forwarding
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: PutEventsToHubBus
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: events:PutEvents
+                Resource: !Ref HubEventBusArn
+
+  # EventBridge rule: forward AutoAlarm alarm state changes to hub account
+  AlarmStateChangeForwardingRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: AutoAlarm-Forward-Alarm-StateChange
+      Description: >
+        Forwards AutoAlarm alarm state changes to the central hub account
+        for enrichment processing.
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.cloudwatch
+        detail-type:
+          - CloudWatch Alarm State Change
+        detail:
+          alarmName:
+            - prefix: 'AutoAlarm-'
+          state:
+            value:
+              - ALARM
+          previousState:
+            value:
+              - OK
+              - INSUFFICIENT_DATA
+      Targets:
+        - Id: HubAccountCentralBus
+          Arn: !Ref HubEventBusArn
+          RoleArn: !GetAtt EventBridgeForwardingRole.Arn
+
+Outputs:
+  OamLinkArn:
+    Condition: CreateOamLink
+    Description: ARN of the OAM Link to the hub account sink
+    Value: !GetAtt OamLink.Arn
+
+  ForwardingRuleArn:
+    Description: ARN of the EventBridge forwarding rule
+    Value: !GetAtt AlarmStateChangeForwardingRule.Arn
+
+  ForwardingRoleName:
+    Description: Name of the IAM role used for EventBridge forwarding
+    Value: !Ref EventBridgeForwardingRole

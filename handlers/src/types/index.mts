@@ -38,3 +38,24 @@ export {
   PrometheusAlarmConfigArray,
   NamespaceDetails,
 } from './prometheus-types.mjs';
+
+// Import and re-export from enrichment-schemas.mjs
+export {AlarmStateChangeEventSchema} from './enrichment-schemas.mjs';
+export type {AlarmStateChangeEvent} from './enrichment-schemas.mjs';
+
+// Import and re-export from enrichment-types.mjs
+export type {
+  EnrichedAlarmEvent,
+  AlarmInfo,
+  ResourceInfo,
+  EnrichmentContext,
+  CorrelatedMetric,
+  RecentError,
+  RecentDeployment,
+  DeepLinks,
+  EnrichmentMetadata,
+  AgentSummary,
+  ParsedAlarmIdentity,
+  CorrelatedMetricsMap,
+  EnrichmentMessageAttributes,
+} from './enrichment-types.mjs';

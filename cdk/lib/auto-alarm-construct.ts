@@ -6,10 +6,31 @@ import {Stack} from 'aws-cdk-lib';
 import {ReAlarmTagEventHandler} from './realarm-tag-event-subconstruct';
 import {EventRules} from './service-eventbridge-subconstruct';
 import {SqsHandlerSubConstruct} from './sqs-handler-subconstruct';
+import {OamSinkSubConstruct} from './oam-sink-subconstruct';
+import {EnrichmentSubConstruct} from './enrichment-subconstruct';
+import {SourceAccountStackSetSubConstruct} from './source-account-stackset-subconstruct';
 
 interface AutoAlarmConstructProps {
   readonly prometheusWorkspaceId?: string;
   readonly enableReAlarm?: boolean;
+  // OAM Sink
+  readonly enableOamSink?: boolean;
+  readonly oamSourceAccountIds?: string[];
+  readonly oamOrganizationIds?: string[];
+  readonly oamResourceTypes?: string[];
+  // Enrichment
+  readonly enableEnrichment?: boolean;
+  readonly enrichmentSourceAccountIds?: string[];
+  readonly enrichmentOrganizationIds?: string[];
+  readonly enableAgentEnrichment?: boolean;
+  readonly agentRuntimeArn?: string;
+  readonly agentSeverityFilter?: string[];
+  // Source account StackSet
+  readonly enableSourceAccountStackSet?: boolean;
+  readonly stackSetTargetOuIds?: string[];
+  readonly stackSetDeploymentRegions?: string[];
+  readonly stackSetLogGroupFilter?: string;
+  readonly stackSetPermissionModel?: 'SERVICE_MANAGED' | 'SELF_MANAGED';
 }
 
 export class AutoAlarmConstruct extends Construct {
@@ -19,6 +40,9 @@ export class AutoAlarmConstruct extends Construct {
   protected readonly reAlarmConsumer: ReAlarmConsumer;
   protected readonly reAlarmTagEventHandler: ReAlarmTagEventHandler;
   protected readonly eventBridgeRules: EventRules;
+  protected readonly oamSink: OamSinkSubConstruct;
+  protected readonly enrichment: EnrichmentSubConstruct;
+  protected readonly sourceAccountStackSet: SourceAccountStackSetSubConstruct;
   constructor(scope: Construct, id: string, props: AutoAlarmConstructProps) {
     super(scope, id);
     //the following four consts are used to pass the correct ARN for whichever prometheus ID is being used as well as to the lambda.
@@ -110,5 +134,61 @@ export class AutoAlarmConstruct extends Construct {
       'ServiceEventRules',
       this.sqsHandler.eventSourceQueues,
     );
+
+    /**
+     * If OAM Sink is enabled, create the OAM Sink subconstruct.
+     * This creates an Observability Access Manager sink that source accounts
+     * can link to for cross-account metric and log sharing.
+     */
+    const enableOamSink = props.enableOamSink ?? false;
+    if (enableOamSink) {
+      this.oamSink = new OamSinkSubConstruct(this, 'OamSink', {
+        sourceAccountIds: props.oamSourceAccountIds,
+        organizationIds: props.oamOrganizationIds,
+        resourceTypes: props.oamResourceTypes,
+      });
+    }
+
+    /**
+     * If enrichment is enabled, create the enrichment pipeline subconstruct.
+     * This creates a custom EventBridge bus, SQS queue, enrichment Lambda,
+     * SNS topic, and DynamoDB idempotency table for alarm enrichment.
+     */
+    const enableEnrichment = props.enableEnrichment ?? false;
+    if (enableEnrichment) {
+      this.enrichment = new EnrichmentSubConstruct(this, 'Enrichment', {
+        sourceAccountIds: props.enrichmentSourceAccountIds,
+        organizationIds: props.enrichmentOrganizationIds,
+        enableAgentEnrichment: props.enableAgentEnrichment,
+        agentRuntimeArn: props.agentRuntimeArn,
+        agentSeverityFilter: props.agentSeverityFilter,
+      });
+    }
+
+    /**
+     * If source account StackSet is enabled, deploy the OAM Link + EventBridge
+     * forwarding rule to target OUs via CloudFormation StackSets.
+     *
+     * Requires enrichment to be enabled (for the hub event bus ARN).
+     * Requires the hub account to be the org management account or a delegated
+     * CloudFormation StackSets administrator.
+     */
+    const enableSourceAccountStackSet =
+      props.enableSourceAccountStackSet ?? false;
+    if (enableSourceAccountStackSet && this.enrichment) {
+      this.sourceAccountStackSet = new SourceAccountStackSetSubConstruct(
+        this,
+        'SourceAccountStackSet',
+        {
+          hubEventBusArn: this.enrichment.centralEventBus.eventBusArn,
+          sinkArn: this.oamSink?.sinkArn,
+          targetOrganizationalUnitIds: props.stackSetTargetOuIds ?? [],
+          deploymentRegions: props.stackSetDeploymentRegions,
+          oamResourceTypes: props.oamResourceTypes,
+          logGroupFilter: props.stackSetLogGroupFilter,
+          permissionModel: props.stackSetPermissionModel,
+        },
+      );
+    }
   }
 }

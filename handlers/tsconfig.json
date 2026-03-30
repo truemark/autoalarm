@@ -15,7 +15,10 @@
     "noImplicitReturns": true,
     "pretty": true,
     "sourceMap": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "paths": {
+      "aws-sdk-client-mock": ["./node_modules/aws-sdk-client-mock/dist/types/index.d.ts"]
+    }
   },
   "include": ["src"],
   "exclude": ["node_modules"]
