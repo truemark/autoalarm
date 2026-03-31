@@ -60,6 +60,10 @@ const stackSetTargetOuIds = app.node
   .tryGetContext('StackSetTargetOuIds')
   ?.split(',')
   .filter(Boolean);
+const stackSetTargetAccountIds = app.node
+  .tryGetContext('StackSetTargetAccountIds')
+  ?.split(',')
+  .filter(Boolean);
 const stackSetDeploymentRegions = app.node
   .tryGetContext('StackSetDeploymentRegions')
   ?.split(',')
@@ -89,6 +93,7 @@ new AutoAlarmStack(app, 'AutoAlarm', {
   agentSeverityFilter,
   enableSourceAccountStackSet,
   stackSetTargetOuIds,
+  stackSetTargetAccountIds,
   stackSetDeploymentRegions,
   stackSetLogGroupFilter,
   stackSetPermissionModel,

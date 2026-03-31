@@ -510,8 +510,10 @@ describe('handler', () => {
     expect(snsMock.calls()).toHaveLength(0);
   });
 
-  test('sends unparseable alarm name to DLQ', async () => {
+  test('sends unparseable alarm name to DLQ and publishes degraded SNS notification', async () => {
     ddbMock.on(GetItemCommand).resolves({Item: undefined});
+    // @ts-expect-error aws-sdk-client-mock version mismatch
+    snsMock.on(PublishCommand).resolves({MessageId: 'degraded-msg'});
 
     const record = makeRecord();
     // Put an un-parseable alarm name in the event
@@ -522,24 +524,35 @@ describe('handler', () => {
     const result = await handler(makeSqsEvent([record]) as never);
     expect(result.batchItemFailures).toHaveLength(1);
     expect(result.batchItemFailures[0].itemIdentifier).toBe('msg-1');
-    expect(snsMock.calls()).toHaveLength(0);
+    // Degraded notification must be published
+    expect(snsMock.calls()).toHaveLength(1);
+    const published = JSON.parse(
+      (snsMock.calls()[0].args[0].input as {Message: string}).Message,
+    );
+    expect(published.alarm.name).toBe('NotAnAutoAlarm');
+    expect(published.enrichment.parseError).toBe('alarm_name_unparseable');
+    expect(published.resource.service).toBe('unknown');
   });
 
-  test('sends invalid JSON body to DLQ', async () => {
+  test('sends invalid JSON body to DLQ without SNS notification', async () => {
     const result = await handler({
       Records: [{messageId: 'bad-msg', body: 'not-json'}],
     } as never);
     expect(result.batchItemFailures).toHaveLength(1);
     expect(result.batchItemFailures[0].itemIdentifier).toBe('bad-msg');
+    // Cannot extract anything useful from malformed JSON — no SNS
+    expect(snsMock.calls()).toHaveLength(0);
   });
 
-  test('sends schema-invalid event to DLQ', async () => {
+  test('sends schema-invalid event to DLQ and publishes degraded SNS notification when alarm info extractable', async () => {
+    // @ts-expect-error aws-sdk-client-mock version mismatch
+    snsMock.on(PublishCommand).resolves({MessageId: 'degraded-schema'});
     const result = await handler({
       Records: [
         {
           messageId: 'schema-fail',
           body: JSON.stringify({
-            source: 'aws.s3', // wrong source
+            source: 'aws.s3', // wrong source — fails schema
             'detail-type': 'CloudWatch Alarm State Change',
             account: '111122223333',
             region: 'us-east-1',
@@ -552,6 +565,27 @@ describe('handler', () => {
       ],
     } as never);
     expect(result.batchItemFailures).toHaveLength(1);
+    // Degraded notification published because account/region/alarmName are present
+    expect(snsMock.calls()).toHaveLength(1);
+    const published = JSON.parse(
+      (snsMock.calls()[0].args[0].input as {Message: string}).Message,
+    );
+    expect(published.alarm.name).toBe('AutoAlarm-RDS-db1-CPUUtilization-Critical');
+    expect(published.enrichment.parseError).toBe('schema_validation_failed');
+  });
+
+  test('sends schema-invalid event to DLQ without SNS when alarm info not extractable', async () => {
+    const result = await handler({
+      Records: [
+        {
+          messageId: 'schema-fail-no-info',
+          body: JSON.stringify({foo: 'bar'}), // no account/region/alarmName
+        },
+      ],
+    } as never);
+    expect(result.batchItemFailures).toHaveLength(1);
+    // No account/region available — skip SNS
+    expect(snsMock.calls()).toHaveLength(0);
   });
 
   test('degrades gracefully when CloudWatch tags call fails', async () => {

@@ -23,6 +23,7 @@ export interface ExtendedAutoAlarmProps extends ExtendedStackProps {
   // Source account StackSet
   readonly enableSourceAccountStackSet?: boolean;
   readonly stackSetTargetOuIds?: string[];
+  readonly stackSetTargetAccountIds?: string[];
   readonly stackSetDeploymentRegions?: string[];
   readonly stackSetLogGroupFilter?: string;
   readonly stackSetPermissionModel?: 'SERVICE_MANAGED' | 'SELF_MANAGED';
@@ -47,6 +48,7 @@ export class AutoAlarmStack extends ExtendedStack {
       agentSeverityFilter: props.agentSeverityFilter,
       enableSourceAccountStackSet: props.enableSourceAccountStackSet,
       stackSetTargetOuIds: props.stackSetTargetOuIds,
+      stackSetTargetAccountIds: props.stackSetTargetAccountIds,
       stackSetDeploymentRegions: props.stackSetDeploymentRegions,
       stackSetLogGroupFilter: props.stackSetLogGroupFilter,
       stackSetPermissionModel: props.stackSetPermissionModel,

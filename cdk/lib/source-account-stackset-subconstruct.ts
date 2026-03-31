@@ -1,6 +1,12 @@
 import {Construct} from 'constructs';
 import {Stack} from 'aws-cdk-lib';
 import {CfnStackSet} from 'aws-cdk-lib/aws-cloudformation';
+import {
+  Role,
+  ServicePrincipal,
+  PolicyStatement,
+  Effect,
+} from 'aws-cdk-lib/aws-iam';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -20,9 +26,15 @@ export interface SourceAccountStackSetSubConstructProps {
   /**
    * Organizational Unit IDs to deploy the source account stack to.
    * Format: 'ou-xxxx-xxxxxxxx' (found in AWS Organizations console).
-   * Must be set when permissionModel is SERVICE_MANAGED (default).
+   * Required when permissionModel is SERVICE_MANAGED (default).
    */
-  readonly targetOrganizationalUnitIds: string[];
+  readonly targetOrganizationalUnitIds?: string[];
+
+  /**
+   * Target AWS account IDs to deploy the source account stack to.
+   * Required when permissionModel is SELF_MANAGED.
+   */
+  readonly targetAccountIds?: string[];
 
   /**
    * Regions to deploy the source account stack to.
@@ -59,25 +71,24 @@ export interface SourceAccountStackSetSubConstructProps {
    * Only applies when permissionModel is SERVICE_MANAGED. Default: true.
    */
   readonly autoDeployToNewAccounts?: boolean;
+
+  /**
+   * Name of the execution role in target accounts for SELF_MANAGED StackSets.
+   * This role must already exist in each target account.
+   * Default: AWSCloudFormationStackSetExecutionRole
+   */
+  readonly executionRoleName?: string;
 }
 
 /**
  * Deploys the AutoAlarm source account setup (OAM Link + EventBridge forwarding rule)
- * to target OUs via CloudFormation StackSets.
+ * to target accounts via CloudFormation StackSets.
  *
- * PREREQUISITE for SERVICE_MANAGED (default): The hub account must be the
- * AWS Organizations management account, OR it must be registered as a delegated
- * administrator for CloudFormation StackSets:
+ * SERVICE_MANAGED (default): The hub account must be the AWS Organizations management
+ * account or registered as a delegated administrator for CloudFormation StackSets.
  *
- *   aws organizations register-delegated-administrator \
- *     --account-id HUB_ACCOUNT_ID \
- *     --service-principal stacksets.cloudformation.amazonaws.com
- *
- * Find your OU IDs in the AWS Organizations console, or via:
- *   aws organizations list-organizational-units-for-parent --parent-id ROOT_ID
- *
- * Find your Organization ID via:
- *   aws organizations describe-organization --query 'Organization.Id' --output text
+ * SELF_MANAGED: Creates an administration role in the hub account and requires
+ * an execution role (AWSCloudFormationStackSetExecutionRole) in each target account.
  */
 export class SourceAccountStackSetSubConstruct extends Construct {
   public readonly stackSet: CfnStackSet;
@@ -131,31 +142,69 @@ export class SourceAccountStackSetSubConstruct extends Construct {
       });
     }
 
-    this.stackSet = new CfnStackSet(this, 'SourceAccountStackSet', {
-      stackSetName: 'AutoAlarm-SourceAccount',
-      description:
-        'Deploys OAM Link and EventBridge alarm forwarding rule in each source account.',
-      permissionModel,
-      capabilities: ['CAPABILITY_NAMED_IAM'],
-      templateBody,
-      parameters,
-      ...(permissionModel === 'SERVICE_MANAGED'
-        ? {
-            autoDeployment: {
-              enabled: props.autoDeployToNewAccounts ?? true,
-              retainStacksOnAccountRemoval: false,
+    if (permissionModel === 'SELF_MANAGED') {
+      // Create the administration role in the hub account
+      const adminRole = new Role(this, 'StackSetAdminRole', {
+        roleName: 'AWSCloudFormationStackSetAdministrationRole',
+        assumedBy: new ServicePrincipal('cloudformation.amazonaws.com'),
+      });
+      adminRole.addToPolicy(
+        new PolicyStatement({
+          effect: Effect.ALLOW,
+          actions: ['sts:AssumeRole'],
+          resources: [
+            `arn:aws:iam::*:role/${props.executionRoleName ?? 'AWSCloudFormationStackSetExecutionRole'}`,
+          ],
+        }),
+      );
+
+      const targetAccountIds = props.targetAccountIds ?? [];
+
+      this.stackSet = new CfnStackSet(this, 'SourceAccountStackSet', {
+        stackSetName: 'AutoAlarm-SourceAccount',
+        description:
+          'Deploys OAM Link and EventBridge alarm forwarding rule in each source account.',
+        permissionModel,
+        capabilities: ['CAPABILITY_NAMED_IAM'],
+        templateBody,
+        parameters,
+        administrationRoleArn: adminRole.roleArn,
+        executionRoleName:
+          props.executionRoleName ??
+          'AWSCloudFormationStackSetExecutionRole',
+        stackInstancesGroup: [
+          {
+            deploymentTargets: {
+              accounts: targetAccountIds,
             },
-            managedExecution: {active: true},
-          }
-        : {}),
-      stackInstancesGroup: [
-        {
-          deploymentTargets: {
-            organizationalUnitIds: props.targetOrganizationalUnitIds,
+            regions: deploymentRegions,
           },
-          regions: deploymentRegions,
+        ],
+      });
+      this.stackSet.node.addDependency(adminRole);
+    } else {
+      this.stackSet = new CfnStackSet(this, 'SourceAccountStackSet', {
+        stackSetName: 'AutoAlarm-SourceAccount',
+        description:
+          'Deploys OAM Link and EventBridge alarm forwarding rule in each source account.',
+        permissionModel,
+        capabilities: ['CAPABILITY_NAMED_IAM'],
+        templateBody,
+        parameters,
+        autoDeployment: {
+          enabled: props.autoDeployToNewAccounts ?? true,
+          retainStacksOnAccountRemoval: false,
         },
-      ],
-    });
+        managedExecution: {Active: true},
+        stackInstancesGroup: [
+          {
+            deploymentTargets: {
+              organizationalUnitIds: props.targetOrganizationalUnitIds,
+            },
+            regions: deploymentRegions,
+          },
+        ],
+      });
+    }
   }
 }

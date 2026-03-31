@@ -111,6 +111,8 @@ export interface EnrichmentMetadata {
     concurrentAlarms: number;
     relatedAlarmNames: string[];
   };
+  /** Present when enrichment was skipped due to a parse failure */
+  parseError?: 'schema_validation_failed' | 'alarm_name_unparseable';
 }
 
 export interface AgentSummary {

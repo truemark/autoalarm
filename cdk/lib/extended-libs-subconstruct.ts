@@ -1,6 +1,7 @@
 import {ExtendedQueue, ExtendedQueueProps} from 'truemark-cdk-lib/aws-sqs';
 import {Construct} from 'constructs';
 import {CfnAlarm} from 'aws-cdk-lib/aws-cloudwatch';
+import {QueueEncryption} from 'aws-cdk-lib/aws-sqs';
 
 //Interface to expose the physical name of an alarm from within the AlarmBase class
 interface AlarmWithProtectedMembers {
@@ -16,7 +17,10 @@ export class NoBreachingExtendedQueue extends ExtendedQueue {
     queueName: string,
     props: ExtendedQueueProps,
   ) {
-    super(scope, id, props);
+    super(scope, id, {
+      ...props,
+      encryption: props.encryption ?? QueueEncryption.SQS_MANAGED,
+    });
 
     this.queueNameLower = queueName.toLowerCase();
     this.id = id;

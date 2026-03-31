@@ -15,7 +15,13 @@ import {NoBreachingExtendedQueue} from './extended-libs-subconstruct';
 import {EventBus, Rule} from 'aws-cdk-lib/aws-events';
 import {SqsQueue} from 'aws-cdk-lib/aws-events-targets';
 import {Topic} from 'aws-cdk-lib/aws-sns';
-import {Table, AttributeType, BillingMode} from 'aws-cdk-lib/aws-dynamodb';
+import {Alias} from 'aws-cdk-lib/aws-kms';
+import {
+  Table,
+  AttributeType,
+  BillingMode,
+  TableEncryption,
+} from 'aws-cdk-lib/aws-dynamodb';
 import {
   Alarm,
   ComparisonOperator,
@@ -74,10 +80,11 @@ export class EnrichmentSubConstruct extends Construct {
       accountId,
     );
 
-    // 2. SNS topic for enriched alarm output
+    // 2. SNS topic for enriched alarm output (encrypted with AWS-managed SNS key)
     this.enrichedAlarmsTopic = new Topic(this, 'EnrichedAlarmsTopic', {
       topicName: 'AutoAlarm-EnrichedAlarms',
       displayName: 'AutoAlarm Enriched Alarm Events',
+      masterKey: Alias.fromAliasName(this, 'SnsKey', 'alias/aws/sns'),
     });
 
     // 3. DynamoDB idempotency table
@@ -85,6 +92,7 @@ export class EnrichmentSubConstruct extends Construct {
       tableName: 'AutoAlarm-Enrichment-Idempotency',
       partitionKey: {name: 'idempotencyKey', type: AttributeType.STRING},
       billingMode: BillingMode.PAY_PER_REQUEST,
+      encryption: TableEncryption.AWS_MANAGED,
       timeToLiveAttribute: 'ttl',
       removalPolicy: RemovalPolicy.DESTROY,
     });
@@ -127,9 +135,15 @@ export class EnrichmentSubConstruct extends Construct {
     organizationIds?: string[],
     accountId?: string,
   ): EventBus {
+    const busName = 'AutoAlarm-Central';
     const bus = new EventBus(this, 'CentralEventBus', {
-      eventBusName: 'AutoAlarm-Central',
+      eventBusName: busName,
     });
+
+    // Construct the bus ARN as a plain string to avoid CDK token
+    // self-references that cause circular dependency errors.
+    const region = Stack.of(this).region;
+    const busArn = `arn:aws:events:${region}:${accountId}:event-bus/${busName}`;
 
     // Build resource policy statements for cross-account PutEvents
     const policyStatements: object[] = [];
@@ -142,7 +156,7 @@ export class EnrichmentSubConstruct extends Construct {
           AWS: sourceAccountIds.map((id) => `arn:aws:iam::${id}:root`),
         },
         Action: 'events:PutEvents',
-        Resource: bus.eventBusArn,
+        Resource: busArn,
       });
     }
 
@@ -152,7 +166,7 @@ export class EnrichmentSubConstruct extends Construct {
         Effect: 'Allow',
         Principal: '*',
         Action: 'events:PutEvents',
-        Resource: bus.eventBusArn,
+        Resource: busArn,
         Condition: {
           StringEquals: {
             'aws:PrincipalOrgID': organizationIds,
@@ -170,16 +184,16 @@ export class EnrichmentSubConstruct extends Construct {
           AWS: `arn:aws:iam::${accountId}:root`,
         },
         Action: 'events:PutEvents',
-        Resource: bus.eventBusArn,
+        Resource: busArn,
       });
     }
 
     if (policyStatements.length > 0) {
       const cfnBus = bus.node.defaultChild as import('aws-cdk-lib/aws-events').CfnEventBus;
-      cfnBus.addPropertyOverride('Policy', JSON.stringify({
+      cfnBus.addPropertyOverride('Policy', {
         Version: '2012-10-17',
         Statement: policyStatements,
-      }));
+      });
     }
 
     return bus;

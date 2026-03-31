@@ -28,6 +28,7 @@ interface AutoAlarmConstructProps {
   // Source account StackSet
   readonly enableSourceAccountStackSet?: boolean;
   readonly stackSetTargetOuIds?: string[];
+  readonly stackSetTargetAccountIds?: string[];
   readonly stackSetDeploymentRegions?: string[];
   readonly stackSetLogGroupFilter?: string;
   readonly stackSetPermissionModel?: 'SERVICE_MANAGED' | 'SELF_MANAGED';
@@ -180,9 +181,12 @@ export class AutoAlarmConstruct extends Construct {
         this,
         'SourceAccountStackSet',
         {
-          hubEventBusArn: this.enrichment.centralEventBus.eventBusArn,
+          // Construct ARN manually to avoid circular CDK token dependency
+          // (bus name is deterministic: 'AutoAlarm-Central')
+          hubEventBusArn: `arn:aws:events:${region}:${accountId}:event-bus/AutoAlarm-Central`,
           sinkArn: this.oamSink?.sinkArn,
-          targetOrganizationalUnitIds: props.stackSetTargetOuIds ?? [],
+          targetOrganizationalUnitIds: props.stackSetTargetOuIds,
+          targetAccountIds: props.stackSetTargetAccountIds,
           deploymentRegions: props.stackSetDeploymentRegions,
           oamResourceTypes: props.oamResourceTypes,
           logGroupFilter: props.stackSetLogGroupFilter,

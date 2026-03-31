@@ -617,6 +617,95 @@ function buildCloudTrailEventLink(
 }
 
 /**
+ * Publish a degraded SNS notification for events that failed schema validation
+ * or alarm name parsing. We have enough information to notify downstream
+ * consumers but cannot provide enrichment context.
+ */
+async function publishParseFailureEvent(
+  alarmName: string,
+  alarmArn: string,
+  sourceAccount: string,
+  sourceRegion: string,
+  parseError: 'schema_validation_failed' | 'alarm_name_unparseable',
+  messageId: string,
+): Promise<void> {
+  const now = new Date().toISOString();
+  const event: EnrichedAlarmEvent = {
+    version: '1.0',
+    alarm: {
+      name: alarmName,
+      arn: alarmArn,
+      state: 'ALARM',
+      previousState: 'OK',
+      reason: '',
+      timestamp: now,
+      severity: 'Critical',
+      metric: 'unknown',
+      namespace: '',
+      alarmType: 'static',
+      threshold: null,
+      currentValue: null,
+    },
+    resource: {
+      service: 'unknown',
+      identifier: 'unknown',
+      account: sourceAccount,
+      region: sourceRegion,
+      tags: {},
+      owner: null,
+      environment: null,
+      application: null,
+    },
+    context: {
+      correlatedMetrics: [],
+      recentErrors: null,
+      recentDeployments: [],
+      runbookUrl: null,
+    },
+    links: {
+      alarmConsole: buildAlarmConsoleLink(sourceRegion, alarmName),
+      metricsGraph: '',
+      logsInsights: null,
+      dashboard: null,
+      runbook: null,
+      cloudTrail: buildCloudTrailLink(sourceRegion, alarmName),
+    },
+    enrichment: {
+      timestamp: now,
+      version: '1.0',
+      idempotencyKey: `${messageId}:${parseError}`,
+      durationMs: 0,
+      logsSkipped: true,
+      logsSkipReason: 'disabled',
+      agentInvoked: false,
+      parseError,
+    },
+  };
+
+  const attrs: EnrichmentMessageAttributes = {
+    schemaVersion: '1.0',
+    severity: 'Critical',
+    service: 'unknown',
+    sourceAccount,
+    region: sourceRegion,
+    hasAgentSummary: 'false',
+    isDegraded: 'true',
+  };
+
+  await snsClient.send(
+    new PublishCommand({
+      TopicArn: snsTopicArn,
+      Message: JSON.stringify(event),
+      MessageAttributes: Object.fromEntries(
+        Object.entries(attrs)
+          .filter(([, v]) => v !== undefined)
+          .map(([k, v]) => [k, {DataType: 'String', StringValue: v}]),
+      ),
+    }),
+  );
+}
+
+/**
  * Build the deterministic fallback agent summary.
  */
 export function buildFallbackSummary(
@@ -735,7 +824,36 @@ export async function handler(
           .error()
           .str('messageId', record.messageId)
           .str('issues', JSON.stringify(flatten(parseResult.issues)))
-          .msg('SQS message failed schema validation — sending to DLQ');
+          .msg('SQS message failed schema validation — sending degraded notification and routing to DLQ');
+        // Best-effort: extract enough info for a degraded SNS notification
+        const raw = rawBody as Record<string, unknown>;
+        const rawDetail = raw?.['detail'] as Record<string, unknown> | undefined;
+        const rawAlarmName = (rawDetail?.['alarmName'] as string) ?? 'unknown';
+        const rawAccount = (raw?.['account'] as string) ?? '';
+        const rawRegion = (raw?.['region'] as string) ?? region;
+        const rawAlarmArn =
+          (rawDetail?.['alarmArn'] as string) ??
+          (rawAccount && rawRegion
+            ? `arn:aws:cloudwatch:${rawRegion}:${rawAccount}:alarm:${rawAlarmName}`
+            : '');
+        if (rawAlarmName !== 'unknown' && rawAccount && rawRegion) {
+          try {
+            await publishParseFailureEvent(
+              rawAlarmName,
+              rawAlarmArn,
+              rawAccount,
+              rawRegion,
+              'schema_validation_failed',
+              record.messageId,
+            );
+          } catch (pubErr) {
+            log
+              .warn()
+              .str('messageId', record.messageId)
+              .err(pubErr)
+              .msg('Failed to publish degraded parse-failure notification');
+          }
+        }
         batchItemFailures.push({itemIdentifier: record.messageId});
         continue;
       }
@@ -756,7 +874,23 @@ export async function handler(
         log
           .error()
           .str('alarmName', alarmName)
-          .msg('Failed to parse alarm name — sending to DLQ');
+          .msg('Failed to parse alarm name — sending degraded notification and routing to DLQ');
+        try {
+          await publishParseFailureEvent(
+            alarmName,
+            alarmArn,
+            sourceAccount,
+            sourceRegion,
+            'alarm_name_unparseable',
+            record.messageId,
+          );
+        } catch (pubErr) {
+          log
+            .warn()
+            .str('alarmName', alarmName)
+            .err(pubErr)
+            .msg('Failed to publish degraded parse-failure notification');
+        }
         batchItemFailures.push({itemIdentifier: record.messageId});
         continue;
       }
