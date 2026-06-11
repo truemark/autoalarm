@@ -1,16 +1,14 @@
 import {SFNClient, ListTagsForResourceCommand} from '@aws-sdk/client-sfn';
 import * as logging from '@nr1e/logging';
 import {AlarmClassification, Tag} from '../types/index.mjs';
-import {
-  CloudWatchClient,
-  DeleteAlarmsCommand,
-} from '@aws-sdk/client-cloudwatch';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
   deleteExistingAlarms,
   buildAlarmName,
+  buildExpectedAlarmNames,
   handleAnomalyAlarms,
   handleStaticAlarms,
+  massDeleteAlarms,
   getCWAlarmsForInstance,
   parseMetricAlarmOptions,
 } from '../alarm-configs/utils/index.mjs';
@@ -20,10 +18,6 @@ const log: logging.Logger = logging.getLogger('step-function-modules');
 const region: string = process.env.AWS_REGION || '';
 const retryStrategy = new ConfiguredRetryStrategy(20);
 const sfnClient: SFNClient = new SFNClient({
-  region: region,
-  retryStrategy: retryStrategy,
-});
-const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   region: region,
   retryStrategy: retryStrategy,
 });
@@ -79,7 +73,7 @@ async function checkAndManageSFNStatusAlarms(
       .str('function', 'checkAndManageSFNStatusAlarms')
       .str('sfnArn', sfnArn)
       .msg('Alarm creation disabled by tag settings');
-    await deleteExistingAlarms('SFN', sfnArn);
+    await deleteExistingAlarms('SFN', sfnArn, metricConfigs);
     return;
   }
 
@@ -149,7 +143,17 @@ async function checkAndManageSFNStatusAlarms(
     }
   }
   // Delete alarms that are not in the alarmsToKeep set
-  const existingAlarms = await getCWAlarmsForInstance('SFN', sfnArn);
+  // Restrict the prefix-based fetch to this resource's exact expected alarm
+  // names so we never delete alarms of another resource whose identifier
+  // shares a prefix.
+  const expectedAlarmNames = buildExpectedAlarmNames(
+    'SFN',
+    sfnArn,
+    metricConfigs,
+  );
+  const existingAlarms = (await getCWAlarmsForInstance('SFN', sfnArn)).filter(
+    (alarm) => expectedAlarmNames.has(alarm),
+  );
 
   // Log the full structure of retrieved alarms for debugging
   log
@@ -188,11 +192,7 @@ async function checkAndManageSFNStatusAlarms(
     .obj('alarms to delete', alarmsToDelete)
     .msg('Deleting alarms that are no longer needed');
 
-  await cloudWatchClient.send(
-    new DeleteAlarmsCommand({
-      AlarmNames: [...alarmsToDelete],
-    }),
-  );
+  await massDeleteAlarms(alarmsToDelete);
 
   log
     .info()
@@ -203,7 +203,7 @@ async function checkAndManageSFNStatusAlarms(
 
 export async function manageInactiveSFNAlarms(sfnArn: string): Promise<void> {
   try {
-    await deleteExistingAlarms('SFN', sfnArn);
+    await deleteExistingAlarms('SFN', sfnArn, metricConfigs);
   } catch (e) {
     log
       .error()

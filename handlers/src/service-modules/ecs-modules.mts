@@ -1,17 +1,15 @@
 import {ECSClient, ListTagsForResourceCommand} from '@aws-sdk/client-ecs';
 import * as logging from '@nr1e/logging';
 import {Tag} from '../types/index.mjs';
-import {
-  CloudWatchClient,
-  DeleteAlarmsCommand,
-} from '@aws-sdk/client-cloudwatch';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {SQSRecord} from 'aws-lambda';
 import {
   deleteExistingAlarms,
+  buildExpectedAlarmNames,
   handleAnomalyAlarms,
   handleStaticAlarms,
   getCWAlarmsForInstance,
+  massDeleteAlarms,
   parseMetricAlarmOptions,
 } from '../alarm-configs/utils/index.mjs';
 import {ECS_CONFIGS} from '../alarm-configs/_index.mjs';
@@ -22,11 +20,6 @@ const region: string = process.env.AWS_REGION || '';
 const retryStrategy = new ConfiguredRetryStrategy(20);
 
 const ecsClient = new ECSClient({
-  region,
-  retryStrategy,
-});
-
-const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   region,
   retryStrategy,
 });
@@ -124,7 +117,9 @@ export async function fetchEcsTags(ecsArn: string): Promise<Tag> {
       .str('ecsArn', ecsArn)
       .err(error)
       .msg('Error fetching ECS tags');
-    return {};
+    // Rethrow so a transient API error fails the record (and is retried)
+    // instead of being treated as "no tags" and deleting the alarms.
+    throw error;
   }
 }
 
@@ -210,7 +205,17 @@ async function deleteUnneededAlarms(
   alarmsToKeep: Set<string>,
   serviceType: string,
 ): Promise<void> {
-  const existingAlarms = await getCWAlarmsForInstance(serviceType, resourceArn);
+  // Restrict the prefix-based fetch to this resource's exact expected alarm
+  // names so we never delete alarms of another resource whose identifier
+  // shares a prefix.
+  const expectedAlarmNames = buildExpectedAlarmNames(
+    serviceType,
+    resourceArn,
+    metricConfigs,
+  );
+  const existingAlarms = (
+    await getCWAlarmsForInstance(serviceType, resourceArn)
+  ).filter((alarm) => expectedAlarmNames.has(alarm));
   const alarmsToDelete = existingAlarms.filter(
     (alarm) => !alarmsToKeep.has(alarm),
   );
@@ -219,9 +224,7 @@ async function deleteUnneededAlarms(
     return;
   }
 
-  await cloudWatchClient.send(
-    new DeleteAlarmsCommand({AlarmNames: alarmsToDelete}),
-  );
+  await massDeleteAlarms(alarmsToDelete);
 
   log
     .info()
@@ -270,7 +273,7 @@ export async function parseECSEventAndCreateAlarms(
         .str('function', 'parseECSEventAndCreateAlarms')
         .str('serviceArn', serviceArn)
         .msg('Deleting alarms for deleted ECS service');
-      await deleteExistingAlarms('ECS', serviceArn);
+      await deleteExistingAlarms('ECS', serviceArn, metricConfigs);
       return;
     } catch (error) {
       log
@@ -293,7 +296,7 @@ export async function parseECSEventAndCreateAlarms(
       .str('function', 'parseECSEventAndCreateAlarms')
       .str('serviceArn', serviceArn)
       .msg('No autoalarm tags found - skipping alarm management');
-    await deleteExistingAlarms('ECS', serviceArn);
+    await deleteExistingAlarms('ECS', serviceArn, metricConfigs);
     return;
   }
 
@@ -303,7 +306,7 @@ export async function parseECSEventAndCreateAlarms(
       .str('function', 'parseECSEventAndCreateAlarms')
       .str('serviceArn', serviceArn)
       .msg('AutoAlarm disabled - deleting existing alarms');
-    await deleteExistingAlarms('ECS', serviceArn);
+    await deleteExistingAlarms('ECS', serviceArn, metricConfigs);
     return;
   }
 
@@ -315,7 +318,7 @@ export async function parseECSEventAndCreateAlarms(
       .msg(
         'autoalarm:enabled tag not found - skipping alarm management and deleting existing alarms',
       );
-    await deleteExistingAlarms('ECS', serviceArn);
+    await deleteExistingAlarms('ECS', serviceArn, metricConfigs);
     return;
   }
 

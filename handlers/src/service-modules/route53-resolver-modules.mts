@@ -4,16 +4,14 @@ import {
 } from '@aws-sdk/client-route53resolver';
 import * as logging from '@nr1e/logging';
 import {AlarmClassification, Tag} from '../types/index.mjs';
-import {
-  CloudWatchClient,
-  DeleteAlarmsCommand,
-} from '@aws-sdk/client-cloudwatch';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
   deleteExistingAlarms,
   buildAlarmName,
+  buildExpectedAlarmNames,
   handleAnomalyAlarms,
   handleStaticAlarms,
+  massDeleteAlarms,
   getCWAlarmsForInstance,
   parseMetricAlarmOptions,
 } from '../alarm-configs/utils/index.mjs';
@@ -23,10 +21,6 @@ const log: logging.Logger = logging.getLogger('route53-resolver-modules');
 const region: string = process.env.AWS_REGION || '';
 const retryStrategy = new ConfiguredRetryStrategy(20);
 const route53ResolverClient = new Route53ResolverClient({
-  region,
-  retryStrategy,
-});
-const cloudWatchClient = new CloudWatchClient({
   region,
   retryStrategy,
 });
@@ -82,7 +76,7 @@ async function checkAndManageR53ResolverStatusAlarms(
       .str('function', 'checkAndManageR53ResolverStatusAlarms')
       .str('EndpointId', endpointId)
       .msg('Alarm creation disabled by tag settings');
-    await deleteExistingAlarms('R53R', endpointId);
+    await deleteExistingAlarms('R53R', endpointId, metricConfigs);
     return;
   }
 
@@ -154,7 +148,17 @@ async function checkAndManageR53ResolverStatusAlarms(
   }
 
   // Delete alarms that are not in the alarmsToKeep set
-  const existingAlarms = await getCWAlarmsForInstance('R53R', endpointId);
+  // Restrict the prefix-based fetch to this resource's exact expected alarm
+  // names so we never delete alarms of another resource whose identifier
+  // shares a prefix.
+  const expectedAlarmNames = buildExpectedAlarmNames(
+    'R53R',
+    endpointId,
+    metricConfigs,
+  );
+  const existingAlarms = (
+    await getCWAlarmsForInstance('R53R', endpointId)
+  ).filter((alarm) => expectedAlarmNames.has(alarm));
   const alarmsToDelete = existingAlarms.filter(
     (alarm) => !alarmsToKeep.has(alarm),
   );
@@ -164,11 +168,7 @@ async function checkAndManageR53ResolverStatusAlarms(
     .str('function', 'checkAndManageR53ResolverStatusAlarms')
     .obj('alarms to delete', alarmsToDelete)
     .msg('Deleting alarms that are no longer needed');
-  await cloudWatchClient.send(
-    new DeleteAlarmsCommand({
-      AlarmNames: [...alarmsToDelete],
-    }),
-  );
+  await massDeleteAlarms(alarmsToDelete);
 
   log
     .info()
@@ -186,7 +186,7 @@ export async function manageR53ResolverAlarms(
 
 export async function manageInactiveR53ResolverAlarms(endpointId: string) {
   try {
-    await deleteExistingAlarms('R53R', endpointId);
+    await deleteExistingAlarms('R53R', endpointId, metricConfigs);
   } catch (e) {
     log
       .error()

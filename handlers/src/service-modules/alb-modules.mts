@@ -8,16 +8,14 @@ import {
   Tag,
   AlarmClassification,
 } from '../types/index.mjs';
-import {
-  CloudWatchClient,
-  DeleteAlarmsCommand,
-} from '@aws-sdk/client-cloudwatch';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
   deleteExistingAlarms,
   buildAlarmName,
+  buildExpectedAlarmNames,
   handleAnomalyAlarms,
   handleStaticAlarms,
+  massDeleteAlarms,
   getCWAlarmsForInstance,
   parseMetricAlarmOptions,
 } from '../alarm-configs/utils/index.mjs';
@@ -31,10 +29,6 @@ const elbClient: ElasticLoadBalancingV2Client =
     region,
     retryStrategy,
   });
-const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
-  region: region,
-  retryStrategy: retryStrategy,
-});
 
 const metricConfigs = ALB_CONFIGS;
 
@@ -90,7 +84,7 @@ async function checkAndManageALBStatusAlarms(
       .str('function', 'checkAndManageALBStatusAlarms')
       .str('LoadBalancerName', loadBalancerName)
       .msg('Alarm creation disabled by tag settings');
-    await deleteExistingAlarms('ALB', loadBalancerName);
+    await deleteExistingAlarms('ALB', loadBalancerName, metricConfigs);
     return;
   }
 
@@ -166,7 +160,17 @@ async function checkAndManageALBStatusAlarms(
   }
 
   // Delete alarms that are not in the alarmsToKeep set
-  const existingAlarms = await getCWAlarmsForInstance('ALB', loadBalancerName);
+  // Restrict the prefix-based fetch to this resource's exact expected alarm
+  // names so we never delete alarms of another resource whose identifier
+  // shares a prefix.
+  const expectedAlarmNames = buildExpectedAlarmNames(
+    'ALB',
+    loadBalancerName,
+    metricConfigs,
+  );
+  const existingAlarms = (
+    await getCWAlarmsForInstance('ALB', loadBalancerName)
+  ).filter((alarm) => expectedAlarmNames.has(alarm));
   const alarmsToDelete = existingAlarms.filter(
     (alarm: string) => !alarmsToKeep.has(alarm),
   );
@@ -176,11 +180,7 @@ async function checkAndManageALBStatusAlarms(
     .str('function', 'checkAndManageALBStatusAlarms')
     .obj('alarms to delete', alarmsToDelete)
     .msg('Deleting alarms that are no longer needed');
-  await cloudWatchClient.send(
-    new DeleteAlarmsCommand({
-      AlarmNames: [...alarmsToDelete],
-    }),
-  );
+  await massDeleteAlarms(alarmsToDelete);
 
   log
     .info()
@@ -198,7 +198,7 @@ export async function manageALBAlarms(
 
 export async function manageInactiveALBAlarms(loadBalancerName: string) {
   try {
-    await deleteExistingAlarms('ALB', loadBalancerName);
+    await deleteExistingAlarms('ALB', loadBalancerName, metricConfigs);
   } catch (e) {
     log
       .error()

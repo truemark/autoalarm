@@ -1,17 +1,15 @@
 import {SQSClient, ListQueueTagsCommand} from '@aws-sdk/client-sqs';
 import * as logging from '@nr1e/logging';
 import {AlarmClassification, Tag} from '../types/index.mjs';
-import {
-  CloudWatchClient,
-  DeleteAlarmsCommand,
-} from '@aws-sdk/client-cloudwatch';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
   deleteExistingAlarms,
   buildAlarmName,
+  buildExpectedAlarmNames,
   handleAnomalyAlarms,
   handleStaticAlarms,
   getCWAlarmsForInstance,
+  massDeleteAlarms,
   parseMetricAlarmOptions,
 } from '../alarm-configs/utils/index.mjs';
 import {SQS_CONFIGS} from '../alarm-configs/_index.mjs';
@@ -22,10 +20,6 @@ const retryStrategy = new ConfiguredRetryStrategy(20);
 const sqsClient: SQSClient = new SQSClient({
   region,
   retryStrategy,
-});
-const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
-  region: region,
-  retryStrategy: retryStrategy,
 });
 
 const metricConfigs = SQS_CONFIGS;
@@ -51,7 +45,9 @@ export async function fetchSQSTags(queueUrl: string): Promise<Tag> {
       .err(error)
       .str('queueUrl', queueUrl)
       .msg('Error fetching SQS tags');
-    return {};
+    // Rethrow so a transient API error fails the record (and is retried)
+    // instead of being treated as "no tags" and deleting the alarms.
+    throw error;
   }
 }
 
@@ -69,7 +65,7 @@ async function checkAndManageSQSStatusAlarms(queueName: string, tags: Tag) {
       .str('function', 'checkAndManageSQSStatusAlarms')
       .str('QueueName', queueName)
       .msg('Alarm creation disabled by tag settings');
-    await deleteExistingAlarms('SQS', queueName);
+    await deleteExistingAlarms('SQS', queueName, metricConfigs);
     return;
   }
 
@@ -140,8 +136,18 @@ async function checkAndManageSQSStatusAlarms(queueName: string, tags: Tag) {
     }
   }
 
-  // Delete alarms that are not in the alarmsToKeep set
-  const existingAlarms = await getCWAlarmsForInstance('SQS', queueName);
+  // Delete alarms that are not in the alarmsToKeep set. Restrict the
+  // prefix-based fetch to this queue's exact expected alarm names so we never
+  // delete alarms of another queue whose name shares a prefix (e.g., 'orders'
+  // vs 'orders-dlq').
+  const expectedAlarmNames = buildExpectedAlarmNames(
+    'SQS',
+    queueName,
+    metricConfigs,
+  );
+  const existingAlarms = (
+    await getCWAlarmsForInstance('SQS', queueName)
+  ).filter((alarm) => expectedAlarmNames.has(alarm));
   const alarmsToDelete = existingAlarms.filter(
     (alarm) => !alarmsToKeep.has(alarm),
   );
@@ -151,11 +157,7 @@ async function checkAndManageSQSStatusAlarms(queueName: string, tags: Tag) {
     .str('function', 'checkAndManageSQSStatusAlarms')
     .obj('alarms to delete', alarmsToDelete)
     .msg('Deleting alarm that is no longer needed');
-  await cloudWatchClient.send(
-    new DeleteAlarmsCommand({
-      AlarmNames: [...alarmsToDelete],
-    }),
-  );
+  await massDeleteAlarms(alarmsToDelete);
 
   log
     .info()
@@ -174,7 +176,7 @@ export async function manageSQSAlarms(
 export async function manageInactiveSQSAlarms(queueUrl: string) {
   const queueName = extractQueueName(queueUrl);
   try {
-    await deleteExistingAlarms('SQS', queueName);
+    await deleteExistingAlarms('SQS', queueName, metricConfigs);
   } catch (e) {
     log
       .error()
