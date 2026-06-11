@@ -3,17 +3,12 @@ import {
   ListTagsForResourceCommand,
 } from '@aws-sdk/client-cloudfront';
 import * as logging from '@nr1e/logging';
-import {Tag, AlarmClassification} from '../types/index.mjs';
+import {Tag} from '../types/index.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
-  getCWAlarmsForInstance,
   deleteExistingAlarms,
-  buildAlarmName,
-  buildExpectedAlarmNames,
-  handleAnomalyAlarms,
-  handleStaticAlarms,
-  massDeleteAlarms,
-  parseMetricAlarmOptions,
+  fetchResourceTags,
+  manageServiceAlarms,
 } from '../alarm-configs/utils/index.mjs';
 import {CLOUDFRONT_CONFIGS} from '../alarm-configs/_index.mjs';
 
@@ -30,165 +25,43 @@ const metricConfigs = CLOUDFRONT_CONFIGS;
 export async function fetchCloudFrontTags(
   distributionArn: string,
 ): Promise<Tag> {
-  try {
-    // Use the distributionArn directly as it's already an ARN
-    const command = new ListTagsForResourceCommand({Resource: distributionArn});
-    const response = await cloudFrontClient.send(command);
+  return fetchResourceTags(
+    'CloudFront',
+    distributionArn,
+    async () => {
+      // Use the distributionArn directly as it's already an ARN
+      const command = new ListTagsForResourceCommand({
+        Resource: distributionArn,
+      });
+      const response = await cloudFrontClient.send(command);
 
-    const tags: {[key: string]: string} = {};
-    response.Tags?.Items?.forEach((tag) => {
-      if (tag.Key && tag.Value) {
-        tags[tag.Key] = tag.Value;
-      }
-    });
+      const tags: {[key: string]: string} = {};
+      response.Tags?.Items?.forEach((tag) => {
+        if (tag.Key && tag.Value) {
+          tags[tag.Key] = tag.Value;
+        }
+      });
 
-    log
-      .info()
-      .str('function', 'fetchCloudFrontTags')
-      .str('distributionArn', distributionArn)
-      .str('tags', JSON.stringify(tags))
-      .msg('Fetched tags for CloudFront distribution');
-
-    return tags;
-  } catch (error) {
-    log
-      .error()
-      .str('function', 'fetchCloudFrontTags')
-      .err(error)
-      .str('distributionArn', distributionArn)
-      .msg('Error fetching CloudFront tags');
-
-    return {};
-  }
-}
-
-async function checkAndManageCloudFrontStatusAlarms(
-  distributionId: string,
-  tags: Tag,
-): Promise<void> {
-  log
-    .info()
-    .str('function', 'checkAndManageCloudFrontStatusAlarms')
-    .str('distributionId', distributionId)
-    .msg('Starting alarm management process');
-
-  const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
-  if (!isAlarmEnabled) {
-    log
-      .info()
-      .str('function', 'checkAndManageCloudFrontStatusAlarms')
-      .str('distributionId', distributionId)
-      .msg('Alarm creation disabled by tag settings');
-    await deleteExistingAlarms('CF', distributionId, metricConfigs);
-    return;
-  }
-
-  const alarmsToKeep = new Set<string>();
-
-  for (const config of metricConfigs) {
-    log
-      .info()
-      .str('function', 'checkAndManageCloudFrontStatusAlarms')
-      .obj('config', config)
-      .str('distributionId', distributionId)
-      .msg('Processing metric configuration');
-
-    const tagValue = tags[`autoalarm:${config.tagKey}`];
-    const updatedDefaults = parseMetricAlarmOptions(
-      tagValue || '',
-      config.defaults,
-    );
-    if (config.defaultCreate || tagValue !== undefined) {
-      if (config.tagKey.includes('anomaly')) {
-        log
-          .info()
-          .str('function', 'checkAndManageCloudFrontStatusAlarms')
-          .str('distributionId', distributionId)
-          .msg('Tag key indicates anomaly alarm. Handling anomaly alarms');
-        const anomalyAlarms = await handleAnomalyAlarms(
-          config,
-          'CF',
-          distributionId,
-          [
-            {Name: 'DistributionId', Value: distributionId},
-            {Name: 'Region', Value: 'Global'},
-          ],
-          updatedDefaults,
-        );
-        anomalyAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
-      } else {
-        log
-          .info()
-          .str('function', 'checkAndManageCloudFrontStatusAlarms')
-          .str('distributionId', distributionId)
-          .msg('Tag key indicates static alarm. Handling static alarms');
-        const staticAlarms = await handleStaticAlarms(
-          config,
-          'CF',
-          distributionId,
-          [
-            {Name: 'DistributionId', Value: distributionId},
-            {Name: 'Region', Value: 'Global'},
-          ],
-          updatedDefaults,
-        );
-        staticAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
-      }
-    } else {
-      log
-        .info()
-        .str('function', 'checkAndManageCloudFrontStatusAlarms')
-        .str('distributionId', distributionId)
-        .str(
-          'alarm prefix: ',
-          buildAlarmName(
-            config,
-            'CF',
-            distributionId,
-            AlarmClassification.Warning,
-            'static',
-          ).replace('Warning', ''),
-        )
-        .msg(
-          'No default or overridden alarm values. Marking alarms for deletion.',
-        );
-    }
-  }
-  // Delete alarms that are not in the alarmsToKeep set
-  // Restrict the prefix-based fetch to this resource's exact expected alarm
-  // names so we never delete alarms of another resource whose identifier
-  // shares a prefix.
-  const expectedAlarmNames = buildExpectedAlarmNames(
-    'CF',
-    distributionId,
-    metricConfigs,
+      return tags;
+    },
+    'return-empty',
   );
-  const existingAlarms = (
-    await getCWAlarmsForInstance('CF', distributionId)
-  ).filter((alarm) => expectedAlarmNames.has(alarm));
-  const alarmsToDelete = existingAlarms.filter(
-    (alarm) => !alarmsToKeep.has(alarm),
-  );
-
-  log
-    .info()
-    .str('function', 'checkAndManageCloudFrontStatusAlarms')
-    .obj('alarms to delete', alarmsToDelete)
-    .msg('Deleting alarms that are no longer needed');
-  await massDeleteAlarms(alarmsToDelete);
-
-  log
-    .info()
-    .str('function', 'checkAndManageCloudFrontStatusAlarms')
-    .str('distributionId', distributionId)
-    .msg('Finished alarm management process');
 }
 
 export async function manageCloudFrontAlarms(
   distributionId: string,
   tags: Tag,
 ): Promise<void> {
-  await checkAndManageCloudFrontStatusAlarms(distributionId, tags);
+  await manageServiceAlarms({
+    service: 'CF',
+    identifier: distributionId,
+    tags,
+    configs: metricConfigs,
+    dimensions: [
+      {Name: 'DistributionId', Value: distributionId},
+      {Name: 'Region', Value: 'Global'},
+    ],
+  });
 }
 
 export async function manageInactiveCloudFrontAlarms(

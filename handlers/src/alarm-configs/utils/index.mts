@@ -19,6 +19,12 @@ export {
   getCWAlarmsForInstance,
 } from './alarm-tools.mjs';
 export {
+  manageServiceAlarms,
+  filterAlarmsToDelete,
+  fetchResourceTags,
+  findArnInEvent,
+} from './service-helpers.mjs';
+export {
   EC2getCpuQuery,
   EC2getMemoryQuery,
   EC2getStorageQuery,

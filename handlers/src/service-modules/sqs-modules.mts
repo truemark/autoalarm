@@ -1,16 +1,11 @@
 import {SQSClient, ListQueueTagsCommand} from '@aws-sdk/client-sqs';
 import * as logging from '@nr1e/logging';
-import {AlarmClassification, Tag} from '../types/index.mjs';
+import {Tag} from '../types/index.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
   deleteExistingAlarms,
-  buildAlarmName,
-  buildExpectedAlarmNames,
-  handleAnomalyAlarms,
-  handleStaticAlarms,
-  getCWAlarmsForInstance,
-  massDeleteAlarms,
-  parseMetricAlarmOptions,
+  fetchResourceTags,
+  manageServiceAlarms,
 } from '../alarm-configs/utils/index.mjs';
 import {SQS_CONFIGS} from '../alarm-configs/_index.mjs';
 
@@ -25,152 +20,24 @@ const sqsClient: SQSClient = new SQSClient({
 const metricConfigs = SQS_CONFIGS;
 
 export async function fetchSQSTags(queueUrl: string): Promise<Tag> {
-  try {
+  return fetchResourceTags('SQS', queueUrl, async () => {
     const command = new ListQueueTagsCommand({QueueUrl: queueUrl});
     const response = await sqsClient.send(command);
-    const tags: Tag = response.Tags || {};
-
-    log
-      .info()
-      .str('function', 'fetchSQSTags')
-      .str('queueUrl', queueUrl)
-      .str('tags', JSON.stringify(tags))
-      .msg('Fetched SQS tags');
-
-    return tags;
-  } catch (error) {
-    log
-      .error()
-      .str('function', 'fetchSQSTags')
-      .err(error)
-      .str('queueUrl', queueUrl)
-      .msg('Error fetching SQS tags');
-    // Rethrow so a transient API error fails the record (and is retried)
-    // instead of being treated as "no tags" and deleting the alarms.
-    throw error;
-  }
-}
-
-async function checkAndManageSQSStatusAlarms(queueName: string, tags: Tag) {
-  log
-    .info()
-    .str('function', 'checkAndManageSQSStatusAlarms')
-    .str('QueueName', queueName)
-    .msg('Starting alarm management process');
-
-  const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
-  if (!isAlarmEnabled) {
-    log
-      .info()
-      .str('function', 'checkAndManageSQSStatusAlarms')
-      .str('QueueName', queueName)
-      .msg('Alarm creation disabled by tag settings');
-    await deleteExistingAlarms('SQS', queueName, metricConfigs);
-    return;
-  }
-
-  const alarmsToKeep = new Set<string>();
-
-  for (const config of metricConfigs) {
-    log
-      .info()
-      .str('function', 'checkAndManageSQSStatusAlarms')
-      .obj('config', config)
-      .str('SQS', queueName)
-      .msg('Processing metric configuration');
-
-    const tagValue = tags[`autoalarm:${config.tagKey}`];
-    const updatedDefaults = parseMetricAlarmOptions(
-      tagValue || '',
-      config.defaults,
-    );
-
-    if (config.defaultCreate || tagValue !== undefined) {
-      if (config.tagKey.includes('anomaly')) {
-        log
-          .info()
-          .str('function', 'checkAndManageSQSStatusAlarms')
-          .str('QueueName', queueName)
-          .msg('Tag key indicates anomaly alarm. Handling anomaly alarms');
-        const anomalyAlarms = await handleAnomalyAlarms(
-          config,
-          'SQS',
-          queueName,
-          [{Name: 'QueueName', Value: queueName}],
-          updatedDefaults,
-        );
-        anomalyAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
-      } else {
-        log
-          .info()
-          .str('function', 'checkAndManageSQSStatusAlarms')
-          .str('QueueName', queueName)
-          .msg('Tag key indicates static alarm. Handling static alarms');
-        const staticAlarms = await handleStaticAlarms(
-          config,
-          'SQS',
-          queueName,
-          [{Name: 'QueueName', Value: queueName}],
-          updatedDefaults,
-        );
-        staticAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
-      }
-    } else {
-      log
-        .info()
-        .str('function', 'checkAndManageSQSStatusAlarms')
-        .str('QueueName', queueName)
-        .str(
-          'alarm prefix: ',
-          buildAlarmName(
-            config,
-            'SQS',
-            queueName,
-            AlarmClassification.Warning,
-            'static',
-          ).replace('Warning', ''),
-        )
-        .msg(
-          'No default or overridden alarm values. Marking alarms for deletion.',
-        );
-    }
-  }
-
-  // Delete alarms that are not in the alarmsToKeep set. Restrict the
-  // prefix-based fetch to this queue's exact expected alarm names so we never
-  // delete alarms of another queue whose name shares a prefix (e.g., 'orders'
-  // vs 'orders-dlq').
-  const expectedAlarmNames = buildExpectedAlarmNames(
-    'SQS',
-    queueName,
-    metricConfigs,
-  );
-  const existingAlarms = (
-    await getCWAlarmsForInstance('SQS', queueName)
-  ).filter((alarm) => expectedAlarmNames.has(alarm));
-  const alarmsToDelete = existingAlarms.filter(
-    (alarm) => !alarmsToKeep.has(alarm),
-  );
-
-  log
-    .info()
-    .str('function', 'checkAndManageSQSStatusAlarms')
-    .obj('alarms to delete', alarmsToDelete)
-    .msg('Deleting alarm that is no longer needed');
-  await massDeleteAlarms(alarmsToDelete);
-
-  log
-    .info()
-    .str('function', 'checkAndManageSQSStatusAlarms')
-    .str('QueueName', queueName)
-    .msg('Finished alarm management process');
+    return response.Tags || {};
+  });
 }
 
 export async function manageSQSAlarms(
   queueName: string,
   tags: Tag,
 ): Promise<void> {
-  await checkAndManageSQSStatusAlarms(queueName, tags);
+  await manageServiceAlarms({
+    service: 'SQS',
+    identifier: queueName,
+    tags,
+    configs: metricConfigs,
+    dimensions: [{Name: 'QueueName', Value: queueName}],
+  });
 }
 
 export async function manageInactiveSQSAlarms(queueUrl: string) {

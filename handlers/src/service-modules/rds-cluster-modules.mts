@@ -1,16 +1,12 @@
 import {RDSClient, DescribeDBClustersCommand} from '@aws-sdk/client-rds';
 import * as logging from '@nr1e/logging';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
-import {AlarmClassification, Tag} from '../types/index.mjs';
+import {Tag} from '../types/index.mjs';
 import {
-  getCWAlarmsForInstance,
   deleteExistingAlarms,
-  buildAlarmName,
-  buildExpectedAlarmNames,
-  handleAnomalyAlarms,
-  handleStaticAlarms,
-  massDeleteAlarms,
-  parseMetricAlarmOptions,
+  fetchResourceTags,
+  findArnInEvent,
+  manageServiceAlarms,
 } from '../alarm-configs/utils/index.mjs';
 import {RDS_CLUSTER_CONFIGS} from '../alarm-configs/_index.mjs';
 
@@ -27,7 +23,7 @@ const metricConfigs = RDS_CLUSTER_CONFIGS;
 export async function fetchRDSClusterTags(
   dbClusterId: string,
 ): Promise<{[key: string]: string}> {
-  try {
+  return fetchResourceTags('RDSCluster', dbClusterId, async () => {
     const command = new DescribeDBClustersCommand({
       DBClusterIdentifier: dbClusterId,
     });
@@ -40,172 +36,26 @@ export async function fetchRDSClusterTags(
       }
     });
 
-    log
-      .info()
-      .str('function', 'fetchRDSClusterTags')
-      .str('dbClusterId', dbClusterId)
-      .str('tags', JSON.stringify(tags))
-      .msg('Fetched database cluster tags');
-
     return tags;
-  } catch (error) {
-    log
-      .error()
-      .str('function', 'fetchRDSClusterTags')
-      .err(error)
-      .str('dbClusterId', dbClusterId)
-      .msg('Error fetching database cluster tags');
-    // Rethrow so a transient API error fails the record (and is retried)
-    // instead of being treated as "no tags" and deleting the alarms.
-    throw error;
-  }
+  });
 }
 
 async function checkAndManageRDSClusterStatusAlarms(
   dbClusterId: string,
   tags: Tag,
 ): Promise<void> {
-  log
-    .info()
-    .str('function', 'checkAndManageRDSClusterStatusAlarms')
-    .str('dbClusterId', dbClusterId)
-    .msg('Starting alarm management process');
-
-  const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
-  if (!isAlarmEnabled) {
-    log
-      .info()
-      .str('function', 'checkAndManageRDSClusterStatusAlarms')
-      .str('dbClusterId', dbClusterId)
-      .msg('Alarm creation disabled by tag settings');
-    await deleteExistingAlarms('RDSCluster', dbClusterId, metricConfigs);
-    return;
-  }
-
-  const alarmsToKeep = new Set<string>();
-
-  for (const config of metricConfigs) {
-    log
-      .info()
-      .str('function', 'checkAndManageRDSClusterStatusAlarms')
-      .obj('config', config)
-      .str('dbClusterId', dbClusterId)
-      .msg('Processing metric configuration');
-
-    const tagValue = tags[`autoalarm:${config.tagKey}`];
-    const updatedDefaults = parseMetricAlarmOptions(
-      tagValue || '',
-      config.defaults,
-    );
-    if (config.defaultCreate || tagValue !== undefined) {
-      if (config.tagKey.includes('anomaly')) {
-        log
-          .info()
-          .str('function', 'checkAndManageRDSClusterStatusAlarms')
-          .str('dbClusterId', dbClusterId)
-          .msg('Tag key indicates anomaly alarm. Handling anomaly alarms');
-        const anomalyAlarms = await handleAnomalyAlarms(
-          config,
-          'RDSCluster',
-          dbClusterId,
-          [{Name: 'DBClusterIdentifier', Value: dbClusterId}],
-          updatedDefaults,
-        );
-        anomalyAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
-      } else {
-        log
-          .info()
-          .str('function', 'checkAndManageRDSClusterStatusAlarms')
-          .str('dbClusterId', dbClusterId)
-          .msg('Tag key indicates static alarm. Handling static alarms');
-        const staticAlarms = await handleStaticAlarms(
-          config,
-          'RDSCluster',
-          dbClusterId,
-          [{Name: 'DBClusterIdentifier', Value: dbClusterId}],
-          updatedDefaults,
-        );
-        staticAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
-      }
-    } else {
-      log
-        .info()
-        .str('function', 'checkAndManageRDSClusterStatusAlarms')
-        .str('dbClusterId', dbClusterId)
-        .str(
-          'alarm prefix: ',
-          buildAlarmName(
-            config,
-            'RDSCluster',
-            dbClusterId,
-            AlarmClassification.Warning,
-            'static',
-          ).replace('Warning', ''),
-        )
-        .msg(
-          'No default or overridden alarm values. Marking alarms for deletion.',
-        );
-    }
-  }
-  // Delete alarms that are not in the alarmsToKeep set. Cluster alarms are
-  // created under the 'RDSCluster' service name, so fetch with that prefix and
-  // restrict deletion to this cluster's exact expected alarm names. Fetching
-  // with 'RDS' previously matched member DB instance alarms (the cluster id is
-  // a prefix of default instance ids like 'mydb-instance-1') and deleted them.
-  const expectedAlarmNames = buildExpectedAlarmNames(
-    'RDSCluster',
-    dbClusterId,
-    metricConfigs,
-  );
-  const existingAlarms = (
-    await getCWAlarmsForInstance('RDSCluster', dbClusterId)
-  ).filter((alarm) => expectedAlarmNames.has(alarm));
-
-  // Log the full structure of retrieved alarms for debugging
-  log
-    .info()
-    .str('function', 'checkAndManageRDSClusterStatusAlarms')
-    .obj('raw existing alarms', existingAlarms)
-    .msg('Fetched existing alarms before filtering');
-
-  // Log the expected pattern. buildAlarmName upper-cases the service name, so
-  // cluster alarms are prefixed 'AutoAlarm-RDSCLUSTER-'.
-  const expectedPattern = `AutoAlarm-RDSCLUSTER-${dbClusterId}`;
-  log
-    .info()
-    .str('function', 'checkAndManageRDSClusterStatusAlarms')
-    .str('expected alarm pattern', expectedPattern)
-    .msg('Verifying alarms against expected naming pattern');
-
-  // Check and log if alarms match expected pattern
-  existingAlarms.forEach((alarm) => {
-    const matchesPattern = alarm.includes(expectedPattern);
-    log
-      .info()
-      .str('function', 'checkAndManageRDSClusterStatusAlarms')
-      .str('alarm name', alarm)
-      .bool('matches expected pattern', matchesPattern)
-      .msg('Evaluating alarm name match');
+  // Cluster alarms are created under the 'RDSCluster' service name, so fetch
+  // with that prefix and restrict deletion to this cluster's exact expected
+  // alarm names. Fetching with 'RDS' previously matched member DB instance
+  // alarms (the cluster id is a prefix of default instance ids like
+  // 'mydb-instance-1') and deleted them.
+  await manageServiceAlarms({
+    service: 'RDSCluster',
+    identifier: dbClusterId,
+    tags,
+    configs: metricConfigs,
+    dimensions: [{Name: 'DBClusterIdentifier', Value: dbClusterId}],
   });
-
-  // Filter alarms that need deletion
-  const alarmsToDelete = existingAlarms.filter(
-    (alarm) => !alarmsToKeep.has(alarm),
-  );
-
-  log
-    .info()
-    .str('function', 'checkAndManageRDSClusterStatusAlarms')
-    .obj('alarms to delete', alarmsToDelete)
-    .msg('Deleting alarms that are no longer needed');
-
-  await massDeleteAlarms(alarmsToDelete);
-
-  log
-    .info()
-    .str('function', 'checkAndManageRDSClusterStatusAlarms')
-    .str('dbClusterId', dbClusterId)
-    .msg('Finished alarm management process');
 }
 
 export async function manageInactiveRDSClusterAlarms(
@@ -240,51 +90,11 @@ function extractRDSClusterIdFromArn(arn: string): string {
 
 /**
  * Searches the provided object for the first occurrence of an RDS ARN.
- * Serializes the object to a JSON string, looks for the substring "arn:aws:rds",
- * and then extracts everything up to the next quotation mark.
  * Logs an error and returns an empty string if no valid RDS ARN can be found.
- *
- * @param {Record<string, any>} eventObj - A JSON-serializable object to search for an RDS ARN.
- * @returns {string} The extracted RDS ARN, or an empty string if not found.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function findRDSClusterArn(eventObj: Record<string, any>): string {
-  const eventString = JSON.stringify(eventObj);
-
-  // 1) Find where the ARN starts.
-  const startIndex = eventString.indexOf('arn:aws:rds');
-  if (startIndex === -1) {
-    log
-      .error()
-      .str('function', 'findRDSArn')
-      .obj('eventObj', eventObj)
-      .msg('No RDS ARN found in event');
-    return '';
-  }
-
-  // 2) Find the next quote after that.
-  const endIndex = eventString.indexOf('"', startIndex);
-  if (endIndex === -1) {
-    log
-      .error()
-      .str('function', 'findRDSArn')
-      .obj('eventObj', eventObj)
-      .msg('No ending quote found for RDS ARN');
-    return '';
-  }
-
-  // 3) Extract the ARN
-  const arn = eventString.substring(startIndex, endIndex);
-
-  log
-    .info()
-    .str('function', 'findRDSArn')
-    .str('arn', arn)
-    .str('startIndex', startIndex.toString())
-    .str('endIndex', endIndex.toString())
-    .msg('Extracted RDS ARN');
-
-  return arn;
+  return findArnInEvent(eventObj, 'arn:aws:rds');
 }
 
 // On occasion AWS will splice the arn with the resource ID. If this happens, we need to remap the arn from the resource ID.

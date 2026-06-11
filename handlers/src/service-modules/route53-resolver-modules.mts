@@ -3,17 +3,12 @@ import {
   Route53ResolverClient,
 } from '@aws-sdk/client-route53resolver';
 import * as logging from '@nr1e/logging';
-import {AlarmClassification, Tag} from '../types/index.mjs';
+import {Tag} from '../types/index.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
   deleteExistingAlarms,
-  buildAlarmName,
-  buildExpectedAlarmNames,
-  handleAnomalyAlarms,
-  handleStaticAlarms,
-  massDeleteAlarms,
-  getCWAlarmsForInstance,
-  parseMetricAlarmOptions,
+  fetchResourceTags,
+  manageServiceAlarms,
 } from '../alarm-configs/utils/index.mjs';
 import {ROUTE53_RESOLVER_CONFIGS} from '../alarm-configs/_index.mjs';
 
@@ -28,160 +23,39 @@ const route53ResolverClient = new Route53ResolverClient({
 const metricConfigs = ROUTE53_RESOLVER_CONFIGS;
 
 export async function fetchR53ResolverTags(endpointId: string): Promise<Tag> {
-  try {
-    const command = new ListTagsForResourceCommand({
-      ResourceArn: endpointId,
-    });
-    const response = await route53ResolverClient.send(command);
-    const tags: Tag = {};
-
-    response.Tags?.forEach((tag) => {
-      if (tag.Key && tag.Value) {
-        tags[tag.Key] = tag.Value;
-      }
-    });
-
-    log
-      .info()
-      .str('function', 'fetchR53ResolverTags')
-      .str('resolverId', endpointId)
-      .str('tags', JSON.stringify(tags))
-      .msg('Fetched tags for R53 Resolver Endpoint');
-    return tags;
-  } catch (error) {
-    log
-      .error()
-      .str('function', 'fetchR53ResolverTags')
-      .str('resolverId', endpointId)
-      .err(error)
-      .msg('Error fetching tags for R53 Resolver Endpoint');
-    return {};
-  }
-}
-
-async function checkAndManageR53ResolverStatusAlarms(
-  endpointId: string,
-  tags: Tag,
-) {
-  log
-    .info()
-    .str('function', 'checkAndManageR53ResolverStatusAlarms')
-    .str('EndpointId', endpointId)
-    .msg('Starting alarm management process');
-
-  const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
-  if (!isAlarmEnabled) {
-    log
-      .info()
-      .str('function', 'checkAndManageR53ResolverStatusAlarms')
-      .str('EndpointId', endpointId)
-      .msg('Alarm creation disabled by tag settings');
-    await deleteExistingAlarms('R53R', endpointId, metricConfigs);
-    return;
-  }
-
-  const alarmsToKeep = new Set<string>();
-
-  for (const config of metricConfigs) {
-    log
-      .info()
-      .str('function', 'checkAndManageR53ResolverStatusAlarms')
-      .obj('config', config)
-      .str('EndpointId', endpointId)
-      .msg('Processing metric configuration');
-
-    const tagValue = tags[`autoalarm:${config.tagKey}`];
-    const updatedDefaults = parseMetricAlarmOptions(
-      tagValue || '',
-      config.defaults,
-    );
-
-    if (config.defaultCreate || tagValue !== undefined) {
-      if (config.tagKey.includes('anomaly')) {
-        log
-          .info()
-          .str('function', 'checkAndManageR53ResolverStatusAlarms')
-          .str('EndpointId', endpointId)
-          .msg('Tag key indicates anomaly alarm. Handling anomaly alarms');
-        const anomalyAlarms = await handleAnomalyAlarms(
-          config,
-          'R53R',
-          endpointId,
-          [{Name: 'EndpointId', Value: endpointId}],
-          updatedDefaults,
-        );
-        anomalyAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
-      } else {
-        log
-          .info()
-          .str('function', 'checkAndManageR53ResolverStatusAlarms')
-          .str('EndpointId', endpointId)
-          .msg('Tag key indicates static alarm. Handling static alarms');
-        const staticAlarms = await handleStaticAlarms(
-          config,
-          'R53R',
-          endpointId,
-          [{Name: 'EndpointId', Value: endpointId}],
-          updatedDefaults,
-        );
-        staticAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
-      }
-    } else {
-      log
-        .info()
-        .str('function', 'checkAndManageR53ResolverStatusAlarms')
-        .str('EndpointId', endpointId)
-        .str(
-          'alarm prefix: ',
-          buildAlarmName(
-            config,
-            'R53R',
-            endpointId,
-            AlarmClassification.Warning,
-            'static',
-          ).replace('Warning', ''),
-        )
-        .msg(
-          'No default or overridden alarm values. Marking alarms for deletion.',
-        );
-    }
-  }
-
-  // Delete alarms that are not in the alarmsToKeep set
-  // Restrict the prefix-based fetch to this resource's exact expected alarm
-  // names so we never delete alarms of another resource whose identifier
-  // shares a prefix.
-  const expectedAlarmNames = buildExpectedAlarmNames(
+  return fetchResourceTags(
     'R53R',
     endpointId,
-    metricConfigs,
-  );
-  const existingAlarms = (
-    await getCWAlarmsForInstance('R53R', endpointId)
-  ).filter((alarm) => expectedAlarmNames.has(alarm));
-  const alarmsToDelete = existingAlarms.filter(
-    (alarm) => !alarmsToKeep.has(alarm),
-  );
+    async () => {
+      const command = new ListTagsForResourceCommand({
+        ResourceArn: endpointId,
+      });
+      const response = await route53ResolverClient.send(command);
+      const tags: Tag = {};
 
-  log
-    .info()
-    .str('function', 'checkAndManageR53ResolverStatusAlarms')
-    .obj('alarms to delete', alarmsToDelete)
-    .msg('Deleting alarms that are no longer needed');
-  await massDeleteAlarms(alarmsToDelete);
+      response.Tags?.forEach((tag) => {
+        if (tag.Key && tag.Value) {
+          tags[tag.Key] = tag.Value;
+        }
+      });
 
-  log
-    .info()
-    .str('function', 'checkAndManageR53ResolverStatusAlarms')
-    .str('EndpointId', endpointId)
-    .msg('Finished alarm management process');
+      return tags;
+    },
+    'return-empty',
+  );
 }
 
 export async function manageR53ResolverAlarms(
   endpointId: string,
   tags: Tag,
 ): Promise<void> {
-  await checkAndManageR53ResolverStatusAlarms(endpointId, tags);
+  await manageServiceAlarms({
+    service: 'R53R',
+    identifier: endpointId,
+    tags,
+    configs: metricConfigs,
+    dimensions: [{Name: 'EndpointId', Value: endpointId}],
+  });
 }
 
 export async function manageInactiveR53ResolverAlarms(endpointId: string) {

@@ -5,17 +5,12 @@ import {
   DescribeTargetGroupsCommandOutput,
 } from '@aws-sdk/client-elastic-load-balancing-v2';
 import * as logging from '@nr1e/logging';
-import {AlarmClassification, Tag} from '../types/index.mjs';
+import {Tag} from '../types/index.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
   deleteExistingAlarms,
-  buildAlarmName,
-  buildExpectedAlarmNames,
-  handleAnomalyAlarms,
-  handleStaticAlarms,
-  massDeleteAlarms,
-  getCWAlarmsForInstance,
-  parseMetricAlarmOptions,
+  fetchResourceTags,
+  manageServiceAlarms,
 } from '../alarm-configs/utils/index.mjs';
 import * as arnparser from '@aws-sdk/util-arn-parser';
 import {TARGET_GROUP_CONFIGS} from '../alarm-configs/_index.mjs';
@@ -32,38 +27,28 @@ const elbClient: ElasticLoadBalancingV2Client =
 const metricConfigs = TARGET_GROUP_CONFIGS;
 
 export async function fetchTGTags(targetGroupArn: string): Promise<Tag> {
-  try {
-    const command = new DescribeTagsCommand({
-      ResourceArns: [targetGroupArn],
-    });
-    const response = await elbClient.send(command);
-    const tags: Tag = {};
-
-    response.TagDescriptions?.forEach((tagDescription) => {
-      tagDescription.Tags?.forEach((tag) => {
-        if (tag.Key && tag.Value) {
-          tags[tag.Key] = tag.Value;
-        }
+  return fetchResourceTags(
+    'TG',
+    targetGroupArn,
+    async () => {
+      const command = new DescribeTagsCommand({
+        ResourceArns: [targetGroupArn],
       });
-    });
+      const response = await elbClient.send(command);
+      const tags: Tag = {};
 
-    log
-      .info()
-      .str('function', 'fetchTGTags')
-      .str('targetGroupArn', targetGroupArn)
-      .str('tags', JSON.stringify(tags))
-      .msg('Fetched target group tags');
+      response.TagDescriptions?.forEach((tagDescription) => {
+        tagDescription.Tags?.forEach((tag) => {
+          if (tag.Key && tag.Value) {
+            tags[tag.Key] = tag.Value;
+          }
+        });
+      });
 
-    return tags;
-  } catch (error) {
-    log
-      .error()
-      .str('function', 'fetchTGTags')
-      .err(error)
-      .str('targetGroupArn', targetGroupArn)
-      .msg('Error fetching target group tags');
-    return {};
-  }
+      return tags;
+    },
+    'return-empty',
+  );
 }
 
 async function manageTGAlarms(
@@ -71,147 +56,32 @@ async function manageTGAlarms(
   loadBalancerName: string | null,
   tags: Tag,
 ) {
-  log
-    .info()
-    .str('function', 'checkAndManageTGStatusAlarms')
-    .str('TargetGroupName', targetGroupName)
-    .str('LoadBalancerName', loadBalancerName)
-    .msg('Starting alarm management process');
-
-  const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
-  if (!isAlarmEnabled) {
+  // A load balancer is required for all TG metrics. Preserve the original
+  // ordering: the enabled check (which may delete alarms) runs first inside
+  // manageServiceAlarms, and the missing-LB guard only skips alarm creation
+  // when alarms are enabled.
+  if (tags['autoalarm:enabled'] === 'true' && !loadBalancerName) {
     log
-      .info()
-      .str('function', 'checkAndManageTGStatusAlarms')
+      .warn()
+      .str('function', 'manageTGAlarms')
       .str('TargetGroupName', targetGroupName)
       .str('LoadBalancerName', loadBalancerName)
-      .msg('Alarm creation disabled by tag settings');
-    await deleteExistingAlarms('TG', targetGroupName, metricConfigs);
+      .msg(
+        'Load balancer name not found but required, skipping alarm creation',
+      );
     return;
   }
 
-  const alarmsToKeep = new Set<string>();
-
-  for (const config of metricConfigs) {
-    /*
-     * log warning if LB is not associated with tg and skip creating alarms as LB is required for all TG Metrics
-     */
-    if (!loadBalancerName) {
-      log
-        .warn()
-        .str('function', 'checkAndManageTGStatusAlarms')
-        .str('TargetGroupName', targetGroupName)
-        .str('LoadBalancerName', loadBalancerName)
-        .msg(
-          `Load balancer name not found but required, skipping alarm creation`,
-        );
-      return;
-    }
-    log
-      .info()
-      .str('function', 'checkAndManageTGStatusAlarms')
-      .obj('config', config)
-      .str('TargetGroupName', targetGroupName)
-      .str('LoadBalancerName', loadBalancerName)
-      .msg('Processing metric configuration');
-
-    const tagValue = tags[`autoalarm:${config.tagKey}`];
-    const updatedDefaults = parseMetricAlarmOptions(
-      tagValue || '',
-      config.defaults,
-    );
-
-    if (config.defaultCreate || tagValue !== undefined) {
-      if (config.tagKey.includes('anomaly')) {
-        log
-          .info()
-          .str('function', 'checkAndManageTGStatusAlarms')
-          .str('TargetGroupName', targetGroupName)
-          .str('LoadBalancerName', loadBalancerName)
-          .msg('Tag key indicates anomaly alarm. Handling anomaly alarms');
-        const anomalyAlarms = await handleAnomalyAlarms(
-          config,
-          'TG',
-          targetGroupName,
-          [
-            {Name: 'TargetGroup', Value: targetGroupName},
-            {Name: 'LoadBalancer', Value: loadBalancerName!}, // LoadBalancerName will always be provided if the function reaches this point and beyond
-          ],
-          updatedDefaults,
-        );
-        anomalyAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
-      } else {
-        log
-          .info()
-          .str('function', 'checkAndManageTGStatusAlarms')
-          .str('TargetGroupName', targetGroupName)
-          .str('LoadBalancerName', loadBalancerName)
-          .msg('Tag key indicates static alarm. Handling static alarms');
-        const staticAlarms = await handleStaticAlarms(
-          config,
-          'TG',
-          targetGroupName,
-          [
-            {Name: 'TargetGroup', Value: targetGroupName},
-            {Name: 'LoadBalancer', Value: loadBalancerName!},
-          ],
-          updatedDefaults,
-        );
-        staticAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
-      }
-    } else {
-      log
-        .info()
-        .str('function', 'checkAndManageTGStatusAlarms')
-        .str('TargetGroupName', targetGroupName)
-        .str('LoadBalancerName', loadBalancerName)
-        .str(
-          'alarm prefix: ',
-          buildAlarmName(
-            config,
-            'TG',
-            targetGroupName,
-            AlarmClassification.Warning,
-            'static',
-          ).replace('Warning', ''),
-        )
-        .msg(
-          'No default or overridden alarm values. Marking alarms for deletion.',
-        );
-    }
-  }
-
-  // Delete alarms that are not in the alarmsToKeep set
-  // Restrict the prefix-based fetch to this resource's exact expected alarm
-  // names so we never delete alarms of another resource whose identifier
-  // shares a prefix.
-  const expectedAlarmNames = buildExpectedAlarmNames(
-    'TG',
-    targetGroupName,
-    metricConfigs,
-  );
-  const existingAlarms = (
-    await getCWAlarmsForInstance('TG', targetGroupName)
-  ).filter((alarm) => expectedAlarmNames.has(alarm));
-  const alarmsToDelete = existingAlarms.filter(
-    (alarm) => !alarmsToKeep.has(alarm),
-  );
-
-  log
-    .info()
-    .str('function', 'checkAndManageTGStatusAlarms')
-    .obj('existing alarms', existingAlarms)
-    .obj('alarms to keep', alarmsToKeep)
-    .obj('alarms to delete', alarmsToDelete)
-    .msg('Deleting alarms that are no longer needed');
-  await massDeleteAlarms(alarmsToDelete);
-
-  log
-    .info()
-    .str('function', 'checkAndManageTGStatusAlarms')
-    .str('TargetGroupName', targetGroupName)
-    .str('LoadBalancerName', loadBalancerName)
-    .msg('Finished alarm management process');
+  await manageServiceAlarms({
+    service: 'TG',
+    identifier: targetGroupName,
+    tags,
+    configs: metricConfigs,
+    dimensions: [
+      {Name: 'TargetGroup', Value: targetGroupName},
+      {Name: 'LoadBalancer', Value: loadBalancerName ?? ''},
+    ],
+  });
 }
 
 export async function manageInactiveTGAlarms(targetGroupName: string) {

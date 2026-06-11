@@ -1,16 +1,11 @@
 import {SFNClient, ListTagsForResourceCommand} from '@aws-sdk/client-sfn';
 import * as logging from '@nr1e/logging';
-import {AlarmClassification, Tag} from '../types/index.mjs';
+import {Tag} from '../types/index.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
   deleteExistingAlarms,
-  buildAlarmName,
-  buildExpectedAlarmNames,
-  handleAnomalyAlarms,
-  handleStaticAlarms,
-  massDeleteAlarms,
-  getCWAlarmsForInstance,
-  parseMetricAlarmOptions,
+  fetchResourceTags,
+  manageServiceAlarms,
 } from '../alarm-configs/utils/index.mjs';
 import {STEP_FUNCTION_CONFIGS} from '../alarm-configs/_index.mjs';
 
@@ -25,180 +20,39 @@ const sfnClient: SFNClient = new SFNClient({
 const metricConfigs = STEP_FUNCTION_CONFIGS;
 
 export async function fetchSFNTags(sfnArn: string): Promise<Tag> {
-  try {
-    const command = new ListTagsForResourceCommand({
-      resourceArn: sfnArn,
-    });
-    const response = await sfnClient.send(command);
-    const tags: Tag = {};
+  return fetchResourceTags(
+    'SFN',
+    sfnArn,
+    async () => {
+      const command = new ListTagsForResourceCommand({
+        resourceArn: sfnArn,
+      });
+      const response = await sfnClient.send(command);
+      const tags: Tag = {};
 
-    response.tags?.forEach((tag) => {
-      if (tag.key && tag.value) {
-        tags[tag.key] = tag.value;
-      }
-    });
+      response.tags?.forEach((tag) => {
+        if (tag.key && tag.value) {
+          tags[tag.key] = tag.value;
+        }
+      });
 
-    log
-      .info()
-      .str('function', 'fetchSFNTags')
-      .str('sfnArn', sfnArn)
-      .str('tags', JSON.stringify(tags))
-      .msg('Fetched tags for SFN Arn');
-    return tags;
-  } catch (error) {
-    log
-      .error()
-      .str('function', 'fetchSFNTags')
-      .str('sfnArn', sfnArn)
-      .err(error)
-      .msg('Error fetching tags for SFN Arn');
-    return {};
-  }
+      return tags;
+    },
+    'return-empty',
+  );
 }
 
 async function checkAndManageSFNStatusAlarms(
   sfnArn: string,
   tags: Tag,
 ): Promise<void> {
-  log
-    .info()
-    .str('function', 'checkAndManageSFNStatusAlarms')
-    .str('sfnArn', sfnArn)
-    .msg('Starting alarm management process');
-
-  const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
-  if (!isAlarmEnabled) {
-    log
-      .info()
-      .str('function', 'checkAndManageSFNStatusAlarms')
-      .str('sfnArn', sfnArn)
-      .msg('Alarm creation disabled by tag settings');
-    await deleteExistingAlarms('SFN', sfnArn, metricConfigs);
-    return;
-  }
-
-  const alarmsToKeep = new Set<string>();
-
-  for (const config of metricConfigs) {
-    log
-      .info()
-      .str('function', 'checkAndManageSFNStatusAlarms')
-      .obj('config', config)
-      .str('sfnArn', sfnArn)
-      .msg('Processing metric configuration');
-
-    const tagValue = tags[`autoalarm:${config.tagKey}`];
-    const updatedDefaults = parseMetricAlarmOptions(
-      tagValue || '',
-      config.defaults,
-    );
-    if (config.defaultCreate || tagValue !== undefined) {
-      if (config.tagKey.includes('anomaly')) {
-        log
-          .info()
-          .str('function', 'checkAndManageSFNStatusAlarms')
-          .str('sfnArn', sfnArn)
-          .msg('Tag key indicates anomaly alarm. Handling anomaly alarms');
-        const anomalyAlarms = await handleAnomalyAlarms(
-          config,
-          'SFN',
-          sfnArn,
-          [{Name: 'StateMachineArn', Value: sfnArn}],
-          updatedDefaults,
-        );
-        anomalyAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
-      } else {
-        log
-          .info()
-          .str('function', 'checkAndManageSFNStatusAlarms')
-          .str('sfnArn', sfnArn)
-          .msg('Tag key indicates static alarm. Handling static alarms');
-        const staticAlarms = await handleStaticAlarms(
-          config,
-          'SFN',
-          sfnArn,
-          [{Name: 'StateMachineArn', Value: sfnArn}],
-          updatedDefaults,
-        );
-        staticAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
-      }
-    } else {
-      log
-        .info()
-        .str('function', 'checkAndManageSFNStatusAlarms')
-        .str('sfnArn', sfnArn)
-        .str(
-          'alarm prefix: ',
-          buildAlarmName(
-            config,
-            'SFN',
-            sfnArn,
-            AlarmClassification.Warning,
-            'static',
-          ).replace('Warning', ''),
-        )
-        .msg(
-          'No default or overridden alarm values. Marking alarms for deletion.',
-        );
-    }
-  }
-  // Delete alarms that are not in the alarmsToKeep set
-  // Restrict the prefix-based fetch to this resource's exact expected alarm
-  // names so we never delete alarms of another resource whose identifier
-  // shares a prefix.
-  const expectedAlarmNames = buildExpectedAlarmNames(
-    'SFN',
-    sfnArn,
-    metricConfigs,
-  );
-  const existingAlarms = (await getCWAlarmsForInstance('SFN', sfnArn)).filter(
-    (alarm) => expectedAlarmNames.has(alarm),
-  );
-
-  // Log the full structure of retrieved alarms for debugging
-  log
-    .info()
-    .str('function', 'checkAndManageSFNStatusAlarms')
-    .obj('raw existing alarms', existingAlarms)
-    .msg('Fetched existing alarms before filtering');
-
-  // Log the expected pattern
-  const expectedPattern = `AutoAlarm-SFN-${sfnArn}`;
-  log
-    .info()
-    .str('function', 'checkAndManageSFNStatusAlarms')
-    .str('expected alarm pattern', expectedPattern)
-    .msg('Verifying alarms against expected naming pattern');
-
-  // Check and log if alarms match expected pattern
-  existingAlarms.forEach((alarm) => {
-    const matchesPattern = alarm.includes(expectedPattern);
-    log
-      .info()
-      .str('function', 'checkAndManageSFNStatusAlarms')
-      .str('alarm name', alarm)
-      .bool('matches expected pattern', matchesPattern)
-      .msg('Evaluating alarm name match');
+  await manageServiceAlarms({
+    service: 'SFN',
+    identifier: sfnArn,
+    tags,
+    configs: metricConfigs,
+    dimensions: [{Name: 'StateMachineArn', Value: sfnArn}],
   });
-
-  // Filter alarms that need deletion
-  const alarmsToDelete = existingAlarms.filter(
-    (alarm) => !alarmsToKeep.has(alarm),
-  );
-
-  log
-    .info()
-    .str('function', 'checkAndManageSFNStatusAlarms')
-    .obj('alarms to delete', alarmsToDelete)
-    .msg('Deleting alarms that are no longer needed');
-
-  await massDeleteAlarms(alarmsToDelete);
-
-  log
-    .info()
-    .str('function', 'checkAndManageSFNStatusAlarms')
-    .str('sfnArn', sfnArn)
-    .msg('Finished alarm management process');
 }
 
 export async function manageInactiveSFNAlarms(sfnArn: string): Promise<void> {
