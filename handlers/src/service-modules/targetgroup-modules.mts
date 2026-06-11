@@ -3,6 +3,7 @@ import {
   DescribeTagsCommand,
   DescribeTargetGroupsCommand,
   DescribeTargetGroupsCommandOutput,
+  TargetGroupNotFoundException,
 } from '@aws-sdk/client-elastic-load-balancing-v2';
 import * as logging from '@nr1e/logging';
 import {AlarmClassification, Tag} from '../types/index.mjs';
@@ -344,12 +345,22 @@ export async function parseTGEventAndCreateAlarms(event: any): Promise<{
       }),
     );
   } catch (e) {
+    if (e instanceof TargetGroupNotFoundException) {
+      log
+        .warn()
+        .str('function', 'parseTGEventAndCreateAlarms')
+        .str('targetGroupArn', targetGroupArn)
+        .msg(
+          'Target group not found — likely deleted before this stale event was processed; skipping alarm management.',
+        );
+      return {targetGroupArn, eventType, tags};
+    }
     log
       .error()
       .str('function', 'parseTGEventAndCreateAlarms')
       .err(e)
       .str('targetGroupArn', targetGroupArn)
-      .msg('Error fetching target group or target group does not exist.');
+      .msg('Error fetching target group.');
     return {targetGroupArn, eventType, tags};
   }
 

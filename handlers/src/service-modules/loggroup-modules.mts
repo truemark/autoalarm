@@ -205,11 +205,12 @@ function extractLogGroupIdentifiers(
   // 1) Find where the ARN starts.
   const startIndex = eventBody.indexOf('arn:aws:logs');
   if (startIndex === -1) {
+    // Normal for CreateLogGroup events where the ARN isn't in the request body.
+    // The caller falls back to constructing the ARN from requestParameters.
     log
-      .error()
+      .debug()
       .str('function', 'extractLogGroupIdentifiers')
-      .str('eventObj', eventBody)
-      .msg('No LogGroup ARN found in event');
+      .msg('No LogGroup ARN found in event body; caller will use requestParameters fallback');
     return void 0;
   }
 
@@ -309,6 +310,17 @@ export async function parseLogGroupEventAndCreateAlarms(
         cause: record,
       });
     }
+  }
+
+  // bedrock-agentcore creates and destroys log groups continuously; processing
+  // those events floods the main handler queue and delays all other services.
+  if (resourceName.startsWith('/aws/bedrock-agentcore/')) {
+    log
+      .info()
+      .str('function', 'parseLogGroupEventAndCreateAlarms')
+      .str('logGroupName', resourceName)
+      .msg('Skipping bedrock-agentcore log group — excluded from AutoAlarm management');
+    return;
   }
 
   log

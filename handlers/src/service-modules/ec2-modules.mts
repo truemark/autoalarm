@@ -573,7 +573,7 @@ export async function manageActiveEC2InstanceAlarms(
     const deletePrometheusAlarmsArray: EC2AlarmManagerArray = [];
 
     const instanceIDsReportingToPrometheus: string[] = prometheusWorkspaceId
-      ? await queryPrometheusForService('ec2', prometheusWorkspaceId, region)
+      ? await queryPrometheusForService('ec2', prometheusWorkspaceId, region!)
       : [];
 
     for (const {instanceID, tags, state} of activeInstancesInfoArray) {
@@ -824,7 +824,7 @@ export async function manageInactiveInstanceAlarms(
   inactiveInstancesInfoArray: EC2AlarmManagerArray,
 ) {
   const instanceIPsReportingToPrometheus: string[] = prometheusWorkspaceId
-    ? await queryPrometheusForService('ec2', prometheusWorkspaceId, region)
+    ? await queryPrometheusForService('ec2', prometheusWorkspaceId, region!)
     : [];
 
   const CWAlarmsToDelete: string[] = [];
