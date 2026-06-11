@@ -39,16 +39,17 @@ export const RDS_CLUSTER_CONFIGS: MetricAlarmConfig[] = [
     },
   },
 
-  // 2) ReplicaLag - Static
+  // 2) AuroraReplicaLag - Static
   {
     tagKey: 'replica-lag',
-    metricName: 'ReplicaLag',
+    metricName: 'AuroraReplicaLag',
     metricNamespace: 'AWS/RDS',
     defaultCreate: false,
     anomaly: false,
     defaults: {
-      warningThreshold: 30,
-      criticalThreshold: 600,
+      // AuroraReplicaLag is reported in milliseconds
+      warningThreshold: 30000,
+      criticalThreshold: 600000,
       period: 60,
       evaluationPeriods: 15,
       statistic: 'Maximum',
@@ -58,10 +59,10 @@ export const RDS_CLUSTER_CONFIGS: MetricAlarmConfig[] = [
     },
   },
 
-  // 3) ReplicaLag - Anomaly
+  // 3) AuroraReplicaLag - Anomaly
   {
     tagKey: 'replica-lag-anomaly',
-    metricName: 'ReplicaLag',
+    metricName: 'AuroraReplicaLag',
     metricNamespace: 'AWS/RDS',
     defaultCreate: true,
     anomaly: true,
@@ -74,25 +75,6 @@ export const RDS_CLUSTER_CONFIGS: MetricAlarmConfig[] = [
       dataPointsToAlarm: 16,
       comparisonOperator: 'GreaterThanUpperThreshold',
       missingDataTreatment: 'ignore',
-    },
-  },
-
-  // 4) FailoverState - Static
-  {
-    tagKey: 'failover-state',
-    metricName: 'FailoverState',
-    metricNamespace: 'AWS/RDS',
-    defaultCreate: false,
-    anomaly: false,
-    defaults: {
-      warningThreshold: 0,
-      criticalThreshold: 1,
-      period: 60,
-      evaluationPeriods: 1,
-      statistic: 'Maximum',
-      dataPointsToAlarm: 1,
-      comparisonOperator: 'GreaterThanThreshold',
-      missingDataTreatment: 'notBreaching',
     },
   },
   // add more as needed

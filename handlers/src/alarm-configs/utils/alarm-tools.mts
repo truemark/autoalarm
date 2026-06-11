@@ -1,5 +1,6 @@
 import {
   CloudWatchClient,
+  ComparisonOperator,
   DeleteAlarmsCommand,
   DescribeAlarmsCommand,
   DescribeAlarmsCommandOutput,
@@ -180,35 +181,82 @@ export function buildAlarmName(
 }
 
 // used as input validation to ensure that the period value is always a valid number for the cloudwatch api
+// Valid CloudWatch periods are 10, 30, and any multiple of 60.
 function validatePeriod(period: number) {
-  if (period < 10) {
-    log
-      .info()
-      .str('function', 'validatePeriod')
-      .str('period', period.toString())
-      .msg('Period is less than 10, setting to 10');
-    return 10;
-  } else if (period < 30 || period <= 45) {
-    log
-      .info()
-      .str('function', 'validatePeriod')
-      .str('period', period.toString())
-      .msg('Period is less than 30 or less than or equal to 45, setting to 30');
-    return 30;
-  } else if (period > 45 && period % 60 !== 0) {
-    log
-      .info()
-      .str('function', 'validatePeriod')
-      .str('period', period.toString())
-      .msg('Period is greater than 45, setting to nearest multiple of 60');
-    return Math.ceil(period / 60) * 60;
-  } else {
+  if (period === 10 || period === 30 || (period >= 60 && period % 60 === 0)) {
     log
       .info()
       .str('function', 'validatePeriod')
       .str('period', period.toString())
       .msg('Period is valid');
     return period;
+  } else if (period < 10) {
+    log
+      .info()
+      .str('function', 'validatePeriod')
+      .str('period', period.toString())
+      .msg('Period is less than 10, setting to 10');
+    return 10;
+  } else if (period < 30) {
+    log
+      .info()
+      .str('function', 'validatePeriod')
+      .str('period', period.toString())
+      .msg('Period is between 11 and 29, setting to 30');
+    return 30;
+  } else {
+    log
+      .info()
+      .str('function', 'validatePeriod')
+      .str('period', period.toString())
+      .msg(
+        'Period is greater than 30 and not a multiple of 60, rounding up to the next multiple of 60',
+      );
+    return Math.ceil(period / 60) * 60;
+  }
+}
+
+/**
+ * Comparison operators that are only valid for anomaly detection alarms.
+ * Static threshold alarms must NOT use these, and anomaly alarms must ONLY use these.
+ */
+const ANOMALY_COMPARISON_OPERATORS: ComparisonOperator[] = [
+  ComparisonOperator.GreaterThanUpperThreshold,
+  ComparisonOperator.LessThanLowerThreshold,
+  ComparisonOperator.LessThanLowerOrGreaterThanUpperThreshold,
+];
+
+/**
+ * Ensures the comparison operator matches the alarm variant (anomaly vs static).
+ * Tag parsing accepts any valid ComparisonOperator, so a mismatched operator
+ * (e.g. a static operator on an anomaly alarm) would make PutMetricAlarm reject
+ * the request and send the record to the DLQ. If a mismatch is detected, log a
+ * warning and fall back to the config's default operator.
+ */
+function validateComparisonOperator(
+  config: MetricAlarmConfig,
+  updatedDefaults: MetricAlarmOptions,
+  variant: 'anomaly' | 'static',
+): void {
+  const isAnomalyOperator = ANOMALY_COMPARISON_OPERATORS.includes(
+    updatedDefaults.comparisonOperator,
+  );
+
+  if (
+    (variant === 'anomaly' && !isAnomalyOperator) ||
+    (variant === 'static' && isAnomalyOperator)
+  ) {
+    log
+      .warn()
+      .str('function', 'validateComparisonOperator')
+      .str('tagKey', config.tagKey)
+      .str('variant', variant)
+      .str('comparisonOperator', updatedDefaults.comparisonOperator)
+      .str('defaultComparisonOperator', config.defaults.comparisonOperator)
+      .msg(
+        'Comparison operator is not valid for this alarm variant. Falling back to the config default operator.',
+      );
+    updatedDefaults.comparisonOperator = config.defaults.comparisonOperator;
   }
 }
 
@@ -338,6 +386,7 @@ export async function handleAnomalyAlarms(
   }
 
   updatedDefaults.period = validatePeriod(updatedDefaults.period);
+  validateComparisonOperator(config, updatedDefaults, 'anomaly');
 
   // Handle warning anomaly alarm
   if (warningThresholdSet) {
@@ -524,6 +573,7 @@ export async function handleStaticAlarms(
   }
 
   updatedDefaults.period = validatePeriod(updatedDefaults.period);
+  validateComparisonOperator(config, updatedDefaults, 'static');
 
   // Handle warning static alarm
   if (warningThresholdSet) {
