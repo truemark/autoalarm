@@ -88,7 +88,12 @@ function extractLogGroupIdentifiers(
   // Extract the log group ARN from the raw event body.
   // Normal for CreateLogGroup events where the ARN isn't in the request body.
   // The caller falls back to constructing the ARN from requestParameters.
-  const arn = findArnInEvent(eventBody, 'arn:aws:logs').trim();
+  // A miss here is the normal CreateLogGroup path (no ARN in the body; the
+  // caller reconstructs it from requestParameters), so log it at debug rather
+  // than flooding ERROR for every log group event in the account.
+  const arn = findArnInEvent(eventBody, 'arn:aws:logs', {
+    notFoundLogLevel: 'debug',
+  }).trim();
   if (!arn) {
     log
       .debug()

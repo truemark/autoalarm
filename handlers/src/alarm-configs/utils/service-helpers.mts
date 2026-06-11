@@ -302,22 +302,31 @@ export async function fetchResourceTags(
  * Searches an event for the first occurrence of an ARN starting with the
  * given prefix. Serializes the event to a JSON string (unless it already is
  * one), looks for the prefix, and extracts everything up to the next
- * quotation mark. Logs an error and returns an empty string if no matching
- * ARN can be found.
+ * whitespace or quotation mark. Returns an empty string if no matching ARN
+ * can be found.
  *
  * @param event - A JSON-serializable object (or pre-serialized JSON string)
  * to search.
  * @param arnPrefix - The ARN prefix to look for (e.g. 'arn:aws:rds').
+ * @param options.notFoundLogLevel - Level to log a "prefix not found" miss at.
+ * Defaults to 'error'. The LOGS module passes 'debug' because CreateLogGroup
+ * events legitimately carry no ARN in the body (the ARN is reconstructed from
+ * requestParameters), so a miss there is a normal fallback, not an error.
  * @returns The extracted ARN, or an empty string if not found.
  */
-export function findArnInEvent(event: unknown, arnPrefix: string): string {
+export function findArnInEvent(
+  event: unknown,
+  arnPrefix: string,
+  options: {notFoundLogLevel?: 'error' | 'debug'} = {},
+): string {
+  const {notFoundLogLevel = 'error'} = options;
   const eventString = typeof event === 'string' ? event : JSON.stringify(event);
 
   // 1) Find where the ARN starts.
   const startIndex = eventString.indexOf(arnPrefix);
   if (startIndex === -1) {
-    log
-      .error()
+    const entry = notFoundLogLevel === 'debug' ? log.debug() : log.error();
+    entry
       .str('function', 'findArnInEvent')
       .str('arnPrefix', arnPrefix)
       .str('event', eventString)
