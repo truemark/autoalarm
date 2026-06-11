@@ -7,16 +7,102 @@ on:
 name: publish
 permissions:
   contents: write
-  pages: write
+  packages: write
   id-token: write
 jobs:
   publish:
-    # truemark/github-workflows@main as of 2026-06-10
-    uses: truemark/github-workflows/.github/workflows/javascript-library.yml@1fe9881c23e60770fbdfb7d0a45552b9697b3274
-    with:
-      node-versions: "[18,20,22]"
-      publish-node-version: "22"
-      pnpm-version: "10"
-    secrets:
-      app-id: ${{ secrets.RELEASE_BOT_ID }}
-      private-key: ${{ secrets.RELEASE_BOT_KEY }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18, 20, 22]
+    steps:
+      - name: Generate token
+        id: app-token
+        uses: getsentry/action-github-app-token@v3
+        with:
+          app_id: ${{ secrets.RELEASE_BOT_ID }}
+          private_key: ${{ secrets.RELEASE_BOT_KEY }}
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: "10"
+          run_install: false
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'pnpm'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@truemark'
+      - name: Get pnpm store directory
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+      - uses: actions/cache@v4
+        name: Setup pnpm cache
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: "${{ runner.os }}-${{ matrix.node-version }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}"
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.node-version }}-pnpm-store-
+      - name: Install dependencies
+        run: pnpm i --frozen-lockfile --prefer-offline
+      - name: Set develop version with timestamp
+        if: matrix.node-version == 22 && github.ref == 'refs/heads/develop' && github.event_name != 'pull_request'
+        run: |
+          TEMP_VERSION="$(pnpm version prerelease --preid alpha --no-git-tag-version | sed 's/v//')"
+          echo "TEMP_VERSION=${TEMP_VERSION}" >> $GITHUB_ENV
+          VERSION="$(echo ${TEMP_VERSION} | sed -E "s/[0-9]+$/$(date +%s)/")"
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          sed -i -E "s/${TEMP_VERSION}/${VERSION}/" package.json
+      - name: Increment main version
+        if: matrix.node-version == 22 && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: echo VERSION="$(pnpm version patch --no-git-tag-version)" >> $GITHUB_ENV
+      - run: pnpm build
+      - run: pnpm test
+      - name: Setup git config
+        if: matrix.node-version == 22 && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.co"
+          git config user.name "github-actions[bot]"
+      - name: Commit and push version bump
+        if: matrix.node-version == 22 && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          git commit -a -m "$VERSION" -m "GitHub Run Number ${{ github.run_number }}" -m "[skip ci]"
+          git push
+      - name: Create tag ${{ env.VERSION }}
+        if: matrix.node-version == 22 && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          git tag -a "$VERSION" -m "$VERSION"
+          git push origin "$VERSION"
+      - name: Create Release
+        if: matrix.node-version == 22 && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: comnoco/create-release-action@v2
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+        with:
+          tag_name: ${{ env.VERSION }}
+          release_name: Release ${{ env.VERSION }}
+          draft: false
+          prerelease: false
+      - name: Publish canary ${{ env.VERSION }} to GitHub Packages
+        if: matrix.node-version == 22 && github.ref == 'refs/heads/develop' && github.event_name != 'pull_request'
+        run: pnpm publish --tag canary --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ steps.app-token.outputs.token }}
+      - name: Publish release ${{ env.VERSION }} to GitHub Packages
+        if: matrix.node-version == 22 && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: pnpm publish --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ steps.app-token.outputs.token }}
+      - name: Upload artifacts
+        if: matrix.node-version == 22
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifact
+          path: |
+            *
+            !node_modules
+            !**/node_modules
