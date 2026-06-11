@@ -43,8 +43,27 @@ async function processRecord(record: SQSRecord): Promise<boolean> {
       .digest('hex')
       .substring(0, 8);
 
+    /*
+     * EC2 messages MUST keep their original MessageGroupId so they remain
+     * strictly serialized on the target FIFO queue. The EC2 path manages AMP
+     * (Amazon Managed Prometheus) rule groups namespaces via a
+     * read-modify-write (DescribeRuleGroupsNamespace -> mutate in memory ->
+     * PutRuleGroupsNamespace), and the AMP API has no conditional put.
+     * Appending the hash suffix lets these messages process concurrently,
+     * which causes lost updates (whole-namespace replaces clobber each other
+     * and silently drop rules). EC2 is the only service using the Prometheus
+     * path; all other services keep the hash suffix for parallelism, which is
+     * safe for them. Message bodies are unchanged, so contentBasedDeduplication
+     * behavior on the target FIFO queue is unaffected.
+     */
+    const originalMessageGroupId = record.attributes.MessageGroupId;
+    const isEc2Message =
+      originalMessageGroupId?.toLowerCase() === 'autoalarm-ec2';
+
     // Create a unique message group ID by appending the hash to the message ID
-    const messageGroupId = `${record.attributes.MessageGroupId}-${messageHash}`;
+    const messageGroupId = isEc2Message
+      ? originalMessageGroupId
+      : `${originalMessageGroupId}-${messageHash}`;
 
     // Log routing details
     log
