@@ -11,7 +11,7 @@ import {EC2AlarmManagerArray} from './types/index.mjs';
 
 // Initialize logging
 //TODO: maybe initialize logging in src so we can get child loggers across all modules
-const level = process.env.LOG_LEVEL || 'trace';
+const level = process.env.LOG_LEVEL || 'info';
 if (!logging.isLevel(level)) {
   throw new Error(`Invalid log level: ${level}`);
 }

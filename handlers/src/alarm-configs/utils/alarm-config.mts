@@ -14,7 +14,7 @@ import {
 import * as logging from '@nr1e/logging';
 
 // Initialize logging
-const level = process.env.LOG_LEVEL || 'trace';
+const level = process.env.LOG_LEVEL || 'info';
 if (!logging.isLevel(level)) {
   throw new Error(`Invalid log level: ${level}`);
 }

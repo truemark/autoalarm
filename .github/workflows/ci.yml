@@ -5,8 +5,11 @@ on:
       - develop
   workflow_dispatch:
 name: ci
+permissions:
+  contents: read
 jobs:
   ci:
-    uses: truemark/github-workflows/.github/workflows/javascript-library-build.yml@main
+    # truemark/github-workflows@main as of 2026-06-10
+    uses: truemark/github-workflows/.github/workflows/javascript-library-build.yml@1fe9881c23e60770fbdfb7d0a45552b9697b3274
     with:
       node-versions: "[18,20,22]"

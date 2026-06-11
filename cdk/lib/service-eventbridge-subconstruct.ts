@@ -1,6 +1,7 @@
 import {Construct} from 'constructs';
 import {Rule} from 'aws-cdk-lib/aws-events';
 import {SqsQueue} from 'aws-cdk-lib/aws-events-targets';
+import {IQueue} from 'aws-cdk-lib/aws-sqs';
 import {NoBreachingExtendedQueue} from './extended-libs-subconstruct';
 
 type ServiceName =
@@ -25,13 +26,16 @@ type RuleObject = {
 
 export class EventRules extends Construct {
   public readonly serviceRules: Map<ServiceName, RuleObject[]>;
+  private readonly eventRuleTargetDLQ: IQueue;
 
   constructor(
     scope: Construct,
     id: string,
     queues: {[key: string]: NoBreachingExtendedQueue},
+    eventRuleTargetDLQ: IQueue,
   ) {
     super(scope, id);
+    this.eventRuleTargetDLQ = eventRuleTargetDLQ;
     this.serviceRules = new Map();
     this.initializeServiceEventRules();
     this.eventRuleTargetSetter(this, queues);
@@ -690,6 +694,9 @@ export class EventRules extends Construct {
               rule.addTarget(
                 new SqsQueue(queue, {
                   messageGroupId: `AutoAlarm-${serviceName}`,
+                  // Capture events EventBridge could not deliver to the
+                  // target queue after its retry policy is exhausted.
+                  deadLetterQueue: this.eventRuleTargetDLQ,
                 }),
               );
             } catch (error) {
