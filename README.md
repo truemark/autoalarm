@@ -423,6 +423,9 @@ ReAlarm's behavior can be configured on a per-alarm basis using tags.
     - Alarms can be tagged with `autoalarm:re-alarm-enabled=false` to exclude them from the ReAlarm process.
     - When this tag is present on an alarm, ReAlarm will skip resetting it, regardless of its state.
     - This is useful for alarms that should be managed manually or have specific conditions that should not trigger ReAlarm.
+    - ReAlarm discovers these tags in bulk via the Resource Groups Tagging API, whose data is eventually consistent —
+      a tag added or removed shortly before a scheduled run may not take effect until the next cycle (typically within
+      minutes).
 
 **Example**
 

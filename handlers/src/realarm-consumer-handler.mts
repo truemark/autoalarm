@@ -7,9 +7,7 @@ import {
 } from 'aws-lambda';
 import {
   CloudWatchClient,
-  ListTagsForResourceCommand,
   SetAlarmStateCommand,
-  Tag,
 } from '@aws-sdk/client-cloudwatch';
 import * as logging from '@nr1e/logging';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
@@ -37,7 +35,6 @@ const log = logging.initialize({
 });
 
 // Constants for rate limiting and retries
-const TAG_RETRY_ATTEMPTS = 3;
 const DELAY_BETWEEN_OPERATIONS = 200;
 const THROTTLING_ERROR_CODES = [
   'Throttling', // CloudWatch (Query protocol) throttle error name
@@ -58,14 +55,23 @@ function isThrottlingError(error: unknown): boolean {
     (code) => errorName === code || String(error).includes(code),
   );
 }
-const MAX_CONCURRENT_TAG_REQUESTS = 5;
-const TAG_REQUEST_DELAY = 200; // 200ms between requests
-
+/**
+ * Message produced by the ReAlarm producer. The producer resolves all
+ * tag-derived facts (bulk Resource Groups Tagging API sweep for the standard
+ * cycle, single ListTagsForResource for the override path) and embeds them in
+ * the message, so this consumer performs no tag lookups. Note: the Tagging
+ * API data the producer reads is eventually consistent and can lag tag
+ * changes by minutes.
+ */
 interface AlarmMessage {
   alarmName: string;
   alarmArn: string;
   alarmActions: string[];
   isOverride?: boolean;
+  /** True when the alarm carries autoalarm:re-alarm-enabled=false. */
+  reAlarmDisabled?: boolean;
+  /** True when the alarm carries a valid autoalarm:re-alarm-minutes tag. */
+  hasOverrideTag?: boolean;
 }
 
 interface ErrorMetrics {
@@ -107,102 +113,7 @@ function logMetricsSummary() {
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function fetchTagsWithRetry(
-  alarm: AlarmMessage,
-  attempts: number = TAG_RETRY_ATTEMPTS,
-): Promise<Tag[]> {
-  for (let i = 0; i < attempts; i++) {
-    try {
-      metrics.totalCalls++;
-      const tagsResponse = await cloudwatch.send(
-        new ListTagsForResourceCommand({
-          ResourceARN: alarm.alarmArn,
-        }),
-      );
-
-      if (!tagsResponse.Tags) {
-        throw new Error('No tags returned from ListTagsForResource');
-      }
-      return tagsResponse.Tags;
-    } catch (error) {
-      if (isThrottlingError(error)) {
-        metrics.throttlingErrors++;
-      }
-
-      if (i === attempts - 1) {
-        log
-          .error()
-          .str('function', 'fetchTagsWithRetry')
-          .str('alarmName', alarm.alarmName)
-          .str('error', String(error))
-          .num('attempt', i + 1)
-          .msg('Failed to fetch tags after all retry attempts');
-        throw new Error(
-          `Failed to fetch tags for alarm ${alarm.alarmName} after ${attempts} attempts: ${error}`,
-        );
-      }
-
-      log
-        .warn()
-        .str('function', 'fetchTagsWithRetry')
-        .str('alarmName', alarm.alarmName)
-        .str('error', String(error))
-        .num('attempt', i + 1)
-        .msg('Retrying tag fetch after error');
-
-      await delay(Math.pow(2, i) * 100); // Exponential backoff
-    }
-  }
-  throw new Error('Unexpected end of fetchTagsWithRetry');
-}
-
-function chunk<T>(array: T[], size: number): T[][] {
-  return Array.from({length: Math.ceil(array.length / size)}, (_, index) =>
-    array.slice(index * size, index * size + size),
-  );
-}
-
-// Create a rate limiter utility
-async function rateLimitedTagFetch(alarms: AlarmMessage[]): Promise<{
-  tagResults: Map<string, Tag[]>;
-  failedArns: Set<string>;
-}> {
-  const tagResults = new Map<string, Tag[]>();
-  const failedArns = new Set<string>();
-
-  // Process alarms in smaller chunks
-  const chunks = chunk(alarms, MAX_CONCURRENT_TAG_REQUESTS);
-
-  for (const chunk of chunks) {
-    // Process each chunk concurrently but with controlled parallelism
-    const chunkPromises = chunk.map(async (alarm) => {
-      try {
-        const tags = await fetchTagsWithRetry(alarm);
-        tagResults.set(alarm.alarmArn, tags);
-      } catch (error) {
-        // Track the failure - without tags we cannot honor opt-outs like
-        // autoalarm:re-alarm-enabled=false, so the caller must not process
-        // this alarm with an empty tag set.
-        failedArns.add(alarm.alarmArn);
-        log
-          .error()
-          .str('function', 'rateLimitedTagFetch')
-          .str('alarmArn', alarm.alarmArn)
-          .str('error', String(error))
-          .msg('Failed to fetch tags for alarm');
-      }
-      // Add delay between requests within chunk
-      await delay(TAG_REQUEST_DELAY);
-    });
-
-    // Wait for current chunk to complete before moving to next
-    await Promise.all(chunkPromises);
-  }
-
-  return {tagResults, failedArns};
-}
-
-function validateAlarm(alarm: AlarmMessage, tags: Tag[]): boolean {
+function validateAlarm(alarm: AlarmMessage): boolean {
   // Log all actions for this alarm
   log
     .info()
@@ -232,20 +143,15 @@ function validateAlarm(alarm: AlarmMessage, tags: Tag[]): boolean {
       .msg('Autoscaling actions found - alarm will be excluded');
   }
 
-  const reAlarmDisabled = tags.some(
-    (tag) => tag.Key === 'autoalarm:re-alarm-enabled' && tag.Value === 'false',
-  );
+  // Tag-derived facts are resolved by the producer and embedded in the
+  // message - no tag lookups happen here. Normalize with Boolean() so
+  // messages produced before these fields existed (in-flight during a
+  // deploy) keep their historical standard-cycle behavior.
+  const reAlarmDisabled = Boolean(alarm.reAlarmDisabled);
 
   // Only a real positive integer counts as an override (mirrors the tag-event
-  // handler). Number('') === 0, so a bare !isNaN check would treat ''/' '/'0'
-  // as an override and exclude the alarm from BOTH re-alarm paths.
-  const reAlarmOverrideTag = tags.some((tag) => {
-    if (tag.Key !== 'autoalarm:re-alarm-minutes') {
-      return false;
-    }
-    const minutes = Number(tag.Value);
-    return Number.isInteger(minutes) && minutes > 0;
-  });
+  // handler); the producer applies that rule when it sets hasOverrideTag.
+  const reAlarmOverrideTag = Boolean(alarm.hasOverrideTag);
 
   const hasAutoScalingAction = autoscalingActions.length > 0;
 
@@ -263,7 +169,7 @@ function validateAlarm(alarm: AlarmMessage, tags: Tag[]): boolean {
       String(
         !reAlarmDisabled &&
           !hasAutoScalingAction &&
-          reAlarmOverrideTag === alarm.isOverride,
+          reAlarmOverrideTag === Boolean(alarm.isOverride),
       ),
     )
     .msg('Alarm validation result');
@@ -271,7 +177,7 @@ function validateAlarm(alarm: AlarmMessage, tags: Tag[]): boolean {
   return (
     !reAlarmDisabled &&
     !hasAutoScalingAction &&
-    reAlarmOverrideTag === alarm.isOverride
+    reAlarmOverrideTag === Boolean(alarm.isOverride)
   );
 }
 
@@ -317,13 +223,13 @@ async function resetAlarmState(
 
 let currentDelay = DELAY_BETWEEN_OPERATIONS;
 
-async function processAlarm(message: AlarmMessage, tags: Tag[]): Promise<void> {
+async function processAlarm(message: AlarmMessage): Promise<void> {
   try {
     const startTime = Date.now();
     let throttleCount = 0;
 
     try {
-      if (validateAlarm(message, tags)) {
+      if (validateAlarm(message)) {
         // Reset the throttling error count before the next API call
         const previousThrottleErrors = metrics.throttlingErrors;
         await resetAlarmState(message.alarmName, message.isOverride || false);
@@ -442,37 +348,14 @@ export const handler: SQSHandler = async (
     }
   });
 
-  // Fetch all tags upfront
-  const {tagResults: tagCache, failedArns} = await rateLimitedTagFetch(
-    parsedMessages.map(({message}) => message),
-  );
-
-  // Do not process alarms whose tag fetch failed - without tags we cannot
-  // honor opt-outs (autoalarm:re-alarm-enabled=false). Report them as batch
-  // item failures so SQS retries them.
-  const processableMessages = parsedMessages.filter(({record, message}) => {
-    if (failedArns.has(message.alarmArn)) {
-      log
-        .warn()
-        .str('function', 'handler')
-        .str('messageId', record.messageId)
-        .str('alarmName', message.alarmName)
-        .msg(
-          'Skipping alarm because tag fetch failed - reporting for SQS retry',
-        );
-      batchItemFailures.push({itemIdentifier: record.messageId});
-      batchItemBodies.push(record);
-      return false;
-    }
-    return true;
-  });
+  // All tag-derived facts arrive embedded in the message body (resolved by
+  // the producer), so every successfully parsed message is processable - no
+  // per-alarm tag fetches and no tag-fetch failure handling are needed here.
+  const processableMessages = parsedMessages;
 
   try {
-    // Process messages using cached tags
     const processingResults = await Promise.allSettled(
-      processableMessages.map(({message}) =>
-        processAlarm(message, tagCache.get(message.alarmArn) || []),
-      ),
+      processableMessages.map(({message}) => processAlarm(message)),
     );
 
     // Attribute failures by index - processingResults[i] corresponds to

@@ -74,12 +74,18 @@ export class ReAlarmProducer extends Construct {
       description: 'Execution role for ReAlarm Producer Lambda function',
     });
 
+    // DescribeAlarms enumerates eligibility; ListTagsForResource is the
+    // single-alarm tag lookup for the override path; tag:GetResources is the
+    // bulk Resource Groups Tagging API sweep that builds the standard-cycle
+    // exclusion/override sets. None of these read/list actions are
+    // resource-scopable in a useful way, so they stay on '*'.
     reAlarmProducerRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: [
           'cloudwatch:DescribeAlarms',
           'cloudwatch:ListTagsForResource',
+          'tag:GetResources',
         ],
         resources: ['*'],
       }),

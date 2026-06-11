@@ -134,23 +134,29 @@ export class AutoAlarm extends Construct {
       }),
     );
 
-    // Alarm-management actions scoped to AutoAlarm-managed alarms only. All
-    // alarms created by this function are named 'AutoAlarm-*', so resource-level
-    // scoping is safe here (the ReAlarm producer uses a different role for
-    // account-wide DescribeAlarms).
+    // Mutating alarm actions scoped to AutoAlarm-managed alarms only.
     autoAlarmExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: [
           'cloudwatch:PutMetricAlarm',
           'cloudwatch:DeleteAlarms',
-          'cloudwatch:DescribeAlarms',
           'cloudwatch:TagResource',
           'cloudwatch:UntagResource',
         ],
         resources: [
           `arn:aws:cloudwatch:${region}:${accountId}:alarm:AutoAlarm-*`,
         ],
+      }),
+    );
+
+    // DescribeAlarms with AlarmNamePrefix is evaluated by IAM against alarm:*
+    // (AWS does not support resource-level scoping for prefix-based list calls).
+    autoAlarmExecutionRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['cloudwatch:DescribeAlarms'],
+        resources: [`arn:aws:cloudwatch:${region}:${accountId}:alarm:*`],
       }),
     );
 

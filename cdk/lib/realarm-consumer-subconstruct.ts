@@ -100,7 +100,7 @@ export class ReAlarmConsumer extends Construct {
   private createRole(reAlarmConsumerQueueArn: string): IRole {
     /**
      * Set up the IAM roles for the ReAlarm Consumer function
-     * Allow the consumer to describe alarms and list tags
+     * Allow the consumer to describe alarms
      * Allow the consumer to set alarm state
      * Allow the consumer to write to CloudWatch Logs
      * Allow Consumer to consume messages from the Consumer queue
@@ -128,15 +128,14 @@ export class ReAlarmConsumer extends Construct {
       }),
     );
 
-    // DescribeAlarms and ListTagsForResource are read/list operations that
-    // must run against all alarms in the account.
+    // DescribeAlarms is a read/list operation that must run against all
+    // alarms in the account. ListTagsForResource is no longer needed: the
+    // producer resolves all tag-derived facts (bulk Tagging API sweep /
+    // single-alarm lookup) and embeds them in each SQS message.
     reAlarmConsumerRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
-        actions: [
-          'cloudwatch:DescribeAlarms',
-          'cloudwatch:ListTagsForResource',
-        ],
+        actions: ['cloudwatch:DescribeAlarms'],
         resources: ['*'],
       }),
     );

@@ -41,7 +41,7 @@ const retryStrategy = new ConfiguredRetryStrategy(
   (attempt: number) => 100 + attempt * 1000,
 );
 //the following environment variables are used to get the prometheus workspace id and the region
-const region: string = process.env.AWS_REGION || '';
+const region = process.env.AWS_REGION;
 const client = new AmpClient({
   region,
   credentials: defaultProvider(),

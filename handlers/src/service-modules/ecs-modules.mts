@@ -13,7 +13,7 @@ import {ECS_CONFIGS} from '../alarm-configs/_index.mjs';
 import {Dimension} from '../types/module-types.mjs';
 
 const log: logging.Logger = logging.getLogger('ecs-modules');
-const region: string = process.env.AWS_REGION || '';
+const region = process.env.AWS_REGION;
 const retryStrategy = new ConfiguredRetryStrategy(20);
 
 const ecsClient = new ECSClient({

@@ -13,7 +13,7 @@ import {
 import {ALB_CONFIGS} from '../alarm-configs/_index.mjs';
 
 const log: logging.Logger = logging.getLogger('alb-modules');
-const region: string = process.env.AWS_REGION || '';
+const region = process.env.AWS_REGION;
 const retryStrategy = new ConfiguredRetryStrategy(20);
 const elbClient: ElasticLoadBalancingV2Client =
   new ElasticLoadBalancingV2Client({
