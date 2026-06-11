@@ -401,6 +401,10 @@ Empty positions between slashes (`//`) preserve the default values for those par
 The ReAlarm function is an AWS Lambda-based handler designed to monitor and reset CloudWatch alarms that are in an
 "ALARM" state. It is an optional part of the AutoAlarm system, aimed at ensuring alarms are not missed or ignored.
 
+> **Important:** By default, ReAlarm resets **every** CloudWatch alarm in the account that is in `ALARM` state — not
+> only AutoAlarm-managed alarms. Individual alarms can opt out by setting the `autoalarm:re-alarm-enabled=false` tag.
+> Alarms with AutoScaling actions are excluded automatically.
+
 ### Default Values
 
 By default, the ReAlarm function is enabled. When ReAlarm is enabled, it runs on a default schedule of every 120 minutes.
@@ -413,6 +417,8 @@ ReAlarm's behavior can be configured on a per-alarm basis using tags.
     - The ReAlarm schedule by default runs every 120 minutes.
     - ReAlarm can be customized to run at different intervals on a per-alarm basis by setting the `autoalarm:re-alarm-minutes`
       tag to a whole number value.
+    - The value must be between **5** and **1440** (one day) minutes, inclusive. Values outside these bounds are
+      treated as invalid and any existing per-alarm schedule is removed.
 - **Disable ReAlarm for a Resource**:
     - Alarms can be tagged with `autoalarm:re-alarm-enabled=false` to exclude them from the ReAlarm process.
     - When this tag is present on an alarm, ReAlarm will skip resetting it, regardless of its state.
