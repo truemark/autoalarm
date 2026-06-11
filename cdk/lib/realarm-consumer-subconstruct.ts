@@ -8,7 +8,7 @@ import {
 } from 'aws-cdk-lib/aws-iam';
 import {Construct} from 'constructs';
 import * as path from 'path';
-import {Duration, Stack} from 'aws-cdk-lib';
+import {ArnFormat, Duration, Stack} from 'aws-cdk-lib';
 import {Architecture} from 'aws-cdk-lib/aws-lambda';
 import {SqsEventSource} from 'aws-cdk-lib/aws-lambda-event-sources';
 import {NoBreachingExtendedQueue} from './extended-libs-subconstruct';
@@ -110,12 +110,31 @@ export class ReAlarmConsumer extends Construct {
       description: 'Execution role for ReAlarm Consumer Lambda function',
     });
 
+    // ReAlarm intentionally operates on every alarm in the account (opt-out
+    // via the autoalarm:re-alarm-enabled=false tag), but SetAlarmState can
+    // still be scoped to alarm ARNs in this account/region rather than '*'.
+    reAlarmConsumerRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['cloudwatch:SetAlarmState'],
+        resources: [
+          Stack.of(this).formatArn({
+            service: 'cloudwatch',
+            resource: 'alarm',
+            resourceName: '*',
+            arnFormat: ArnFormat.COLON_RESOURCE_NAME,
+          }),
+        ],
+      }),
+    );
+
+    // DescribeAlarms and ListTagsForResource are read/list operations that
+    // must run against all alarms in the account.
     reAlarmConsumerRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: [
           'cloudwatch:DescribeAlarms',
-          'cloudwatch:SetAlarmState',
           'cloudwatch:ListTagsForResource',
         ],
         resources: ['*'],

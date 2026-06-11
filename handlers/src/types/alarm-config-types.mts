@@ -21,7 +21,18 @@ import {
  *
  * @see {@link https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Statistics-definitions.html}
  */
-export type ValidExtendedStat = string | undefined;
+export type ValidExtendedStat =
+  | 'IQM'
+  | `p${number}`
+  | `tm${number}`
+  | `tc${number}`
+  | `ts${number}`
+  | `wm${number}`
+  | `TM(${string})`
+  | `WM(${string})`
+  | `TC(${string})`
+  | `TS(${string})`
+  | `PR(${string})`;
 
 /**
  * **Important**:

@@ -145,6 +145,8 @@ export class AutoAlarm extends Construct {
           'cloudwatch:PutMetricAlarm',
           'cloudwatch:DeleteAlarms',
           'cloudwatch:DescribeAlarms',
+          'cloudwatch:TagResource',
+          'cloudwatch:UntagResource',
         ],
         resources: [
           `arn:aws:cloudwatch:${region}:${accountId}:alarm:AutoAlarm-*`,
@@ -162,6 +164,7 @@ export class AutoAlarm extends Construct {
           'ec2:DescribeTags',
           'cloudwatch:ListMetrics',
           'cloudwatch:PutAnomalyDetector',
+          'cloudwatch:DeleteAnomalyDetector',
         ],
         resources: ['*'],
       }),

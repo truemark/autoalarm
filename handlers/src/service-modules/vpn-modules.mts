@@ -1,16 +1,14 @@
 import {EC2Client, DescribeTagsCommand} from '@aws-sdk/client-ec2';
 import * as logging from '@nr1e/logging';
 import {AlarmClassification, Tag} from '../types/index.mjs';
-import {
-  CloudWatchClient,
-  DeleteAlarmsCommand,
-} from '@aws-sdk/client-cloudwatch';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
   deleteExistingAlarms,
   buildAlarmName,
+  buildExpectedAlarmNames,
   handleAnomalyAlarms,
   handleStaticAlarms,
+  massDeleteAlarms,
   getCWAlarmsForInstance,
   parseMetricAlarmOptions,
 } from '../alarm-configs/utils/index.mjs';
@@ -20,10 +18,6 @@ const log: logging.Logger = logging.getLogger('vpn-modules');
 const region: string = process.env.AWS_REGION || '';
 const retryStrategy = new ConfiguredRetryStrategy(20);
 const ec2Client: EC2Client = new EC2Client({
-  region: region,
-  retryStrategy: retryStrategy,
-});
-const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   region: region,
   retryStrategy: retryStrategy,
 });
@@ -82,7 +76,7 @@ async function checkAndManageVpnStatusAlarms(
       .str('function', 'checkAndManageVpnStatusAlarms')
       .str('vpnId', vpnId)
       .msg('Alarm creation disabled by tag settings');
-    await deleteExistingAlarms('VPN', vpnId);
+    await deleteExistingAlarms('VPN', vpnId, metricConfigs);
     return;
   }
 
@@ -152,7 +146,17 @@ async function checkAndManageVpnStatusAlarms(
     }
   }
   // Delete alarms that are not in the alarmsToKeep set
-  const existingAlarms = await getCWAlarmsForInstance('VPN', vpnId);
+  // Restrict the prefix-based fetch to this resource's exact expected alarm
+  // names so we never delete alarms of another resource whose identifier
+  // shares a prefix.
+  const expectedAlarmNames = buildExpectedAlarmNames(
+    'VPN',
+    vpnId,
+    metricConfigs,
+  );
+  const existingAlarms = (await getCWAlarmsForInstance('VPN', vpnId)).filter(
+    (alarm) => expectedAlarmNames.has(alarm),
+  );
   const alarmsToDelete = existingAlarms.filter(
     (alarm) => !alarmsToKeep.has(alarm),
   );
@@ -162,11 +166,7 @@ async function checkAndManageVpnStatusAlarms(
     .str('function', 'checkAndManageVpnStatusAlarms')
     .obj('alarms to delete', alarmsToDelete)
     .msg('Deleting alarms that are no longer needed');
-  await cloudWatchClient.send(
-    new DeleteAlarmsCommand({
-      AlarmNames: [...alarmsToDelete],
-    }),
-  );
+  await massDeleteAlarms(alarmsToDelete);
 
   log
     .info()
@@ -181,7 +181,7 @@ export async function manageVpnAlarms(vpnId: string, tags: Tag): Promise<void> {
 
 export async function manageInactiveVpnAlarms(vpnId: string): Promise<void> {
   try {
-    await deleteExistingAlarms('VPN', vpnId);
+    await deleteExistingAlarms('VPN', vpnId, metricConfigs);
   } catch (e) {
     log
       .error()
@@ -205,7 +205,9 @@ export async function parseVpnEventAndCreateAlarms(
 
   switch (event['detail-type']) {
     case 'Tag Change on Resource':
-      vpnId = event.resources[0];
+      // resources[0] is a full ARN (arn:aws:ec2:...:vpn-connection/vpn-xxx);
+      // extract the bare 'vpn-...' id to match the VpnId dimension and alarm names
+      vpnId = event.resources[0]?.split('/').pop() || '';
       eventType = 'TagChange';
       tags = event.detail.tags || {};
       log
@@ -281,7 +283,12 @@ export async function parseVpnEventAndCreateAlarms(
       .error()
       .str('function', 'parseVpnEventAndCreateAlarms')
       .str('vpnId', vpnId)
-      .msg('Vpn Id is empty');
+      .msg(
+        'Could not resolve VPN identifier from event. Failing record to avoid managing alarms with an empty identifier',
+      );
+    throw new Error(
+      'Could not resolve VPN identifier from event. Cannot manage alarms with an empty identifier',
+    );
   }
 
   log

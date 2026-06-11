@@ -9,25 +9,18 @@ import {
   getCWAlarmsForInstance,
   deleteExistingAlarms,
   buildAlarmName,
+  buildExpectedAlarmNames,
   handleAnomalyAlarms,
   handleStaticAlarms,
+  massDeleteAlarms,
   parseMetricAlarmOptions,
 } from '../alarm-configs/utils/index.mjs';
-import {
-  CloudWatchClient,
-  DeleteAlarmsCommand,
-} from '@aws-sdk/client-cloudwatch';
 import {CLOUDFRONT_CONFIGS} from '../alarm-configs/_index.mjs';
 
 const log: logging.Logger = logging.getLogger('cloudfront-modules');
 const region: string = process.env.AWS_REGION || '';
 const retryStrategy = new ConfiguredRetryStrategy(20);
 const cloudFrontClient: CloudFrontClient = new CloudFrontClient({
-  region: region,
-  retryStrategy: retryStrategy,
-});
-
-const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   region: region,
   retryStrategy: retryStrategy,
 });
@@ -86,7 +79,7 @@ async function checkAndManageCloudFrontStatusAlarms(
       .str('function', 'checkAndManageCloudFrontStatusAlarms')
       .str('distributionId', distributionId)
       .msg('Alarm creation disabled by tag settings');
-    await deleteExistingAlarms('CF', distributionId);
+    await deleteExistingAlarms('CF', distributionId, metricConfigs);
     return;
   }
 
@@ -162,7 +155,17 @@ async function checkAndManageCloudFrontStatusAlarms(
     }
   }
   // Delete alarms that are not in the alarmsToKeep set
-  const existingAlarms = await getCWAlarmsForInstance('CF', distributionId);
+  // Restrict the prefix-based fetch to this resource's exact expected alarm
+  // names so we never delete alarms of another resource whose identifier
+  // shares a prefix.
+  const expectedAlarmNames = buildExpectedAlarmNames(
+    'CF',
+    distributionId,
+    metricConfigs,
+  );
+  const existingAlarms = (
+    await getCWAlarmsForInstance('CF', distributionId)
+  ).filter((alarm) => expectedAlarmNames.has(alarm));
   const alarmsToDelete = existingAlarms.filter(
     (alarm) => !alarmsToKeep.has(alarm),
   );
@@ -172,11 +175,7 @@ async function checkAndManageCloudFrontStatusAlarms(
     .str('function', 'checkAndManageCloudFrontStatusAlarms')
     .obj('alarms to delete', alarmsToDelete)
     .msg('Deleting alarms that are no longer needed');
-  await cloudWatchClient.send(
-    new DeleteAlarmsCommand({
-      AlarmNames: [...alarmsToDelete],
-    }),
-  );
+  await massDeleteAlarms(alarmsToDelete);
 
   log
     .info()
@@ -196,7 +195,7 @@ export async function manageInactiveCloudFrontAlarms(
   distributionId: string,
 ): Promise<void> {
   try {
-    await deleteExistingAlarms('CF', distributionId);
+    await deleteExistingAlarms('CF', distributionId, metricConfigs);
   } catch (e) {
     log
       .error()
@@ -221,6 +220,7 @@ export async function parseCloudFrontEventAndCreateAlarms(
   tags: Record<string, string>;
 }> {
   let distributionArn: string = '';
+  let distributionId: string = '';
   let eventType: string = '';
   let tags: Record<string, string> = {};
 
@@ -268,13 +268,15 @@ export async function parseCloudFrontEventAndCreateAlarms(
           break;
 
         case 'DeleteDistribution':
-          distributionArn = event.detail.responseElements?.distribution?.aRN;
+          // DeleteDistribution returns a 204 with no responseElements, so use
+          // the distribution ID from the request parameters directly.
+          distributionId = event.detail.requestParameters?.id;
           eventType = 'Delete';
           log
             .info()
             .str('function', 'parseCloudFrontEventAndCreateAlarms')
             .str('eventType', 'Delete')
-            .str('distributionArn', distributionArn)
+            .str('distributionId', distributionId)
             .str('requestId', event.detail.requestID)
             .msg('Processing DeleteDistribution event');
           break;
@@ -297,14 +299,23 @@ export async function parseCloudFrontEventAndCreateAlarms(
         .msg('Unexpected event type');
   }
 
-  // Extract the distribution ID from the ARN
-  const distributionId = extractDistributionIdFromArn(distributionArn);
+  // Extract the distribution ID from the ARN (Delete events set it directly
+  // from the request parameters since the API response carries no ARN)
+  if (!distributionId) {
+    distributionId = extractDistributionIdFromArn(distributionArn ?? '');
+  }
   if (!distributionId) {
     log
       .error()
       .str('function', 'parseCloudFrontEventAndCreateAlarms')
       .str('distributionArn', distributionArn)
-      .msg('Extracted CloudFront distribution ID is empty');
+      .str('eventType', eventType)
+      .msg(
+        'Resolved CloudFront distribution ID is empty. Aborting alarm management.',
+      );
+    throw new Error(
+      'Resolved CloudFront distribution ID is empty. Aborting alarm management.',
+    );
   }
 
   log

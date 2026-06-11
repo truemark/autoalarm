@@ -7,10 +7,12 @@ import {Queue, QueueEncryption} from 'aws-cdk-lib/aws-sqs';
 import {ReAlarmTagEventHandler} from './realarm-tag-event-subconstruct';
 import {EventRules} from './service-eventbridge-subconstruct';
 import {SqsHandlerSubConstruct} from './sqs-handler-subconstruct';
+import {CronOptions} from 'aws-cdk-lib/aws-events';
 
 interface AutoAlarmConstructProps {
   readonly prometheusWorkspaceId?: string;
   readonly enableReAlarm?: boolean;
+  readonly reAlarmSchedule?: CronOptions;
 }
 
 export class AutoAlarmConstruct extends Construct {
@@ -60,6 +62,7 @@ export class AutoAlarmConstruct extends Construct {
         this.reAlarmConsumer.reAlarmConsumerQueue.queueArn,
         this.reAlarmConsumer.reAlarmConsumerQueue.queueUrl,
         eventRuleTargetDLQ,
+        props.reAlarmSchedule,
       );
 
       this.reAlarmTagEventHandler = new ReAlarmTagEventHandler(

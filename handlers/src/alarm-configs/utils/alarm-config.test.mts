@@ -1,13 +1,15 @@
 import {test, expect, describe} from 'vitest';
 import {
-  //metricAlarmOptionsToString,
+  metricAlarmOptionsToString,
+  parseMetricAlarmOptions,
   parseStatisticOption,
 } from './alarm-config.mjs';
 import {Statistic} from '@aws-sdk/client-cloudwatch';
+import {TreatMissingData} from 'aws-cdk-lib/aws-cloudwatch';
+import {MetricAlarmOptions} from '../../types/index.mjs';
 
 // Use the following to run test individually: npx vitest run ./alarm-configs/utils/alarm-config.test.mts
-/*
-test('metricAlarmOptionsToString', async () => {
+test('metricAlarmOptionsToString', () => {
   expect(
     metricAlarmOptionsToString({
       warningThreshold: 1,
@@ -16,18 +18,59 @@ test('metricAlarmOptionsToString', async () => {
       evaluationPeriods: 3,
       statistic: 'Average',
       dataPointsToAlarm: 4,
-      missingDataTreatment: 'missing',
+      missingDataTreatment: TreatMissingData.MISSING,
       comparisonOperator: 'GreaterThanOrEqualToThreshold',
     }),
   ).toBe('1/2/2/3/Average/4/GreaterThanOrEqualToThreshold/missing');
-  // TODO Add more tests
 });
 
+describe('parseMetricAlarmOptions', () => {
+  const defaults: MetricAlarmOptions = {
+    warningThreshold: 10,
+    criticalThreshold: 20,
+    period: 60,
+    evaluationPeriods: 5,
+    statistic: 'Average',
+    dataPointsToAlarm: 5,
+    missingDataTreatment: TreatMissingData.IGNORE,
+    comparisonOperator: 'GreaterThanThreshold',
+  };
 
-test('parseMetricAlarmOptions', async () => {
-  // TODO Add tests
+  test('parses a fully specified value', () => {
+    expect(
+      parseMetricAlarmOptions(
+        '1/2/300/3/Maximum/2/LessThanThreshold/breaching',
+        defaults,
+      ),
+    ).toEqual({
+      warningThreshold: 1,
+      criticalThreshold: 2,
+      period: 300,
+      evaluationPeriods: 3,
+      statistic: 'Maximum',
+      dataPointsToAlarm: 2,
+      missingDataTreatment: 'breaching',
+      comparisonOperator: 'LessThanThreshold',
+    });
+  });
+
+  test('falls back to defaults for missing or empty fields', () => {
+    expect(parseMetricAlarmOptions('', defaults)).toEqual({
+      ...defaults,
+      warningThreshold: defaults.warningThreshold,
+    });
+    expect(parseMetricAlarmOptions('//120', defaults)).toEqual({
+      ...defaults,
+      period: 120,
+    });
+  });
+
+  test('treats "-" thresholds as disabled (null)', () => {
+    const parsed = parseMetricAlarmOptions('-/30', defaults);
+    expect(parsed.warningThreshold).toBeNull();
+    expect(parsed.criticalThreshold).toBe(30);
+  });
 });
-*/
 
 /** parseStatisticOption test for valid Extended statistics.*/
 describe('parseStatisticOption', () => {
@@ -211,6 +254,8 @@ describe('parseStatisticOption', () => {
       'p101', // Percentile out of range
       'tm101', // Trimmed mean out of range
       'wm101', // Winsorized mean out of range
+      'maxp95', // Prefixed garbage must not match (regex must be fully anchored)
+      'p95max', // Suffixed garbage must not match
       'TC(zz%:300%)', // Percentage over 100%
       'PR(abc)', // Invalid percentile rank format
       'TM(10:90:80)', // Too many values in range
@@ -244,15 +289,16 @@ describe('parseStatisticOption', () => {
     expect(parseStatisticOption('tm99', 'Average')).toBe('tm99');
     expect(parseStatisticOption('TM(:99%)', 'Average')).toBe('TM(:99%)');
 
-    // Edge case: Decimal place precision in percentiles
-    expect(parseStatisticOption('p99.9', 'Average')).toBe('Average');
+    // Edge case: Decimal place precision in percentiles (valid per AWS docs)
+    expect(parseStatisticOption('p99.9', 'Average')).toBe('p99.9');
+    expect(parseStatisticOption('tm99.9', 'Average')).toBe('tm99.9');
     expect(parseStatisticOption('TM(10.5%:90.5%)', 'Average')).toBe(
       'TM(10.5%:90.5%)',
     );
 
-    // Edge case: Valid format with minimal values
-    expect(parseStatisticOption('p0', 'Average')).toBe('Average');
-    expect(parseStatisticOption('p100', 'Average')).toBe('Average');
+    // Edge case: Valid format with boundary values
+    expect(parseStatisticOption('p0', 'Average')).toBe('p0');
+    expect(parseStatisticOption('p100', 'Average')).toBe('p100');
   });
 
   // Edge case: Empty strings
@@ -267,4 +313,104 @@ describe('parseStatisticOption', () => {
   expect(parseStatisticOption('TS(0.001:0.001)', 'Average')).toBe(
     'TS(0.001:0.001)',
   );
+});
+
+/** parseMetricAlarmOptions tests for missing data treatment and integer parsing. */
+describe('parseMetricAlarmOptions', () => {
+  const defaults: MetricAlarmOptions = {
+    warningThreshold: 1,
+    criticalThreshold: 2,
+    period: 60,
+    evaluationPeriods: 5,
+    statistic: 'Average',
+    dataPointsToAlarm: 4,
+    comparisonOperator: 'GreaterThanThreshold',
+    missingDataTreatment: 'missing',
+  };
+
+  // Tag format: warning/critical/period/evalPeriods/statistic/datapoints/operator/missingDataTreatment
+  test('parses documented missing data treatment values (enum values)', () => {
+    expect(
+      parseMetricAlarmOptions(
+        '1/2/60/5/Average/4/GreaterThanThreshold/notBreaching',
+        defaults,
+      ).missingDataTreatment,
+    ).toBe('notBreaching');
+    expect(
+      parseMetricAlarmOptions(
+        '1/2/60/5/Average/4/GreaterThanThreshold/NOTBREACHING',
+        defaults,
+      ).missingDataTreatment,
+    ).toBe('notBreaching');
+    expect(
+      parseMetricAlarmOptions(
+        '1/2/60/5/Average/4/GreaterThanThreshold/ignore',
+        defaults,
+      ).missingDataTreatment,
+    ).toBe('ignore');
+    expect(
+      parseMetricAlarmOptions(
+        '1/2/60/5/Average/4/GreaterThanThreshold/breaching',
+        defaults,
+      ).missingDataTreatment,
+    ).toBe('breaching');
+  });
+
+  test('accepts legacy enum key spellings and maps them to enum values', () => {
+    expect(
+      parseMetricAlarmOptions(
+        '1/2/60/5/Average/4/GreaterThanThreshold/not_breaching',
+        defaults,
+      ).missingDataTreatment,
+    ).toBe('notBreaching');
+    expect(
+      parseMetricAlarmOptions(
+        '1/2/60/5/Average/4/GreaterThanThreshold/NOT_BREACHING',
+        defaults,
+      ).missingDataTreatment,
+    ).toBe('notBreaching');
+    expect(
+      parseMetricAlarmOptions(
+        '1/2/60/5/Average/4/GreaterThanThreshold/IGNORE',
+        defaults,
+      ).missingDataTreatment,
+    ).toBe('ignore');
+  });
+
+  test('falls back to default for invalid missing data treatment values', () => {
+    expect(
+      parseMetricAlarmOptions(
+        '1/2/60/5/Average/4/GreaterThanThreshold/bogus',
+        defaults,
+      ).missingDataTreatment,
+    ).toBe('missing');
+  });
+
+  test('rejects non-integer and non-positive integer options', () => {
+    // 2.5 evaluation periods is invalid - fall back to default
+    expect(
+      parseMetricAlarmOptions('1/2/60/2.5/Average/4', defaults)
+        .evaluationPeriods,
+    ).toBe(5);
+    // 0 and negative values are invalid - fall back to default
+    expect(parseMetricAlarmOptions('1/2/0/5/Average/4', defaults).period).toBe(
+      60,
+    );
+    expect(
+      parseMetricAlarmOptions('1/2/60/5/Average/-3', defaults)
+        .dataPointsToAlarm,
+    ).toBe(4);
+    // Valid positive integers are accepted
+    expect(
+      parseMetricAlarmOptions('1/2/300/3/Average/2', defaults).period,
+    ).toBe(300);
+    expect(
+      parseMetricAlarmOptions('1/2/300/3/Average/2', defaults)
+        .evaluationPeriods,
+    ).toBe(3);
+    expect(
+      parseMetricAlarmOptions('1/2/300/3/Average/2', defaults)
+        .dataPointsToAlarm,
+    ).toBe(2);
+  });
 });

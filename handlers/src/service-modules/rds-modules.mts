@@ -6,24 +6,18 @@ import {
   getCWAlarmsForInstance,
   deleteExistingAlarms,
   buildAlarmName,
+  buildExpectedAlarmNames,
   handleAnomalyAlarms,
   handleStaticAlarms,
+  massDeleteAlarms,
   parseMetricAlarmOptions,
 } from '../alarm-configs/utils/index.mjs';
-import {
-  CloudWatchClient,
-  DeleteAlarmsCommand,
-} from '@aws-sdk/client-cloudwatch';
 import {RDS_CONFIGS} from '../alarm-configs/_index.mjs';
 
 const log: logging.Logger = logging.getLogger('rds-modules');
 const region: string = process.env.AWS_REGION || '';
 const retryStrategy = new ConfiguredRetryStrategy(20);
 const rdsClient: RDSClient = new RDSClient({
-  region: region,
-  retryStrategy: retryStrategy,
-});
-const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   region: region,
   retryStrategy: retryStrategy,
 });
@@ -61,7 +55,9 @@ export async function fetchRDSTags(
       .err(error)
       .str('dbInstanceId', dbInstanceId)
       .msg('Error fetching database tags');
-    return {};
+    // Rethrow so a transient API error fails the record (and is retried)
+    // instead of being treated as "no tags" and deleting the alarms.
+    throw error;
   }
 }
 
@@ -82,7 +78,7 @@ async function checkAndManageRDSStatusAlarms(
       .str('function', 'checkAndManageRDSStatusAlarms')
       .str('dbInstanceId', dbInstanceId)
       .msg('Alarm creation disabled by tag settings');
-    await deleteExistingAlarms('RDS', dbInstanceId);
+    await deleteExistingAlarms('RDS', dbInstanceId, metricConfigs);
     return;
   }
 
@@ -151,8 +147,18 @@ async function checkAndManageRDSStatusAlarms(
         );
     }
   }
-  // Delete alarms that are not in the alarmsToKeep set
-  const existingAlarms = await getCWAlarmsForInstance('RDS', dbInstanceId);
+  // Delete alarms that are not in the alarmsToKeep set. Restrict the
+  // prefix-based fetch to this instance's exact expected alarm names so we
+  // never delete alarms of another resource whose identifier shares a prefix
+  // (e.g., 'mydb' vs 'mydb-replica').
+  const expectedAlarmNames = buildExpectedAlarmNames(
+    'RDS',
+    dbInstanceId,
+    metricConfigs,
+  );
+  const existingAlarms = (
+    await getCWAlarmsForInstance('RDS', dbInstanceId)
+  ).filter((alarm) => expectedAlarmNames.has(alarm));
 
   // Log the full structure of retrieved alarms for debugging
   log
@@ -191,11 +197,7 @@ async function checkAndManageRDSStatusAlarms(
     .obj('alarms to delete', alarmsToDelete)
     .msg('Deleting alarms that are no longer needed');
 
-  await cloudWatchClient.send(
-    new DeleteAlarmsCommand({
-      AlarmNames: [...alarmsToDelete],
-    }),
-  );
+  await massDeleteAlarms(alarmsToDelete);
 
   log
     .info()
@@ -208,7 +210,7 @@ export async function manageInactiveRDSAlarms(
   dbInstanceId: string,
 ): Promise<void> {
   try {
-    await deleteExistingAlarms('RDS', dbInstanceId);
+    await deleteExistingAlarms('RDS', dbInstanceId, metricConfigs);
   } catch (e) {
     log
       .error()

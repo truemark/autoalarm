@@ -10,7 +10,7 @@ import {Construct} from 'constructs';
 import * as path from 'path';
 import {Duration, Stack} from 'aws-cdk-lib';
 import {Architecture} from 'aws-cdk-lib/aws-lambda';
-import {Rule, Schedule} from 'aws-cdk-lib/aws-events';
+import {CronOptions, Rule, Schedule} from 'aws-cdk-lib/aws-events';
 import {LambdaFunction} from 'aws-cdk-lib/aws-events-targets';
 import {IQueue} from 'aws-cdk-lib/aws-sqs';
 
@@ -25,6 +25,7 @@ export class ReAlarmProducer extends Construct {
     reAlarmConsumerQueueArn: string,
     reAlarmConsumerQueueURL: string,
     eventRuleTargetDLQ: IQueue,
+    reAlarmSchedule?: CronOptions,
   ) {
     super(scope, id);
     this.eventRuleTargetDLQ = eventRuleTargetDLQ;
@@ -56,7 +57,7 @@ export class ReAlarmProducer extends Construct {
     /**
      * Set up the EventBridge rule to trigger the ReAlarm Producer function
      */
-    this.createEventBridgeRules();
+    this.createEventBridgeRules(reAlarmSchedule);
   }
 
   /**
@@ -113,10 +114,13 @@ export class ReAlarmProducer extends Construct {
 
   /**
    * private method to up the EventBridge rule to trigger the ReAlarm Producer function
+   * @param reAlarmSchedule - Optional cron schedule override. Defaults to a rate of every 2 hours.
    */
-  private createEventBridgeRules(): void {
+  private createEventBridgeRules(reAlarmSchedule?: CronOptions): void {
     const reAlarmeScheduleRule = new Rule(this, 'ReAlarmScheduleRule', {
-      schedule: Schedule.rate(Duration.minutes(120)),
+      schedule: reAlarmSchedule
+        ? Schedule.cron(reAlarmSchedule)
+        : Schedule.rate(Duration.minutes(120)),
       description:
         'Default rule to trigger the ReAlarm Producer function every 2 hours',
     });

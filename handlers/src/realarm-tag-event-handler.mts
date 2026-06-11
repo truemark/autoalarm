@@ -34,6 +34,12 @@ const log = logging.initialize({
 // Configuration constants
 const TAG_KEY = 'autoalarm:re-alarm-minutes';
 
+// Bounds for the autoalarm:re-alarm-minutes tag value. The producer scans every
+// alarm in the account on each invocation, so very short schedules are abusive;
+// cap at one day to keep override schedules sane.
+const MIN_REALARM_MINUTES = 5;
+const MAX_REALARM_MINUTES = 1440;
+
 const targetFunctionArn = process.env.PRODUCER_FUNCTION_ARN;
 
 // Initialize AWS service clients
@@ -93,6 +99,18 @@ async function deleteEventBridgeRule(alarmName: string): Promise<void> {
       .str('ruleName', ruleName)
       .msg('Successfully deleted EventBridge rule');
   } catch (error) {
+    // Deleting a rule that was never created (e.g. an opt-out tag on an alarm
+    // that never had an override schedule) is the common case - treat it as a
+    // successful no-op instead of failing the record.
+    if (error instanceof Error && error.name === 'ResourceNotFoundException') {
+      log
+        .debug()
+        .str('function', 'deleteEventBridgeRule')
+        .str('alarmName', alarmName)
+        .str('ruleName', ruleName)
+        .msg('Rule did not exist - nothing to delete');
+      return;
+    }
     log
       .error()
       .str('function', 'deleteEventBridgeRule')
@@ -259,7 +277,9 @@ export const handler: Handler = async (
         .obj('MetricAlarms', MetricAlarms)
         .msg('Alarm details');
 
-      if (!MetricAlarms) {
+      // DescribeAlarms returns MetricAlarms: [] (truthy) for nonexistent
+      // alarms, so we must check the length to detect "not found".
+      if (!MetricAlarms?.length) {
         log
           .info()
           .str('function', 'handler')
@@ -301,6 +321,23 @@ export const handler: Handler = async (
           .msg('Invalid or missing tag value - deleting existing rule');
 
         // Delete the rule if tag is invalid or missing
+        await deleteEventBridgeRule(alarmName);
+        continue; // Continue to next record instead of returning
+      }
+
+      // Enforce schedule bounds - treat out-of-bounds values as invalid
+      if (minutes < MIN_REALARM_MINUTES || minutes > MAX_REALARM_MINUTES) {
+        log
+          .warn()
+          .str('function', 'handler')
+          .str('resourceARN', resourceARN)
+          .num('minutes', minutes)
+          .num('minMinutes', MIN_REALARM_MINUTES)
+          .num('maxMinutes', MAX_REALARM_MINUTES)
+          .msg(
+            'Tag value outside allowed bounds - treating as invalid and deleting existing rule',
+          );
+
         await deleteEventBridgeRule(alarmName);
         continue; // Continue to next record instead of returning
       }

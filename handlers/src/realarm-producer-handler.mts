@@ -14,12 +14,20 @@ import * as logging from '@nr1e/logging';
 import * as crypto from 'crypto';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 
-const retryStrategy = new ConfiguredRetryStrategy(20);
+// Retry up to 5 times with linear backoff (100ms + 1s per attempt) instead of
+// hammering the API with constant-delay retries.
+const retryStrategy = new ConfiguredRetryStrategy(
+  5,
+  (attempt) => 100 + attempt * 1000,
+);
 const cloudwatch = new CloudWatchClient({
   region: process.env.AWS_REGION,
   retryStrategy: retryStrategy,
 });
-const sqs = new SQSClient({region: process.env.AWS_REGION});
+const sqs = new SQSClient({
+  region: process.env.AWS_REGION,
+  retryStrategy: retryStrategy,
+});
 
 // Set up logging configuration with fallback to 'info' level
 const level = process.env.LOG_LEVEL || 'info';
@@ -32,15 +40,31 @@ const log = logging.initialize({
   level,
 });
 
-const DELAY_BETWEEN_BATCHES = 1000;
 const PAGE_SIZE = 100;
 const SQS_BATCH_SIZE = 10;
+// Number of SendMessageBatch calls issued concurrently per group
+const MAX_CONCURRENT_SQS_BATCHES = 5;
+// Small fixed pause between concurrent groups to smooth burst traffic to SQS;
+// throttling itself is handled by the SDK retry strategy.
+const DELAY_BETWEEN_BATCH_GROUPS = 100;
 const THROTTLING_ERROR_CODES = [
+  'Throttling', // CloudWatch (Query protocol) throttle error name
   'ThrottlingException',
   'RequestLimitExceeded',
   'TooManyRequestsException',
+  'RequestThrottled', // SQS throttle error name
 ];
-const BACKOFF_MULTIPLIER = 1.5;
+
+/**
+ * Detects throttling errors by matching the error name (precise) and falling
+ * back to a message substring match for wrapped/stringified errors.
+ */
+function isThrottlingError(error: unknown): boolean {
+  const errorName = error instanceof Error ? error.name : '';
+  return THROTTLING_ERROR_CODES.some(
+    (code) => errorName === code || String(error).includes(code),
+  );
+}
 
 interface ErrorMetrics {
   throttlingErrors: number;
@@ -165,7 +189,6 @@ async function sendAlarmsToSQS(
 
   // Process alarms in batches for efficiency
   const batches = chunk(alarmsToProcess, SQS_BATCH_SIZE);
-  let currentDelay = DELAY_BETWEEN_BATCHES;
 
   log
     .info()
@@ -176,75 +199,43 @@ async function sendAlarmsToSQS(
     .str('isOverride', String(isOverride))
     .msg('Starting to send alarms to SQS');
 
-  // Process each batch of alarms
-  for (const [batchIndex, batch] of batches.entries()) {
-    const startTime = Date.now();
-    let batchThrottleCount = 0;
+  // Create hash for unique message id
+  const messageHash = (alarm: string): string => {
+    return crypto
+      .createHash('sha256')
+      .update(alarm)
+      .digest('hex')
+      .substring(0, 8);
+  };
 
-    // Create hash for unique message id
-    const messageHash = (alarm: string): string => {
-      return crypto
-        .createHash('sha256')
-        .update(alarm)
-        .digest('hex')
-        .substring(0, 8);
-    };
+  const sendBatch = async (
+    batch: MetricAlarm[],
+    batchIndex: number,
+  ): Promise<void> => {
+    // Prepare messages for the batch
+    const entries: SendMessageBatchRequestEntry[] = batch.map((alarm, i) => ({
+      Id: `${batchIndex}-${i}`,
+      MessageBody: JSON.stringify({
+        alarmName: alarm.AlarmName,
+        alarmArn: alarm.AlarmArn,
+        alarmActions: alarm.AlarmActions || [],
+        isOverride,
+      }),
+      MessageGroupId: `realarm-producer-${messageHash(`${alarm.AlarmName}${alarm.AlarmArn}${alarm.AlarmActions}${isOverride}-${i}`)}`,
+    }));
 
     try {
-      // Prepare messages for the batch
-      const entries: SendMessageBatchRequestEntry[] = batch.map((alarm, i) => ({
-        Id: `${batchIndex}-${i}`,
-        MessageBody: JSON.stringify({
-          alarmName: alarm.AlarmName,
-          alarmArn: alarm.AlarmArn,
-          alarmActions: alarm.AlarmActions || [],
-          isOverride,
-        }),
-        MessageGroupId: `realarm-producer-${messageHash(`${alarm.AlarmName}${alarm.AlarmArn}${alarm.AlarmActions}${isOverride}-${i}`)}`,
-      }));
-
-      // Send the batch to SQS
-      const command = new SendMessageBatchCommand({
-        QueueUrl: queueUrl,
-        Entries: entries,
-      });
-
       metrics.totalCalls++;
-      await sqs.send(command);
-
-      const processingTime = Date.now() - startTime;
-
-      // Adjust delay based on throttling and processing time
-      if (batchThrottleCount > 0) {
-        currentDelay = Math.min(currentDelay * BACKOFF_MULTIPLIER, 2000);
-        log
-          .warn()
-          .str('function', 'sendAlarmsToSQS')
-          .num('batchIndex', batchIndex)
-          .num('throttleCount', batchThrottleCount)
-          .num('newDelay', currentDelay)
-          .msg('Increasing delay due to throttling');
-      } else if (processingTime < currentDelay / 2) {
-        currentDelay = Math.max(
-          currentDelay / BACKOFF_MULTIPLIER,
-          DELAY_BETWEEN_BATCHES,
-        );
-        log
-          .info()
-          .str('function', 'sendAlarmsToSQS')
-          .num('batchIndex', batchIndex)
-          .num('processingTime', processingTime)
-          .num('newDelay', currentDelay)
-          .msg('Decreasing delay due to good performance');
-      }
-
-      // Wait before processing next batch
-      await delay(currentDelay);
+      await sqs.send(
+        new SendMessageBatchCommand({
+          QueueUrl: queueUrl,
+          Entries: entries,
+        }),
+      );
     } catch (error) {
       metrics.totalErrors++;
-      if (THROTTLING_ERROR_CODES.some((code) => String(error).includes(code))) {
+      if (isThrottlingError(error)) {
         metrics.throttlingErrors++;
-        batchThrottleCount++;
       }
 
       log
@@ -254,6 +245,20 @@ async function sendAlarmsToSQS(
         .str('error', String(error))
         .msg('Failed to send batch to SQS');
       throw error;
+    }
+  };
+
+  // Send batches with bounded concurrency. Throttling is handled by the SDK
+  // retry strategy (backoff), so no adaptive inter-batch delay is needed -
+  // just a small fixed pause between groups to avoid bursting the SQS API.
+  const indexedBatches = batches.map((batch, index) => ({batch, index}));
+  const batchGroups = chunk(indexedBatches, MAX_CONCURRENT_SQS_BATCHES);
+
+  for (const [groupIndex, group] of batchGroups.entries()) {
+    await Promise.all(group.map(({batch, index}) => sendBatch(batch, index)));
+
+    if (groupIndex < batchGroups.length - 1) {
+      await delay(DELAY_BETWEEN_BATCH_GROUPS);
     }
   }
 }

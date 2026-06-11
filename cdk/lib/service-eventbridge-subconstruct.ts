@@ -106,11 +106,9 @@ export class EventRules extends Construct {
               'autoalarm:request-count',
               'autoalarm:4xx-count',
               'autoalarm:5xx-count',
-              'autoalarm:response-time',
               'autoalarm:request-count-anomaly',
               'autoalarm:4xx-count-anomaly',
               'autoalarm:5xx-count-anomaly',
-              'autoalarm:response-time-anomaly',
             ],
           },
         },
@@ -309,8 +307,6 @@ export class EventRules extends Construct {
               'autoalarm:snapshot-failure',
               'autoalarm:storage',
               'autoalarm:storage-anomaly',
-              'autoalarm:sys-memory-util',
-              'autoalarm:sys-memory-util-anomaly',
               'autoalarm:throughput-throttle',
               'autoalarm:throughput-throttle-anomaly',
               'autoalarm:write-latency',
@@ -329,9 +325,10 @@ export class EventRules extends Construct {
       openSearchStateRule: new Rule(this, 'OpenSearchStateRule', {
         eventPattern: {
           source: ['aws.es'],
-          detailType: ['Elasticsearch Service Domain Change'],
+          detailType: ['AWS API Call via CloudTrail'],
           detail: {
-            state: ['CreateDomain', 'DeleteDomain'],
+            eventSource: ['es.amazonaws.com'],
+            eventName: ['CreateDomain', 'DeleteDomain'],
           },
         },
         description: 'Routes OpenSearch events to AutoAlarm',
@@ -411,7 +408,6 @@ export class EventRules extends Construct {
               'autoalarm:db-connections-anomaly',
               'autoalarm:replica-lag',
               'autoalarm:replica-lag-anomaly',
-              'autoalarm:failover-state',
             ],
           },
         },
@@ -526,8 +522,6 @@ export class EventRules extends Construct {
               'autoalarm:enabled',
               'autoalarm:executions-failed',
               'autoalarm:executions-failed-anomaly',
-              'autoalarm:executions-aborted',
-              'autoalarm:executions-aborted-anomaly',
               'autoalarm:executions-timed-out',
               'autoalarm:executions-timed-out-anomaly',
             ],
@@ -554,11 +548,9 @@ export class EventRules extends Construct {
               'autoalarm:enabled',
               'autoalarm:unhealthy-host-count',
               'autoalarm:response-time',
-              'autoalarm:request-count',
               'autoalarm:4xx-count',
               'autoalarm:5xx-count',
               'autoalarm:unhealthy-host-count-anomaly',
-              'autoalarm:request-count-anomaly',
               'autoalarm:response-time-anomaly',
               'autoalarm:4xx-count-anomaly',
               'autoalarm:5xx-count-anomaly',
@@ -684,18 +676,16 @@ export class EventRules extends Construct {
         );
 
         if (!queueKey) {
-          console.warn(
+          throw new Error(
             `No queue found containing service name: ${serviceName}`,
           );
-          break;
         }
 
         const queue = queues[queueKey];
         const serviceRules = eventBridgeRules.serviceRules.get(serviceName);
 
         if (!serviceRules) {
-          console.warn(`No rules found for service: ${serviceName}`);
-          break;
+          throw new Error(`No rules found for service: ${serviceName}`);
         }
 
         serviceRules.forEach((ruleObj) => {

@@ -52,12 +52,32 @@ describe('AutoAlarm stack', () => {
       Match.objectLike({
         PolicyDocument: Match.objectLike({
           Statement: Match.arrayWith([
+            // Alarm-management (including tagging) actions are scoped to
+            // AutoAlarm-managed alarm ARNs only.
             Match.objectLike({
               Action: Match.arrayWith([
                 'cloudwatch:PutMetricAlarm',
                 'cloudwatch:DeleteAlarms',
                 'cloudwatch:DescribeAlarms',
+                'cloudwatch:TagResource',
+                'cloudwatch:UntagResource',
               ]),
+              Resource: Match.objectLike({
+                'Fn::Join': Match.arrayWith([
+                  Match.arrayWith([
+                    Match.stringLikeRegexp(':alarm:AutoAlarm-\\*'),
+                  ]),
+                ]),
+              }),
+            }),
+            // Anomaly-detector and describe/list actions are not
+            // resource-scopable and stay on '*'.
+            Match.objectLike({
+              Action: Match.arrayWith([
+                'cloudwatch:PutAnomalyDetector',
+                'cloudwatch:DeleteAnomalyDetector',
+              ]),
+              Resource: '*',
             }),
           ]),
         }),
