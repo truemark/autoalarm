@@ -12,6 +12,8 @@ export {
   doesAlarmExist,
   deleteExistingAlarms,
   buildAlarmName,
+  buildExpectedAlarmNames,
+  chunkAlarmNames,
   handleAnomalyAlarms,
   handleStaticAlarms,
   getCWAlarmsForInstance,

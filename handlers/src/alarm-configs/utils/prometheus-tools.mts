@@ -255,9 +255,28 @@ async function getPromAlarmConfigs(
             continue;
           }
 
+          /**
+           * The shared EC2 memory/storage configs ship with an empty
+           * metricName (it is platform-resolved for CloudWatch alarms in
+           * ec2-modules). Resolve a distinct, non-empty metric name on a local
+           * copy here so Prometheus rule names are unique and never contain an
+           * empty segment. The Prometheus path is node_exporter/Linux based,
+           * so use the Linux CloudWatch agent metric names. Never mutate the
+           * shared config objects.
+           */
+          const resolvedConfig =
+            config.metricName === ''
+              ? {
+                  ...config,
+                  metricName: config.tagKey.includes('memory')
+                    ? 'mem_used_percent'
+                    : 'disk_used_percent',
+                }
+              : config;
+
           // Build the alarm name based on the convention
           const alarmName = buildAlarmName(
-            config,
+            resolvedConfig,
             service,
             instanceID,
             classification as AlarmClassification,

@@ -6,16 +6,14 @@ import {
 } from '@aws-sdk/client-elastic-load-balancing-v2';
 import * as logging from '@nr1e/logging';
 import {AlarmClassification, Tag} from '../types/index.mjs';
-import {
-  CloudWatchClient,
-  DeleteAlarmsCommand,
-} from '@aws-sdk/client-cloudwatch';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
   deleteExistingAlarms,
   buildAlarmName,
+  buildExpectedAlarmNames,
   handleAnomalyAlarms,
   handleStaticAlarms,
+  massDeleteAlarms,
   getCWAlarmsForInstance,
   parseMetricAlarmOptions,
 } from '../alarm-configs/utils/index.mjs';
@@ -30,10 +28,6 @@ const elbClient: ElasticLoadBalancingV2Client =
     region,
     retryStrategy,
   });
-const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
-  region: region,
-  retryStrategy: retryStrategy,
-});
 
 const metricConfigs = TARGET_GROUP_CONFIGS;
 
@@ -92,7 +86,7 @@ async function manageTGAlarms(
       .str('TargetGroupName', targetGroupName)
       .str('LoadBalancerName', loadBalancerName)
       .msg('Alarm creation disabled by tag settings');
-    await deleteExistingAlarms('TG', targetGroupName);
+    await deleteExistingAlarms('TG', targetGroupName, metricConfigs);
     return;
   }
 
@@ -188,7 +182,17 @@ async function manageTGAlarms(
   }
 
   // Delete alarms that are not in the alarmsToKeep set
-  const existingAlarms = await getCWAlarmsForInstance('TG', targetGroupName);
+  // Restrict the prefix-based fetch to this resource's exact expected alarm
+  // names so we never delete alarms of another resource whose identifier
+  // shares a prefix.
+  const expectedAlarmNames = buildExpectedAlarmNames(
+    'TG',
+    targetGroupName,
+    metricConfigs,
+  );
+  const existingAlarms = (
+    await getCWAlarmsForInstance('TG', targetGroupName)
+  ).filter((alarm) => expectedAlarmNames.has(alarm));
   const alarmsToDelete = existingAlarms.filter(
     (alarm) => !alarmsToKeep.has(alarm),
   );
@@ -200,11 +204,7 @@ async function manageTGAlarms(
     .obj('alarms to keep', alarmsToKeep)
     .obj('alarms to delete', alarmsToDelete)
     .msg('Deleting alarms that are no longer needed');
-  await cloudWatchClient.send(
-    new DeleteAlarmsCommand({
-      AlarmNames: [...alarmsToDelete],
-    }),
-  );
+  await massDeleteAlarms(alarmsToDelete);
 
   log
     .info()
@@ -216,7 +216,7 @@ async function manageTGAlarms(
 
 export async function manageInactiveTGAlarms(targetGroupName: string) {
   try {
-    await deleteExistingAlarms('TG', targetGroupName);
+    await deleteExistingAlarms('TG', targetGroupName, metricConfigs);
   } catch (e) {
     log
       .error()
