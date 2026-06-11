@@ -20,8 +20,8 @@ const cloudwatch = new CloudWatchClient({
   retryStrategy: retryStrategy,
 });
 
-// Set up logging configuration with fallback to 'trace' level
-const level = process.env.LOG_LEVEL || 'trace';
+// Set up logging configuration with fallback to 'info' level
+const level = process.env.LOG_LEVEL || 'info';
 if (!logging.isLevel(level)) {
   throw new Error(`Invalid log level: ${level}`);
 }

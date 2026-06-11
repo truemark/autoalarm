@@ -21,8 +21,8 @@ importers:
         specifier: ^0.5.21
         version: 0.5.21
       truemark-cdk-lib:
-        specifier: ^1.20.0
-        version: 1.20.0(@aws-cdk/aws-lambda-go-alpha@2.215.0-alpha.0(aws-cdk-lib@2.225.0(constructs@10.4.3))(constructs@10.4.3))(@aws-cdk/aws-lambda-python-alpha@2.215.0-alpha.0(aws-cdk-lib@2.225.0(constructs@10.4.3))(constructs@10.4.3))(@aws-cdk/aws-redshift-alpha@2.215.0-alpha.0(aws-cdk-lib@2.225.0(constructs@10.4.3))(constructs@10.4.3))(aws-cdk-lib@2.225.0(constructs@10.4.3))(cdk-monitoring-constructs@9.16.0(aws-cdk-lib@2.225.0(constructs@10.4.3))(constructs@10.4.3))(constructs@10.4.3)(eslint@9.39.1)
+        specifier: ^1.23.0
+        version: 1.23.1(@aws-cdk/aws-lambda-go-alpha@2.215.0-alpha.0(aws-cdk-lib@2.225.0(constructs@10.4.3))(constructs@10.4.3))(@aws-cdk/aws-lambda-python-alpha@2.215.0-alpha.0(aws-cdk-lib@2.225.0(constructs@10.4.3))(constructs@10.4.3))(@aws-cdk/aws-redshift-alpha@2.215.0-alpha.0(aws-cdk-lib@2.225.0(constructs@10.4.3))(constructs@10.4.3))(@aws-sdk/credential-provider-node@3.934.0)(aws-cdk-lib@2.225.0(constructs@10.4.3))(cdk-monitoring-constructs@9.16.0(aws-cdk-lib@2.225.0(constructs@10.4.3))(constructs@10.4.3))(constructs@10.4.3)
     devDependencies:
       '@eslint/js':
         specifier: ^9.39.1
@@ -687,10 +687,6 @@ packages:
     resolution: {integrity: sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg==}
     engines: {node: '>= 8'}
 
-  '@opensearch-project/opensearch@2.13.0':
-    resolution: {integrity: sha512-Bu3jJ7pKzumbMMeefu7/npAWAvFu5W9SlbBow1ulhluqUpqc7QoXe0KidDrMy7Dy3BQrkI6llR3cWL4lQTZOFw==}
-    engines: {node: '>=10', yarn: ^1.22.10}
-
   '@sinclair/typebox@0.27.8':
     resolution: {integrity: sha512-+Fj43pSMwJs4KRrH/938Uf+uAELIgVBmQzg/q1YG10djyfA3TnrU8N8XzqCh/okZdszqBQTZf96idMfE5lnwTA==}
 
@@ -1059,9 +1055,6 @@ packages:
     resolution: {integrity: sha512-Pit2k7cVAwxoYI7RMVsOyltuy7/HGENLupJ4KAm/d8mGzOfX+SLOo9YQsx5CKY9J6ErCZ1ViLerklTfjytvQww==}
     engines: {node: '>= 18.0.0'}
     hasBin: true
-
-  aws4@1.13.2:
-    resolution: {integrity: sha512-lHe62zvbTB5eEABUVi/AwVh0ZKY9rMMDhmm+eeyuuUQbQ3+J+fONVQOZyj+DdrvD4BY33uYniyRJ4UJIaSKAfw==}
 
   babel-jest@29.7.0:
     resolution: {integrity: sha512-BrvGY3xZSwEcCzKvKsCi2GgHqDqsYkOP4/by5xCgIwGXQxIEh+8ew3gmrE1y7XRR6LHZIj6yLYnUi/mm2KXKBg==}
@@ -1436,10 +1429,6 @@ packages:
     resolution: {integrity: sha512-0hJU9SCPvmMzIBdZFqNPXWa6dqh7WdH0cII9y+CyS8rG3nL48Bclra9HmKhVVUHyPWNH5Y7xDwAB7bfgSjkUMQ==}
     engines: {node: '>= 0.4'}
 
-  hpagent@1.2.0:
-    resolution: {integrity: sha512-A91dYTeIB6NoXG+PxTQpCCDDnfHsW9kc06Lvpu1TEe9gnd6ZFeiBoRO9JvzEv6xK7EX97/dUE8g/vBMTqTS3CA==}
-    engines: {node: '>=14'}
-
   html-escaper@2.0.2:
     resolution: {integrity: sha512-H2iMtd0I4Mt5eYiapRdIDjp+XzelXQ0tFE4JS7YFwFevXXMmOp9myNrUvCg0D6ws8iqkRPBfKHgbwig1SmlLfg==}
 
@@ -1690,10 +1679,6 @@ packages:
   json-stable-stringify-without-jsonify@1.0.1:
     resolution: {integrity: sha512-Bdboy+l7tA3OGW6FjyFHWkP5LuByj1Tk33Ljyq0axyzdk9//JSi2u3fP1QSmd1KNwq6VOKYGlAu87CisVir6Pw==}
 
-  json11@2.0.2:
-    resolution: {integrity: sha512-HIrd50UPYmP6sqLuLbFVm75g16o0oZrVfxrsY0EEys22klz8mRoWlX9KAEDOSOR9Q34rcxsyC8oDveGrCz5uLQ==}
-    hasBin: true
-
   json5@2.2.3:
     resolution: {integrity: sha512-XmOWe7eyHYH14cLdVPoyg+GOH3rYX++KpzrylJwSW98t3Nk+U8XOl8FWKOgwtzdb8lXGf6zYwDUzeHMWfxasyg==}
     engines: {node: '>=6'}
@@ -1923,9 +1908,6 @@ packages:
   run-parallel@1.2.0:
     resolution: {integrity: sha512-5l4VyZR86LZ/lDxZTR6jqL8AFE2S0IFLMP26AbjsLVADxHdhB/c0GUsH+y39UfCi3dzz8OlQuPmnaJOMoDHQBA==}
 
-  secure-json-parse@2.7.0:
-    resolution: {integrity: sha512-6aU+Rwsezw7VR8/nyvKTx8QpWH9FrcYiXXlqC4z5d5XQBDRqtbfsRjnwGyqbi3gddNtWHuEk9OANUotL26qKUw==}
-
   semver@6.3.1:
     resolution: {integrity: sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA==}
     hasBin: true
@@ -2020,15 +2002,16 @@ packages:
     resolution: {integrity: sha512-65P7iz6X5yEr1cwcgvQxbbIw7Uk3gOy5dIdtZ4rDveLqhrdJP+Li/Hx6tyK0NEb+2GCyneCMJiGqrADCSNk8sQ==}
     engines: {node: '>=8.0'}
 
-  truemark-cdk-lib@1.20.0:
-    resolution: {integrity: sha512-8jQggaWYK5/bLrb59AnGk7mWo+24EJmHCOKDJfvpM7fnQ8bw9g+IH8O0RC//UuyN9DmuFFmphOBr6Tv3GqhpyQ==}
+  truemark-cdk-lib@1.23.1:
+    resolution: {integrity: sha512-lMgjBc/WivzFJnRG/2KAh5v+1c42JayPvsNQd8rfJZsinywltKyF1POytpQzzl1mR/5uThFLcpOC8lDDwpGIaw==}
     peerDependencies:
-      '@aws-cdk/aws-lambda-go-alpha': ^2.215.0-alpha.0
-      '@aws-cdk/aws-lambda-python-alpha': ^2.215.0-alpha.0
-      '@aws-cdk/aws-redshift-alpha': ^2.215.0-alpha.0
-      aws-cdk-lib: ^2.215.0
-      cdk-monitoring-constructs: ^9.15.2
-      constructs: ^10.4.2
+      '@aws-cdk/aws-lambda-go-alpha': ^2.256.0-alpha.0
+      '@aws-cdk/aws-lambda-python-alpha': ^2.256.0-alpha.0
+      '@aws-cdk/aws-redshift-alpha': ^2.256.0-alpha.0
+      '@aws-sdk/credential-provider-node': ^3.972.43
+      aws-cdk-lib: 2.256.0
+      cdk-monitoring-constructs: 10.0.0
+      constructs: ^10.6.0
 
   ts-api-utils@2.1.0:
     resolution: {integrity: sha512-CUgTZL1irw8u29bzrOD/nH85jqyc74D6SshFgujOIA7osm2Rz7dYH77agkx7H4FBNxDq7Cjf+IjaX/8zwFW+ZQ==}
@@ -2105,11 +2088,6 @@ packages:
 
   typescript@5.6.3:
     resolution: {integrity: sha512-hjcS1mhfuyi4WW8IWtjP7brDrG2cuDZukyrYrSauoXGNgx0S7zceP07adYkJycEr56BOUTNPzbInooiN3fn1qw==}
-    engines: {node: '>=14.17'}
-    hasBin: true
-
-  typescript@5.9.3:
-    resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
     engines: {node: '>=14.17'}
     hasBin: true
 
@@ -3051,17 +3029,6 @@ snapshots:
       '@nodelib/fs.scandir': 2.1.5
       fastq: 1.19.1
 
-  '@opensearch-project/opensearch@2.13.0':
-    dependencies:
-      aws4: 1.13.2
-      debug: 4.4.3
-      hpagent: 1.2.0
-      json11: 2.0.2
-      ms: 2.1.3
-      secure-json-parse: 2.7.0
-    transitivePeerDependencies:
-      - supports-color
-
   '@sinclair/typebox@0.27.8': {}
 
   '@sinonjs/commons@3.0.1':
@@ -3429,23 +3396,6 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@typescript-eslint/eslint-plugin@8.47.0(@typescript-eslint/parser@8.47.0(eslint@9.39.1)(typescript@5.6.3))(eslint@9.39.1)(typescript@5.9.3)':
-    dependencies:
-      '@eslint-community/regexpp': 4.12.2
-      '@typescript-eslint/parser': 8.47.0(eslint@9.39.1)(typescript@5.6.3)
-      '@typescript-eslint/scope-manager': 8.47.0
-      '@typescript-eslint/type-utils': 8.47.0(eslint@9.39.1)(typescript@5.9.3)
-      '@typescript-eslint/utils': 8.47.0(eslint@9.39.1)(typescript@5.9.3)
-      '@typescript-eslint/visitor-keys': 8.47.0
-      eslint: 9.39.1
-      graphemer: 1.4.0
-      ignore: 7.0.5
-      natural-compare: 1.4.0
-      ts-api-utils: 2.1.0(typescript@5.9.3)
-      typescript: 5.9.3
-    transitivePeerDependencies:
-      - supports-color
-
   '@typescript-eslint/parser@8.47.0(eslint@9.39.1)(typescript@5.6.3)':
     dependencies:
       '@typescript-eslint/scope-manager': 8.47.0
@@ -3458,33 +3408,12 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@typescript-eslint/parser@8.47.0(eslint@9.39.1)(typescript@5.9.3)':
-    dependencies:
-      '@typescript-eslint/scope-manager': 8.47.0
-      '@typescript-eslint/types': 8.47.0
-      '@typescript-eslint/typescript-estree': 8.47.0(typescript@5.9.3)
-      '@typescript-eslint/visitor-keys': 8.47.0
-      debug: 4.4.3
-      eslint: 9.39.1
-      typescript: 5.9.3
-    transitivePeerDependencies:
-      - supports-color
-
   '@typescript-eslint/project-service@8.47.0(typescript@5.6.3)':
     dependencies:
       '@typescript-eslint/tsconfig-utils': 8.47.0(typescript@5.6.3)
       '@typescript-eslint/types': 8.47.0
       debug: 4.4.3
       typescript: 5.6.3
-    transitivePeerDependencies:
-      - supports-color
-
-  '@typescript-eslint/project-service@8.47.0(typescript@5.9.3)':
-    dependencies:
-      '@typescript-eslint/tsconfig-utils': 8.47.0(typescript@5.9.3)
-      '@typescript-eslint/types': 8.47.0
-      debug: 4.4.3
-      typescript: 5.9.3
     transitivePeerDependencies:
       - supports-color
 
@@ -3497,10 +3426,6 @@ snapshots:
     dependencies:
       typescript: 5.6.3
 
-  '@typescript-eslint/tsconfig-utils@8.47.0(typescript@5.9.3)':
-    dependencies:
-      typescript: 5.9.3
-
   '@typescript-eslint/type-utils@8.47.0(eslint@9.39.1)(typescript@5.6.3)':
     dependencies:
       '@typescript-eslint/types': 8.47.0
@@ -3510,18 +3435,6 @@ snapshots:
       eslint: 9.39.1
       ts-api-utils: 2.1.0(typescript@5.6.3)
       typescript: 5.6.3
-    transitivePeerDependencies:
-      - supports-color
-
-  '@typescript-eslint/type-utils@8.47.0(eslint@9.39.1)(typescript@5.9.3)':
-    dependencies:
-      '@typescript-eslint/types': 8.47.0
-      '@typescript-eslint/typescript-estree': 8.47.0(typescript@5.9.3)
-      '@typescript-eslint/utils': 8.47.0(eslint@9.39.1)(typescript@5.9.3)
-      debug: 4.4.3
-      eslint: 9.39.1
-      ts-api-utils: 2.1.0(typescript@5.9.3)
-      typescript: 5.9.3
     transitivePeerDependencies:
       - supports-color
 
@@ -3543,22 +3456,6 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@typescript-eslint/typescript-estree@8.47.0(typescript@5.9.3)':
-    dependencies:
-      '@typescript-eslint/project-service': 8.47.0(typescript@5.9.3)
-      '@typescript-eslint/tsconfig-utils': 8.47.0(typescript@5.9.3)
-      '@typescript-eslint/types': 8.47.0
-      '@typescript-eslint/visitor-keys': 8.47.0
-      debug: 4.4.3
-      fast-glob: 3.3.3
-      is-glob: 4.0.3
-      minimatch: 9.0.5
-      semver: 7.7.3
-      ts-api-utils: 2.1.0(typescript@5.9.3)
-      typescript: 5.9.3
-    transitivePeerDependencies:
-      - supports-color
-
   '@typescript-eslint/utils@8.47.0(eslint@9.39.1)(typescript@5.6.3)':
     dependencies:
       '@eslint-community/eslint-utils': 4.9.0(eslint@9.39.1)
@@ -3567,17 +3464,6 @@ snapshots:
       '@typescript-eslint/typescript-estree': 8.47.0(typescript@5.6.3)
       eslint: 9.39.1
       typescript: 5.6.3
-    transitivePeerDependencies:
-      - supports-color
-
-  '@typescript-eslint/utils@8.47.0(eslint@9.39.1)(typescript@5.9.3)':
-    dependencies:
-      '@eslint-community/eslint-utils': 4.9.0(eslint@9.39.1)
-      '@typescript-eslint/scope-manager': 8.47.0
-      '@typescript-eslint/types': 8.47.0
-      '@typescript-eslint/typescript-estree': 8.47.0(typescript@5.9.3)
-      eslint: 9.39.1
-      typescript: 5.9.3
     transitivePeerDependencies:
       - supports-color
 
@@ -3638,8 +3524,6 @@ snapshots:
   aws-cdk@2.1033.0:
     optionalDependencies:
       fsevents: 2.3.2
-
-  aws4@1.13.2: {}
 
   babel-jest@29.7.0(@babel/core@7.28.5):
     dependencies:
@@ -4058,8 +3942,6 @@ snapshots:
   hasown@2.0.2:
     dependencies:
       function-bind: 1.1.2
-
-  hpagent@1.2.0: {}
 
   html-escaper@2.0.2: {}
 
@@ -4481,8 +4363,6 @@ snapshots:
 
   json-stable-stringify-without-jsonify@1.0.1: {}
 
-  json11@2.0.2: {}
-
   json5@2.2.3: {}
 
   keyv@4.5.4:
@@ -4674,8 +4554,6 @@ snapshots:
     dependencies:
       queue-microtask: 1.2.3
 
-  secure-json-parse@2.7.0: {}
-
   semver@6.3.1: {}
 
   semver@7.7.3: {}
@@ -4755,30 +4633,19 @@ snapshots:
     dependencies:
       is-number: 7.0.0
 
-  truemark-cdk-lib@1.20.0(@aws-cdk/aws-lambda-go-alpha@2.215.0-alpha.0(aws-cdk-lib@2.225.0(constructs@10.4.3))(constructs@10.4.3))(@aws-cdk/aws-lambda-python-alpha@2.215.0-alpha.0(aws-cdk-lib@2.225.0(constructs@10.4.3))(constructs@10.4.3))(@aws-cdk/aws-redshift-alpha@2.215.0-alpha.0(aws-cdk-lib@2.225.0(constructs@10.4.3))(constructs@10.4.3))(aws-cdk-lib@2.225.0(constructs@10.4.3))(cdk-monitoring-constructs@9.16.0(aws-cdk-lib@2.225.0(constructs@10.4.3))(constructs@10.4.3))(constructs@10.4.3)(eslint@9.39.1):
+  truemark-cdk-lib@1.23.1(@aws-cdk/aws-lambda-go-alpha@2.215.0-alpha.0(aws-cdk-lib@2.225.0(constructs@10.4.3))(constructs@10.4.3))(@aws-cdk/aws-lambda-python-alpha@2.215.0-alpha.0(aws-cdk-lib@2.225.0(constructs@10.4.3))(constructs@10.4.3))(@aws-cdk/aws-redshift-alpha@2.215.0-alpha.0(aws-cdk-lib@2.225.0(constructs@10.4.3))(constructs@10.4.3))(@aws-sdk/credential-provider-node@3.934.0)(aws-cdk-lib@2.225.0(constructs@10.4.3))(cdk-monitoring-constructs@9.16.0(aws-cdk-lib@2.225.0(constructs@10.4.3))(constructs@10.4.3))(constructs@10.4.3):
     dependencies:
       '@aws-cdk/aws-lambda-go-alpha': 2.215.0-alpha.0(aws-cdk-lib@2.225.0(constructs@10.4.3))(constructs@10.4.3)
       '@aws-cdk/aws-lambda-python-alpha': 2.215.0-alpha.0(aws-cdk-lib@2.225.0(constructs@10.4.3))(constructs@10.4.3)
       '@aws-cdk/aws-redshift-alpha': 2.215.0-alpha.0(aws-cdk-lib@2.225.0(constructs@10.4.3))(constructs@10.4.3)
       '@aws-sdk/credential-provider-node': 3.934.0
-      '@opensearch-project/opensearch': 2.13.0
       aws-cdk-lib: 2.225.0(constructs@10.4.3)
       cdk-monitoring-constructs: 9.16.0(aws-cdk-lib@2.225.0(constructs@10.4.3))(constructs@10.4.3)
       constructs: 10.4.3
-      typescript: 5.9.3
-      typescript-eslint: 8.47.0(eslint@9.39.1)(typescript@5.9.3)
-    transitivePeerDependencies:
-      - aws-crt
-      - eslint
-      - supports-color
 
   ts-api-utils@2.1.0(typescript@5.6.3):
     dependencies:
       typescript: 5.6.3
-
-  ts-api-utils@2.1.0(typescript@5.9.3):
-    dependencies:
-      typescript: 5.9.3
 
   ts-jest@29.4.5(@babel/core@7.28.5)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.28.5))(esbuild@0.24.2)(jest-util@29.7.0)(jest@29.7.0(@types/node@22.9.0)(ts-node@10.9.2(@types/node@22.9.0)(typescript@5.6.3)))(typescript@5.6.3):
     dependencies:
@@ -4842,20 +4709,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  typescript-eslint@8.47.0(eslint@9.39.1)(typescript@5.9.3):
-    dependencies:
-      '@typescript-eslint/eslint-plugin': 8.47.0(@typescript-eslint/parser@8.47.0(eslint@9.39.1)(typescript@5.6.3))(eslint@9.39.1)(typescript@5.9.3)
-      '@typescript-eslint/parser': 8.47.0(eslint@9.39.1)(typescript@5.9.3)
-      '@typescript-eslint/typescript-estree': 8.47.0(typescript@5.9.3)
-      '@typescript-eslint/utils': 8.47.0(eslint@9.39.1)(typescript@5.9.3)
-      eslint: 9.39.1
-      typescript: 5.9.3
-    transitivePeerDependencies:
-      - supports-color
-
   typescript@5.6.3: {}
-
-  typescript@5.9.3: {}
 
   uglify-js@3.19.3:
     optional: true

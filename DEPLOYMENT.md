@@ -57,3 +57,24 @@ Start by cloning the project repository to your local machine:
     ```bash
     cd cdk ; cdk deploy AutoAlarm
     ```
+
+### Optional: Cost Center and Team Tags
+
+AutoAlarm always applies TrueMark automation tags. You may optionally apply cost center and team tags to all
+resources in the stack. No values are hardcoded; tags are only applied when you supply them via environment
+variables or CDK context at deploy time:
+
+| Knob        | Environment variable    | CDK context        |
+|-------------|-------------------------|--------------------|
+| Cost center | `AUTOALARM_COST_CENTER` | `-c costCenter=...`|
+| Team        | `AUTOALARM_TEAM`        | `-c team=...`      |
+
+Environment variables take precedence over context values. Example:
+
+```bash
+export AUTOALARM_COST_CENTER="platform-engineering"
+export AUTOALARM_TEAM="sre"
+cdk deploy AutoAlarm
+# or equivalently
+cdk deploy AutoAlarm -c costCenter=platform-engineering -c team=sre
+```

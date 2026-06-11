@@ -13,11 +13,13 @@ import {Architecture} from 'aws-cdk-lib/aws-lambda';
 import {SqsEventSource} from 'aws-cdk-lib/aws-lambda-event-sources';
 import {Rule} from 'aws-cdk-lib/aws-events';
 import {SqsQueue} from 'aws-cdk-lib/aws-events-targets';
+import {IQueue} from 'aws-cdk-lib/aws-sqs';
 import {NoBreachingExtendedQueue} from './extended-libs-subconstruct';
 
 export class ReAlarmTagEventHandler extends Construct {
   public readonly lambdaFunction: ExtendedNodejsFunction;
   public readonly reAlarmTagEventQueue: NoBreachingExtendedQueue;
+  private readonly eventRuleTargetDLQ: IQueue;
 
   constructor(
     scope: Construct,
@@ -25,8 +27,10 @@ export class ReAlarmTagEventHandler extends Construct {
     region: string,
     accountId: string,
     reAlarmProducerFuncionArn: string,
+    eventRuleTargetDLQ: IQueue,
   ) {
     super(scope, id);
+    this.eventRuleTargetDLQ = eventRuleTargetDLQ;
     /**
      * Create all the required Queues for the ReAlarm tag event handler function
      */
@@ -58,6 +62,9 @@ export class ReAlarmTagEventHandler extends Construct {
         batchSize: 10,
         reportBatchItemFailures: true,
         enabled: true,
+        // Caps concurrent pollers to protect EventBridge/CloudWatch
+        // control-plane TPS. Tunable starting point.
+        maxConcurrency: 10,
       }),
     );
 
@@ -92,7 +99,9 @@ export class ReAlarmTagEventHandler extends Construct {
         fifo: true,
         contentBasedDeduplication: true,
         retentionPeriod: Duration.days(14),
-        visibilityTimeout: Duration.seconds(900),
+        // ~6x the consumer Lambda timeout (900s) per AWS guidance for Lambda
+        // event source queues.
+        visibilityTimeout: Duration.seconds(5400),
         deadLetterQueue: {queue: reAlarmTagEventHandlerDLQ, maxReceiveCount: 3},
       },
     );
@@ -145,15 +154,17 @@ export class ReAlarmTagEventHandler extends Construct {
       }),
     );
 
+    // The log group is created and managed by CDK (ExtendedNodejsFunction),
+    // so logs:CreateLogGroup is not needed; the function name is
+    // CDK-generated, so writes are scoped to the Lambda log-group namespace
+    // rather than '*'.
     reAlarmEventRuleLambdaExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
-        resources: ['*'],
-        actions: [
-          'logs:CreateLogGroup',
-          'logs:CreateLogStream',
-          'logs:PutLogEvents',
+        resources: [
+          `arn:aws:logs:${region}:${accountId}:log-group:/aws/lambda/*:*`,
         ],
+        actions: ['logs:CreateLogStream', 'logs:PutLogEvents'],
       }),
     );
 
@@ -227,6 +238,9 @@ export class ReAlarmTagEventHandler extends Construct {
     reAlarmEventTagRule.addTarget(
       new SqsQueue(this.reAlarmTagEventQueue, {
         messageGroupId: 'ReAlarmTagEventHandler',
+        // Capture events EventBridge could not deliver to the target queue
+        // after its retry policy is exhausted.
+        deadLetterQueue: this.eventRuleTargetDLQ,
       }),
     );
   }

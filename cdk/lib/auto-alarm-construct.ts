@@ -2,7 +2,8 @@ import {Construct} from 'constructs';
 import {AutoAlarm} from './main-function-subsconstruct';
 import {ReAlarmProducer} from './realarm-producer-subconstruct';
 import {ReAlarmConsumer} from './realarm-consumer-subconstruct';
-import {Stack} from 'aws-cdk-lib';
+import {Duration, Stack} from 'aws-cdk-lib';
+import {Queue, QueueEncryption} from 'aws-cdk-lib/aws-sqs';
 import {ReAlarmTagEventHandler} from './realarm-tag-event-subconstruct';
 import {EventRules} from './service-eventbridge-subconstruct';
 import {SqsHandlerSubConstruct} from './sqs-handler-subconstruct';
@@ -29,6 +30,17 @@ export class AutoAlarmConstruct extends Construct {
 
     const enableReAlarm = props.enableReAlarm ?? true;
 
+    /**
+     * Shared dead-letter queue for all EventBridge rule targets. Events that
+     * EventBridge cannot deliver to a target after its retry policy is
+     * exhausted land here instead of being dropped. The CDK target constructs
+     * automatically grant EventBridge permission to send to this queue.
+     */
+    const eventRuleTargetDLQ = new Queue(this, 'EventRuleTargetDLQ', {
+      encryption: QueueEncryption.SQS_MANAGED,
+      retentionPeriod: Duration.days(14),
+    });
+
     if (enableReAlarm) {
       /**
        * If reAlarm is enabled, create the ReAlarm Consumer, Producer and tag event handler objects
@@ -47,6 +59,7 @@ export class AutoAlarmConstruct extends Construct {
         accountId,
         this.reAlarmConsumer.reAlarmConsumerQueue.queueArn,
         this.reAlarmConsumer.reAlarmConsumerQueue.queueUrl,
+        eventRuleTargetDLQ,
       );
 
       this.reAlarmTagEventHandler = new ReAlarmTagEventHandler(
@@ -55,6 +68,7 @@ export class AutoAlarmConstruct extends Construct {
         region,
         accountId,
         this.reAlarmProducer.lambdaFunction.functionArn,
+        eventRuleTargetDLQ,
       );
 
       /**
@@ -109,6 +123,7 @@ export class AutoAlarmConstruct extends Construct {
       this,
       'ServiceEventRules',
       this.sqsHandler.eventSourceQueues,
+      eventRuleTargetDLQ,
     );
   }
 }

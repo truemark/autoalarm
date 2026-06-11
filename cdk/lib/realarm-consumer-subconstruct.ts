@@ -8,7 +8,7 @@ import {
 } from 'aws-cdk-lib/aws-iam';
 import {Construct} from 'constructs';
 import * as path from 'path';
-import {Duration} from 'aws-cdk-lib';
+import {Duration, Stack} from 'aws-cdk-lib';
 import {Architecture} from 'aws-cdk-lib/aws-lambda';
 import {SqsEventSource} from 'aws-cdk-lib/aws-lambda-event-sources';
 import {NoBreachingExtendedQueue} from './extended-libs-subconstruct';
@@ -50,6 +50,9 @@ export class ReAlarmConsumer extends Construct {
         batchSize: 10,
         reportBatchItemFailures: true,
         enabled: true,
+        // Caps concurrent pollers to protect CloudWatch control-plane TPS
+        // (SetAlarmState). Tunable starting point.
+        maxConcurrency: 10,
       }),
     );
   }
@@ -79,7 +82,9 @@ export class ReAlarmConsumer extends Construct {
         fifo: true,
         contentBasedDeduplication: true,
         retentionPeriod: Duration.days(14),
-        visibilityTimeout: Duration.seconds(900),
+        // ~6x the consumer Lambda timeout (900s) per AWS guidance for Lambda
+        // event source queues.
+        visibilityTimeout: Duration.seconds(5400),
         deadLetterQueue: {queue: reAlarmConsumerDLQ, maxReceiveCount: 3},
       },
     );
@@ -117,15 +122,17 @@ export class ReAlarmConsumer extends Construct {
       }),
     );
 
+    // The log group is created and managed by CDK (ExtendedNodejsFunction),
+    // so logs:CreateLogGroup is not needed; the function name is
+    // CDK-generated, so writes are scoped to the Lambda log-group namespace
+    // rather than '*'.
     reAlarmConsumerRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
-        resources: ['*'],
-        actions: [
-          'logs:CreateLogGroup',
-          'logs:CreateLogStream',
-          'logs:PutLogEvents',
+        resources: [
+          `arn:aws:logs:${Stack.of(this).region}:${Stack.of(this).account}:log-group:/aws/lambda/*:*`,
         ],
+        actions: ['logs:CreateLogStream', 'logs:PutLogEvents'],
       }),
     );
 

@@ -75,7 +75,9 @@ export class AutoAlarm extends Construct {
         fifo: true,
         contentBasedDeduplication: true,
         retentionPeriod: Duration.days(14),
-        visibilityTimeout: Duration.seconds(900),
+        // ~6x the consumer Lambda timeout (900s) per AWS guidance for Lambda
+        // event source queues.
+        visibilityTimeout: Duration.seconds(5400),
         deadLetterQueue: {queue: dlq, maxReceiveCount: 3},
       },
     );
@@ -86,6 +88,9 @@ export class AutoAlarm extends Construct {
         batchSize: 10,
         reportBatchItemFailures: true,
         enabled: true,
+        // Caps concurrent pollers to protect CloudWatch control-plane TPS
+        // (PutMetricAlarm/DeleteAlarms). Tunable starting point.
+        maxConcurrency: 20,
       }),
     );
 
@@ -129,16 +134,32 @@ export class AutoAlarm extends Construct {
       }),
     );
 
-    // Attach policies for EC2 and CloudWatch
+    // Alarm-management actions scoped to AutoAlarm-managed alarms only. All
+    // alarms created by this function are named 'AutoAlarm-*', so resource-level
+    // scoping is safe here (the ReAlarm producer uses a different role for
+    // account-wide DescribeAlarms).
+    autoAlarmExecutionRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: [
+          'cloudwatch:PutMetricAlarm',
+          'cloudwatch:DeleteAlarms',
+          'cloudwatch:DescribeAlarms',
+        ],
+        resources: [
+          `arn:aws:cloudwatch:${region}:${accountId}:alarm:AutoAlarm-*`,
+        ],
+      }),
+    );
+
+    // EC2 describe and CloudWatch metric/anomaly-detector actions do not
+    // support resource-level scoping and must remain on '*'.
     autoAlarmExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: [
           'ec2:DescribeInstances',
           'ec2:DescribeTags',
-          'cloudwatch:PutMetricAlarm',
-          'cloudwatch:DeleteAlarms',
-          'cloudwatch:DescribeAlarms',
           'cloudwatch:ListMetrics',
           'cloudwatch:PutAnomalyDetector',
         ],
@@ -161,16 +182,26 @@ export class AutoAlarm extends Construct {
       }),
     );
 
-    // Attach policies for CloudWatch Logs
+    // Attach policies for CloudWatch Logs. The log group itself is created and
+    // managed by CDK (ExtendedNodejsFunction), so logs:CreateLogGroup is not
+    // needed; the function name is CDK-generated, so we scope writes to the
+    // Lambda log-group namespace rather than '*'.
     autoAlarmExecutionRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
-        actions: [
-          'logs:CreateLogGroup',
-          'logs:CreateLogStream',
-          'logs:PutLogEvents',
-          'logs:ListTagsForResource',
+        actions: ['logs:CreateLogStream', 'logs:PutLogEvents'],
+        resources: [
+          `arn:aws:logs:${region}:${accountId}:log-group:/aws/lambda/*:*`,
         ],
+      }),
+    );
+
+    // logs:ListTagsForResource is used to read autoalarm tags on monitored log
+    // groups and does not support useful resource-level scoping here.
+    autoAlarmExecutionRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['logs:ListTagsForResource'],
         resources: ['*'],
       }),
     );
