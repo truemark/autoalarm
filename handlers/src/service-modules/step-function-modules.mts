@@ -121,6 +121,15 @@ export async function parseSFNEventAndCreateAlarms(
     case 'AWS API Call via CloudTrail':
       switch (event.detail.eventName) {
         case 'CreateStateMachine':
+          // Failed events (AccessDenied, etc.) have no responseElements — skip.
+          if (event.detail.errorCode) {
+            log
+              .info()
+              .str('function', 'parseSFNEventAndCreateAlarms')
+              .str('errorCode', event.detail.errorCode)
+              .msg('Skipping failed CreateStateMachine event');
+            return;
+          }
           // Read the ARN from the structured response rather than string-mining
           // the event, which can match service-integration ARNs (e.g.
           // 'arn:aws:states:::lambda:invoke') inside the state machine definition.
@@ -143,25 +152,25 @@ export async function parseSFNEventAndCreateAlarms(
             .str('sfnArn', sfnArn)
             .str('requestId', event.detail.requestID)
             .msg('Processing CreateStateMachine event');
-          if (sfnArn) {
-            tags = await fetchSFNTags(sfnArn);
-            log
-              .info()
-              .str('function', 'parseSFNEventAndCreateAlarms')
-              .str('sfnArn', sfnArn)
-              .str('tags', JSON.stringify(tags))
-              .msg('Fetched tags for new CreateStateMachine event');
-          } else {
-            log
-              .error()
-              .str('function', 'parseSFNEventAndCreateAlarms')
-              .str('eventType', 'Create')
-              .msg('SFN ARN not found in CreateStateMachine event');
-            throw new Error('SFN ARN not found in CreateStateMachine event');
-          }
+          tags = await fetchSFNTags(sfnArn);
+          log
+            .info()
+            .str('function', 'parseSFNEventAndCreateAlarms')
+            .str('sfnArn', sfnArn)
+            .str('tags', JSON.stringify(tags))
+            .msg('Fetched tags for new CreateStateMachine event');
           break;
 
         case 'DeleteStateMachine':
+          // Failed events have no requestParameters — skip.
+          if (event.detail.errorCode) {
+            log
+              .info()
+              .str('function', 'parseSFNEventAndCreateAlarms')
+              .str('errorCode', event.detail.errorCode)
+              .msg('Skipping failed DeleteStateMachine event');
+            return;
+          }
           sfnArn = event.detail.requestParameters?.stateMachineArn ?? '';
           if (!sfnArn) {
             log

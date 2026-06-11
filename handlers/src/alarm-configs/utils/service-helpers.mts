@@ -325,27 +325,26 @@ export function findArnInEvent(event: unknown, arnPrefix: string): string {
     return '';
   }
 
-  // 2) Find the next quote after that.
-  const endIndex = eventString.indexOf('"', startIndex);
-  if (endIndex === -1) {
+  // 2) ARNs contain no whitespace or quotes — extract up to the first of these.
+  const tail = eventString.slice(startIndex);
+  const arnMatch = tail.match(/^[^\s"]+/);
+  if (!arnMatch) {
     log
       .error()
       .str('function', 'findArnInEvent')
       .str('arnPrefix', arnPrefix)
       .str('event', eventString)
-      .msg('No ending quote found for ARN');
+      .msg('No ending delimiter found for ARN');
     return '';
   }
 
   // 3) Extract the ARN
-  const arn = eventString.substring(startIndex, endIndex);
+  const arn = arnMatch[0];
 
   log
     .info()
     .str('function', 'findArnInEvent')
     .str('arn', arn)
-    .str('startIndex', startIndex.toString())
-    .str('endIndex', endIndex.toString())
     .msg('Extracted ARN from event');
 
   return arn;

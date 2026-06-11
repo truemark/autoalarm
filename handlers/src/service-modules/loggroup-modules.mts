@@ -78,6 +78,13 @@ interface ServiceInfo {
 function extractLogGroupIdentifiers(
   eventBody: string,
 ): ServiceInfo | undefined {
+  // Failed events (errorCode present) never have responseElements with an ARN.
+  // Skip the string search to avoid a spurious error log; caller handles fallback.
+  const parsedBody = JSON.parse(eventBody);
+  if (parsedBody.detail?.errorCode) {
+    return void 0;
+  }
+
   // Extract the log group ARN from the raw event body.
   // Normal for CreateLogGroup events where the ARN isn't in the request body.
   // The caller falls back to constructing the ARN from requestParameters.
@@ -147,12 +154,10 @@ export async function parseLogGroupEventAndCreateAlarms(
 
   if (!logGroupInfo) {
     log
-      .error()
+      .debug()
       .str('function', 'parseLogGroupEventAndCreateAlarms')
       .str('eventName', eventName)
-      .msg(
-        'Failed to extract log group identifiers. Trying manual json mapping',
-      );
+      .msg('No ARN in event body; falling back to requestParameters');
 
     try {
       resourceName = body.detail.requestParameters.logGroupName;

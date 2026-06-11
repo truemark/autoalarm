@@ -102,7 +102,7 @@ export async function parseSQSEventAndCreateAlarms(event: any): Promise<{
            * TODO: Hot fix to prevent work when a queue is created without autoalarm:enabled, true
            *  will be addressed in a more elegant way in future refactors.
            */
-          const eventTags = event.detail.requestParameters.tags;
+          const eventTags = event.detail.requestParameters?.tags;
           if (
             !eventTags ||
             !eventTags['autoalarm:enabled'] ||
