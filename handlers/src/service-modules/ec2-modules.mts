@@ -14,6 +14,7 @@ import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
   deleteAlarm,
   doesAlarmExist,
+  fetchResourceTags,
   getCWAlarmsForInstance,
   handleAnomalyAlarms,
   handleStaticAlarms,
@@ -303,7 +304,7 @@ const metricConfigs = EC2_CONFIGS;
 export async function fetchInstanceTags(
   instanceId: string,
 ): Promise<{[key: string]: string}> {
-  try {
+  return fetchResourceTags('EC2', instanceId, async () => {
     const response = await ec2Client.send(
       new DescribeTagsCommand({
         Filters: [{Name: 'resource-id', Values: [instanceId]}],
@@ -317,25 +318,8 @@ export async function fetchInstanceTags(
       }
     });
 
-    log
-      .info()
-      .str('function', 'fetchInstanceTags')
-      .str('instanceId', instanceId)
-      .str('tags', JSON.stringify(tags))
-      .msg('Fetched instance tags');
-
     return tags;
-  } catch (error) {
-    log
-      .error()
-      .str('function', 'fetchInstanceTags')
-      .err(error)
-      .str('instanceId', instanceId)
-      .msg('Error fetching instance tags');
-    // Rethrow so a transient API error fails the record (and is retried)
-    // instead of being treated as "no tags" and deleting the alarms.
-    throw error;
-  }
+  });
 }
 
 async function handleAlarmCreation(

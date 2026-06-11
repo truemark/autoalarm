@@ -488,8 +488,16 @@ async function handleAnomalyDetectionWorkflow(
   }
 }
 
-//TODO: Confirm that we do not need to differentiate between Standard Statistics and Extended Statistics
-export async function handleAnomalyAlarms(
+/**
+ * Shared implementation behind {@link handleAnomalyAlarms} and
+ * {@link handleStaticAlarms}. Creates/updates the warning and critical alarms
+ * for a config when their thresholds are set, deletes them when not, and
+ * deletes everything for the config when no thresholds are defined at all.
+ *
+ * @returns The names of the alarms created or updated.
+ */
+async function handleAlarmsForVariant(
+  variant: 'anomaly' | 'static',
   config: MetricAlarmConfig,
   service: string,
   serviceIdentifier: string,
@@ -497,6 +505,8 @@ export async function handleAnomalyAlarms(
   updatedDefaults: MetricAlarmOptions,
   storagePath?: string,
 ): Promise<string[]> {
+  const functionName =
+    variant === 'anomaly' ? 'handleAnomalyAlarms' : 'handleStaticAlarms';
   const createdAlarms: string[] = [];
 
   // Validate if thresholds are set correctly
@@ -509,10 +519,13 @@ export async function handleAnomalyAlarms(
 
   // If no thresholds are set, log and exit early
   if (!warningThresholdSet && !criticalThresholdSet && !config.defaultCreate) {
-    const alarmPrefix = `AutoAlarm-${service}-${serviceIdentifier}-${config.metricName}-anomaly-`;
+    const alarmPrefix =
+      variant === 'anomaly'
+        ? `AutoAlarm-${service}-${serviceIdentifier}-${config.metricName}-anomaly-`
+        : `AutoAlarm-${service}-${serviceIdentifier}-${config.metricName}`;
     log
       .info()
-      .str('function', 'handleAnomalyAlarms')
+      .str('function', functionName)
       .str('Service Identifier', serviceIdentifier)
       .str('alarm prefix: ', alarmPrefix)
       .msg(
@@ -529,91 +542,89 @@ export async function handleAnomalyAlarms(
   }
 
   updatedDefaults.period = validatePeriod(updatedDefaults.period);
-  validateComparisonOperator(config, updatedDefaults, 'anomaly');
+  validateComparisonOperator(config, updatedDefaults, variant);
 
-  // Handle warning anomaly alarm
-  if (warningThresholdSet) {
-    const warningAlarmName = buildAlarmName(
-      config,
-      service,
-      serviceIdentifier,
-      AlarmClassification.Warning,
-      'anomaly',
-      storagePath,
-    );
-    log
-      .info()
-      .str('function', 'handleAnomalyAlarms')
-      .str('AlarmName', warningAlarmName)
-      .msg('Creating or updating warning anomaly alarm');
-    await handleAnomalyDetectionWorkflow(
-      warningAlarmName,
-      updatedDefaults,
-      config,
-      dimensions,
-      AlarmClassification.Warning,
-      updatedDefaults.warningThreshold as number,
-    );
-    createdAlarms.push(warningAlarmName);
-  } else {
-    const warningAlarmName = buildAlarmName(
-      config,
-      service,
-      serviceIdentifier,
-      AlarmClassification.Warning,
-      'anomaly',
-      storagePath,
-    );
-    log
-      .info()
-      .str('function', 'handleAnomalyAlarms')
-      .str('AlarmName', warningAlarmName)
-      .msg('Deleting existing warning anomaly alarm due to no threshold.');
-    await deleteAlarm(warningAlarmName);
-  }
+  const workflow =
+    variant === 'anomaly'
+      ? handleAnomalyDetectionWorkflow
+      : handleStaticThresholdWorkflow;
 
-  // Handle critical anomaly alarm
-  if (criticalThresholdSet) {
-    const criticalAlarmName = buildAlarmName(
+  const classifications: {
+    classification: AlarmClassification;
+    thresholdSet: boolean;
+    threshold: number | null;
+  }[] = [
+    {
+      classification: AlarmClassification.Warning,
+      thresholdSet: warningThresholdSet,
+      threshold: updatedDefaults.warningThreshold,
+    },
+    {
+      classification: AlarmClassification.Critical,
+      thresholdSet: criticalThresholdSet,
+      threshold: updatedDefaults.criticalThreshold,
+    },
+  ];
+
+  for (const {classification, thresholdSet, threshold} of classifications) {
+    const alarmName = buildAlarmName(
       config,
       service,
       serviceIdentifier,
-      AlarmClassification.Critical,
-      'anomaly',
+      classification,
+      variant,
       storagePath,
     );
-    log
-      .info()
-      .str('function', 'handleAnomalyAlarms')
-      .str('AlarmName', criticalAlarmName)
-      .msg('Creating or updating critical anomaly alarm');
-    await handleAnomalyDetectionWorkflow(
-      criticalAlarmName,
-      updatedDefaults,
-      config,
-      dimensions,
-      AlarmClassification.Critical,
-      updatedDefaults.criticalThreshold as number,
-    );
-    createdAlarms.push(criticalAlarmName);
-  } else {
-    const criticalAlarmName = buildAlarmName(
-      config,
-      service,
-      serviceIdentifier,
-      AlarmClassification.Critical,
-      'anomaly',
-      storagePath,
-    );
-    log
-      .info()
-      .str('function', 'handleAnomalyAlarms')
-      .str('AlarmName', criticalAlarmName)
-      .msg('Deleting existing critical anomaly alarm due to no threshold.');
-    await deleteAlarm(criticalAlarmName);
+    if (thresholdSet) {
+      log
+        .info()
+        .str('function', functionName)
+        .str('AlarmName', alarmName)
+        .msg(
+          `Creating or updating ${classification.toLowerCase()} ${variant} alarms`,
+        );
+      await workflow(
+        alarmName,
+        updatedDefaults,
+        config,
+        dimensions,
+        classification,
+        threshold as number,
+      );
+      createdAlarms.push(alarmName);
+    } else {
+      log
+        .info()
+        .str('function', functionName)
+        .str('AlarmName', alarmName)
+        .msg(
+          `Deleting existing ${classification.toLowerCase()} ${variant} alarm due to no threshold.`,
+        );
+      await deleteAlarm(alarmName);
+    }
   }
 
   return createdAlarms;
+}
+
+//TODO: Confirm that we do not need to differentiate between Standard Statistics and Extended Statistics
+export async function handleAnomalyAlarms(
+  config: MetricAlarmConfig,
+  service: string,
+  serviceIdentifier: string,
+  dimensions: {Name: string; Value: string}[],
+  updatedDefaults: MetricAlarmOptions,
+  storagePath?: string,
+): Promise<string[]> {
+  return handleAlarmsForVariant(
+    'anomaly',
+    config,
+    service,
+    serviceIdentifier,
+    dimensions,
+    updatedDefaults,
+    storagePath,
+  );
 }
 
 async function handleStaticThresholdWorkflow(
@@ -690,123 +701,15 @@ export async function handleStaticAlarms(
   updatedDefaults: MetricAlarmOptions,
   storagePath?: string,
 ): Promise<string[]> {
-  const createdAlarms: string[] = [];
-
-  // Validate if thresholds are set correctly
-  const warningThresholdSet =
-    updatedDefaults.warningThreshold !== undefined &&
-    updatedDefaults.warningThreshold !== null;
-  const criticalThresholdSet =
-    updatedDefaults.criticalThreshold !== undefined &&
-    updatedDefaults.criticalThreshold !== null;
-
-  // If no thresholds are set, log and exit early
-  if (!warningThresholdSet && !criticalThresholdSet && !config.defaultCreate) {
-    const alarmPrefix = `AutoAlarm-ALB-${serviceIdentifier}-${config.metricName}`;
-    log
-      .info()
-      .str('function', 'handleStaticAlarms')
-      .str('serviceIdentifier', serviceIdentifier)
-      .str('alarm prefix: ', `${alarmPrefix}`)
-      .msg(
-        'No thresholds defined, skipping alarm creation and deleting alarms for config if they exist.',
-      );
-    await deleteAlarmsForConfig(
-      config,
-      service,
-      serviceIdentifier,
-      dimensions,
-      updatedDefaults.statistic,
-    );
-    return createdAlarms;
-  }
-
-  updatedDefaults.period = validatePeriod(updatedDefaults.period);
-  validateComparisonOperator(config, updatedDefaults, 'static');
-
-  // Handle warning static alarm
-  if (warningThresholdSet) {
-    const warningAlarmName = buildAlarmName(
-      config,
-      service,
-      serviceIdentifier,
-      AlarmClassification.Warning,
-      'static',
-      storagePath,
-    );
-    log
-      .info()
-      .str('function', 'handleStaticAlarms')
-      .str('AlarmName', warningAlarmName)
-      .msg('Creating or updating warning static alarms');
-    await handleStaticThresholdWorkflow(
-      warningAlarmName,
-      updatedDefaults,
-      config,
-      dimensions,
-      AlarmClassification.Warning,
-      updatedDefaults.warningThreshold as number,
-    );
-    createdAlarms.push(warningAlarmName);
-  } else {
-    const warningAlarmName = buildAlarmName(
-      config,
-      service,
-      serviceIdentifier,
-      AlarmClassification.Warning,
-      'static',
-      storagePath,
-    );
-    log
-      .info()
-      .str('function', 'handleStaticAlarms')
-      .str('AlarmName', warningAlarmName)
-      .msg('Deleting existing warning static alarm due to no threshold.');
-    await deleteAlarm(warningAlarmName);
-  }
-
-  // Handle critical static alarm
-  if (criticalThresholdSet) {
-    const criticalAlarmName = buildAlarmName(
-      config,
-      service,
-      serviceIdentifier,
-      AlarmClassification.Critical,
-      'static',
-      storagePath,
-    );
-    log
-      .info()
-      .str('function', 'handleStaticAlarms')
-      .str('AlarmName', criticalAlarmName)
-      .msg('Creating or updating critical static alarms');
-    await handleStaticThresholdWorkflow(
-      criticalAlarmName,
-      updatedDefaults,
-      config,
-      dimensions,
-      AlarmClassification.Critical,
-      updatedDefaults.criticalThreshold as number,
-    );
-    createdAlarms.push(criticalAlarmName);
-  } else {
-    const criticalAlarmName = buildAlarmName(
-      config,
-      service,
-      serviceIdentifier,
-      AlarmClassification.Critical,
-      'static',
-      storagePath,
-    );
-    log
-      .info()
-      .str('function', 'handleStaticAlarms')
-      .str('AlarmName', criticalAlarmName)
-      .msg('Deleting existing critical static alarm due to no threshold.');
-    await deleteAlarm(criticalAlarmName);
-  }
-
-  return createdAlarms;
+  return handleAlarmsForVariant(
+    'static',
+    config,
+    service,
+    serviceIdentifier,
+    dimensions,
+    updatedDefaults,
+    storagePath,
+  );
 }
 
 /**

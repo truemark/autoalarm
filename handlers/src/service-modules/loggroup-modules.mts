@@ -7,13 +7,10 @@ import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {SQSRecord} from 'aws-lambda';
 import {Tag} from '../types/index.mjs';
 import {
-  buildExpectedAlarmNames,
-  handleAnomalyAlarms,
-  handleStaticAlarms,
-  getCWAlarmsForInstance,
-  massDeleteAlarms,
-  parseMetricAlarmOptions,
   deleteExistingAlarms,
+  fetchResourceTags,
+  findArnInEvent,
+  manageServiceAlarms,
 } from '../alarm-configs/utils/index.mjs';
 import {LOGGROUP_CONFIGS} from '../alarm-configs/loggroup-configs.mjs';
 import {Dimension} from '../types/module-types.mjs';
@@ -32,34 +29,22 @@ const metricConfigs = LOGGROUP_CONFIGS;
 export async function fetchLogGroupTags(
   arn: string,
 ): Promise<Record<string, string>> {
-  log
-    .debug()
-    .str('function', 'fetchLogGroupTags')
-    .str('inputArn', arn)
-    .str('resourceArn', arn)
-    .msg('Calling ListTagsForResource');
+  return fetchResourceTags('Logs', arn, async () => {
+    const resp = await logsClient.send(
+      new ListTagsForResourceCommand({
+        resourceArn: arn,
+      }),
+    );
 
-  const resp = await logsClient.send(
-    new ListTagsForResourceCommand({
-      resourceArn: arn,
-    }),
-  );
-
-  const tags: Record<string, string> = {};
-  for (const [key, value] of Object.entries(resp.tags ?? {})) {
-    if (key.startsWith('autoalarm:')) {
-      tags[key] = value ?? '';
+    const tags: Record<string, string> = {};
+    for (const [key, value] of Object.entries(resp.tags ?? {})) {
+      if (key.startsWith('autoalarm:')) {
+        tags[key] = value ?? '';
+      }
     }
-  }
 
-  log
-    .debug()
-    .str('function', 'fetchLogGroupTags')
-    .str('inputArn', arn)
-    .obj('Filtered AutoAlarm tags', tags)
-    .msg('ListTagsForResource complete');
-
-  return tags;
+    return tags;
+  });
 }
 
 async function manageLogGroupAlarms(
@@ -67,127 +52,18 @@ async function manageLogGroupAlarms(
   logGroupName: string,
   tags: Tag,
 ): Promise<void> {
-  log
-    .info()
-    .str('function', 'manageLogGroupAlarms')
-    .str('logGroupArn', logGroupArn)
-    .str('logGroupName', logGroupName)
-    .msg('Managing log group alarms');
-
-  const alarmsToKeep = await createOrUpdateLogGroupAlarms(
-    logGroupArn,
-    logGroupName,
-    tags,
-  );
-
-  await deleteUnneededLogGroupAlarms(logGroupArn, alarmsToKeep);
-
-  log
-    .info()
-    .str('function', 'manageLogGroupAlarms')
-    .str('logGroupArn', logGroupArn)
-    .num('alarmsManaged', alarmsToKeep.size)
-    .msg('Log group alarm management complete');
-}
-
-async function createOrUpdateLogGroupAlarms(
-  logGroupArn: string,
-  logGroupName: string,
-  tags: Tag,
-): Promise<Set<string>> {
-  log
-    .debug()
-    .str('function', 'createOrUpdateLogGroupAlarms')
-    .str('logGroupName', logGroupName)
-    .msg('Creating/updating log group alarms');
-
-  const alarmsToKeep = new Set<string>();
-
   const dimensions: Dimension[] = [{Name: 'LogGroupName', Value: logGroupName}];
 
-  for (const config of metricConfigs) {
-    const tagValue = tags[`autoalarm:${config.tagKey}`];
-
-    if (!config.defaultCreate && tagValue === undefined) {
-      continue;
-    }
-
-    const updatedDefaults = parseMetricAlarmOptions(
-      tagValue || '',
-      config.defaults,
-    );
-
-    const isAnomaly = config.tagKey.includes('anomaly') || config.anomaly;
-
-    log
-      .info()
-      .str('function', 'createOrUpdateLogGroupAlarms')
-      .str('logGroupName', logGroupName)
-      .bool('isAnomaly', isAnomaly)
-      .msg('Determined alarm type based on tag key and configuration');
-
-    const alarmHandler = isAnomaly ? handleAnomalyAlarms : handleStaticAlarms;
-
-    log
-      .info()
-      .str('function', 'createOrUpdateLogGroupAlarms')
-      .str('logGroupName', logGroupName)
-      .str('metricType', config.tagKey)
-      .msg('Starting alarm handler');
-
-    const alarmNames = await alarmHandler(
-      config,
-      'Logs',
-      logGroupArn,
-      dimensions,
-      updatedDefaults,
-    );
-
-    alarmNames.forEach((name) => alarmsToKeep.add(name));
-
-    log
-      .debug()
-      .str('function', 'createOrUpdateLogGroupAlarms')
-      .str('logGroupName', logGroupName)
-      .str('metricType', config.tagKey)
-      .num('alarmsCreated', alarmNames.length)
-      .msg('Processed log group metric configuration');
-  }
-
-  return alarmsToKeep;
-}
-
-async function deleteUnneededLogGroupAlarms(
-  logGroupArn: string,
-  alarmsToKeep: Set<string>,
-): Promise<void> {
-  // Restrict the prefix-based fetch to this log group's exact expected alarm
-  // names so we never delete alarms of another log group whose ARN shares a
-  // prefix.
-  const expectedAlarmNames = buildExpectedAlarmNames(
-    'Logs',
-    logGroupArn,
-    metricConfigs,
-  );
-  const existingAlarms = (
-    await getCWAlarmsForInstance('Logs', logGroupArn)
-  ).filter((alarm) => expectedAlarmNames.has(alarm));
-  const alarmsToDelete = existingAlarms.filter(
-    (alarm) => !alarmsToKeep.has(alarm),
-  );
-
-  if (alarmsToDelete.length === 0) {
-    return;
-  }
-
-  await massDeleteAlarms(alarmsToDelete);
-
-  log
-    .info()
-    .str('function', 'deleteUnneededLogGroupAlarms')
-    .str('logGroupArn', logGroupArn)
-    .num('deletedCount', alarmsToDelete.length)
-    .msg('Deleted obsolete log group alarms');
+  // The event parser performs its own autoalarm:enabled gating before calling
+  // this, so skip the generic enabled check.
+  await manageServiceAlarms({
+    service: 'Logs',
+    identifier: logGroupArn,
+    tags,
+    configs: metricConfigs,
+    dimensions,
+    checkEnabled: false,
+  });
 }
 
 /**
@@ -202,11 +78,11 @@ interface ServiceInfo {
 function extractLogGroupIdentifiers(
   eventBody: string,
 ): ServiceInfo | undefined {
-  // 1) Find where the ARN starts.
-  const startIndex = eventBody.indexOf('arn:aws:logs');
-  if (startIndex === -1) {
-    // Normal for CreateLogGroup events where the ARN isn't in the request body.
-    // The caller falls back to constructing the ARN from requestParameters.
+  // Extract the log group ARN from the raw event body.
+  // Normal for CreateLogGroup events where the ARN isn't in the request body.
+  // The caller falls back to constructing the ARN from requestParameters.
+  const arn = findArnInEvent(eventBody, 'arn:aws:logs').trim();
+  if (!arn) {
     log
       .debug()
       .str('function', 'extractLogGroupIdentifiers')
@@ -214,21 +90,7 @@ function extractLogGroupIdentifiers(
     return void 0;
   }
 
-  // 2) Find the next quote after that.
-  const endIndex = eventBody.indexOf('"', startIndex);
-  if (endIndex === -1) {
-    log
-      .error()
-      .str('function', 'extractLogGroupIdentifiers')
-      .str('eventObj', eventBody)
-      .msg('No ending quote found for logGrop ARN');
-    return void 0;
-  }
-
-  // 3) Extract the ARN
-  const arn = eventBody.substring(startIndex, endIndex).trim();
-
-  // 4) Extract LogGroup name from ARN
+  // Extract LogGroup name from ARN
   const arnParts = arn.split('log-group:');
   if (arnParts.length < 2) {
     log

@@ -1,16 +1,11 @@
 import {EC2Client, DescribeTagsCommand} from '@aws-sdk/client-ec2';
 import * as logging from '@nr1e/logging';
-import {AlarmClassification, Tag} from '../types/index.mjs';
+import {Tag} from '../types/index.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
   deleteExistingAlarms,
-  buildAlarmName,
-  buildExpectedAlarmNames,
-  handleAnomalyAlarms,
-  handleStaticAlarms,
-  massDeleteAlarms,
-  getCWAlarmsForInstance,
-  parseMetricAlarmOptions,
+  fetchResourceTags,
+  manageServiceAlarms,
 } from '../alarm-configs/utils/index.mjs';
 import {TRANSIT_GATEWAY_CONFIGS} from '../alarm-configs/_index.mjs';
 
@@ -27,159 +22,40 @@ const metricConfigs = TRANSIT_GATEWAY_CONFIGS;
 export async function fetchTransitGatewayTags(
   transitGatewayId: string,
 ): Promise<{[key: string]: string}> {
-  try {
-    const response = await ec2Client.send(
-      new DescribeTagsCommand({
-        Filters: [{Name: 'resource-id', Values: [transitGatewayId]}],
-      }),
-    );
-
-    const tags: {[key: string]: string} = {};
-    response.Tags?.forEach((tag) => {
-      if (tag.Key && tag.Value) {
-        tags[tag.Key] = tag.Value;
-      }
-    });
-
-    log
-      .info()
-      .str('function', 'fetchTransitGatewayTags')
-      .str('transitGatewayId', transitGatewayId)
-      .str('tags', JSON.stringify(tags))
-      .msg('Fetched tags for Transit Gateway');
-
-    return tags;
-  } catch (error) {
-    log
-      .error()
-      .str('function', 'fetchTransitGatewayTags')
-      .err(error)
-      .msg('Error fetching tags for Transit Gateway');
-    return {};
-  }
-}
-
-async function checkAndManageTransitGatewayStatusAlarms(
-  transitGatewayId: string,
-  tags: Tag,
-): Promise<void> {
-  log
-    .info()
-    .str('function', 'checkAndManageTransitGatewayStaticAlarms')
-    .str('transitGatewayId', transitGatewayId)
-    .msg('Starting alarm management process');
-
-  const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
-  if (!isAlarmEnabled) {
-    log
-      .info()
-      .str('function', 'checkAndManageTransitGatewayStaticAlarms')
-      .str('transitGatewayId', transitGatewayId)
-      .msg('Alarm creation disabled by tag settings');
-    await deleteExistingAlarms('TGW', transitGatewayId, metricConfigs);
-    return;
-  }
-
-  const alarmsToKeep = new Set<string>();
-
-  for (const config of metricConfigs) {
-    log
-      .info()
-      .str('function', 'checkAndManageTransitGatewayStaticAlarms')
-      .obj('config', config)
-      .str('transitGatewayId', transitGatewayId)
-      .msg('Processing metric configuration');
-
-    const tagValue = tags[`autoalarm:${config.tagKey}`];
-    const updatedDefaults = parseMetricAlarmOptions(
-      tagValue || '',
-      config.defaults,
-    );
-    if (config.defaultCreate || tagValue !== undefined) {
-      if (config.tagKey.includes('anomaly')) {
-        log
-          .info()
-          .str('function', 'checkAndManageTransitGatewayStaticAlarms')
-          .str('transitGatewayId', transitGatewayId)
-          .msg('Tag key indicates anomaly alarm. Handling anomaly alarms');
-        const anomalyAlarms = await handleAnomalyAlarms(
-          config,
-          'TGW',
-          transitGatewayId,
-          [{Name: 'TransitGateway', Value: transitGatewayId}],
-          updatedDefaults,
-        );
-        anomalyAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
-      } else {
-        log
-          .info()
-          .str('function', 'checkAndManageTransitGatewayStaticAlarms')
-          .str('transitGatewayId', transitGatewayId)
-          .msg('Tag key indicates static alarm. Handling static alarms');
-        const staticAlarms = await handleStaticAlarms(
-          config,
-          'TGW',
-          transitGatewayId,
-          [{Name: 'TransitGateway', Value: transitGatewayId}],
-          updatedDefaults,
-        );
-        staticAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
-      }
-    } else {
-      log
-        .info()
-        .str('function', 'checkAndManageTransitGatewayStaticAlarms')
-        .str('transitGatewayId', transitGatewayId)
-        .str(
-          'alarm prefix: ',
-          buildAlarmName(
-            config,
-            'TGW',
-            transitGatewayId,
-            AlarmClassification.Warning,
-            'static',
-          ).replace('Warning', ''),
-        )
-        .msg(
-          'No default or overridden alarm values. Marking alarms for deletion.',
-        );
-    }
-  }
-  // Delete alarms that are not in the alarmsToKeep set
-  // Restrict the prefix-based fetch to this resource's exact expected alarm
-  // names so we never delete alarms of another resource whose identifier
-  // shares a prefix.
-  const expectedAlarmNames = buildExpectedAlarmNames(
+  return fetchResourceTags(
     'TGW',
     transitGatewayId,
-    metricConfigs,
-  );
-  const existingAlarms = (
-    await getCWAlarmsForInstance('TGW', transitGatewayId)
-  ).filter((alarm) => expectedAlarmNames.has(alarm));
-  const alarmsToDelete = existingAlarms.filter(
-    (alarm) => !alarmsToKeep.has(alarm),
-  );
+    async () => {
+      const response = await ec2Client.send(
+        new DescribeTagsCommand({
+          Filters: [{Name: 'resource-id', Values: [transitGatewayId]}],
+        }),
+      );
 
-  log
-    .info()
-    .str('function', 'checkAndManageTransitGatewayStaticAlarms')
-    .obj('alarms to delete', alarmsToDelete)
-    .msg('Deleting alarms that are no longer needed');
-  await massDeleteAlarms(alarmsToDelete);
+      const tags: {[key: string]: string} = {};
+      response.Tags?.forEach((tag) => {
+        if (tag.Key && tag.Value) {
+          tags[tag.Key] = tag.Value;
+        }
+      });
 
-  log
-    .info()
-    .str('function', 'checkAndManageTransitGatewayStaticAlarms')
-    .str('transitGatewayId', transitGatewayId)
-    .msg('Finished alarm management process');
+      return tags;
+    },
+    'return-empty',
+  );
 }
 
 export async function manageTransitGatewayAlarms(
   transitGatewayId: string,
   tags: Tag,
 ): Promise<void> {
-  await checkAndManageTransitGatewayStatusAlarms(transitGatewayId, tags);
+  await manageServiceAlarms({
+    service: 'TGW',
+    identifier: transitGatewayId,
+    tags,
+    configs: metricConfigs,
+    dimensions: [{Name: 'TransitGateway', Value: transitGatewayId}],
+  });
 }
 
 export async function manageInactiveTransitGatewayAlarms(

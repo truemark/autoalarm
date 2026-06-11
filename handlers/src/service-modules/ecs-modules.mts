@@ -5,12 +5,9 @@ import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {SQSRecord} from 'aws-lambda';
 import {
   deleteExistingAlarms,
-  buildExpectedAlarmNames,
-  handleAnomalyAlarms,
-  handleStaticAlarms,
-  getCWAlarmsForInstance,
-  massDeleteAlarms,
-  parseMetricAlarmOptions,
+  fetchResourceTags,
+  findArnInEvent,
+  manageServiceAlarms,
 } from '../alarm-configs/utils/index.mjs';
 import {ECS_CONFIGS} from '../alarm-configs/_index.mjs';
 import {Dimension} from '../types/module-types.mjs';
@@ -36,14 +33,13 @@ function extractECSServiceInfo(
   eventBody: string,
   accountId: string,
 ): ECSServiceInfo | undefined {
-  const searchIndex = 0;
   const region: string = process.env.AWS_REGION!;
 
-  const startIndex = eventBody.indexOf(
+  const arn = findArnInEvent(
+    eventBody,
     `arn:aws:ecs:${region}:${accountId}:service`,
-    searchIndex,
-  );
-  if (startIndex === -1) {
+  ).trim();
+  if (!arn) {
     log
       .error()
       .str('function', 'extractECSServiceInfo')
@@ -51,16 +47,6 @@ function extractECSServiceInfo(
     return void 0;
   }
 
-  const endIndex = eventBody.indexOf('"', startIndex);
-  if (endIndex === -1) {
-    log
-      .error()
-      .str('function', 'extractECSServiceInfo')
-      .msg('No ending quote found for ECS ARN');
-    return void 0;
-  }
-
-  const arn = eventBody.substring(startIndex, endIndex).trim();
   const arnParts = arn.split('/');
 
   if (arnParts.length < 3) {
@@ -91,7 +77,7 @@ function extractECSServiceInfo(
 }
 
 export async function fetchEcsTags(ecsArn: string): Promise<Tag> {
-  try {
+  return fetchResourceTags('ECS', ecsArn, async () => {
     const command = new ListTagsForResourceCommand({resourceArn: ecsArn});
     const response = await ecsClient.send(command);
 
@@ -102,25 +88,8 @@ export async function fetchEcsTags(ecsArn: string): Promise<Tag> {
       }
     });
 
-    log
-      .debug()
-      .str('function', 'fetchEcsTags')
-      .str('ecsArn', ecsArn)
-      .num('tagCount', Object.keys(tags).length)
-      .msg('Fetched ECS tags');
-
     return tags;
-  } catch (error) {
-    log
-      .error()
-      .str('function', 'fetchEcsTags')
-      .str('ecsArn', ecsArn)
-      .err(error)
-      .msg('Error fetching ECS tags');
-    // Rethrow so a transient API error fails the record (and is retried)
-    // instead of being treated as "no tags" and deleting the alarms.
-    throw error;
-  }
+  });
 }
 
 async function manageEcsAlarms(
@@ -134,102 +103,17 @@ async function manageEcsAlarms(
     {Name: 'ServiceName', Value: serviceName},
   ];
 
-  log
-    .info()
-    .str('function', 'manageEcsAlarms')
-    .str('serviceArn', serviceArn)
-    .msg('Managing ECS service alarms');
-
-  const alarmsToKeep = await createOrUpdateAlarms(
-    serviceArn,
+  // The event parser performs its own enabled/disabled gating before calling
+  // this (any present autoalarm:enabled value other than 'false' proceeds),
+  // so skip the generic strict 'true' check to preserve that behavior.
+  await manageServiceAlarms({
+    service: 'ECS',
+    identifier: serviceArn,
     tags,
-    'ECS',
+    configs: metricConfigs,
     dimensions,
-  );
-
-  await deleteUnneededAlarms(serviceArn, alarmsToKeep, 'ECS');
-
-  log
-    .info()
-    .str('function', 'manageEcsAlarms')
-    .num('alarmsManaged', alarmsToKeep.size)
-    .msg('ECS service alarm management complete');
-}
-
-async function createOrUpdateAlarms(
-  resourceArn: string,
-  tags: Tag,
-  serviceType: string,
-  dimensions: Dimension[],
-): Promise<Set<string>> {
-  const alarmsToKeep = new Set<string>();
-
-  for (const config of metricConfigs) {
-    const tagValue = tags[`autoalarm:${config.tagKey}`];
-
-    if (!config.defaultCreate && tagValue === undefined) {
-      continue;
-    }
-
-    const updatedDefaults = parseMetricAlarmOptions(
-      tagValue || '',
-      config.defaults,
-    );
-
-    const alarmHandler = config.tagKey.includes('anomaly')
-      ? handleAnomalyAlarms
-      : handleStaticAlarms;
-
-    const alarmNames = await alarmHandler(
-      config,
-      serviceType,
-      resourceArn,
-      dimensions,
-      updatedDefaults,
-    );
-
-    alarmNames.forEach((name) => alarmsToKeep.add(name));
-
-    log
-      .debug()
-      .str('metricType', config.tagKey)
-      .num('alarmsCreated', alarmNames.length)
-      .msg('Processed ECS metric configuration');
-  }
-
-  return alarmsToKeep;
-}
-
-async function deleteUnneededAlarms(
-  resourceArn: string,
-  alarmsToKeep: Set<string>,
-  serviceType: string,
-): Promise<void> {
-  // Restrict the prefix-based fetch to this resource's exact expected alarm
-  // names so we never delete alarms of another resource whose identifier
-  // shares a prefix.
-  const expectedAlarmNames = buildExpectedAlarmNames(
-    serviceType,
-    resourceArn,
-    metricConfigs,
-  );
-  const existingAlarms = (
-    await getCWAlarmsForInstance(serviceType, resourceArn)
-  ).filter((alarm) => expectedAlarmNames.has(alarm));
-  const alarmsToDelete = existingAlarms.filter(
-    (alarm) => !alarmsToKeep.has(alarm),
-  );
-
-  if (alarmsToDelete.length === 0) {
-    return;
-  }
-
-  await massDeleteAlarms(alarmsToDelete);
-
-  log
-    .info()
-    .num('deletedCount', alarmsToDelete.length)
-    .msg('Deleted obsolete ECS service alarms');
+    checkEnabled: false,
+  });
 }
 
 /**

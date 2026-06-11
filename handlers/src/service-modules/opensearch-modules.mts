@@ -1,16 +1,11 @@
 import {OpenSearchClient, ListTagsCommand} from '@aws-sdk/client-opensearch';
 import * as logging from '@nr1e/logging';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
-import {AlarmClassification, Tag} from '../types/index.mjs';
+import {Tag} from '../types/index.mjs';
 import {
-  getCWAlarmsForInstance,
   deleteExistingAlarms,
-  buildAlarmName,
-  buildExpectedAlarmNames,
-  handleAnomalyAlarms,
-  handleStaticAlarms,
-  massDeleteAlarms,
-  parseMetricAlarmOptions,
+  fetchResourceTags,
+  manageServiceAlarms,
 } from '../alarm-configs/utils/index.mjs';
 import {OPENSEARCH_CONFIGS} from '../alarm-configs/_index.mjs';
 
@@ -25,163 +20,26 @@ const openSearchClient: OpenSearchClient = new OpenSearchClient({
 const metricConfigs = OPENSEARCH_CONFIGS;
 
 export async function fetchOpenSearchTags(domainArn: string): Promise<Tag> {
-  try {
-    const command = new ListTagsCommand({
-      ARN: domainArn,
-    });
-    const response = await openSearchClient.send(command);
-    const tags: Tag = {};
+  return fetchResourceTags(
+    'OpenSearch',
+    domainArn,
+    async () => {
+      const command = new ListTagsCommand({
+        ARN: domainArn,
+      });
+      const response = await openSearchClient.send(command);
+      const tags: Tag = {};
 
-    response.TagList?.forEach((tag) => {
-      if (tag.Key && tag.Value) {
-        tags[tag.Key] = tag.Value;
-      }
-    });
+      response.TagList?.forEach((tag) => {
+        if (tag.Key && tag.Value) {
+          tags[tag.Key] = tag.Value;
+        }
+      });
 
-    log
-      .info()
-      .str('function', 'fetchOpenSearchTags')
-      .str('domainArn', domainArn)
-      .str('tags', JSON.stringify(tags))
-      .msg('Fetched OpenSearch tags');
-
-    return tags;
-  } catch (error) {
-    log
-      .error()
-      .str('function', 'fetchOpenSearchTags')
-      .err(error)
-      .str('domainArn', domainArn)
-      .msg('Error fetching OpenSearch tags');
-    return {};
-  }
-}
-
-async function checkAndManageOpenSearchStatusAlarms(
-  domainName: string,
-  accountID: string,
-  tags: Tag,
-) {
-  log
-    .info()
-    .str('function', 'checkAndManageOSStatusAlarms')
-    .str('DomainName', domainName)
-    .str('ClientId', accountID)
-    .msg('Starting alarm management process');
-
-  const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
-  if (!isAlarmEnabled) {
-    log
-      .info()
-      .str('function', 'checkAndManageOSStatusAlarms')
-      .str('DomainName', domainName)
-      .str('ClientId', accountID)
-      .msg('Alarm creation disabled by tag settings');
-    await deleteExistingAlarms('OS', domainName, metricConfigs);
-    return;
-  }
-
-  const alarmsToKeep = new Set<string>();
-
-  for (const config of metricConfigs) {
-    log
-      .info()
-      .str('function', 'checkAndManageOSStatusAlarms')
-      .obj('config', config)
-      .str('DomainName', domainName)
-      .msg('Processing metric configuration');
-
-    const tagValue = tags[`autoalarm:${config.tagKey}`];
-    const updatedDefaults = parseMetricAlarmOptions(
-      tagValue || '',
-      config.defaults,
-    );
-
-    if (config.defaultCreate || tagValue !== undefined) {
-      if (config.tagKey.includes('anomaly')) {
-        log
-          .info()
-          .str('function', 'checkAndManageOSStatusAlarms')
-          .str('DomainName', domainName)
-          .msg('Tag key indicates anomaly alarm. Handling anomaly alarms');
-        const anomalyAlarms = await handleAnomalyAlarms(
-          config,
-          'OS',
-          domainName,
-          [
-            {Name: 'DomainName', Value: domainName},
-            {Name: 'ClientId', Value: accountID},
-          ],
-          updatedDefaults,
-        );
-        anomalyAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
-      } else {
-        log
-          .info()
-          .str('function', 'checkAndManageOSStatusAlarms')
-          .str('DomainName', domainName)
-          .msg('Tag key indicates static alarm. Handling static alarms');
-        const staticAlarms = await handleStaticAlarms(
-          config,
-          'OS',
-          domainName,
-          [
-            {Name: 'DomainName', Value: domainName},
-            {Name: 'ClientId', Value: accountID},
-          ],
-          updatedDefaults,
-        );
-        staticAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
-      }
-    } else {
-      log
-        .info()
-        .str('function', 'checkAndManageOSStatusAlarms')
-        .str('DomainName', domainName)
-        .str(
-          'alarm prefix: ',
-          buildAlarmName(
-            config,
-            'OS',
-            domainName,
-            AlarmClassification.Warning,
-            'static',
-          ).replace('Warning', ''),
-        )
-        .msg(
-          'No default or overridden alarm values. Marking alarms for deletion.',
-        );
-    }
-  }
-
-  // Delete alarms that are not in the alarmsToKeep set
-  // Restrict the prefix-based fetch to this resource's exact expected alarm
-  // names so we never delete alarms of another resource whose identifier
-  // shares a prefix.
-  const expectedAlarmNames = buildExpectedAlarmNames(
-    'OS',
-    domainName,
-    metricConfigs,
+      return tags;
+    },
+    'return-empty',
   );
-  const existingAlarms = (
-    await getCWAlarmsForInstance('OS', domainName)
-  ).filter((alarm) => expectedAlarmNames.has(alarm));
-  const alarmsToDelete = existingAlarms.filter(
-    (alarm) => !alarmsToKeep.has(alarm),
-  );
-
-  log
-    .info()
-    .str('function', 'checkAndManageOSStatusAlarms')
-    .obj('alarms to delete', alarmsToDelete)
-    .msg('Deleting alarm that is no longer needed');
-  await massDeleteAlarms(alarmsToDelete);
-
-  log
-    .info()
-    .str('function', 'checkAndManageOSStatusAlarms')
-    .str('DomainName', domainName)
-    .msg('Finished alarm management process');
 }
 
 export async function manageOpenSearchAlarms(
@@ -189,7 +47,16 @@ export async function manageOpenSearchAlarms(
   accountID: string,
   tags: Tag,
 ): Promise<void> {
-  await checkAndManageOpenSearchStatusAlarms(domainName, accountID, tags);
+  await manageServiceAlarms({
+    service: 'OS',
+    identifier: domainName,
+    tags,
+    configs: metricConfigs,
+    dimensions: [
+      {Name: 'DomainName', Value: domainName},
+      {Name: 'ClientId', Value: accountID},
+    ],
+  });
 }
 
 export async function manageInactiveOpenSearchAlarms(domainName: string) {

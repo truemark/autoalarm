@@ -1,0 +1,293 @@
+/**
+ * Shared helpers for the per-service modules.
+ *
+ * These consolidate the checkAndManage<Service>StatusAlarms,
+ * fetch<Service>Tags, and findArn-in-stringified-event logic that used to be
+ * copy-pasted across the service modules. EC2 keeps its bespoke alarm
+ * management (storage-path/platform-specific alarms and Prometheus rules) and
+ * is intentionally not routed through {@link manageServiceAlarms}.
+ */
+import * as logging from '@nr1e/logging';
+import {MetricAlarmConfig, Tag} from '../../types/index.mjs';
+import {Dimension} from '../../types/module-types.mjs';
+import {
+  buildExpectedAlarmNames,
+  deleteExistingAlarms,
+  getCWAlarmsForInstance,
+  handleAnomalyAlarms,
+  handleStaticAlarms,
+  massDeleteAlarms,
+} from './alarm-tools.mjs';
+import {parseMetricAlarmOptions} from './alarm-config.mjs';
+
+const log = logging.getLogger('service-helpers');
+
+/**
+ * Returns the subset of a resource's existing alarms that should be deleted:
+ * alarms that exactly match one of the names AutoAlarm could have created for
+ * this resource (so we never touch alarms of another resource whose
+ * identifier shares a prefix) and that are not in the keep set.
+ *
+ * Pure function so the reconcile diffing is unit-testable without a
+ * CloudWatch client.
+ */
+export function filterAlarmsToDelete(
+  existingAlarms: string[],
+  expectedAlarmNames: Set<string>,
+  alarmsToKeep: Set<string>,
+): string[] {
+  return existingAlarms
+    .filter((alarm) => expectedAlarmNames.has(alarm))
+    .filter((alarm) => !alarmsToKeep.has(alarm));
+}
+
+export interface ManageServiceAlarmsOptions {
+  /**
+   * Service name used in alarm names and the AlarmNamePrefix fetch
+   * (e.g. 'SQS', 'ALB', 'RDSCluster').
+   */
+  service: string;
+  /**
+   * Resource identifier embedded in alarm names (queue name, ARN,
+   * instance id, ...).
+   */
+  identifier: string;
+  /** Tags currently on the resource. */
+  tags: Tag;
+  /** The service's alarm configs. */
+  configs: MetricAlarmConfig[];
+  /** CloudWatch dimensions applied to every alarm for this resource. */
+  dimensions: Dimension[];
+  /**
+   * When false, skips the autoalarm:enabled gate. For modules whose entry
+   * point performs its own enabled/disabled handling before calling this
+   * (e.g. ECS and log groups, which gate on the tag in their event parsers).
+   * Defaults to true.
+   */
+  checkEnabled?: boolean;
+}
+
+/**
+ * Generic alarm reconciliation for a tagged resource. Implements the shape
+ * every non-EC2 service module shared:
+ *
+ * 1. If alarms are not enabled (autoalarm:enabled !== 'true'), delete all of
+ *    this resource's AutoAlarm alarms and return.
+ * 2. For each config with a default-create flag or a tag override, dispatch
+ *    to the anomaly or static alarm handler and collect the created alarm
+ *    names.
+ * 3. Fetch the resource's existing AutoAlarm alarms, restrict them to the
+ *    exact expected names for this resource, and delete any that were not
+ *    just created/kept.
+ */
+export async function manageServiceAlarms(
+  options: ManageServiceAlarmsOptions,
+): Promise<void> {
+  const {service, identifier, tags, configs, dimensions} = options;
+
+  log
+    .info()
+    .str('function', 'manageServiceAlarms')
+    .str('Service', service)
+    .str('Identifier', identifier)
+    .msg('Starting alarm management process');
+
+  if (options.checkEnabled ?? true) {
+    const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
+    if (!isAlarmEnabled) {
+      log
+        .info()
+        .str('function', 'manageServiceAlarms')
+        .str('Service', service)
+        .str('Identifier', identifier)
+        .msg('Alarm creation disabled by tag settings');
+      await deleteExistingAlarms(service, identifier, configs);
+      return;
+    }
+  }
+
+  const alarmsToKeep = new Set<string>();
+
+  for (const config of configs) {
+    log
+      .info()
+      .str('function', 'manageServiceAlarms')
+      .obj('config', config)
+      .str('Service', service)
+      .str('Identifier', identifier)
+      .msg('Processing metric configuration');
+
+    const tagValue = tags[`autoalarm:${config.tagKey}`];
+    const updatedDefaults = parseMetricAlarmOptions(
+      tagValue || '',
+      config.defaults,
+    );
+
+    if (config.defaultCreate || tagValue !== undefined) {
+      const isAnomaly = config.tagKey.includes('anomaly');
+      log
+        .info()
+        .str('function', 'manageServiceAlarms')
+        .str('Service', service)
+        .str('Identifier', identifier)
+        .msg(
+          isAnomaly
+            ? 'Tag key indicates anomaly alarm. Handling anomaly alarms'
+            : 'Tag key indicates static alarm. Handling static alarms',
+        );
+      const alarmHandler = isAnomaly ? handleAnomalyAlarms : handleStaticAlarms;
+      const alarmNames = await alarmHandler(
+        config,
+        service,
+        identifier,
+        dimensions,
+        updatedDefaults,
+      );
+      alarmNames.forEach((alarmName) => alarmsToKeep.add(alarmName));
+    } else {
+      log
+        .info()
+        .str('function', 'manageServiceAlarms')
+        .str('Service', service)
+        .str('Identifier', identifier)
+        .str('tagKey', config.tagKey)
+        .msg(
+          'No default or overridden alarm values. Marking alarms for deletion.',
+        );
+    }
+  }
+
+  // Delete alarms that are not in the alarmsToKeep set. Restrict the
+  // prefix-based fetch to this resource's exact expected alarm names so we
+  // never delete alarms of another resource whose identifier shares a prefix
+  // (e.g., 'orders' vs 'orders-dlq').
+  const expectedAlarmNames = buildExpectedAlarmNames(
+    service,
+    identifier,
+    configs,
+  );
+  const existingAlarms = await getCWAlarmsForInstance(service, identifier);
+  const alarmsToDelete = filterAlarmsToDelete(
+    existingAlarms,
+    expectedAlarmNames,
+    alarmsToKeep,
+  );
+
+  log
+    .info()
+    .str('function', 'manageServiceAlarms')
+    .str('Service', service)
+    .str('Identifier', identifier)
+    .obj('alarms to delete', alarmsToDelete)
+    .msg('Deleting alarms that are no longer needed');
+  await massDeleteAlarms(alarmsToDelete);
+
+  log
+    .info()
+    .str('function', 'manageServiceAlarms')
+    .str('Service', service)
+    .str('Identifier', identifier)
+    .msg('Finished alarm management process');
+}
+
+/**
+ * Generic tag fetcher owning the shared log-and-handle-error contract of the
+ * per-service fetch<Service>Tags wrappers. The caller supplies a closure that
+ * performs the service's SDK call and extracts a Tag record from the
+ * response.
+ *
+ * @param service - Service label used in log messages (e.g. 'SQS').
+ * @param resourceId - Resource identifier/ARN, for log context only.
+ * @param fetchFn - Closure performing the SDK call and Tag extraction.
+ * @param onError - 'rethrow' (default) propagates fetch errors so a transient
+ * API error fails the record (and is retried) instead of being treated as
+ * "no tags" and deleting the alarms. 'return-empty' preserves the legacy
+ * behavior of some modules that treat fetch errors as an empty tag set.
+ */
+export async function fetchResourceTags(
+  service: string,
+  resourceId: string,
+  fetchFn: () => Promise<Tag>,
+  onError: 'rethrow' | 'return-empty' = 'rethrow',
+): Promise<Tag> {
+  try {
+    const tags = await fetchFn();
+
+    log
+      .info()
+      .str('function', 'fetchResourceTags')
+      .str('Service', service)
+      .str('ResourceId', resourceId)
+      .str('tags', JSON.stringify(tags))
+      .msg(`Fetched ${service} tags`);
+
+    return tags;
+  } catch (error) {
+    log
+      .error()
+      .str('function', 'fetchResourceTags')
+      .str('Service', service)
+      .str('ResourceId', resourceId)
+      .err(error)
+      .msg(`Error fetching ${service} tags`);
+    if (onError === 'return-empty') {
+      return {};
+    }
+    // Rethrow so a transient API error fails the record (and is retried)
+    // instead of being treated as "no tags" and deleting the alarms.
+    throw error;
+  }
+}
+
+/**
+ * Searches an event for the first occurrence of an ARN starting with the
+ * given prefix. Serializes the event to a JSON string (unless it already is
+ * one), looks for the prefix, and extracts everything up to the next
+ * quotation mark. Logs an error and returns an empty string if no matching
+ * ARN can be found.
+ *
+ * @param event - A JSON-serializable object (or pre-serialized JSON string)
+ * to search.
+ * @param arnPrefix - The ARN prefix to look for (e.g. 'arn:aws:rds').
+ * @returns The extracted ARN, or an empty string if not found.
+ */
+export function findArnInEvent(event: unknown, arnPrefix: string): string {
+  const eventString = typeof event === 'string' ? event : JSON.stringify(event);
+
+  // 1) Find where the ARN starts.
+  const startIndex = eventString.indexOf(arnPrefix);
+  if (startIndex === -1) {
+    log
+      .error()
+      .str('function', 'findArnInEvent')
+      .str('arnPrefix', arnPrefix)
+      .str('event', eventString)
+      .msg('No ARN matching prefix found in event');
+    return '';
+  }
+
+  // 2) Find the next quote after that.
+  const endIndex = eventString.indexOf('"', startIndex);
+  if (endIndex === -1) {
+    log
+      .error()
+      .str('function', 'findArnInEvent')
+      .str('arnPrefix', arnPrefix)
+      .str('event', eventString)
+      .msg('No ending quote found for ARN');
+    return '';
+  }
+
+  // 3) Extract the ARN
+  const arn = eventString.substring(startIndex, endIndex);
+
+  log
+    .info()
+    .str('function', 'findArnInEvent')
+    .str('arn', arn)
+    .str('startIndex', startIndex.toString())
+    .str('endIndex', endIndex.toString())
+    .msg('Extracted ARN from event');
+
+  return arn;
+}
