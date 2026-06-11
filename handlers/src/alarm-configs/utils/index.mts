@@ -12,15 +12,21 @@ export {
   doesAlarmExist,
   deleteExistingAlarms,
   buildAlarmName,
+  buildAlarmArn,
+  buildAlarmIdentityTags,
   buildExpectedAlarmNames,
   chunkAlarmNames,
   handleAnomalyAlarms,
   handleStaticAlarms,
+  getAlarmsByIdentityTags,
   getCWAlarmsForInstance,
+  ALARM_IDENTITY_SERVICE_TAG,
+  ALARM_IDENTITY_RESOURCE_ID_TAG,
 } from './alarm-tools.mjs';
 export {
   manageServiceAlarms,
   filterAlarmsToDelete,
+  buildAlarmsToDelete,
   fetchResourceTags,
   findArnInEvent,
 } from './service-helpers.mjs';

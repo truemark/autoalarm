@@ -1,5 +1,9 @@
 import {test, expect, describe} from 'vitest';
-import {filterAlarmsToDelete, findArnInEvent} from './service-helpers.mjs';
+import {
+  buildAlarmsToDelete,
+  filterAlarmsToDelete,
+  findArnInEvent,
+} from './service-helpers.mjs';
 import {buildExpectedAlarmNames} from './alarm-tools.mjs';
 import {SQS_CONFIGS} from '../_index.mjs';
 
@@ -67,6 +71,88 @@ describe('filterAlarmsToDelete', () => {
     expect(
       filterAlarmsToDelete(existing, expected, new Set([someExpected[0]])),
     ).toEqual(someExpected.slice(1));
+  });
+});
+
+describe('buildAlarmsToDelete', () => {
+  test('unions identity-tagged alarms with expected-name-matched alarms', () => {
+    const tagged = [
+      'AutoAlarm-SQS-orders-NumberOfMessagesSent-Warning',
+      'AutoAlarm-SQS-orders-OldMetricName-Critical', // renamed metric, tag-only
+    ];
+    const prefixFetched = [
+      'AutoAlarm-SQS-orders-NumberOfMessagesSent-Warning',
+      'AutoAlarm-SQS-orders-ApproximateAgeOfOldestMessage-Critical',
+    ];
+    const expected = new Set([
+      'AutoAlarm-SQS-orders-NumberOfMessagesSent-Warning',
+      'AutoAlarm-SQS-orders-ApproximateAgeOfOldestMessage-Critical',
+    ]);
+
+    expect(
+      buildAlarmsToDelete(tagged, prefixFetched, expected, new Set()),
+    ).toEqual([
+      'AutoAlarm-SQS-orders-NumberOfMessagesSent-Warning',
+      'AutoAlarm-SQS-orders-OldMetricName-Critical',
+      'AutoAlarm-SQS-orders-ApproximateAgeOfOldestMessage-Critical',
+    ]);
+  });
+
+  test('identity-tagged alarms are deleted even when their name is not expected', () => {
+    // An alarm tagged with this resource's identity is authoritatively ours
+    // regardless of name (e.g., created under an older naming scheme).
+    const tagged = ['AutoAlarm-SQS-orders-LegacyName-Warning'];
+    const expected = new Set<string>(); // name no longer expected
+
+    expect(buildAlarmsToDelete(tagged, [], expected, new Set())).toEqual([
+      'AutoAlarm-SQS-orders-LegacyName-Warning',
+    ]);
+  });
+
+  test('prefix-fetched alarms outside the expected names are never deleted', () => {
+    // 'orders' is a prefix of 'orders-dlq': the AlarmNamePrefix fetch for
+    // 'orders' returns the dlq queue's alarms, and they carry a different
+    // identity tag (so they are not in the tagged set). They must survive.
+    const prefixFetched = [
+      'AutoAlarm-SQS-orders-NumberOfMessagesSent-Critical',
+      'AutoAlarm-SQS-orders-dlq-NumberOfMessagesSent-Critical',
+    ];
+    const expected = new Set([
+      'AutoAlarm-SQS-orders-NumberOfMessagesSent-Critical',
+    ]);
+
+    expect(buildAlarmsToDelete([], prefixFetched, expected, new Set())).toEqual(
+      ['AutoAlarm-SQS-orders-NumberOfMessagesSent-Critical'],
+    );
+  });
+
+  test('kept alarms are excluded from both sources', () => {
+    const keepName = 'AutoAlarm-SQS-orders-NumberOfMessagesSent-Warning';
+    const tagged = [keepName, 'AutoAlarm-SQS-orders-Stale-Critical'];
+    const prefixFetched = [keepName];
+    const expected = new Set([keepName]);
+    const keep = new Set([keepName]);
+
+    expect(buildAlarmsToDelete(tagged, prefixFetched, expected, keep)).toEqual([
+      'AutoAlarm-SQS-orders-Stale-Critical',
+    ]);
+  });
+
+  test('deduplicates alarms present in both sources', () => {
+    const name = 'AutoAlarm-SQS-orders-NumberOfMessagesSent-Critical';
+    const result = buildAlarmsToDelete(
+      [name],
+      [name],
+      new Set([name]),
+      new Set(),
+    );
+    expect(result).toEqual([name]);
+  });
+
+  test('returns an empty array when both sources are empty', () => {
+    expect(
+      buildAlarmsToDelete([], [], new Set(['anything']), new Set()),
+    ).toEqual([]);
   });
 });
 

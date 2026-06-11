@@ -13,6 +13,7 @@ import {Dimension} from '../../types/module-types.mjs';
 import {
   buildExpectedAlarmNames,
   deleteExistingAlarms,
+  getAlarmsByIdentityTags,
   getCWAlarmsForInstance,
   handleAnomalyAlarms,
   handleStaticAlarms,
@@ -39,6 +40,48 @@ export function filterAlarmsToDelete(
   return existingAlarms
     .filter((alarm) => expectedAlarmNames.has(alarm))
     .filter((alarm) => !alarmsToKeep.has(alarm));
+}
+
+/**
+ * Computes the alarms to delete during reconciliation from the two ownership
+ * lookups:
+ *
+ * - identityTaggedAlarms: alarms carrying this resource's
+ *   autoalarm:service/autoalarm:resource-id identity tags (Resource Groups
+ *   Tagging API). These are authoritatively ours and are deleted when not
+ *   kept, regardless of their name.
+ * - prefixFetchedAlarms: alarms found via the AlarmNamePrefix fetch. These
+ *   are only trusted when their names exactly match a name AutoAlarm could
+ *   have created for this resource (expectedAlarmNames), so a resource whose
+ *   identifier is a prefix of another's can never delete its sibling's
+ *   alarms.
+ *
+ * The union exists for migration and consistency reasons: alarms created
+ * before identity tags existed are only found by name, and the Tagging API
+ * is eventually consistent (newly tagged alarms can lag GetResources by
+ * minutes). After one full reconcile cycle every touched alarm carries
+ * identity tags, at which point the name-based fallback can be retired.
+ *
+ * Pure function so the reconcile diffing is unit-testable without CloudWatch
+ * or Tagging API clients.
+ */
+export function buildAlarmsToDelete(
+  identityTaggedAlarms: string[],
+  prefixFetchedAlarms: string[],
+  expectedAlarmNames: Set<string>,
+  alarmsToKeep: Set<string>,
+): string[] {
+  const alarmsToDelete = new Set<string>(
+    identityTaggedAlarms.filter((alarm) => !alarmsToKeep.has(alarm)),
+  );
+  for (const alarm of filterAlarmsToDelete(
+    prefixFetchedAlarms,
+    expectedAlarmNames,
+    alarmsToKeep,
+  )) {
+    alarmsToDelete.add(alarm);
+  }
+  return [...alarmsToDelete];
 }
 
 export interface ManageServiceAlarmsOptions {
@@ -142,6 +185,8 @@ export async function manageServiceAlarms(
         identifier,
         dimensions,
         updatedDefaults,
+        undefined,
+        tags['autoalarm:re-alarm-enabled'],
       );
       alarmNames.forEach((alarmName) => alarmsToKeep.add(alarmName));
     } else {
@@ -157,18 +202,32 @@ export async function manageServiceAlarms(
     }
   }
 
-  // Delete alarms that are not in the alarmsToKeep set. Restrict the
-  // prefix-based fetch to this resource's exact expected alarm names so we
-  // never delete alarms of another resource whose identifier shares a prefix
-  // (e.g., 'orders' vs 'orders-dlq').
+  // Delete alarms that are not in the alarmsToKeep set. Ownership is
+  // resolved identity-first: the primary lookup asks the Resource Groups
+  // Tagging API for alarms carrying this resource's identity tags
+  // (autoalarm:service + autoalarm:resource-id), which every alarm receives
+  // at creation/update. That set is UNIONed with the legacy name-based
+  // lookup (AlarmNamePrefix fetch restricted to this resource's exact
+  // expected alarm names, so we never delete alarms of another resource
+  // whose identifier shares a prefix, e.g. 'orders' vs 'orders-dlq').
+  //
+  // Migration story: the name-based fallback covers (a) alarms created
+  // before identity tags existed and (b) the Tagging API's
+  // eventual-consistency lag (newly tagged alarms can take minutes to show
+  // up in GetResources). After one full reconcile cycle every touched alarm
+  // carries identity tags, so the fallback can be retired later.
   const expectedAlarmNames = buildExpectedAlarmNames(
     service,
     identifier,
     configs,
   );
-  const existingAlarms = await getCWAlarmsForInstance(service, identifier);
-  const alarmsToDelete = filterAlarmsToDelete(
-    existingAlarms,
+  const [identityTaggedAlarms, prefixFetchedAlarms] = await Promise.all([
+    getAlarmsByIdentityTags(service, identifier),
+    getCWAlarmsForInstance(service, identifier),
+  ]);
+  const alarmsToDelete = buildAlarmsToDelete(
+    identityTaggedAlarms,
+    prefixFetchedAlarms,
     expectedAlarmNames,
     alarmsToKeep,
   );

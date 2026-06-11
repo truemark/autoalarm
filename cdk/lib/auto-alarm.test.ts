@@ -95,6 +95,24 @@ describe('AutoAlarm stack', () => {
     );
   });
 
+  test('main function policy includes tag:GetResources for identity-tag alarm lookup', () => {
+    template.hasResourceProperties(
+      'AWS::IAM::Policy',
+      Match.objectLike({
+        PolicyDocument: Match.objectLike({
+          Statement: Match.arrayWith([
+            // tag:GetResources is not resource-scopable; used by the main
+            // function to look up alarms by their identity tags.
+            Match.objectLike({
+              Action: 'tag:GetResources',
+              Resource: '*',
+            }),
+          ]),
+        }),
+      }),
+    );
+  });
+
   test('all queues except the shared EventBridge target DLQ are FIFO', () => {
     const queues = Object.values(template.findResources('AWS::SQS::Queue'));
     const fifoQueues = queues.filter(

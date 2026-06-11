@@ -160,6 +160,18 @@ export class AutoAlarm extends Construct {
       }),
     );
 
+    // Resource Groups Tagging API lookup used for identity-first alarm
+    // reconciliation (alarms are tagged with autoalarm:service and
+    // autoalarm:resource-id at creation). tag:GetResources does not support
+    // resource-level scoping and must remain on '*'.
+    autoAlarmExecutionRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['tag:GetResources'],
+        resources: ['*'],
+      }),
+    );
+
     // EC2 describe and CloudWatch metric/anomaly-detector actions do not
     // support resource-level scoping and must remain on '*'.
     autoAlarmExecutionRole.addToPolicy(
