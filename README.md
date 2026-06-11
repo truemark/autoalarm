@@ -108,6 +108,8 @@ threshold values are provided in the tag value when setting the tag on the resou
 
 #### CloudFront
 
+> **Note:** CloudFront is a global service. Its CloudTrail and tag-change events are delivered only in the `us-east-1` region, so CloudFront alarm automation requires AutoAlarm (or a satellite event rule forwarding to it) to be deployed in `us-east-1`.
+
 | Tag                            | Alarm Created by Default | Standard CloudWatch Metric | Warning Threshold | Critical Threshold | Period | Evaluation Periods | Statistic | Datapoints to Alarm | Comparison Operator       | Missing Data Treatment | Complete Tag Value                                     |
 |--------------------------------|--------------------------|----------------------------|-------------------|--------------------|--------|--------------------|-----------|---------------------|---------------------------|------------------------|--------------------------------------------------------|
 | `autoalarm:4xx-errors`         | No                       | Yes                        | 100               | 300                | 300    | 1                  | Sum       | 1                   | GreaterThanThreshold      | ignore                 | `100/300/300/1/Sum/1/GreaterThanThreshold/ignore`      |

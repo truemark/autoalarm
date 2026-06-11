@@ -325,9 +325,10 @@ export class EventRules extends Construct {
       openSearchStateRule: new Rule(this, 'OpenSearchStateRule', {
         eventPattern: {
           source: ['aws.es'],
-          detailType: ['Elasticsearch Service Domain Change'],
+          detailType: ['AWS API Call via CloudTrail'],
           detail: {
-            state: ['CreateDomain', 'DeleteDomain'],
+            eventSource: ['es.amazonaws.com'],
+            eventName: ['CreateDomain', 'DeleteDomain'],
           },
         },
         description: 'Routes OpenSearch events to AutoAlarm',
@@ -680,18 +681,16 @@ export class EventRules extends Construct {
         );
 
         if (!queueKey) {
-          console.warn(
+          throw new Error(
             `No queue found containing service name: ${serviceName}`,
           );
-          break;
         }
 
         const queue = queues[queueKey];
         const serviceRules = eventBridgeRules.serviceRules.get(serviceName);
 
         if (!serviceRules) {
-          console.warn(`No rules found for service: ${serviceName}`);
-          break;
+          throw new Error(`No rules found for service: ${serviceName}`);
         }
 
         serviceRules.forEach((ruleObj) => {

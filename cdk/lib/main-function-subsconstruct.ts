@@ -141,6 +141,8 @@ export class AutoAlarm extends Construct {
           'cloudwatch:DescribeAlarms',
           'cloudwatch:ListMetrics',
           'cloudwatch:PutAnomalyDetector',
+          'cloudwatch:TagResource',
+          'cloudwatch:UntagResource',
         ],
         resources: ['*'],
       }),
