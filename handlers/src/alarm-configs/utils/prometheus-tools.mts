@@ -8,6 +8,7 @@ import {
   DescribeWorkspaceCommandInput,
   ListRuleGroupsNamespacesCommand,
   PutRuleGroupsNamespaceCommand,
+  RuleGroupsNamespaceStatusCode,
   RuleGroupsNamespaceSummary,
 } from '@aws-sdk/client-amp';
 import {
@@ -32,7 +33,13 @@ import {buildAlarmName, parseMetricAlarmOptions} from './index.mjs';
 import * as AlarmConfigs from '../_index.mjs';
 
 const log: logging.Logger = logging.getLogger('ec2-modules');
-const retryStrategy = new ConfiguredRetryStrategy(20);
+// Keep the SDK-level retries modest: these calls are also wrapped in
+// retryWithExponentialBackoff, so a large SDK retry count multiplies the
+// total retry time.
+const retryStrategy = new ConfiguredRetryStrategy(
+  5,
+  (attempt: number) => 100 + attempt * 1000,
+);
 //the following environment variables are used to get the prometheus workspace id and the region
 const region: string = process.env.AWS_REGION || '';
 const client = new AmpClient({
@@ -44,13 +51,13 @@ const client = new AmpClient({
 /*
  * Exponential backoff retry helper function. This is used because the built-in aws retry strategy doesn't work in this
  * context as failed calls during update.
- * first delay starts at 30 seconds and then increments by 15 seconds for each iteration.
+ * first delay starts at 5 seconds and then increments by 5 seconds for each iteration.
  */
 async function retryWithExponentialBackoff(
   fn: () => Promise<void>,
-  maxRetries = 5,
-  initialDelay = 30000, // Initial delay in milliseconds (30 seconds)
-  delayIncrement = 15000, // Incremental delay in milliseconds (15 seconds)
+  maxRetries = 3,
+  initialDelay = 5000, // Initial delay in milliseconds (5 seconds)
+  delayIncrement = 5000, // Incremental delay in milliseconds (5 seconds)
 ) {
   let attempt = 0;
 
@@ -148,6 +155,9 @@ export async function batchPromRulesDeletion(
       .str('function', 'batchPromRulesDeletion')
       .err(error)
       .msg('Error deleting Prometheus rules.');
+    // Rethrow so callers don't treat failed deletions as success and leave
+    // stale Prometheus rules behind (e.g. for terminated instances).
+    throw error;
   }
 }
 
@@ -602,24 +612,64 @@ export async function queryPrometheusForService(
 }
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-// Function to list namespaces
+
+// Errors that will never succeed on retry and should be rethrown immediately.
+const nonRetryableListErrors = ['AccessDeniedException', 'ValidationException'];
+
+// Function to list namespaces. Paginates via nextToken so all namespaces are
+// returned (the 2000-rule guard depends on a complete count) and retries
+// transient errors a bounded number of times instead of recursing forever.
 const listNamespaces = async (
   workspaceId: string,
 ): Promise<RuleGroupsNamespaceSummary[]> => {
-  const command = new ListRuleGroupsNamespacesCommand({workspaceId});
   log.info().str('workspaceId', workspaceId).msg('Listing namespaces');
-  try {
-    const response = await client.send(command);
-    log
-      .info()
-      .str('response', JSON.stringify(response))
-      .msg('Successfully listed namespaces');
-    return response.ruleGroupsNamespaces ?? [];
-  } catch (error) {
-    log.error().err(error).msg('Error listing namespaces');
-    await wait(60000); // Wait for 60 seconds before retrying
-    return listNamespaces(workspaceId);
+  const maxAttempts = 3;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const namespaces: RuleGroupsNamespaceSummary[] = [];
+      let nextToken: string | undefined;
+      do {
+        const response = await client.send(
+          new ListRuleGroupsNamespacesCommand({workspaceId, nextToken}),
+        );
+        namespaces.push(...(response.ruleGroupsNamespaces ?? []));
+        nextToken = response.nextToken;
+      } while (nextToken);
+
+      log
+        .info()
+        .num('namespaceCount', namespaces.length)
+        .msg('Successfully listed namespaces');
+      return namespaces;
+    } catch (error) {
+      const errorName = error instanceof Error ? error.name : '';
+      if (nonRetryableListErrors.includes(errorName)) {
+        log
+          .error()
+          .err(error)
+          .msg('Non-retryable error listing namespaces. Not retrying.');
+        throw error;
+      }
+      if (attempt >= maxAttempts) {
+        log
+          .error()
+          .err(error)
+          .num('attempt', attempt)
+          .msg('Error listing namespaces. Exceeded maximum retries.');
+        throw error;
+      }
+      log
+        .warn()
+        .err(error)
+        .num('attempt', attempt)
+        .msg('Error listing namespaces. Retrying.');
+      await wait(5000); // Wait for 5 seconds before retrying
+    }
   }
+
+  // Unreachable: the loop either returns or throws.
+  return [];
 };
 
 // Function to describe a namespace
@@ -732,19 +782,102 @@ async function createNamespace(
   try {
     const command = new CreateRuleGroupsNamespaceCommand(input);
     await client.send(command);
+    log
+      .info()
+      .str('function', 'createNamespace')
+      .str('namespace', namespace)
+      .msg('Created new namespace and added rules');
   } catch (error) {
     log
       .error()
       .str('function', 'createNamespace')
       .err(error)
       .msg('Failed to create namespace');
+    // Rethrow so callers don't treat a failed create as success and silently
+    // drop every rule (e.g. ConflictException on a concurrent create).
+    throw error;
+  }
+}
+
+/**
+ * Polls DescribeRuleGroupsNamespace until the namespace reaches ACTIVE status.
+ * Replaces fixed sleeps after namespace creation so we only wait as long as
+ * AMP actually needs.
+ * @param promWorkspaceId - The Prometheus workspace ID.
+ * @param namespace - The namespace name.
+ * @param pollIntervalMs - How often to poll (default 5 seconds).
+ * @param timeoutMs - Maximum time to wait before failing (default 120 seconds).
+ */
+async function waitForNamespaceActive(
+  promWorkspaceId: string,
+  namespace: string,
+  pollIntervalMs = 5000,
+  timeoutMs = 120000,
+) {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    try {
+      const response = await client.send(
+        new DescribeRuleGroupsNamespaceCommand({
+          workspaceId: promWorkspaceId,
+          name: namespace,
+        }),
+      );
+      const statusCode = response.ruleGroupsNamespace?.status?.statusCode;
+
+      if (statusCode === RuleGroupsNamespaceStatusCode.ACTIVE) {
+        log
+          .info()
+          .str('function', 'waitForNamespaceActive')
+          .str('namespace', namespace)
+          .msg('Namespace is active');
+        return;
+      }
+
+      if (
+        statusCode === RuleGroupsNamespaceStatusCode.CREATION_FAILED ||
+        statusCode === RuleGroupsNamespaceStatusCode.UPDATE_FAILED
+      ) {
+        log
+          .error()
+          .str('function', 'waitForNamespaceActive')
+          .str('namespace', namespace)
+          .str('statusCode', statusCode)
+          .msg('Namespace entered a failed state');
+        throw new Error(
+          `Namespace ${namespace} entered failed state: ${statusCode}`,
+        );
+      }
+
+      log
+        .info()
+        .str('function', 'waitForNamespaceActive')
+        .str('namespace', namespace)
+        .str('statusCode', statusCode ?? 'unknown')
+        .msg('Namespace not active yet. Waiting before polling again.');
+    } catch (error) {
+      // The namespace may not be visible immediately after creation. Keep
+      // polling on ResourceNotFoundException; rethrow anything else.
+      if (
+        !(error instanceof Error) ||
+        error.name !== 'ResourceNotFoundException'
+      ) {
+        throw error;
+      }
+      log
+        .info()
+        .str('function', 'waitForNamespaceActive')
+        .str('namespace', namespace)
+        .msg('Namespace not found yet. Waiting before polling again.');
+    }
+
+    await wait(pollIntervalMs);
   }
 
-  log
-    .info()
-    .str('function', 'createNamespace')
-    .str('namespace', namespace)
-    .msg('Created new namespace and added rules');
+  throw new Error(
+    `Timed out waiting for namespace ${namespace} to become active after ${timeoutMs}ms`,
+  );
 }
 
 // Helper function to ensure that the object is a NamespaceDetails interface
@@ -831,16 +964,21 @@ export async function managePromNamespaceAlarms(
     .str('namespace', namespace)
     .msg('Retrieved namespaces');
 
+  // Describe all namespaces in parallel and reuse the results below instead of
+  // re-describing the target namespace.
+  const describedNamespaces = await Promise.all(
+    namespaces.map(async (ns) => ({
+      name: ns.name as string,
+      details: await describeNamespace(promWorkspaceId, ns.name as string),
+    })),
+  );
+
   let totalWSRules = 0;
   // Count total rules across all namespaces
-  for (const ns of namespaces) {
-    const nsDetails = await describeNamespace(
-      promWorkspaceId,
-      ns.name as string,
-    );
-    if (nsDetails && isNamespaceDetails(nsDetails)) {
+  for (const {details} of describedNamespaces) {
+    if (details && isNamespaceDetails(details)) {
       // Add the number of rules in the current namespace to the total count
-      totalWSRules += nsDetails.groups.reduce(
+      totalWSRules += details.groups.reduce(
         (count, group) => count + group.rules.length,
         0,
       );
@@ -877,14 +1015,15 @@ export async function managePromNamespaceAlarms(
       .str('function', 'managePromNamespaceAlarms')
       .str('namespace', namespace)
       .msg(
-        'Created new namespace and added rules. Waiting 90 seconds to allow namespace to propagate.',
+        'Created new namespace and added rules. Waiting for namespace to become active.',
       );
-    await wait(90000); // Wait for 90 seconds after creating the namespace
+    await waitForNamespaceActive(promWorkspaceId, namespace);
     return;
   }
 
-  // Describe the specific namespace to get its details
-  const nsDetails = await describeNamespace(promWorkspaceId, namespace);
+  // Reuse the namespace details fetched above for the rule count
+  const nsDetails =
+    describedNamespaces.find((ns) => ns.name === namespace)?.details ?? null;
   if (!nsDetails || !isNamespaceDetails(nsDetails)) {
     log
       .warn()
@@ -922,7 +1061,10 @@ export async function managePromNamespaceAlarms(
         .info()
         .str('function', 'managePromNamespaceAlarms')
         .str('namespace', namespace)
-        .msg('Recreated namespace with updated rules.');
+        .msg(
+          'Recreated namespace with updated rules. Waiting for namespace to become active.',
+        );
+      await waitForNamespaceActive(promWorkspaceId, namespace);
       return;
     } catch (error) {
       log
@@ -937,10 +1079,16 @@ export async function managePromNamespaceAlarms(
     }
   }
 
-  // Find the rule group within the namespace or create a new one
-  const ruleGroup = nsDetails.groups.find(
+  // Find the rule group within the namespace or create a new one. A newly
+  // created rule group must be pushed into nsDetails.groups, otherwise the
+  // rules added to it are silently dropped when nsDetails is dumped to YAML.
+  let ruleGroup = nsDetails.groups.find(
     (rg): rg is RuleGroup => rg.name === ruleGroupName,
-  ) || {name: ruleGroupName, rules: []};
+  );
+  if (!ruleGroup) {
+    ruleGroup = {name: ruleGroupName, rules: []};
+    nsDetails.groups.push(ruleGroup);
+  }
 
   // Iterate over the alarm configurations and update or add rules
   for (const config of alarmConfigs) {
