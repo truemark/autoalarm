@@ -1,16 +1,14 @@
 import {EC2Client, DescribeTagsCommand} from '@aws-sdk/client-ec2';
 import * as logging from '@nr1e/logging';
 import {AlarmClassification, Tag} from '../types/index.mjs';
-import {
-  CloudWatchClient,
-  DeleteAlarmsCommand,
-} from '@aws-sdk/client-cloudwatch';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
   deleteExistingAlarms,
   buildAlarmName,
+  buildExpectedAlarmNames,
   handleAnomalyAlarms,
   handleStaticAlarms,
+  massDeleteAlarms,
   getCWAlarmsForInstance,
   parseMetricAlarmOptions,
 } from '../alarm-configs/utils/index.mjs';
@@ -20,10 +18,6 @@ const log: logging.Logger = logging.getLogger('transit-gateway-modules');
 const region: string = process.env.AWS_REGION || '';
 const retryStrategy = new ConfiguredRetryStrategy(20);
 const ec2Client: EC2Client = new EC2Client({
-  region: region,
-  retryStrategy: retryStrategy,
-});
-const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   region: region,
   retryStrategy: retryStrategy,
 });
@@ -82,7 +76,7 @@ async function checkAndManageTransitGatewayStatusAlarms(
       .str('function', 'checkAndManageTransitGatewayStaticAlarms')
       .str('transitGatewayId', transitGatewayId)
       .msg('Alarm creation disabled by tag settings');
-    await deleteExistingAlarms('TGW', transitGatewayId);
+    await deleteExistingAlarms('TGW', transitGatewayId, metricConfigs);
     return;
   }
 
@@ -152,7 +146,17 @@ async function checkAndManageTransitGatewayStatusAlarms(
     }
   }
   // Delete alarms that are not in the alarmsToKeep set
-  const existingAlarms = await getCWAlarmsForInstance('TGW', transitGatewayId);
+  // Restrict the prefix-based fetch to this resource's exact expected alarm
+  // names so we never delete alarms of another resource whose identifier
+  // shares a prefix.
+  const expectedAlarmNames = buildExpectedAlarmNames(
+    'TGW',
+    transitGatewayId,
+    metricConfigs,
+  );
+  const existingAlarms = (
+    await getCWAlarmsForInstance('TGW', transitGatewayId)
+  ).filter((alarm) => expectedAlarmNames.has(alarm));
   const alarmsToDelete = existingAlarms.filter(
     (alarm) => !alarmsToKeep.has(alarm),
   );
@@ -162,11 +166,7 @@ async function checkAndManageTransitGatewayStatusAlarms(
     .str('function', 'checkAndManageTransitGatewayStaticAlarms')
     .obj('alarms to delete', alarmsToDelete)
     .msg('Deleting alarms that are no longer needed');
-  await cloudWatchClient.send(
-    new DeleteAlarmsCommand({
-      AlarmNames: [...alarmsToDelete],
-    }),
-  );
+  await massDeleteAlarms(alarmsToDelete);
 
   log
     .info()
@@ -186,7 +186,7 @@ export async function manageInactiveTransitGatewayAlarms(
   transitGatewayId: string,
 ): Promise<void> {
   try {
-    await deleteExistingAlarms('TGW', transitGatewayId);
+    await deleteExistingAlarms('TGW', transitGatewayId, metricConfigs);
   } catch (e) {
     log
       .error()
@@ -288,13 +288,22 @@ export async function parseTransitGatewayEventAndCreateAlarms(
         .msg('Unexpected event type');
   }
 
-  const transitGatewayName = extractTransitGatewayNameFromArn(transitGatewayId);
+  // CloudTrail events provide a bare id ('tgw-...') while tag events provide a
+  // full ARN. Only run ARN extraction when the value is not already a bare id.
+  const transitGatewayName = transitGatewayId?.startsWith('tgw-')
+    ? transitGatewayId
+    : extractTransitGatewayNameFromArn(transitGatewayId || '');
   if (!transitGatewayName) {
     log
       .error()
       .str('function', 'parseTransitGatewayEventAndCreateAlarms')
       .str('transitGatewayId', transitGatewayId)
-      .msg('Extracted Transit Gateway name is empty');
+      .msg(
+        'Could not resolve Transit Gateway identifier from event. Failing record to avoid managing alarms with an empty identifier',
+      );
+    throw new Error(
+      'Could not resolve Transit Gateway identifier from event. Cannot manage alarms with an empty identifier',
+    );
   }
 
   log

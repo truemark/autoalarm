@@ -57,3 +57,7 @@ Start by cloning the project repository to your local machine:
     ```bash
     cd cdk ; cdk deploy AutoAlarm
     ```
+
+### Considerations
+
+- **CloudFront**: CloudFront is a global service. Its CloudTrail and tag-change events are delivered only in the `us-east-1` region. To use AutoAlarm's CloudFront alarm automation, deploy the stack (or a satellite event rule that forwards CloudFront events to it) in `us-east-1`.

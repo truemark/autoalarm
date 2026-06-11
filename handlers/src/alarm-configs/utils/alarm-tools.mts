@@ -1,6 +1,8 @@
 import {
   CloudWatchClient,
+  ComparisonOperator,
   DeleteAlarmsCommand,
+  DeleteAnomalyDetectorCommand,
   DescribeAlarmsCommand,
   DescribeAlarmsCommandOutput,
   MetricAlarm,
@@ -53,46 +55,170 @@ export async function doesAlarmExist(alarmName: string): Promise<boolean> {
   return (response.MetricAlarms?.length ?? 0) > 0;
 }
 
+// The DeleteAlarms API accepts at most 100 alarm names per call.
+const DELETE_ALARMS_MAX_BATCH_SIZE = 100;
+
+/**
+ * Splits an array of alarm names into chunks no larger than the DeleteAlarms
+ * API limit (100 names per call).
+ */
+export function chunkAlarmNames(alarmNames: string[]): string[][] {
+  const chunks: string[][] = [];
+  for (let i = 0; i < alarmNames.length; i += DELETE_ALARMS_MAX_BATCH_SIZE) {
+    chunks.push(alarmNames.slice(i, i + DELETE_ALARMS_MAX_BATCH_SIZE));
+  }
+  return chunks;
+}
+
+/**
+ * Builds the exact set of alarm names AutoAlarm could have created for a
+ * resource, based on the service's alarm configs. Reuses {@link buildAlarmName}
+ * so the formats stay identical to alarm creation. Used to ensure deletion
+ * only ever targets this resource's own alarms and never alarms belonging to
+ * another resource whose identifier shares a prefix (e.g., 'orders' vs
+ * 'orders-dlq').
+ *
+ * Note: EC2 is intentionally not reconciled via this helper. EC2 storage
+ * alarms embed dynamic storage paths and platform-resolved metric names, so
+ * the EC2 module keeps prefix-based reconciliation (instance ids are
+ * fixed-format and cannot prefix-collide).
+ */
+export function buildExpectedAlarmNames(
+  service: string,
+  identifier: string,
+  configs: MetricAlarmConfig[],
+): Set<string> {
+  const expectedAlarmNames = new Set<string>();
+  for (const config of configs) {
+    const alarmVariant = config.tagKey.includes('anomaly')
+      ? 'anomaly'
+      : 'static';
+    for (const classification of Object.values(AlarmClassification)) {
+      expectedAlarmNames.add(
+        buildAlarmName(
+          config,
+          service,
+          identifier,
+          classification,
+          alarmVariant,
+        ),
+      );
+    }
+  }
+  return expectedAlarmNames;
+}
+
 export async function deleteExistingAlarms(
   service: string,
   identifier: string,
+  configs: MetricAlarmConfig[],
 ) {
+  if (!identifier) {
+    log
+      .error()
+      .str('function', 'deleteExistingAlarms')
+      .str('Service', service)
+      .msg('Identifier is empty. Refusing to delete alarms by service prefix');
+    throw new Error(
+      `deleteExistingAlarms called with empty identifier for service ${service}`,
+    );
+  }
+
   log
     .info()
     .str('function', 'deleteExistingAlarms')
     .str('Service', service)
     .str('Identifier', identifier)
     .msg('Fetching and deleting existing alarms');
-  const activeAutoAlarms = await getCWAlarmsForInstance(service, identifier);
+  const expectedAlarmNames = buildExpectedAlarmNames(
+    service,
+    identifier,
+    configs,
+  );
+  // Only delete alarms whose names exactly match the names AutoAlarm could
+  // have created for this resource. This prevents the AlarmNamePrefix fetch
+  // from deleting alarms belonging to another resource whose identifier
+  // shares a prefix with this one.
+  const activeAutoAlarms = (
+    await getCWAlarmsForInstance(service, identifier)
+  ).filter((alarmName) => expectedAlarmNames.has(alarmName));
 
   log
     .info()
     .str('function', 'deleteExistingAlarms')
     .obj('AlarmName', activeAutoAlarms)
     .msg('Deleting alarm');
-  await cloudWatchClient.send(
-    new DeleteAlarmsCommand({
-      AlarmNames: [...activeAutoAlarms],
-    }),
-  );
+  await massDeleteAlarms(activeAutoAlarms);
 }
 
 async function deleteAlarmsForConfig(
   config: MetricAlarmConfig,
   service: string,
   serviceIdentifier: string,
+  dimensions: {Name: string; Value: string}[],
+  statistic: string | undefined,
 ) {
+  // Only delete the alarm variant this config represents. Deleting both
+  // variants here would let a no-threshold anomaly config delete the sibling
+  // static alarms managed by a different config (and vice versa).
+  const alarmVariant = config.tagKey.includes('anomaly') ? 'anomaly' : 'static';
   for (const classification of Object.values(AlarmClassification)) {
-    for (const alarmVariant of ['static', 'anomaly'] as const) {
-      const alarmName = buildAlarmName(
-        config,
-        service,
-        serviceIdentifier,
-        classification,
-        alarmVariant,
-      );
-      await deleteAlarm(alarmName);
+    const alarmName = buildAlarmName(
+      config,
+      service,
+      serviceIdentifier,
+      classification,
+      alarmVariant,
+    );
+    await deleteAlarm(alarmName);
+  }
+
+  // Anomaly alarms are backed by an anomaly detector model created via
+  // PutAnomalyDetector. Delete it as well so orphaned models do not
+  // accumulate toward the regional anomaly detector quota.
+  if (alarmVariant === 'anomaly') {
+    await deleteAnomalyDetector(config, dimensions, statistic);
+  }
+}
+
+async function deleteAnomalyDetector(
+  config: MetricAlarmConfig,
+  dimensions: {Name: string; Value: string}[],
+  statistic: string | undefined,
+) {
+  try {
+    await cloudWatchClient.send(
+      new DeleteAnomalyDetectorCommand({
+        Namespace: config.metricNamespace,
+        MetricName: config.metricName,
+        Dimensions: [...dimensions],
+        Stat: statistic,
+      }),
+    );
+    log
+      .info()
+      .str('function', 'deleteAnomalyDetector')
+      .str('Namespace', config.metricNamespace)
+      .str('MetricName', config.metricName)
+      .msg('Successfully deleted anomaly detector');
+  } catch (e) {
+    if (e instanceof Error && e.name === 'ResourceNotFoundException') {
+      log
+        .debug()
+        .str('function', 'deleteAnomalyDetector')
+        .str('Namespace', config.metricNamespace)
+        .str('MetricName', config.metricName)
+        .msg('Anomaly detector does not exist. Nothing to delete');
+      return;
     }
+    log
+      .error()
+      .str('function', 'deleteAnomalyDetector')
+      .str('Namespace', config.metricNamespace)
+      .str('MetricName', config.metricName)
+      .err(e)
+      .msg('Error deleting anomaly detector');
+    throw e;
   }
 }
 
@@ -122,15 +248,25 @@ export async function deleteAlarm(alarmName: string) {
 }
 
 export async function massDeleteAlarms(alarmNames: string[]) {
+  if (alarmNames.length === 0) {
+    log
+      .info()
+      .str('function', 'massDeleteAlarms')
+      .msg('No alarms to delete. Skipping DeleteAlarms call');
+    return;
+  }
   log
     .info()
     .str('function', 'massDeleteAlarms')
     .str('AlarmNames', JSON.stringify(alarmNames))
     .msg('Attempting to delete alarms');
   try {
-    await cloudWatchClient.send(
-      new DeleteAlarmsCommand({AlarmNames: alarmNames}),
-    );
+    // DeleteAlarms accepts at most 100 alarm names per call, so delete in chunks.
+    for (const alarmNamesChunk of chunkAlarmNames(alarmNames)) {
+      await cloudWatchClient.send(
+        new DeleteAlarmsCommand({AlarmNames: alarmNamesChunk}),
+      );
+    }
     log
       .info()
       .str('function', 'massDeleteAlarms')
@@ -143,6 +279,9 @@ export async function massDeleteAlarms(alarmNames: string[]) {
       .str('AlarmNames', JSON.stringify(alarmNames))
       .err(e)
       .msg('Error deleting alarms');
+    // Rethrow so callers can fail the record instead of silently dropping the
+    // deletion and acknowledging the event.
+    throw e;
   }
 }
 
@@ -180,35 +319,82 @@ export function buildAlarmName(
 }
 
 // used as input validation to ensure that the period value is always a valid number for the cloudwatch api
+// Valid CloudWatch periods are 10, 30, and any multiple of 60.
 function validatePeriod(period: number) {
-  if (period < 10) {
-    log
-      .info()
-      .str('function', 'validatePeriod')
-      .str('period', period.toString())
-      .msg('Period is less than 10, setting to 10');
-    return 10;
-  } else if (period < 30 || period <= 45) {
-    log
-      .info()
-      .str('function', 'validatePeriod')
-      .str('period', period.toString())
-      .msg('Period is less than 30 or less than or equal to 45, setting to 30');
-    return 30;
-  } else if (period > 45 && period % 60 !== 0) {
-    log
-      .info()
-      .str('function', 'validatePeriod')
-      .str('period', period.toString())
-      .msg('Period is greater than 45, setting to nearest multiple of 60');
-    return Math.ceil(period / 60) * 60;
-  } else {
+  if (period === 10 || period === 30 || (period >= 60 && period % 60 === 0)) {
     log
       .info()
       .str('function', 'validatePeriod')
       .str('period', period.toString())
       .msg('Period is valid');
     return period;
+  } else if (period < 10) {
+    log
+      .info()
+      .str('function', 'validatePeriod')
+      .str('period', period.toString())
+      .msg('Period is less than 10, setting to 10');
+    return 10;
+  } else if (period < 30) {
+    log
+      .info()
+      .str('function', 'validatePeriod')
+      .str('period', period.toString())
+      .msg('Period is between 11 and 29, setting to 30');
+    return 30;
+  } else {
+    log
+      .info()
+      .str('function', 'validatePeriod')
+      .str('period', period.toString())
+      .msg(
+        'Period is greater than 30 and not a multiple of 60, rounding up to the next multiple of 60',
+      );
+    return Math.ceil(period / 60) * 60;
+  }
+}
+
+/**
+ * Comparison operators that are only valid for anomaly detection alarms.
+ * Static threshold alarms must NOT use these, and anomaly alarms must ONLY use these.
+ */
+const ANOMALY_COMPARISON_OPERATORS: ComparisonOperator[] = [
+  ComparisonOperator.GreaterThanUpperThreshold,
+  ComparisonOperator.LessThanLowerThreshold,
+  ComparisonOperator.LessThanLowerOrGreaterThanUpperThreshold,
+];
+
+/**
+ * Ensures the comparison operator matches the alarm variant (anomaly vs static).
+ * Tag parsing accepts any valid ComparisonOperator, so a mismatched operator
+ * (e.g. a static operator on an anomaly alarm) would make PutMetricAlarm reject
+ * the request and send the record to the DLQ. If a mismatch is detected, log a
+ * warning and fall back to the config's default operator.
+ */
+function validateComparisonOperator(
+  config: MetricAlarmConfig,
+  updatedDefaults: MetricAlarmOptions,
+  variant: 'anomaly' | 'static',
+): void {
+  const isAnomalyOperator = ANOMALY_COMPARISON_OPERATORS.includes(
+    updatedDefaults.comparisonOperator,
+  );
+
+  if (
+    (variant === 'anomaly' && !isAnomalyOperator) ||
+    (variant === 'static' && isAnomalyOperator)
+  ) {
+    log
+      .warn()
+      .str('function', 'validateComparisonOperator')
+      .str('tagKey', config.tagKey)
+      .str('variant', variant)
+      .str('comparisonOperator', updatedDefaults.comparisonOperator)
+      .str('defaultComparisonOperator', config.defaults.comparisonOperator)
+      .msg(
+        'Comparison operator is not valid for this alarm variant. Falling back to the config default operator.',
+      );
+    updatedDefaults.comparisonOperator = config.defaults.comparisonOperator;
   }
 }
 
@@ -333,11 +519,18 @@ export async function handleAnomalyAlarms(
       .msg(
         'No thresholds defined, skipping alarm creation and deleting alarms for config if they exist.',
       );
-    await deleteAlarmsForConfig(config, service, serviceIdentifier);
+    await deleteAlarmsForConfig(
+      config,
+      service,
+      serviceIdentifier,
+      dimensions,
+      updatedDefaults.statistic,
+    );
     return createdAlarms;
   }
 
   updatedDefaults.period = validatePeriod(updatedDefaults.period);
+  validateComparisonOperator(config, updatedDefaults, 'anomaly');
 
   // Handle warning anomaly alarm
   if (warningThresholdSet) {
@@ -519,11 +712,18 @@ export async function handleStaticAlarms(
       .msg(
         'No thresholds defined, skipping alarm creation and deleting alarms for config if they exist.',
       );
-    await deleteAlarmsForConfig(config, service, serviceIdentifier);
+    await deleteAlarmsForConfig(
+      config,
+      service,
+      serviceIdentifier,
+      dimensions,
+      updatedDefaults.statistic,
+    );
     return createdAlarms;
   }
 
   updatedDefaults.period = validatePeriod(updatedDefaults.period);
+  validateComparisonOperator(config, updatedDefaults, 'static');
 
   // Handle warning static alarm
   if (warningThresholdSet) {
@@ -629,6 +829,18 @@ export async function getCWAlarmsForInstance(
   serviceName: string,
   serviceIdentifier: string,
 ): Promise<string[]> {
+  if (!serviceIdentifier) {
+    log
+      .error()
+      .str('function', 'getCWAlarmsForInstance')
+      .str('serviceName', serviceName)
+      .msg(
+        'Service identifier is empty. Refusing to fetch alarms by service-wide prefix',
+      );
+    throw new Error(
+      `getCWAlarmsForInstance called with empty identifier for service ${serviceName}`,
+    );
+  }
   let nextToken: string | undefined = undefined;
   const activeAutoAlarms: MetricAlarm[] = [];
   let hasMorePages = true;
