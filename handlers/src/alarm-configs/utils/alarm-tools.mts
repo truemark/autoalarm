@@ -12,7 +12,14 @@ import {
   PutMetricAlarmCommandInput,
   Statistic,
   MetricDataQuery,
+  Tag as CloudWatchTag,
+  TagResourceCommand,
 } from '@aws-sdk/client-cloudwatch';
+import {
+  GetResourcesCommand,
+  GetResourcesCommandOutput,
+  ResourceGroupsTaggingAPIClient,
+} from '@aws-sdk/client-resource-groups-tagging-api';
 
 import {
   MetricAlarmConfig,
@@ -29,6 +36,199 @@ const cloudWatchClient = new CloudWatchClient({
   region,
   retryStrategy: retryStrategy,
 });
+const taggingClient = new ResourceGroupsTaggingAPIClient({
+  region,
+  retryStrategy: retryStrategy,
+});
+
+/**
+ * Tag keys carrying an alarm's identity: the AutoAlarm service label and the
+ * identifier of the resource the alarm monitors. These tags are the system's
+ * primary key for alarm ownership — reconciliation looks alarms up by these
+ * tags first and only falls back to name matching for alarms created before
+ * identity tags existed (see {@link getAlarmsByIdentityTags}).
+ */
+export const ALARM_IDENTITY_SERVICE_TAG = 'autoalarm:service';
+export const ALARM_IDENTITY_RESOURCE_ID_TAG = 'autoalarm:resource-id';
+
+/**
+ * Builds the identity tags stamped on every alarm AutoAlarm creates or
+ * updates. The service and identifier are stored exactly as passed by the
+ * service module so the tag-based lookup in {@link getAlarmsByIdentityTags}
+ * (which uses the same values) always matches.
+ */
+export function buildAlarmIdentityTags(
+  service: string,
+  serviceIdentifier: string,
+): CloudWatchTag[] {
+  return [
+    {Key: ALARM_IDENTITY_SERVICE_TAG, Value: service},
+    {Key: ALARM_IDENTITY_RESOURCE_ID_TAG, Value: serviceIdentifier},
+  ];
+}
+
+/**
+ * Builds a CloudWatch alarm ARN from the Lambda's region (AWS_REGION) and the
+ * account id provided to the main function via the ACCT_ID environment
+ * variable (set by the CDK stack). Returns undefined when either is missing
+ * so callers can skip ARN-based operations instead of building a bad ARN.
+ */
+export function buildAlarmArn(alarmName: string): string | undefined {
+  // Read at call time (not module load) so the values are current and the
+  // function is testable.
+  const arnRegion = process.env.AWS_REGION;
+  const accountId = process.env.ACCT_ID;
+  if (!arnRegion || !accountId) {
+    return undefined;
+  }
+  return `arn:aws:cloudwatch:${arnRegion}:${accountId}:alarm:${alarmName}`;
+}
+
+/**
+ * Tags an alarm with its severity and identity tags via TagResource.
+ *
+ * PutMetricAlarm only applies its Tags parameter when the alarm is being
+ * CREATED; tags passed on an update of an existing alarm are silently
+ * ignored. Calling TagResource after every successful PutMetricAlarm covers
+ * that update path (and is an idempotent no-op when PutMetricAlarm already
+ * applied the tags at creation), so pre-existing alarms pick up identity
+ * tags the first time they are reconciled.
+ *
+ * Failures are logged but not rethrown: the alarm itself was created or
+ * updated successfully, and an untagged alarm is still found by the
+ * name-based reconciliation fallback until the next reconcile retags it.
+ */
+async function applyAlarmIdentityTags(
+  alarmName: string,
+  service: string,
+  serviceIdentifier: string,
+  classification: AlarmClassification,
+): Promise<void> {
+  const alarmArn = buildAlarmArn(alarmName);
+  if (!alarmArn) {
+    log
+      .warn()
+      .str('function', 'applyAlarmIdentityTags')
+      .str('AlarmName', alarmName)
+      .msg(
+        'AWS_REGION or ACCT_ID is not set; cannot build alarm ARN. Skipping TagResource (identity tags will only be applied at alarm creation)',
+      );
+    return;
+  }
+
+  try {
+    await cloudWatchClient.send(
+      new TagResourceCommand({
+        ResourceARN: alarmArn,
+        Tags: [
+          {Key: 'severity', Value: classification},
+          ...buildAlarmIdentityTags(service, serviceIdentifier),
+        ],
+      }),
+    );
+    log
+      .debug()
+      .str('function', 'applyAlarmIdentityTags')
+      .str('AlarmName', alarmName)
+      .str('Service', service)
+      .str('Identifier', serviceIdentifier)
+      .msg('Applied identity tags to alarm');
+  } catch (e) {
+    log
+      .error()
+      .str('function', 'applyAlarmIdentityTags')
+      .str('AlarmName', alarmName)
+      .str('AlarmArn', alarmArn)
+      .err(e)
+      .msg(
+        'Failed to tag alarm with identity tags. The alarm remains discoverable via the name-based fallback and will be retagged on the next reconcile',
+      );
+  }
+}
+
+/**
+ * Looks up the alarms owned by a resource via the Resource Groups Tagging
+ * API, using the identity tags stamped on every alarm at creation/update.
+ * This is the authoritative ownership lookup; alarm names are not parsed.
+ *
+ * Returns alarm names extracted from the returned alarm ARNs
+ * (arn:aws:cloudwatch:region:account:alarm:NAME).
+ *
+ * Errors are logged and an empty array is returned so reconciliation
+ * gracefully degrades to the name-based lookup (the exact behavior before
+ * identity tags existed) instead of failing the record. The union with the
+ * name-based lookup also covers the Tagging API's eventual consistency lag
+ * (newly tagged alarms can take minutes to appear in GetResources).
+ */
+export async function getAlarmsByIdentityTags(
+  service: string,
+  serviceIdentifier: string,
+): Promise<string[]> {
+  if (!serviceIdentifier) {
+    log
+      .error()
+      .str('function', 'getAlarmsByIdentityTags')
+      .str('serviceName', service)
+      .msg('Service identifier is empty. Refusing to fetch alarms by tags');
+    throw new Error(
+      `getAlarmsByIdentityTags called with empty identifier for service ${service}`,
+    );
+  }
+
+  const alarmNames: string[] = [];
+  let paginationToken: string | undefined = undefined;
+
+  try {
+    do {
+      const response: GetResourcesCommandOutput = await taggingClient.send(
+        new GetResourcesCommand({
+          ResourceTypeFilters: ['cloudwatch:alarm'],
+          TagFilters: [
+            {Key: ALARM_IDENTITY_SERVICE_TAG, Values: [service]},
+            {Key: ALARM_IDENTITY_RESOURCE_ID_TAG, Values: [serviceIdentifier]},
+          ],
+          PaginationToken: paginationToken,
+        }),
+      );
+
+      for (const resource of response.ResourceTagMappingList ?? []) {
+        const arn = resource.ResourceARN;
+        if (!arn) {
+          continue;
+        }
+        const marker = ':alarm:';
+        const markerIndex = arn.indexOf(marker);
+        if (markerIndex === -1) {
+          continue;
+        }
+        alarmNames.push(arn.substring(markerIndex + marker.length));
+      }
+
+      // GetResources signals "no more pages" with an empty string.
+      paginationToken = response.PaginationToken || undefined;
+    } while (paginationToken);
+
+    log
+      .info()
+      .str('function', 'getAlarmsByIdentityTags')
+      .str('Service', service)
+      .str('Identifier', serviceIdentifier)
+      .obj('alarms', alarmNames)
+      .msg('Fetched alarms by identity tags');
+    return alarmNames;
+  } catch (error) {
+    log
+      .error()
+      .str('function', 'getAlarmsByIdentityTags')
+      .str('Service', service)
+      .str('Identifier', serviceIdentifier)
+      .err(error)
+      .msg(
+        'Failed to fetch alarms by identity tags. Falling back to name-based lookup only',
+      );
+    return [];
+  }
+}
 
 export async function doesAlarmExist(alarmName: string): Promise<boolean> {
   //initialize response variable
@@ -135,13 +335,26 @@ export async function deleteExistingAlarms(
     identifier,
     configs,
   );
-  // Only delete alarms whose names exactly match the names AutoAlarm could
-  // have created for this resource. This prevents the AlarmNamePrefix fetch
-  // from deleting alarms belonging to another resource whose identifier
-  // shares a prefix with this one.
-  const activeAutoAlarms = (
-    await getCWAlarmsForInstance(service, identifier)
-  ).filter((alarmName) => expectedAlarmNames.has(alarmName));
+  // Identity-first lookup: alarms tagged with this resource's identity tags
+  // are authoritatively ours and are deleted regardless of their name.
+  // UNION with the name-based lookup, restricted to alarms whose names
+  // exactly match the names AutoAlarm could have created for this resource
+  // (so the AlarmNamePrefix fetch can never delete alarms belonging to
+  // another resource whose identifier shares a prefix with this one). The
+  // name-based fallback covers alarms created before identity tags existed
+  // and the Tagging API's eventual-consistency lag.
+  const [taggedAlarms, prefixFetchedAlarms] = await Promise.all([
+    getAlarmsByIdentityTags(service, identifier),
+    getCWAlarmsForInstance(service, identifier),
+  ]);
+  const activeAutoAlarms = [
+    ...new Set([
+      ...taggedAlarms,
+      ...prefixFetchedAlarms.filter((alarmName) =>
+        expectedAlarmNames.has(alarmName),
+      ),
+    ]),
+  ];
 
   log
     .info()
@@ -405,6 +618,8 @@ async function handleAnomalyDetectionWorkflow(
   dimensions: {Name: string; Value: string}[],
   classification: AlarmClassification,
   threshold: number,
+  service: string,
+  serviceIdentifier: string,
 ) {
   log
     .info()
@@ -458,7 +673,12 @@ async function handleAnomalyDetectionWorkflow(
       Metrics: metrics,
       ThresholdMetricId: 'anomalyDetectionBand',
       ActionsEnabled: false,
-      Tags: [{Key: 'severity', Value: classification}],
+      // Tags are only applied when the alarm is CREATED; updates of existing
+      // alarms ignore them, hence the TagResource call below.
+      Tags: [
+        {Key: 'severity', Value: classification},
+        ...buildAlarmIdentityTags(service, serviceIdentifier),
+      ],
       TreatMissingData: updatedDefaults.missingDataTreatment,
     };
 
@@ -477,6 +697,13 @@ async function handleAnomalyDetectionWorkflow(
       .str('AlarmName', alarmName)
       .obj('response', alarmResponse)
       .msg('Successfully created or updated anomaly detection alarm');
+
+    await applyAlarmIdentityTags(
+      alarmName,
+      service,
+      serviceIdentifier,
+      classification,
+    );
   } catch (e) {
     log
       .error()
@@ -591,6 +818,8 @@ async function handleAlarmsForVariant(
         dimensions,
         classification,
         threshold as number,
+        service,
+        serviceIdentifier,
       );
       createdAlarms.push(alarmName);
     } else {
@@ -635,6 +864,8 @@ async function handleStaticThresholdWorkflow(
   dimensions: {Name: string; Value: string}[],
   classification: AlarmClassification,
   threshold: number,
+  service: string,
+  serviceIdentifier: string,
 ) {
   log
     .info()
@@ -669,7 +900,12 @@ async function handleStaticThresholdWorkflow(
       Threshold: threshold,
       ActionsEnabled: false,
       Dimensions: [...dimensions],
-      Tags: [{Key: 'severity', Value: classification}],
+      // Tags are only applied when the alarm is CREATED; updates of existing
+      // alarms ignore them, hence the TagResource call below.
+      Tags: [
+        {Key: 'severity', Value: classification},
+        ...buildAlarmIdentityTags(service, serviceIdentifier),
+      ],
       TreatMissingData: updatedDefaults.missingDataTreatment,
     };
 
@@ -682,6 +918,13 @@ async function handleStaticThresholdWorkflow(
       .str('AlarmName', alarmName)
       .obj('response', response)
       .msg('Successfully created or updated static threshold alarm');
+
+    await applyAlarmIdentityTags(
+      alarmName,
+      service,
+      serviceIdentifier,
+      classification,
+    );
   } catch (e) {
     log
       .error()
