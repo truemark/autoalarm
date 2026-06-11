@@ -7,6 +7,7 @@ import {
 } from 'aws-lambda';
 import * as logging from '@nr1e/logging';
 import * as ServiceModules from './service-modules/_index.mjs';
+import {routeEvent} from './event-router.mjs';
 import {EC2AlarmManagerArray} from './types/index.mjs';
 
 // Initialize logging
@@ -215,97 +216,6 @@ async function processEC2TagEvent(
   return failedRecords;
 }
 
-// TODO Fix the use of any
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function routeTagEvent(event: any) {
-  const detail = event.detail;
-  const resourceType = detail['resource-type'];
-  const service = detail.service;
-
-  log
-    .info()
-    .str('function', 'routeTagEvent')
-    .str('resourceType', resourceType)
-    .str('service', service)
-    .msg('Processing tag event');
-
-  switch (service) {
-    // Transit Gateway and VPN tag events arrive with service 'ec2' and are
-    // distinguished by resource-type. EC2 instance tag events are diverted
-    // before routeTagEvent is called.
-    case 'ec2':
-      switch (resourceType) {
-        case 'transit-gateway':
-          await ServiceModules.parseTransitGatewayEventAndCreateAlarms(event);
-          break;
-
-        case 'vpn-connection':
-          await ServiceModules.parseVpnEventAndCreateAlarms(event);
-          break;
-
-        default:
-          log
-            .warn()
-            .str('function', 'routeTagEvent')
-            .msg(`Unhandled resource type for EC2: ${resourceType}`);
-          break;
-      }
-      break;
-
-    case 'elasticloadbalancing':
-      switch (resourceType) {
-        case 'loadbalancer':
-          await ServiceModules.parseALBEventAndCreateAlarms(event);
-          break;
-
-        case 'targetgroup':
-          await ServiceModules.parseTGEventAndCreateAlarms(event);
-          break;
-
-        default:
-          log
-            .warn()
-            .str('function', 'routeTagEvent')
-            .msg(`Unhandled resource type for ELB: ${resourceType}`);
-          break;
-      }
-      break;
-
-    case 'es':
-      await ServiceModules.parseOSEventAndCreateAlarms(event);
-      break;
-
-    case 'route53resolver':
-      await ServiceModules.parseR53ResolverEventAndCreateAlarms(event);
-      break;
-
-    case 'cloudfront':
-      await ServiceModules.parseCloudFrontEventAndCreateAlarms(event);
-      break;
-
-    case 'rds':
-      if (resourceType === 'cluster') {
-        await ServiceModules.parseRDSClusterEventAndCreateAlarms(event);
-      } else if (resourceType === 'db') {
-        await ServiceModules.parseRDSEventAndCreateAlarms(event);
-      } else {
-        log.warn().msg(`Unhandled RDS resource: ${resourceType}`);
-      }
-      break;
-
-    case 'states':
-      await ServiceModules.parseSFNEventAndCreateAlarms(event);
-      break;
-
-    default:
-      log
-        .warn()
-        .str('function', 'routeTagEvent')
-        .msg(`Unhandled service: ${service}`);
-      break;
-  }
-}
-
 export const handler: Handler = async (
   event: SQSEvent,
 ): Promise<void | SQSBatchResponse> => {
@@ -361,160 +271,54 @@ export const handler: Handler = async (
     log.trace().obj('body', parsedBody).msg('Processing message body');
 
     try {
-      // TODO Fix the ugliness below. Future modules should be simple if statements
-      if (parsedBody.source === 'aws.ecs') {
-        await ServiceModules.parseECSEventAndCreateAlarms(
-          record,
-          process.env.ACCT_ID!,
-        );
-        continue;
-      }
+      const {name, action} = routeEvent(parsedBody);
 
-      if (parsedBody.source === 'aws.logs') {
-        await ServiceModules.parseLogGroupEventAndCreateAlarms(record);
-        continue;
-      }
+      log
+        .debug()
+        .str('function', 'handler')
+        .str('route', name)
+        .str('source', parsedBody.source)
+        .str('messageId', record.messageId)
+        .msg('Matched route entry');
 
-      switch (parsedBody.source) {
-        case 'aws.cloudfront':
-          await ServiceModules.parseCloudFrontEventAndCreateAlarms(parsedBody);
-          break;
-        case 'aws.ec2':
-          log
-            .debug()
-            .str('function', 'handler')
-            .obj('eventDetail', parsedBody.detail)
-            .str('resourceType', JSON.stringify(parsedBody.detail))
-            .msg('Processing EC2 event');
-
-          // Check for EC2 Instance State-change Notification based on detail-type
-          if (
-            parsedBody['detail-type'] ===
-            'EC2 Instance State-change Notification'
-          ) {
-            ec2Events.push({event: parsedBody, record: record});
-          } else if (
-            parsedBody.detail &&
-            parsedBody['detail-type'] === 'AWS API Call via CloudTrail' &&
-            parsedBody.detail.eventSource === 'ec2.amazonaws.com' &&
-            (parsedBody.detail.eventName === 'CreateVpnConnection' ||
-              parsedBody.detail.eventName === 'DeleteVpnConnection')
-          ) {
-            // CloudTrail VPN events have no detail.resourceType; route by detail-type and eventName
-            await ServiceModules.parseVpnEventAndCreateAlarms(parsedBody);
-          } else if (
-            parsedBody.detail &&
-            parsedBody['detail-type'] === 'AWS API Call via CloudTrail' &&
-            parsedBody.detail.eventSource === 'ec2.amazonaws.com' &&
-            (parsedBody.detail.eventName === 'CreateTransitGateway' ||
-              parsedBody.detail.eventName === 'DeleteTransitGateway')
-          ) {
-            // CloudTrail Transit Gateway events have no detail.resourceType; route by detail-type and eventName
-            await ServiceModules.parseTransitGatewayEventAndCreateAlarms(
-              parsedBody,
-            );
-          } else if (parsedBody.detail && parsedBody.detail.resourceType) {
-            // Handle other EC2 events that have a resourceType defined
-            switch (parsedBody.detail.resourceType) {
-              case 'instance':
-                ec2Events.push({event: parsedBody, record: record});
-                break;
-              case 'vpn-connection':
-                if (
-                  parsedBody.detail.eventName === 'CreateVpnConnection' ||
-                  parsedBody.detail.eventName === 'DeleteVpnConnection'
-                )
-                  await ServiceModules.parseVpnEventAndCreateAlarms(parsedBody);
-                break;
-              default:
-                log
-                  .error()
-                  .msg(
-                    `Unhandled resource type for aws.ec2: ${parsedBody.detail.resourceType}`,
-                  );
-                batchItemFailures.push({itemIdentifier: record.messageId});
-                batchItemBodies.push(record);
-                break;
-            }
+      switch (action.kind) {
+        case 'module':
+          if (action.args === 'record-account') {
+            await action.handler(record, process.env.ACCT_ID!);
+          } else if (action.args === 'record') {
+            await action.handler(record);
           } else {
-            log.error().msg('Unhandled EC2 event format');
-            batchItemFailures.push({itemIdentifier: record.messageId});
-            batchItemBodies.push(record);
+            await action.handler(parsedBody);
           }
           break;
-        case 'aws.elasticloadbalancing':
-          if (
-            parsedBody.detail.eventName === 'CreateLoadBalancer' ||
-            parsedBody.detail.eventName === 'DeleteLoadBalancer'
-          ) {
-            await ServiceModules.parseALBEventAndCreateAlarms(parsedBody);
-          } else if (
-            parsedBody.detail.eventName === 'CreateTargetGroup' ||
-            parsedBody.detail.eventName === 'DeleteTargetGroup'
-          ) {
-            await ServiceModules.parseTGEventAndCreateAlarms(parsedBody);
-          } else {
+
+        case 'accumulate-ec2':
+          // EC2 instance events are accumulated and processed in one batch
+          // after the loop (see processEC2Event).
+          ec2Events.push({event: parsedBody, record: record});
+          break;
+
+        case 'accumulate-ec2-tag':
+          // EC2 instance tag events are accumulated and processed in one
+          // batch after the loop (see processEC2TagEvent).
+          ec2TagEvents.push({event: parsedBody, record: record});
+          break;
+
+        case 'skip':
+          if (!action.silent) {
             log
-              .error()
-              .msg('Unhandled event name for aws.elasticloadbalancing');
-            batchItemFailures.push({itemIdentifier: record.messageId});
-            batchItemBodies.push(record);
+              .warn()
+              .str('function', 'handler')
+              .str('route', name)
+              .msg(action.message(parsedBody));
           }
           break;
 
-        // OpenSearch CloudTrail events arrive with source 'aws.es'
-        case 'aws.es':
-        case 'aws.opensearch':
-          await ServiceModules.parseOSEventAndCreateAlarms(parsedBody);
-          break;
-
-        case 'aws.rds':
-          if (
-            parsedBody.detail.eventName === 'CreateDBInstance' ||
-            parsedBody.detail.eventName === 'DeleteDBInstance'
-          ) {
-            await ServiceModules.parseRDSEventAndCreateAlarms(parsedBody);
-          } else if (
-            parsedBody.detail.eventName === 'CreateDBCluster' ||
-            parsedBody.detail.eventName === 'DeleteDBCluster'
-          ) {
-            await ServiceModules.parseRDSClusterEventAndCreateAlarms(
-              parsedBody,
-            );
-          } else {
-            log.error().msg('Unhandled event name for aws.rds');
-            batchItemFailures.push({itemIdentifier: record.messageId});
-            batchItemBodies.push(record);
-          }
-          break;
-
-        case 'aws.route53resolver':
-          await ServiceModules.parseR53ResolverEventAndCreateAlarms(parsedBody);
-          break;
-
-        case 'aws.sqs':
-          await ServiceModules.parseSQSEventAndCreateAlarms(parsedBody);
-          break;
-
-        case 'aws.states':
-          await ServiceModules.parseSFNEventAndCreateAlarms(parsedBody);
-          break;
-
-        case 'aws.tag':
-          // add ec2 tag events to another array for processing.
-          if (
-            (parsedBody.detail.service === 'ec2' ||
-              parsedBody.detail.service === 'aws.ec2') &&
-            parsedBody.detail['resource-type'] === 'instance'
-          ) {
-            ec2TagEvents.push({event: parsedBody, record: record});
-          } else {
-            await routeTagEvent(parsedBody);
-          }
-          break;
-
-        default:
-          log.warn().msg(`Unhandled event source: ${parsedBody.source}`);
+        case 'fail':
+          log[action.level]()
+            .str('function', 'handler')
+            .str('route', name)
+            .msg(action.message(parsedBody));
           batchItemFailures.push({itemIdentifier: record.messageId});
           batchItemBodies.push(record);
           break;

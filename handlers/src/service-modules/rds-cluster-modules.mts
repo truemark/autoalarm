@@ -11,7 +11,7 @@ import {
 import {RDS_CLUSTER_CONFIGS} from '../alarm-configs/_index.mjs';
 
 const log: logging.Logger = logging.getLogger('rds-modules');
-const region: string = process.env.AWS_REGION || '';
+const region = process.env.AWS_REGION;
 const retryStrategy = new ConfiguredRetryStrategy(20);
 const rdsClient: RDSClient = new RDSClient({
   region: region,

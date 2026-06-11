@@ -22,11 +22,10 @@ import {
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import * as logging from '@nr1e/logging';
 
-const region: string = process.env.AWS_REGION || '';
 const retryStrategy = new ConfiguredRetryStrategy(20);
 const log = logging.getLogger('alarm-tools');
 const cloudWatchClient = new CloudWatchClient({
-  region,
+  region: process.env.AWS_REGION,
   retryStrategy: retryStrategy,
 });
 
