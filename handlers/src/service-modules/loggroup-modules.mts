@@ -86,7 +86,9 @@ function extractLogGroupIdentifiers(
     log
       .debug()
       .str('function', 'extractLogGroupIdentifiers')
-      .msg('No LogGroup ARN found in event body; caller will use requestParameters fallback');
+      .msg(
+        'No LogGroup ARN found in event body; caller will use requestParameters fallback',
+      );
     return void 0;
   }
 
@@ -181,7 +183,9 @@ export async function parseLogGroupEventAndCreateAlarms(
       .info()
       .str('function', 'parseLogGroupEventAndCreateAlarms')
       .str('logGroupName', resourceName)
-      .msg('Skipping bedrock-agentcore log group — excluded from AutoAlarm management');
+      .msg(
+        'Skipping bedrock-agentcore log group — excluded from AutoAlarm management',
+      );
     return;
   }
 
