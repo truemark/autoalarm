@@ -1,15 +1,15 @@
 import {test, expect, describe} from 'vitest';
 import {
-  //metricAlarmOptionsToString,
+  metricAlarmOptionsToString,
   parseMetricAlarmOptions,
   parseStatisticOption,
 } from './alarm-config.mjs';
 import {Statistic} from '@aws-sdk/client-cloudwatch';
+import {TreatMissingData} from 'aws-cdk-lib/aws-cloudwatch';
 import {MetricAlarmOptions} from '../../types/index.mjs';
 
 // Use the following to run test individually: npx vitest run ./alarm-configs/utils/alarm-config.test.mts
-/*
-test('metricAlarmOptionsToString', async () => {
+test('metricAlarmOptionsToString', () => {
   expect(
     metricAlarmOptionsToString({
       warningThreshold: 1,
@@ -18,18 +18,59 @@ test('metricAlarmOptionsToString', async () => {
       evaluationPeriods: 3,
       statistic: 'Average',
       dataPointsToAlarm: 4,
-      missingDataTreatment: 'missing',
+      missingDataTreatment: TreatMissingData.MISSING,
       comparisonOperator: 'GreaterThanOrEqualToThreshold',
     }),
   ).toBe('1/2/2/3/Average/4/GreaterThanOrEqualToThreshold/missing');
-  // TODO Add more tests
 });
 
+describe('parseMetricAlarmOptions', () => {
+  const defaults: MetricAlarmOptions = {
+    warningThreshold: 10,
+    criticalThreshold: 20,
+    period: 60,
+    evaluationPeriods: 5,
+    statistic: 'Average',
+    dataPointsToAlarm: 5,
+    missingDataTreatment: TreatMissingData.IGNORE,
+    comparisonOperator: 'GreaterThanThreshold',
+  };
 
-test('parseMetricAlarmOptions', async () => {
-  // TODO Add tests
+  test('parses a fully specified value', () => {
+    expect(
+      parseMetricAlarmOptions(
+        '1/2/300/3/Maximum/2/LessThanThreshold/breaching',
+        defaults,
+      ),
+    ).toEqual({
+      warningThreshold: 1,
+      criticalThreshold: 2,
+      period: 300,
+      evaluationPeriods: 3,
+      statistic: 'Maximum',
+      dataPointsToAlarm: 2,
+      missingDataTreatment: 'breaching',
+      comparisonOperator: 'LessThanThreshold',
+    });
+  });
+
+  test('falls back to defaults for missing or empty fields', () => {
+    expect(parseMetricAlarmOptions('', defaults)).toEqual({
+      ...defaults,
+      warningThreshold: defaults.warningThreshold,
+    });
+    expect(parseMetricAlarmOptions('//120', defaults)).toEqual({
+      ...defaults,
+      period: 120,
+    });
+  });
+
+  test('treats "-" thresholds as disabled (null)', () => {
+    const parsed = parseMetricAlarmOptions('-/30', defaults);
+    expect(parsed.warningThreshold).toBeNull();
+    expect(parsed.criticalThreshold).toBe(30);
+  });
 });
-*/
 
 /** parseStatisticOption test for valid Extended statistics.*/
 describe('parseStatisticOption', () => {

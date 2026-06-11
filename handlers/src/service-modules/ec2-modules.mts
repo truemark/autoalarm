@@ -910,12 +910,8 @@ export async function getEC2IdAndState(
 
 export const liveStates: Set<ValidInstanceState> = new Set([
   ValidInstanceState.Running,
-  //ValidInstanceState.Pending,
 ]);
 
 export const deadStates: Set<ValidInstanceState> = new Set([
   ValidInstanceState.Terminated,
-  //ValidInstanceState.Stopping, //for testing.
-  //ValidInstanceState.Stopped, //for testing.
-  //ValidInstanceState.ShuttingDown, //for testing.
 ]);
