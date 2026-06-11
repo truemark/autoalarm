@@ -1,6 +1,7 @@
 import {App} from 'aws-cdk-lib';
 import {Match, Template} from 'aws-cdk-lib/assertions';
 import {AutoAlarmStack} from './auto-alarm-stack';
+import {SERVICE_DESCRIPTORS} from './service-eventbridge-subconstruct';
 
 /**
  * Synthesizes the AutoAlarm stack once and runs assertions against the
@@ -127,6 +128,67 @@ describe('AutoAlarm stack', () => {
       expect(mapping.Properties?.FunctionResponseTypes).toEqual([
         'ReportBatchItemFailures',
       ]);
+    }
+  });
+
+  test('service event rule count matches the descriptor table', () => {
+    const ruleIds = Object.keys(template.findResources('AWS::Events::Rule'));
+    const serviceRuleIds = ruleIds.filter((id) =>
+      id.includes('ServiceEventRules'),
+    );
+    const expected = SERVICE_DESCRIPTORS.reduce(
+      (count, service) => count + service.rules.length,
+      0,
+    );
+    expect(serviceRuleIds.length).toBe(expected);
+  });
+
+  test('every service event rule has exactly one SQS target with a DLQ', () => {
+    const rules = template.findResources('AWS::Events::Rule');
+    for (const [logicalId, rule] of Object.entries(rules)) {
+      if (!logicalId.includes('ServiceEventRules')) {
+        continue;
+      }
+      const targets = rule.Properties?.Targets ?? [];
+      expect({logicalId, targetCount: targets.length}).toEqual({
+        logicalId,
+        targetCount: 1,
+      });
+      const target = targets[0];
+      // Target is an SQS queue (queue ARN + FIFO SqsParameters) with a
+      // dead-letter queue for undeliverable events (#234).
+      expect(target.Arn?.['Fn::GetAtt']?.[1]).toBe('Arn');
+      expect(target.SqsParameters?.MessageGroupId).toMatch(
+        /^AutoAlarm-[a-z0-9]+$/,
+      );
+      expect(target.DeadLetterConfig?.Arn).toBeDefined();
+    }
+  });
+
+  test('each descriptor rule synthesizes its exact event pattern, message group id, and DLQ', () => {
+    for (const service of SERVICE_DESCRIPTORS) {
+      for (const rule of service.rules) {
+        // Array properties (including changed-tag-keys, which is derived
+        // from the handler alarm configs via service-tag-keys.ts) are
+        // matched exactly by the assertions module, so this also guards
+        // each tag rule's changed-tag-keys list.
+        template.hasResourceProperties('AWS::Events::Rule', {
+          Description: rule.description,
+          EventPattern: {
+            'source': rule.eventPattern.source,
+            'detail-type': rule.eventPattern.detailType,
+            'detail': rule.eventPattern.detail,
+          },
+          Targets: [
+            Match.objectLike({
+              SqsParameters: {
+                MessageGroupId: `AutoAlarm-${service.serviceName}`,
+              },
+              DeadLetterConfig: Match.objectLike({Arn: Match.anyValue()}),
+            }),
+          ],
+        });
+      }
     }
   });
 
