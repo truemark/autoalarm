@@ -288,13 +288,22 @@ export async function parseTransitGatewayEventAndCreateAlarms(
         .msg('Unexpected event type');
   }
 
-  const transitGatewayName = extractTransitGatewayNameFromArn(transitGatewayId);
+  // CloudTrail events provide a bare id ('tgw-...') while tag events provide a
+  // full ARN. Only run ARN extraction when the value is not already a bare id.
+  const transitGatewayName = transitGatewayId?.startsWith('tgw-')
+    ? transitGatewayId
+    : extractTransitGatewayNameFromArn(transitGatewayId || '');
   if (!transitGatewayName) {
     log
       .error()
       .str('function', 'parseTransitGatewayEventAndCreateAlarms')
       .str('transitGatewayId', transitGatewayId)
-      .msg('Extracted Transit Gateway name is empty');
+      .msg(
+        'Could not resolve Transit Gateway identifier from event. Failing record to avoid managing alarms with an empty identifier',
+      );
+    throw new Error(
+      'Could not resolve Transit Gateway identifier from event. Cannot manage alarms with an empty identifier',
+    );
   }
 
   log

@@ -589,6 +589,17 @@ export async function manageActiveEC2InstanceAlarms(
         const isWindows = ec2Metadata.platform?.includes('Windows') || false;
         const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
 
+        /*
+         * queryPrometheusForService returns a mix of instance IDs and bare
+         * private IPs (the 'instance' label is often ip:port, which is
+         * stripped to the bare IP), so membership must be checked against
+         * BOTH the instance ID and the instance's private IP.
+         */
+        const reportsToPrometheus =
+          instanceIDsReportingToPrometheus.includes(instanceID) ||
+          (!!ec2Metadata.privateIP &&
+            instanceIDsReportingToPrometheus.includes(ec2Metadata.privateIP));
+
         if (!isAlarmEnabled) {
           log
             .info()
@@ -609,8 +620,7 @@ export async function manageActiveEC2InstanceAlarms(
         if (
           prometheusWorkspaceId &&
           (tags['autoalarm:target'] === 'prometheus' ||
-            (!tags['autoalarm:target'] &&
-              instanceIDsReportingToPrometheus.includes(instanceID)))
+            (!tags['autoalarm:target'] && reportsToPrometheus))
         ) {
           log
             .info()
@@ -651,10 +661,8 @@ export async function manageActiveEC2InstanceAlarms(
           prometheusArray.push({instanceID, tags, state, ec2Metadata});
         } else if (
           tags['autoalarm:target'] === 'cloudwatch' ||
-          (!tags['autoalarm:target'] &&
-            !instanceIDsReportingToPrometheus.includes(instanceID)) ||
-          (tags['autoalarm:target'] === 'prometheus' &&
-            !instanceIDsReportingToPrometheus.includes(instanceID))
+          (!tags['autoalarm:target'] && !reportsToPrometheus) ||
+          (tags['autoalarm:target'] === 'prometheus' && !reportsToPrometheus)
         ) {
           log
             .info()
@@ -665,7 +673,7 @@ export async function manageActiveEC2InstanceAlarms(
               'autoalarm target set to cloudwatch. Creating cloudwatch alarms in place of prometheus alarms',
             );
 
-          if (instanceIDsReportingToPrometheus.includes(instanceID)) {
+          if (reportsToPrometheus) {
             deletePrometheusAlarmsArray.push({
               instanceID,
               tags,
@@ -823,10 +831,20 @@ export async function manageInactiveInstanceAlarms(
   const prometheusAlarmsToDelete: EC2AlarmManagerArray = [];
   for (const instanceInfo of inactiveInstancesInfoArray) {
     const ec2MetaData = await getInstanceDetails(instanceInfo.instanceID);
-    //const privateIP = ec2MetaData.privateIP || '';
+
+    /*
+     * queryPrometheusForService returns a mix of instance IDs and bare private
+     * IPs (the 'instance' label is often ip:port, which is stripped to the
+     * bare IP), so membership must be checked against BOTH the instance ID and
+     * the instance's private IP.
+     */
+    const reportsToPrometheus =
+      instanceIPsReportingToPrometheus.includes(instanceInfo.instanceID) ||
+      (!!ec2MetaData.privateIP &&
+        instanceIPsReportingToPrometheus.includes(ec2MetaData.privateIP));
 
     // Check if instance reports to Prometheus and process Prometheus alarm deletion
-    if (instanceIPsReportingToPrometheus.includes(instanceInfo.instanceID)) {
+    if (reportsToPrometheus) {
       prometheusAlarmsToDelete.push({
         instanceID: instanceInfo.instanceID,
         tags: instanceInfo.tags,
