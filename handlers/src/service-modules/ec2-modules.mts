@@ -36,7 +36,7 @@ import {
 const log: logging.Logger = logging.getLogger('ec2-modules');
 export const prometheusWorkspaceId: string =
   process.env.PROMETHEUS_WORKSPACE_ID || '';
-const region: string = process.env.AWS_REGION || '';
+const region = process.env.AWS_REGION;
 const retryStrategy = new ConfiguredRetryStrategy(20);
 const ec2Client: EC2Client = new EC2Client({
   region: region,
@@ -573,7 +573,7 @@ export async function manageActiveEC2InstanceAlarms(
     const deletePrometheusAlarmsArray: EC2AlarmManagerArray = [];
 
     const instanceIDsReportingToPrometheus: string[] = prometheusWorkspaceId
-      ? await queryPrometheusForService('ec2', prometheusWorkspaceId, region)
+      ? await queryPrometheusForService('ec2', prometheusWorkspaceId, region!)
       : [];
 
     for (const {instanceID, tags, state} of activeInstancesInfoArray) {
@@ -824,7 +824,7 @@ export async function manageInactiveInstanceAlarms(
   inactiveInstancesInfoArray: EC2AlarmManagerArray,
 ) {
   const instanceIPsReportingToPrometheus: string[] = prometheusWorkspaceId
-    ? await queryPrometheusForService('ec2', prometheusWorkspaceId, region)
+    ? await queryPrometheusForService('ec2', prometheusWorkspaceId, region!)
     : [];
 
   const CWAlarmsToDelete: string[] = [];

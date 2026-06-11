@@ -15,7 +15,7 @@ import {
 import {TRANSIT_GATEWAY_CONFIGS} from '../alarm-configs/_index.mjs';
 
 const log: logging.Logger = logging.getLogger('transit-gateway-modules');
-const region: string = process.env.AWS_REGION || '';
+const region = process.env.AWS_REGION;
 const retryStrategy = new ConfiguredRetryStrategy(20);
 const ec2Client: EC2Client = new EC2Client({
   region: region,
