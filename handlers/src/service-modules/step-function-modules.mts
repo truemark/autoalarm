@@ -1,16 +1,14 @@
 import {SFNClient, ListTagsForResourceCommand} from '@aws-sdk/client-sfn';
 import * as logging from '@nr1e/logging';
 import {AlarmClassification, Tag} from '../types/index.mjs';
-import {
-  CloudWatchClient,
-  DeleteAlarmsCommand,
-} from '@aws-sdk/client-cloudwatch';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
   deleteExistingAlarms,
   buildAlarmName,
+  buildExpectedAlarmNames,
   handleAnomalyAlarms,
   handleStaticAlarms,
+  massDeleteAlarms,
   getCWAlarmsForInstance,
   parseMetricAlarmOptions,
 } from '../alarm-configs/utils/index.mjs';
@@ -20,10 +18,6 @@ const log: logging.Logger = logging.getLogger('step-function-modules');
 const region: string = process.env.AWS_REGION || '';
 const retryStrategy = new ConfiguredRetryStrategy(20);
 const sfnClient: SFNClient = new SFNClient({
-  region: region,
-  retryStrategy: retryStrategy,
-});
-const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   region: region,
   retryStrategy: retryStrategy,
 });
@@ -79,7 +73,7 @@ async function checkAndManageSFNStatusAlarms(
       .str('function', 'checkAndManageSFNStatusAlarms')
       .str('sfnArn', sfnArn)
       .msg('Alarm creation disabled by tag settings');
-    await deleteExistingAlarms('SFN', sfnArn);
+    await deleteExistingAlarms('SFN', sfnArn, metricConfigs);
     return;
   }
 
@@ -149,7 +143,17 @@ async function checkAndManageSFNStatusAlarms(
     }
   }
   // Delete alarms that are not in the alarmsToKeep set
-  const existingAlarms = await getCWAlarmsForInstance('SFN', sfnArn);
+  // Restrict the prefix-based fetch to this resource's exact expected alarm
+  // names so we never delete alarms of another resource whose identifier
+  // shares a prefix.
+  const expectedAlarmNames = buildExpectedAlarmNames(
+    'SFN',
+    sfnArn,
+    metricConfigs,
+  );
+  const existingAlarms = (await getCWAlarmsForInstance('SFN', sfnArn)).filter(
+    (alarm) => expectedAlarmNames.has(alarm),
+  );
 
   // Log the full structure of retrieved alarms for debugging
   log
@@ -188,11 +192,7 @@ async function checkAndManageSFNStatusAlarms(
     .obj('alarms to delete', alarmsToDelete)
     .msg('Deleting alarms that are no longer needed');
 
-  await cloudWatchClient.send(
-    new DeleteAlarmsCommand({
-      AlarmNames: [...alarmsToDelete],
-    }),
-  );
+  await massDeleteAlarms(alarmsToDelete);
 
   log
     .info()
@@ -203,7 +203,7 @@ async function checkAndManageSFNStatusAlarms(
 
 export async function manageInactiveSFNAlarms(sfnArn: string): Promise<void> {
   try {
-    await deleteExistingAlarms('SFN', sfnArn);
+    await deleteExistingAlarms('SFN', sfnArn, metricConfigs);
   } catch (e) {
     log
       .error()
@@ -211,55 +211,6 @@ export async function manageInactiveSFNAlarms(sfnArn: string): Promise<void> {
       .err(e)
       .msg(`Error deleting SFN alarms: ${e}`);
   }
-}
-
-/**
- * Searches the provided object for the first occurrence of an RDS ARN.
- * Serializes the object to a JSON string, looks for the substring "arn:aws:rds",
- * and then extracts everything up to the next quotation mark.
- * Logs an error and returns an empty string if no valid RDS ARN can be found.
- *
- * @param {Record<string, any>} eventObj - A JSON-serializable object to search for an RDS ARN.
- * @returns {string} The extracted RDS ARN, or an empty string if not found.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function findSFNArn(eventObj: Record<string, any>): string {
-  const eventString = JSON.stringify(eventObj);
-
-  // 1) Find where the ARN starts.
-  const startIndex = eventString.indexOf('arn:aws:states');
-  if (startIndex === -1) {
-    log
-      .error()
-      .str('function', 'findSFNArn')
-      .obj('eventObj', eventObj)
-      .msg('No SFN ARN found in event');
-    return '';
-  }
-
-  // 2) Find the next quote after that.
-  const endIndex = eventString.indexOf('"', startIndex);
-  if (endIndex === -1) {
-    log
-      .error()
-      .str('function', 'findSFNArn')
-      .obj('eventObj', eventObj)
-      .msg('No ending quote found for SFN ARN');
-    return '';
-  }
-
-  // 3) Extract the ARN
-  const arn = eventString.substring(startIndex, endIndex);
-
-  log
-    .info()
-    .str('function', 'findSFNArn')
-    .str('arn', arn)
-    .str('startIndex', startIndex.toString())
-    .str('endIndex', endIndex.toString())
-    .msg('Extracted SFN ARN');
-
-  return arn;
 }
 
 export async function parseSFNEventAndCreateAlarms(
@@ -270,13 +221,13 @@ export async function parseSFNEventAndCreateAlarms(
   eventType: string;
   tags: Record<string, string>;
 } | void> {
-  let sfnArn: string | Error = '';
+  let sfnArn: string = '';
   let eventType: string = '';
   let tags: Record<string, string> = {};
 
   switch (event['detail-type']) {
     case 'Tag Change on Resource':
-      sfnArn = findSFNArn(event);
+      sfnArn = event.resources?.[0] ?? '';
       if (!sfnArn) {
         log
           .error()
@@ -316,7 +267,10 @@ export async function parseSFNEventAndCreateAlarms(
     case 'AWS API Call via CloudTrail':
       switch (event.detail.eventName) {
         case 'CreateStateMachine':
-          sfnArn = findSFNArn(event);
+          // Read the ARN from the structured response rather than string-mining
+          // the event, which can match service-integration ARNs (e.g.
+          // 'arn:aws:states:::lambda:invoke') inside the state machine definition.
+          sfnArn = event.detail.responseElements?.stateMachineArn ?? '';
           if (!sfnArn) {
             log
               .error()
@@ -354,7 +308,7 @@ export async function parseSFNEventAndCreateAlarms(
           break;
 
         case 'DeleteStateMachine':
-          sfnArn = findSFNArn(event);
+          sfnArn = event.detail.requestParameters?.stateMachineArn ?? '';
           if (!sfnArn) {
             log
               .error()

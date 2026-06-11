@@ -1,9 +1,5 @@
 import * as logging from '@nr1e/logging';
 import {
-  CloudWatchClient,
-  DeleteAlarmsCommand,
-} from '@aws-sdk/client-cloudwatch';
-import {
   CloudWatchLogsClient,
   ListTagsForResourceCommand,
 } from '@aws-sdk/client-cloudwatch-logs';
@@ -11,9 +7,11 @@ import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {SQSRecord} from 'aws-lambda';
 import {Tag} from '../types/index.mjs';
 import {
+  buildExpectedAlarmNames,
   handleAnomalyAlarms,
   handleStaticAlarms,
   getCWAlarmsForInstance,
+  massDeleteAlarms,
   parseMetricAlarmOptions,
   deleteExistingAlarms,
 } from '../alarm-configs/utils/index.mjs';
@@ -23,11 +21,6 @@ import {Dimension} from '../types/module-types.mjs';
 const log: logging.Logger = logging.getLogger('loggroup-modules');
 const region: string = process.env.AWS_REGION || '';
 const retryStrategy = new ConfiguredRetryStrategy(20);
-
-const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
-  region,
-  retryStrategy,
-});
 
 const logsClient = new CloudWatchLogsClient({
   region,
@@ -168,7 +161,17 @@ async function deleteUnneededLogGroupAlarms(
   logGroupArn: string,
   alarmsToKeep: Set<string>,
 ): Promise<void> {
-  const existingAlarms = await getCWAlarmsForInstance('Logs', logGroupArn);
+  // Restrict the prefix-based fetch to this log group's exact expected alarm
+  // names so we never delete alarms of another log group whose ARN shares a
+  // prefix.
+  const expectedAlarmNames = buildExpectedAlarmNames(
+    'Logs',
+    logGroupArn,
+    metricConfigs,
+  );
+  const existingAlarms = (
+    await getCWAlarmsForInstance('Logs', logGroupArn)
+  ).filter((alarm) => expectedAlarmNames.has(alarm));
   const alarmsToDelete = existingAlarms.filter(
     (alarm) => !alarmsToKeep.has(alarm),
   );
@@ -177,9 +180,7 @@ async function deleteUnneededLogGroupAlarms(
     return;
   }
 
-  await cloudWatchClient.send(
-    new DeleteAlarmsCommand({AlarmNames: alarmsToDelete}),
-  );
+  await massDeleteAlarms(alarmsToDelete);
 
   log
     .info()
@@ -326,39 +327,30 @@ export async function parseLogGroupEventAndCreateAlarms(
       .str('eventName', eventName)
       .msg('Processing delete log group event');
 
-    const allAlarms = await getCWAlarmsForInstance('Logs', arn);
-    await cloudWatchClient.send(
-      new DeleteAlarmsCommand({AlarmNames: allAlarms}),
-    );
+    await deleteExistingAlarms('Logs', arn, metricConfigs);
     return;
   }
 
   // For non-delete events, fetch tags and filter out AutoAlarm Tags
   const tags = await fetchLogGroupTags(arn);
 
-  // No AutoAlarm tags at all → delete any existing alarms and stop.
-  if (Object.keys(tags).length === 0) {
+  // AutoAlarm is opt-in: only manage alarms when autoalarm:enabled is
+  // explicitly set to 'true'. Anything else (tag absent, 'false', or an
+  // unexpected value) takes the delete path.
+  const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
+  if (!isAlarmEnabled) {
     log
       .info()
       .str('function', 'parseLogGroupEventAndCreateAlarms')
       .str('logGroupArn', arn)
-      .msg('No autoalarm tags found - deleting any existing alarms');
-    await deleteExistingAlarms('LOGS', arn);
+      .msg(
+        'autoalarm:enabled tag missing or not set to true - deleting any existing alarms',
+      );
+    await deleteExistingAlarms('Logs', arn, metricConfigs);
     return;
   }
 
-  // Explicitly disabled via autoalarm:enabled=false → delete alarms and stop.
-  if (tags['autoalarm:enabled'] === 'false') {
-    log
-      .info()
-      .str('function', 'parseLogGroupEventAndCreateAlarms')
-      .str('logGroupArn', arn)
-      .msg('autoalarm:enabled=false - deleting existing alarms');
-    await deleteExistingAlarms('Logs', arn);
-    return;
-  }
-
-  // AutoAlarm enabled and tags present → reconcile alarms.
+  // AutoAlarm enabled → reconcile alarms.
   try {
     await manageLogGroupAlarms(arn, resourceName, tags);
   } catch (error) {

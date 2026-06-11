@@ -6,14 +6,12 @@ import {
   getCWAlarmsForInstance,
   deleteExistingAlarms,
   buildAlarmName,
+  buildExpectedAlarmNames,
   handleAnomalyAlarms,
   handleStaticAlarms,
+  massDeleteAlarms,
   parseMetricAlarmOptions,
 } from '../alarm-configs/utils/index.mjs';
-import {
-  CloudWatchClient,
-  DeleteAlarmsCommand,
-} from '@aws-sdk/client-cloudwatch';
 import {OPENSEARCH_CONFIGS} from '../alarm-configs/_index.mjs';
 
 const log: logging.Logger = logging.getLogger('opensearch-modules');
@@ -22,11 +20,6 @@ const retryStrategy = new ConfiguredRetryStrategy(20);
 const openSearchClient: OpenSearchClient = new OpenSearchClient({
   region,
   retryStrategy,
-});
-
-const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
-  region: region,
-  retryStrategy: retryStrategy,
 });
 
 const metricConfigs = OPENSEARCH_CONFIGS;
@@ -84,7 +77,7 @@ async function checkAndManageOpenSearchStatusAlarms(
       .str('DomainName', domainName)
       .str('ClientId', accountID)
       .msg('Alarm creation disabled by tag settings');
-    await deleteExistingAlarms('OS', domainName);
+    await deleteExistingAlarms('OS', domainName, metricConfigs);
     return;
   }
 
@@ -162,7 +155,17 @@ async function checkAndManageOpenSearchStatusAlarms(
   }
 
   // Delete alarms that are not in the alarmsToKeep set
-  const existingAlarms = await getCWAlarmsForInstance('OS', domainName);
+  // Restrict the prefix-based fetch to this resource's exact expected alarm
+  // names so we never delete alarms of another resource whose identifier
+  // shares a prefix.
+  const expectedAlarmNames = buildExpectedAlarmNames(
+    'OS',
+    domainName,
+    metricConfigs,
+  );
+  const existingAlarms = (
+    await getCWAlarmsForInstance('OS', domainName)
+  ).filter((alarm) => expectedAlarmNames.has(alarm));
   const alarmsToDelete = existingAlarms.filter(
     (alarm) => !alarmsToKeep.has(alarm),
   );
@@ -172,11 +175,7 @@ async function checkAndManageOpenSearchStatusAlarms(
     .str('function', 'checkAndManageOSStatusAlarms')
     .obj('alarms to delete', alarmsToDelete)
     .msg('Deleting alarm that is no longer needed');
-  await cloudWatchClient.send(
-    new DeleteAlarmsCommand({
-      AlarmNames: [...alarmsToDelete],
-    }),
-  );
+  await massDeleteAlarms(alarmsToDelete);
 
   log
     .info()
@@ -195,7 +194,7 @@ export async function manageOpenSearchAlarms(
 
 export async function manageInactiveOpenSearchAlarms(domainName: string) {
   try {
-    await deleteExistingAlarms('OS', domainName);
+    await deleteExistingAlarms('OS', domainName, metricConfigs);
   } catch (e) {
     log.error().err(e).msg(`Error deleting OpenSearch alarms: ${e}`);
     throw new Error(`Error deleting OpenSearch alarms: ${e}`);
@@ -222,6 +221,7 @@ export async function parseOSEventAndCreateAlarms(event: any): Promise<{
   tags: Record<string, string>;
 }> {
   let domainArn: string = '';
+  let domainName: string = '';
   let eventType: string = '';
   let tags: Record<string, string> = {};
 
@@ -269,13 +269,15 @@ export async function parseOSEventAndCreateAlarms(event: any): Promise<{
           break;
 
         case 'DeleteDomain':
-          domainArn = event.detail.requestParameters?.domainArn;
+          // DeleteDomain request parameters carry the domain name, not an ARN.
+          // The domain name is the alarm key and CloudWatch dimension value.
+          domainName = event.detail.requestParameters?.domainName;
           eventType = 'Delete';
           log
             .info()
             .str('function', 'parseOSEventAndCreateAlarms')
             .str('eventType', 'Delete')
-            .str('domainArn', domainArn)
+            .str('domainName', domainName)
             .str('requestId', event.detail.requestID)
             .msg('Processing DeleteDomain event');
           break;
@@ -298,14 +300,29 @@ export async function parseOSEventAndCreateAlarms(event: any): Promise<{
         .msg('Unexpected event type');
   }
 
-  const domainName = extractOSDomainNameFromArn(domainArn);
-  const accountID = extractAccountIdFromArn(domainArn);
+  // Delete events set the domain name directly from the request parameters;
+  // all other events extract it from the domain ARN.
+  if (!domainName) {
+    domainName = extractOSDomainNameFromArn(domainArn ?? '');
+  }
+  // The account ID is carried on the event itself, so derive it from there
+  // rather than from the ARN (which Delete events do not carry).
+  const accountID =
+    event.account ||
+    event.detail?.recipientAccountId ||
+    extractAccountIdFromArn(domainArn ?? '');
   if (!domainName) {
     log
       .error()
       .str('function', 'parseOSEventAndCreateAlarms')
       .str('domainArn', domainArn)
-      .msg('Extracted domain name is empty');
+      .str('eventType', eventType)
+      .msg(
+        'Resolved OpenSearch domain name is empty. Aborting alarm management.',
+      );
+    throw new Error(
+      'Resolved OpenSearch domain name is empty. Aborting alarm management.',
+    );
   }
 
   log

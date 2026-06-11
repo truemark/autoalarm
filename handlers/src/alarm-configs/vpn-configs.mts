@@ -28,7 +28,8 @@ export const VPN_CONFIGS: MetricAlarmConfig[] = [
     anomaly: false,
     defaults: {
       warningThreshold: null,
-      criticalThreshold: 0,
+      // TunnelState is 0/1 (Maximum across tunnels). Fires when Maximum < 1, i.e. all tunnels are down.
+      criticalThreshold: 1,
       period: 300,
       evaluationPeriods: 1,
       statistic: 'Maximum',

@@ -230,12 +230,26 @@ async function routeTagEvent(event: any) {
     .msg('Processing tag event');
 
   switch (service) {
-    case 'transit-gateway':
-      await ServiceModules.parseTransitGatewayEventAndCreateAlarms(event);
-      break;
+    // Transit Gateway and VPN tag events arrive with service 'ec2' and are
+    // distinguished by resource-type. EC2 instance tag events are diverted
+    // before routeTagEvent is called.
+    case 'ec2':
+      switch (resourceType) {
+        case 'transit-gateway':
+          await ServiceModules.parseTransitGatewayEventAndCreateAlarms(event);
+          break;
 
-    case 'vpn-connection':
-      await ServiceModules.parseVpnEventAndCreateAlarms(event);
+        case 'vpn-connection':
+          await ServiceModules.parseVpnEventAndCreateAlarms(event);
+          break;
+
+        default:
+          log
+            .warn()
+            .str('function', 'routeTagEvent')
+            .msg(`Unhandled resource type for EC2: ${resourceType}`);
+          break;
+      }
       break;
 
     case 'elasticloadbalancing':
@@ -388,20 +402,22 @@ export const handler: Handler = async (
           ) {
             // CloudTrail VPN events have no detail.resourceType; route by detail-type and eventName
             await ServiceModules.parseVpnEventAndCreateAlarms(parsedBody);
+          } else if (
+            parsedBody.detail &&
+            parsedBody['detail-type'] === 'AWS API Call via CloudTrail' &&
+            parsedBody.detail.eventSource === 'ec2.amazonaws.com' &&
+            (parsedBody.detail.eventName === 'CreateTransitGateway' ||
+              parsedBody.detail.eventName === 'DeleteTransitGateway')
+          ) {
+            // CloudTrail Transit Gateway events have no detail.resourceType; route by detail-type and eventName
+            await ServiceModules.parseTransitGatewayEventAndCreateAlarms(
+              parsedBody,
+            );
           } else if (parsedBody.detail && parsedBody.detail.resourceType) {
             // Handle other EC2 events that have a resourceType defined
             switch (parsedBody.detail.resourceType) {
               case 'instance':
                 ec2Events.push({event: parsedBody, record: record});
-                break;
-              case 'transit-gateway':
-                if (
-                  parsedBody.detail.eventName === 'CreateTransitGateway' ||
-                  parsedBody.detail.eventName === 'DeleteTransitGateway'
-                )
-                  await ServiceModules.parseTransitGatewayEventAndCreateAlarms(
-                    parsedBody,
-                  );
                 break;
               case 'vpn-connection':
                 if (
@@ -446,6 +462,8 @@ export const handler: Handler = async (
           }
           break;
 
+        // OpenSearch CloudTrail events arrive with source 'aws.es'
+        case 'aws.es':
         case 'aws.opensearch':
           await ServiceModules.parseOSEventAndCreateAlarms(parsedBody);
           break;

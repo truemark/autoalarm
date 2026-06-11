@@ -17,6 +17,7 @@ export class AutoAlarmStack extends ExtendedStack {
     new AutoAlarmConstruct(this, 'AutoAlarmConstruct', {
       prometheusWorkspaceId: props.prometheusWorkspaceId,
       enableReAlarm: props.enableReAlarm,
+      reAlarmSchedule: props.reAlarmSchedule,
     });
     this.outputParameter('Name', 'AutoAlarm');
     this.outputParameter('Version', version);

@@ -1435,8 +1435,8 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'empty-recieves',
-      metricName: 'NumberOfEmptyReceive',
+      tagKey: 'empty-receives',
+      metricName: 'NumberOfEmptyReceives',
       metricNamespace: 'AWS/SQS',
       defaultCreate: false,
       anomaly: false,
@@ -1452,8 +1452,8 @@ export const MetricAlarmConfigs: Record<string, MetricAlarmConfig[]> = {
       },
     },
     {
-      tagKey: 'empty-recieves-anomaly',
-      metricName: 'NumberOfEmptyReceive',
+      tagKey: 'empty-receives-anomaly',
+      metricName: 'NumberOfEmptyReceives',
       metricNamespace: 'AWS/SQS',
       defaultCreate: false,
       anomaly: true,

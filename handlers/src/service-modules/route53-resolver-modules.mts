@@ -4,16 +4,14 @@ import {
 } from '@aws-sdk/client-route53resolver';
 import * as logging from '@nr1e/logging';
 import {AlarmClassification, Tag} from '../types/index.mjs';
-import {
-  CloudWatchClient,
-  DeleteAlarmsCommand,
-} from '@aws-sdk/client-cloudwatch';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
   deleteExistingAlarms,
   buildAlarmName,
+  buildExpectedAlarmNames,
   handleAnomalyAlarms,
   handleStaticAlarms,
+  massDeleteAlarms,
   getCWAlarmsForInstance,
   parseMetricAlarmOptions,
 } from '../alarm-configs/utils/index.mjs';
@@ -23,10 +21,6 @@ const log: logging.Logger = logging.getLogger('route53-resolver-modules');
 const region: string = process.env.AWS_REGION || '';
 const retryStrategy = new ConfiguredRetryStrategy(20);
 const route53ResolverClient = new Route53ResolverClient({
-  region,
-  retryStrategy,
-});
-const cloudWatchClient = new CloudWatchClient({
   region,
   retryStrategy,
 });
@@ -82,7 +76,7 @@ async function checkAndManageR53ResolverStatusAlarms(
       .str('function', 'checkAndManageR53ResolverStatusAlarms')
       .str('EndpointId', endpointId)
       .msg('Alarm creation disabled by tag settings');
-    await deleteExistingAlarms('R53R', endpointId);
+    await deleteExistingAlarms('R53R', endpointId, metricConfigs);
     return;
   }
 
@@ -154,7 +148,17 @@ async function checkAndManageR53ResolverStatusAlarms(
   }
 
   // Delete alarms that are not in the alarmsToKeep set
-  const existingAlarms = await getCWAlarmsForInstance('R53R', endpointId);
+  // Restrict the prefix-based fetch to this resource's exact expected alarm
+  // names so we never delete alarms of another resource whose identifier
+  // shares a prefix.
+  const expectedAlarmNames = buildExpectedAlarmNames(
+    'R53R',
+    endpointId,
+    metricConfigs,
+  );
+  const existingAlarms = (
+    await getCWAlarmsForInstance('R53R', endpointId)
+  ).filter((alarm) => expectedAlarmNames.has(alarm));
   const alarmsToDelete = existingAlarms.filter(
     (alarm) => !alarmsToKeep.has(alarm),
   );
@@ -164,11 +168,7 @@ async function checkAndManageR53ResolverStatusAlarms(
     .str('function', 'checkAndManageR53ResolverStatusAlarms')
     .obj('alarms to delete', alarmsToDelete)
     .msg('Deleting alarms that are no longer needed');
-  await cloudWatchClient.send(
-    new DeleteAlarmsCommand({
-      AlarmNames: [...alarmsToDelete],
-    }),
-  );
+  await massDeleteAlarms(alarmsToDelete);
 
   log
     .info()
@@ -186,7 +186,7 @@ export async function manageR53ResolverAlarms(
 
 export async function manageInactiveR53ResolverAlarms(endpointId: string) {
   try {
-    await deleteExistingAlarms('R53R', endpointId);
+    await deleteExistingAlarms('R53R', endpointId, metricConfigs);
   } catch (e) {
     log
       .error()
@@ -201,6 +201,22 @@ function extractR53ResolverNameFromArn(arn: string): string {
   const regex = /resolver-endpoint\/([^/]+)$/;
   const match = arn.match(regex);
   return match ? match[1] : '';
+}
+
+/**
+ * Builds the full resolver endpoint ARN from a bare endpoint ID using the
+ * region and account ID carried on the CloudTrail event detail. The
+ * ListTagsForResource API requires an ARN, but CloudTrail events only carry
+ * the bare 'rslvr-...' endpoint ID.
+ */
+function buildR53ResolverArn(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  event: any,
+  endpointId: string,
+): string {
+  const eventRegion = event.detail?.awsRegion || event.region || region;
+  const accountId = event.detail?.recipientAccountId || event.account || '';
+  return `arn:aws:route53resolver:${eventRegion}:${accountId}:resolver-endpoint/${endpointId}`;
 }
 
 export async function parseR53ResolverEventAndCreateAlarms(
@@ -242,7 +258,11 @@ export async function parseR53ResolverEventAndCreateAlarms(
             .str('requestId', event.detail.requestID)
             .msg('Processing CreateResolverEndpoint event');
           if (endpointId) {
-            tags = await fetchR53ResolverTags(endpointId);
+            // ListTagsForResource requires an ARN, but the CloudTrail event
+            // only carries the bare endpoint ID. Build the ARN from the event.
+            tags = await fetchR53ResolverTags(
+              buildR53ResolverArn(event, endpointId),
+            );
             log
               .info()
               .str('function', 'parseR53ResolverEventAndCreateAlarms')
@@ -288,14 +308,23 @@ export async function parseR53ResolverEventAndCreateAlarms(
         .msg('Unexpected event type');
   }
 
-  // Extract the Resolver name from the ARN
-  const resolverName = extractR53ResolverNameFromArn(endpointId);
+  // Resolve the endpoint identifier. CloudTrail events carry a bare
+  // 'rslvr-...' endpoint ID while Tag Change events carry the full ARN.
+  const resolverName = endpointId?.startsWith('rslvr-')
+    ? endpointId
+    : extractR53ResolverNameFromArn(endpointId ?? '');
   if (!resolverName) {
     log
       .error()
       .str('function', 'parseR53ResolverEventAndCreateAlarms')
       .str('endpointId', endpointId)
-      .msg('Extracted Route 53 Resolver name is empty');
+      .str('eventType', eventType)
+      .msg(
+        'Resolved Route 53 Resolver endpoint identifier is empty. Aborting to avoid acting on all R53R alarms.',
+      );
+    throw new Error(
+      'Resolved Route 53 Resolver endpoint identifier is empty. Aborting to avoid acting on all R53R alarms.',
+    );
   }
 
   log

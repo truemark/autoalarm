@@ -8,16 +8,14 @@ import {
   Tag,
   AlarmClassification,
 } from '../types/index.mjs';
-import {
-  CloudWatchClient,
-  DeleteAlarmsCommand,
-} from '@aws-sdk/client-cloudwatch';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
   deleteExistingAlarms,
   buildAlarmName,
+  buildExpectedAlarmNames,
   handleAnomalyAlarms,
   handleStaticAlarms,
+  massDeleteAlarms,
   getCWAlarmsForInstance,
   parseMetricAlarmOptions,
 } from '../alarm-configs/utils/index.mjs';
@@ -31,10 +29,6 @@ const elbClient: ElasticLoadBalancingV2Client =
     region,
     retryStrategy,
   });
-const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
-  region: region,
-  retryStrategy: retryStrategy,
-});
 
 const metricConfigs = ALB_CONFIGS;
 
@@ -90,7 +84,7 @@ async function checkAndManageALBStatusAlarms(
       .str('function', 'checkAndManageALBStatusAlarms')
       .str('LoadBalancerName', loadBalancerName)
       .msg('Alarm creation disabled by tag settings');
-    await deleteExistingAlarms('ALB', loadBalancerName);
+    await deleteExistingAlarms('ALB', loadBalancerName, metricConfigs);
     return;
   }
 
@@ -166,7 +160,17 @@ async function checkAndManageALBStatusAlarms(
   }
 
   // Delete alarms that are not in the alarmsToKeep set
-  const existingAlarms = await getCWAlarmsForInstance('ALB', loadBalancerName);
+  // Restrict the prefix-based fetch to this resource's exact expected alarm
+  // names so we never delete alarms of another resource whose identifier
+  // shares a prefix.
+  const expectedAlarmNames = buildExpectedAlarmNames(
+    'ALB',
+    loadBalancerName,
+    metricConfigs,
+  );
+  const existingAlarms = (
+    await getCWAlarmsForInstance('ALB', loadBalancerName)
+  ).filter((alarm) => expectedAlarmNames.has(alarm));
   const alarmsToDelete = existingAlarms.filter(
     (alarm: string) => !alarmsToKeep.has(alarm),
   );
@@ -176,11 +180,7 @@ async function checkAndManageALBStatusAlarms(
     .str('function', 'checkAndManageALBStatusAlarms')
     .obj('alarms to delete', alarmsToDelete)
     .msg('Deleting alarms that are no longer needed');
-  await cloudWatchClient.send(
-    new DeleteAlarmsCommand({
-      AlarmNames: [...alarmsToDelete],
-    }),
-  );
+  await massDeleteAlarms(alarmsToDelete);
 
   log
     .info()
@@ -198,7 +198,7 @@ export async function manageALBAlarms(
 
 export async function manageInactiveALBAlarms(loadBalancerName: string) {
   try {
-    await deleteExistingAlarms('ALB', loadBalancerName);
+    await deleteExistingAlarms('ALB', loadBalancerName, metricConfigs);
   } catch (e) {
     log
       .error()
@@ -209,7 +209,17 @@ export async function manageInactiveALBAlarms(loadBalancerName: string) {
   }
 }
 
-function extractAlbNameFromArn(arn: string): LoadBalancerIdentifiers {
+function extractAlbNameFromArn(
+  arn: string | undefined | null,
+): LoadBalancerIdentifiers {
+  // Classic ELB events carry a loadBalancerName instead of an ARN, so the
+  // input may be undefined. Treat that as an unsupported load balancer.
+  if (!arn) {
+    return {
+      LBType: null,
+      LBName: null,
+    };
+  }
   const regex = /\/(app|net)\/(.*?\/[^/]+)$/;
   const match = arn.match(regex);
   if (!match)
@@ -217,9 +227,11 @@ function extractAlbNameFromArn(arn: string): LoadBalancerIdentifiers {
       LBType: null,
       LBName: null,
     };
+  // The CloudWatch AWS/ApplicationELB LoadBalancer dimension requires the
+  // type prefix (e.g. 'app/my-alb/1234567890abcdef'), so keep it in the name.
   return {
     LBType: match[1] as 'app' | 'net',
-    LBName: match[2],
+    LBName: `${match[1]}/${match[2]}`,
   };
 }
 
@@ -252,7 +264,7 @@ export async function parseALBEventAndCreateAlarms(event: any): Promise<{
       switch (event.detail.eventName) {
         case 'CreateLoadBalancer':
           loadBalancerArn =
-            event.detail.responseElements?.loadBalancers[0]?.loadBalancerArn;
+            event.detail.responseElements?.loadBalancers?.[0]?.loadBalancerArn;
           eventType = 'Create';
           log
             .info()
@@ -309,13 +321,18 @@ export async function parseALBEventAndCreateAlarms(event: any): Promise<{
   }
 
   const loadBalancer = extractAlbNameFromArn(loadBalancerArn);
-  if (loadBalancer.LBType === null) {
+  if (loadBalancer.LBType === null || loadBalancer.LBName === null) {
     log
-      .error()
+      .warn()
       .str('function', 'parseALBEventAndCreateAlarms')
       .str('loadBalancerArn', loadBalancerArn)
       .obj('Load Balancer Identifiers', loadBalancer)
-      .msg('Extracted load balancer name is empty');
+      .msg(
+        'Unable to extract an application or network load balancer name from the event. ' +
+          'This is likely a Classic or Gateway load balancer which AutoAlarm does not support. Skipping processing.',
+      );
+    // return early to avoid processing unsupported load balancers
+    return;
   }
 
   // TODO: we can use this conditional as an entry point to manage nlbs in the future as we build this out.
@@ -323,7 +340,7 @@ export async function parseALBEventAndCreateAlarms(event: any): Promise<{
    *
    * gracefully logging a warning for now if a network load balancer has been tagged.
    */
-  if (loadBalancer.LBType!.includes('net')) {
+  if (loadBalancer.LBType.includes('net')) {
     log
       .warn()
       .str('function', 'parseALBEventAndCreateAlarms')
@@ -352,14 +369,14 @@ export async function parseALBEventAndCreateAlarms(event: any): Promise<{
       .str('function', 'parseALBEventAndCreateAlarms')
       .str('loadBalancerArn', loadBalancerArn)
       .msg('Starting to manage ALB alarms');
-    await manageALBAlarms(loadBalancer.LBName!, tags);
+    await manageALBAlarms(loadBalancer.LBName, tags);
   } else if (eventType === 'Delete') {
     log
       .info()
       .str('function', 'parseALBEventAndCreateAlarms')
       .str('loadBalancerArn', loadBalancerArn)
       .msg('Starting to manage inactive ALB alarms');
-    await manageInactiveALBAlarms(loadBalancer.LBName!);
+    await manageInactiveALBAlarms(loadBalancer.LBName);
   }
 
   return {loadBalancerArn, eventType, tags};
