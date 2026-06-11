@@ -221,6 +221,7 @@ export async function parseCloudFrontEventAndCreateAlarms(
   tags: Record<string, string>;
 }> {
   let distributionArn: string = '';
+  let distributionId: string = '';
   let eventType: string = '';
   let tags: Record<string, string> = {};
 
@@ -268,13 +269,15 @@ export async function parseCloudFrontEventAndCreateAlarms(
           break;
 
         case 'DeleteDistribution':
-          distributionArn = event.detail.responseElements?.distribution?.aRN;
+          // DeleteDistribution returns a 204 with no responseElements, so use
+          // the distribution ID from the request parameters directly.
+          distributionId = event.detail.requestParameters?.id;
           eventType = 'Delete';
           log
             .info()
             .str('function', 'parseCloudFrontEventAndCreateAlarms')
             .str('eventType', 'Delete')
-            .str('distributionArn', distributionArn)
+            .str('distributionId', distributionId)
             .str('requestId', event.detail.requestID)
             .msg('Processing DeleteDistribution event');
           break;
@@ -297,14 +300,23 @@ export async function parseCloudFrontEventAndCreateAlarms(
         .msg('Unexpected event type');
   }
 
-  // Extract the distribution ID from the ARN
-  const distributionId = extractDistributionIdFromArn(distributionArn);
+  // Extract the distribution ID from the ARN (Delete events set it directly
+  // from the request parameters since the API response carries no ARN)
+  if (!distributionId) {
+    distributionId = extractDistributionIdFromArn(distributionArn ?? '');
+  }
   if (!distributionId) {
     log
       .error()
       .str('function', 'parseCloudFrontEventAndCreateAlarms')
       .str('distributionArn', distributionArn)
-      .msg('Extracted CloudFront distribution ID is empty');
+      .str('eventType', eventType)
+      .msg(
+        'Resolved CloudFront distribution ID is empty. Aborting alarm management.',
+      );
+    throw new Error(
+      'Resolved CloudFront distribution ID is empty. Aborting alarm management.',
+    );
   }
 
   log

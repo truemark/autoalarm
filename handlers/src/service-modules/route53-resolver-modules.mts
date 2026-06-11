@@ -203,6 +203,22 @@ function extractR53ResolverNameFromArn(arn: string): string {
   return match ? match[1] : '';
 }
 
+/**
+ * Builds the full resolver endpoint ARN from a bare endpoint ID using the
+ * region and account ID carried on the CloudTrail event detail. The
+ * ListTagsForResource API requires an ARN, but CloudTrail events only carry
+ * the bare 'rslvr-...' endpoint ID.
+ */
+function buildR53ResolverArn(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  event: any,
+  endpointId: string,
+): string {
+  const eventRegion = event.detail?.awsRegion || event.region || region;
+  const accountId = event.detail?.recipientAccountId || event.account || '';
+  return `arn:aws:route53resolver:${eventRegion}:${accountId}:resolver-endpoint/${endpointId}`;
+}
+
 export async function parseR53ResolverEventAndCreateAlarms(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   event: any,
@@ -242,7 +258,11 @@ export async function parseR53ResolverEventAndCreateAlarms(
             .str('requestId', event.detail.requestID)
             .msg('Processing CreateResolverEndpoint event');
           if (endpointId) {
-            tags = await fetchR53ResolverTags(endpointId);
+            // ListTagsForResource requires an ARN, but the CloudTrail event
+            // only carries the bare endpoint ID. Build the ARN from the event.
+            tags = await fetchR53ResolverTags(
+              buildR53ResolverArn(event, endpointId),
+            );
             log
               .info()
               .str('function', 'parseR53ResolverEventAndCreateAlarms')
@@ -288,14 +308,23 @@ export async function parseR53ResolverEventAndCreateAlarms(
         .msg('Unexpected event type');
   }
 
-  // Extract the Resolver name from the ARN
-  const resolverName = extractR53ResolverNameFromArn(endpointId);
+  // Resolve the endpoint identifier. CloudTrail events carry a bare
+  // 'rslvr-...' endpoint ID while Tag Change events carry the full ARN.
+  const resolverName = endpointId?.startsWith('rslvr-')
+    ? endpointId
+    : extractR53ResolverNameFromArn(endpointId ?? '');
   if (!resolverName) {
     log
       .error()
       .str('function', 'parseR53ResolverEventAndCreateAlarms')
       .str('endpointId', endpointId)
-      .msg('Extracted Route 53 Resolver name is empty');
+      .str('eventType', eventType)
+      .msg(
+        'Resolved Route 53 Resolver endpoint identifier is empty. Aborting to avoid acting on all R53R alarms.',
+      );
+    throw new Error(
+      'Resolved Route 53 Resolver endpoint identifier is empty. Aborting to avoid acting on all R53R alarms.',
+    );
   }
 
   log

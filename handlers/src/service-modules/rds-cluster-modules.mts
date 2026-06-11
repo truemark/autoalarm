@@ -285,7 +285,10 @@ function findRDSClusterArn(eventObj: Record<string, any>): string {
 
 // On occasion AWS will splice the arn with the resource ID. If this happens, we need to remap the arn from the resource ID.
 async function getARNFromResourceId(arn: string) {
-  if (!arn.includes('cluster:cluster-')) return arn;
+  // Only treat the ARN as a DBCluster resource-ID form when the final segment
+  // looks like a real resource ID (e.g. 'cluster-ABCDE12345FGHIJ67890KLMNO1').
+  // A cluster literally named 'cluster-prod' must be treated as a normal name ARN.
+  if (!/:cluster:cluster-[A-Z0-9]{10,}$/.test(arn)) return arn;
 
   const resourceId = arn.split(':').at(-1); // grab the last index which is the resource ID
 
