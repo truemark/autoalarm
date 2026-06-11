@@ -1,6 +1,10 @@
 {
-  "name": "autoalarm",
+  "name": "@truemark/autoalarm",
   "version": "1.14.4",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  },
   "scripts": {
     "install-handlers": "cd handlers && pnpm i --frozen-lockfile",
     "install-cdk": "cd cdk && pnpm i --frozen-lockfile",

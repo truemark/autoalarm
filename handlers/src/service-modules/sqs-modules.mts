@@ -15,7 +15,7 @@ import {
 import {SQS_CONFIGS} from '../alarm-configs/_index.mjs';
 
 const log: logging.Logger = logging.getLogger('sqs-modules');
-const region: string = process.env.AWS_REGION || '';
+const region = process.env.AWS_REGION;
 const retryStrategy = new ConfiguredRetryStrategy(20);
 const sqsClient: SQSClient = new SQSClient({
   region,

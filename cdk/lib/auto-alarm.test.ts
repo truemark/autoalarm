@@ -53,13 +53,11 @@ describe('AutoAlarm stack', () => {
       Match.objectLike({
         PolicyDocument: Match.objectLike({
           Statement: Match.arrayWith([
-            // Alarm-management (including tagging) actions are scoped to
-            // AutoAlarm-managed alarm ARNs only.
+            // Mutating alarm actions scoped to AutoAlarm-managed alarm ARNs only.
             Match.objectLike({
               Action: Match.arrayWith([
                 'cloudwatch:PutMetricAlarm',
                 'cloudwatch:DeleteAlarms',
-                'cloudwatch:DescribeAlarms',
                 'cloudwatch:TagResource',
                 'cloudwatch:UntagResource',
               ]),
@@ -68,6 +66,17 @@ describe('AutoAlarm stack', () => {
                   Match.arrayWith([
                     Match.stringLikeRegexp(':alarm:AutoAlarm-\\*'),
                   ]),
+                ]),
+              }),
+            }),
+            // DescribeAlarms with AlarmNamePrefix requires alarm:* resource
+            // (AWS does not support resource-level scoping for prefix-based list calls).
+            // CDK collapses single-action statements to a string, not an array.
+            Match.objectLike({
+              Action: 'cloudwatch:DescribeAlarms',
+              Resource: Match.objectLike({
+                'Fn::Join': Match.arrayWith([
+                  Match.arrayWith([Match.stringLikeRegexp(':alarm:\\*')]),
                 ]),
               }),
             }),
