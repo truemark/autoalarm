@@ -36,7 +36,7 @@ import {
 const log: logging.Logger = logging.getLogger('ec2-modules');
 export const prometheusWorkspaceId: string =
   process.env.PROMETHEUS_WORKSPACE_ID || '';
-const region: string = process.env.AWS_REGION || '';
+const region = process.env.AWS_REGION;
 const retryStrategy = new ConfiguredRetryStrategy(20);
 const ec2Client: EC2Client = new EC2Client({
   region: region,
