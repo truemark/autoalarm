@@ -35,13 +35,18 @@ function extractECSServiceInfo(
 ): ECSServiceInfo | undefined {
   const region: string = process.env.AWS_REGION!;
 
+  // A missing service ARN is normal: ECS forwards TagResource/cluster/
+  // task-definition events too, and only service events are actionable. Log
+  // the miss at debug (here and in findArnInEvent) so non-service events don't
+  // flood ERROR; the caller logs a single warn-level skip explanation.
   const arn = findArnInEvent(
     eventBody,
     `arn:aws:ecs:${region}:${accountId}:service`,
+    {notFoundLogLevel: 'debug'},
   ).trim();
   if (!arn) {
     log
-      .error()
+      .debug()
       .str('function', 'extractECSServiceInfo')
       .msg('No ECS Service ARN found in event');
     return void 0;

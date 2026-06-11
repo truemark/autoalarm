@@ -183,6 +183,22 @@ export async function parseTGEventAndCreateAlarms(event: any): Promise<{
         .msg('Unexpected event type');
   }
 
+  // Failed CloudTrail events (e.g. AccessDenied on CreateTargetGroup) carry no
+  // ARN in responseElements, and a failed DeleteTargetGroup carries none in
+  // requestParameters, leaving targetGroupArn empty. Bail out before
+  // arnparser.parse() would throw on the undefined/empty value and poison-pill
+  // the record into the DLQ.
+  if (!targetGroupArn) {
+    log
+      .warn()
+      .str('function', 'parseTGEventAndCreateAlarms')
+      .str('eventType', eventType)
+      .msg(
+        'No target group ARN resolved from event; skipping alarm management',
+      );
+    return {targetGroupArn: '', eventType, tags};
+  }
+
   /**
    * Extract the target group name from the ARN so we can use it to create or delete alarms as needed.
    */
