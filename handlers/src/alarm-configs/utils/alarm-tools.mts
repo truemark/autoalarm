@@ -31,8 +31,9 @@ import * as logging from '@nr1e/logging';
 
 const retryStrategy = new ConfiguredRetryStrategy(20);
 const log = logging.getLogger('alarm-tools');
+const region = process.env.AWS_REGION;
 const cloudWatchClient = new CloudWatchClient({
-  region: process.env.AWS_REGION,
+  region,
   retryStrategy: retryStrategy,
 });
 const taggingClient = new ResourceGroupsTaggingAPIClient({
@@ -102,6 +103,7 @@ async function applyAlarmIdentityTags(
   service: string,
   serviceIdentifier: string,
   classification: AlarmClassification,
+  reAlarmEnabled?: string,
 ): Promise<void> {
   const alarmArn = buildAlarmArn(alarmName);
   if (!alarmArn) {
@@ -115,14 +117,19 @@ async function applyAlarmIdentityTags(
     return;
   }
 
+  const tags: CloudWatchTag[] = [
+    {Key: 'severity', Value: classification},
+    ...buildAlarmIdentityTags(service, serviceIdentifier),
+  ];
+  if (reAlarmEnabled !== undefined) {
+    tags.push({Key: 'autoalarm:re-alarm-enabled', Value: reAlarmEnabled});
+  }
+
   try {
     await cloudWatchClient.send(
       new TagResourceCommand({
         ResourceARN: alarmArn,
-        Tags: [
-          {Key: 'severity', Value: classification},
-          ...buildAlarmIdentityTags(service, serviceIdentifier),
-        ],
+        Tags: tags,
       }),
     );
     log
@@ -619,6 +626,7 @@ async function handleAnomalyDetectionWorkflow(
   threshold: number,
   service: string,
   serviceIdentifier: string,
+  reAlarmEnabled?: string,
 ) {
   log
     .info()
@@ -702,6 +710,7 @@ async function handleAnomalyDetectionWorkflow(
       service,
       serviceIdentifier,
       classification,
+      reAlarmEnabled,
     );
   } catch (e) {
     log
@@ -731,6 +740,7 @@ async function handleAlarmsForVariant(
   dimensions: {Name: string; Value: string}[],
   updatedDefaults: MetricAlarmOptions,
   storagePath?: string,
+  reAlarmEnabled?: string,
 ): Promise<string[]> {
   const functionName =
     variant === 'anomaly' ? 'handleAnomalyAlarms' : 'handleStaticAlarms';
@@ -819,6 +829,7 @@ async function handleAlarmsForVariant(
         threshold as number,
         service,
         serviceIdentifier,
+        reAlarmEnabled,
       );
       createdAlarms.push(alarmName);
     } else {
@@ -844,6 +855,7 @@ export async function handleAnomalyAlarms(
   dimensions: {Name: string; Value: string}[],
   updatedDefaults: MetricAlarmOptions,
   storagePath?: string,
+  reAlarmEnabled?: string,
 ): Promise<string[]> {
   return handleAlarmsForVariant(
     'anomaly',
@@ -853,6 +865,7 @@ export async function handleAnomalyAlarms(
     dimensions,
     updatedDefaults,
     storagePath,
+    reAlarmEnabled,
   );
 }
 
@@ -865,6 +878,7 @@ async function handleStaticThresholdWorkflow(
   threshold: number,
   service: string,
   serviceIdentifier: string,
+  reAlarmEnabled?: string,
 ) {
   log
     .info()
@@ -923,6 +937,7 @@ async function handleStaticThresholdWorkflow(
       service,
       serviceIdentifier,
       classification,
+      reAlarmEnabled,
     );
   } catch (e) {
     log
@@ -943,6 +958,7 @@ export async function handleStaticAlarms(
   dimensions: {Name: string; Value: string}[],
   updatedDefaults: MetricAlarmOptions,
   storagePath?: string,
+  reAlarmEnabled?: string,
 ): Promise<string[]> {
   return handleAlarmsForVariant(
     'static',
@@ -952,6 +968,7 @@ export async function handleStaticAlarms(
     dimensions,
     updatedDefaults,
     storagePath,
+    reAlarmEnabled,
   );
 }
 

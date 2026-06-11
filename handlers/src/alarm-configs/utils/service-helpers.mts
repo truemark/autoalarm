@@ -185,6 +185,8 @@ export async function manageServiceAlarms(
         identifier,
         dimensions,
         updatedDefaults,
+        undefined,
+        tags['autoalarm:re-alarm-enabled'],
       );
       alarmNames.forEach((alarmName) => alarmsToKeep.add(alarmName));
     } else {
