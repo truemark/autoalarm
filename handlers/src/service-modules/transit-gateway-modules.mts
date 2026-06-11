@@ -107,7 +107,12 @@ export async function parseTransitGatewayEventAndCreateAlarms(
     case 'AWS API Call via CloudTrail':
       switch (event.detail.eventName) {
         case 'CreateTransitGateway':
+          // EC2 query-protocol CloudTrail nests the response under
+          // CreateTransitGatewayResponse → transitGateway → transitGatewayId.
+          // Fall back to the flat shape for safety/older fixtures.
           transitGatewayId =
+            event.detail.responseElements?.CreateTransitGatewayResponse
+              ?.transitGateway?.transitGatewayId ??
             event.detail.responseElements?.transitGateway?.transitGatewayId;
           eventType = 'Create';
           log
@@ -135,7 +140,13 @@ export async function parseTransitGatewayEventAndCreateAlarms(
           break;
 
         case 'DeleteTransitGateway':
-          transitGatewayId = event.detail.requestParameters?.transitGatewayId;
+          // EC2 query-protocol CloudTrail nests the request under
+          // DeleteTransitGatewayRequest → TransitGatewayId (PascalCase). Fall
+          // back to the flat shape for safety/older fixtures.
+          transitGatewayId =
+            event.detail.requestParameters?.DeleteTransitGatewayRequest
+              ?.TransitGatewayId ??
+            event.detail.requestParameters?.transitGatewayId;
           eventType = 'Delete';
           log
             .info()
@@ -170,16 +181,19 @@ export async function parseTransitGatewayEventAndCreateAlarms(
     ? transitGatewayId
     : extractTransitGatewayNameFromArn(transitGatewayId || '');
   if (!transitGatewayName) {
+    // An unresolved id on a CloudTrail Create/Delete event (e.g. a failed
+    // event, or a payload shape we don't parse) must not be thrown — that
+    // poison-pills the record into the DLQ on every retry. Alarm management is
+    // driven by Tag-Change events anyway, so warn and skip.
     log
-      .error()
+      .warn()
       .str('function', 'parseTransitGatewayEventAndCreateAlarms')
-      .str('transitGatewayId', transitGatewayId)
+      .str('transitGatewayId', transitGatewayId ?? '')
+      .str('eventType', eventType)
       .msg(
-        'Could not resolve Transit Gateway identifier from event. Failing record to avoid managing alarms with an empty identifier',
+        'Could not resolve Transit Gateway identifier from event; skipping alarm management',
       );
-    throw new Error(
-      'Could not resolve Transit Gateway identifier from event. Cannot manage alarms with an empty identifier',
-    );
+    return {transitGatewayId: transitGatewayId ?? '', eventType, tags};
   }
 
   log
