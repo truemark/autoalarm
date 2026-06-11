@@ -205,7 +205,9 @@ export async function parseVpnEventAndCreateAlarms(
 
   switch (event['detail-type']) {
     case 'Tag Change on Resource':
-      vpnId = event.resources[0];
+      // resources[0] is a full ARN (arn:aws:ec2:...:vpn-connection/vpn-xxx);
+      // extract the bare 'vpn-...' id to match the VpnId dimension and alarm names
+      vpnId = event.resources[0]?.split('/').pop() || '';
       eventType = 'TagChange';
       tags = event.detail.tags || {};
       log
@@ -281,7 +283,12 @@ export async function parseVpnEventAndCreateAlarms(
       .error()
       .str('function', 'parseVpnEventAndCreateAlarms')
       .str('vpnId', vpnId)
-      .msg('Vpn Id is empty');
+      .msg(
+        'Could not resolve VPN identifier from event. Failing record to avoid managing alarms with an empty identifier',
+      );
+    throw new Error(
+      'Could not resolve VPN identifier from event. Cannot manage alarms with an empty identifier',
+    );
   }
 
   log

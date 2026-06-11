@@ -242,11 +242,14 @@ export async function parseECSEventAndCreateAlarms(
   const serviceInfo = extractECSServiceInfo(record.body, accountId);
 
   if (!serviceInfo) {
+    // TagResource/UntagResource events are forwarded for all ECS resource types
+    // (clusters, task definitions, etc.) - only service events are actionable
     log
-      .error()
+      .warn()
       .str('function', 'parseECSEventAndCreateAlarms')
-      .msg('Failed to extract ECS service info from event');
-    throw new Error('No valid ECS service info found in event');
+      .str('eventName', eventName)
+      .msg('Event does not reference an ECS service - skipping');
+    return;
   }
 
   const {serviceArn, serviceName, clusterName} = serviceInfo;
