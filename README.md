@@ -10,6 +10,7 @@
     - [Application Load Balancer (ALB)](#application-load-balancer-alb)
     - [CloudFront](#cloudfront)
     - [EC2](#ec2)
+    - [Lambda](#lambda)
     - [OpenSearch](#opensearch)
     - [RDS](#rds)
     - [RDS Clusters](#rds-clusters)
@@ -140,6 +141,14 @@ threshold values are provided in the tag value when setting the tag on the resou
 | `autoalarm:cpu-anomaly`         | No                       | Yes                        | 2                 | 5                  | 60     | 5                  | Average   | 5                   | GreaterThanUpperThreshold | ignore                 | `2/5/60/5/Average/5/GreaterThanUpperThreshold/ignore`  |
 | `autoalarm:memory`              | Yes                      | Yes                        | 95                | 98                 | 60     | 10                 | Maximum   | 5                   | GreaterThanThreshold      | ignore                 | `95/98/60/10/Maximum/5/GreaterThanThreshold/ignore`    |
 | `autoalarm:memory-anomaly`      | No                       | Yes                        | 2                 | 5                  | 300    | 2                  | Average   | 2                   | GreaterThanUpperThreshold | ignore                 | `2/5/300/2/Average/2/GreaterThanUpperThreshold/ignore` |
+
+#### Lambda
+
+> **Note:** `autoalarm:errors` is created by default for any function tagged `autoalarm:enabled=true`. It uses `GreaterThanOrEqualToThreshold` with a critical threshold of `1`, so **any error** in a 60-second period (`Sum` of the `AWS/Lambda` `Errors` metric) drives the alarm to ALARM. There is no warning alarm by default. To disable it, set the warning and critical thresholds to the nullish character (`autoalarm:errors=-/-/...`).
+
+| Tag                | Alarm Created by Default | Standard CloudWatch Metric | Warning Threshold | Critical Threshold | Period | Evaluation Periods | Statistic | Datapoints to Alarm | Comparison Operator           | Missing Data Treatment | Complete Tag Value                                       |
+|--------------------|--------------------------|----------------------------|-------------------|--------------------|--------|--------------------|-----------|---------------------|-------------------------------|------------------------|----------------------------------------------------------|
+| `autoalarm:errors` | Yes                      | Yes                        | -                 | 1                  | 60     | 1                  | Sum       | 1                   | GreaterThanOrEqualToThreshold | ignore                 | `-/1/60/1/Sum/1/GreaterThanOrEqualToThreshold/ignore`    |
 
 #### LogGroups
 
