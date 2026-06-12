@@ -333,6 +333,16 @@ export class AutoAlarm extends Construct {
       }),
     );
 
+    // Attach policies for Lambda to read function tags (ListTags) so AutoAlarm
+    // can manage alarms for tagged functions.
+    autoAlarmExecutionRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['lambda:ListTags', 'lambda:GetFunction'],
+        resources: ['*'],
+      }),
+    );
+
     return autoAlarmExecutionRole;
   }
 

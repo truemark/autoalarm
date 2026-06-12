@@ -10,6 +10,7 @@ export type ServiceName =
   | 'cloudfront'
   | 'ec2'
   | 'ecs'
+  | 'lambda'
   | 'logs'
   | 'opensearch'
   | 'rds'
@@ -169,6 +170,35 @@ export const SERVICE_DESCRIPTORS: ServiceDescriptor[] = [
           'CreateService',
           'TagResource',
           'UntagResource',
+        ]),
+      },
+    ],
+  },
+  {
+    serviceName: 'lambda',
+    queueKey: 'AutoAlarm-Lambda',
+    rules: [
+      {
+        id: 'LambdaTagRule',
+        description: 'Routes Lambda tag events to AutoAlarm',
+        eventPattern: tagChangePattern(
+          'lambda',
+          'function',
+          SERVICE_TAG_KEYS.lambda,
+        ),
+      },
+      {
+        id: 'LambdaStateRule',
+        description: 'Routes Lambda function events to AutoAlarm',
+        // Current Lambda management events carry a "...v2" suffix (verified
+        // against a live us-west-2 CloudTrail record: TagResource20170331v2);
+        // match both the legacy and v2 names so the rule fires regardless of
+        // which the account emits.
+        eventPattern: cloudTrailPattern('aws.lambda', 'lambda.amazonaws.com', [
+          'CreateFunction20150331',
+          'CreateFunction20150331v2',
+          'DeleteFunction20150331',
+          'DeleteFunction20150331v2',
         ]),
       },
     ],
