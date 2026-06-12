@@ -140,6 +140,30 @@ describe('direct event sources', () => {
     expect(decision.name).toBe('step-functions');
     expectModule(decision, ServiceModules.parseSFNEventAndCreateAlarms);
   });
+
+  test('aws.lambda create/delete routes to the Lambda module', () => {
+    // Lambda records the create API with a version suffix; both names match.
+    for (const name of [
+      'CreateFunction20150331',
+      'CreateFunction20150331v2',
+      'DeleteFunction20150331',
+      'DeleteFunction20150331v2',
+    ]) {
+      const decision = routeEvent(
+        cloudTrailEvent('aws.lambda', 'lambda.amazonaws.com', name),
+      );
+      expect(decision.name).toBe('lambda');
+      expectModule(decision, ServiceModules.parseLambdaEventAndCreateAlarms);
+    }
+  });
+
+  test('aws.lambda with an unversioned/unhandled eventName falls through to unhandled', () => {
+    const decision = routeEvent(
+      cloudTrailEvent('aws.lambda', 'lambda.amazonaws.com', 'CreateFunction'),
+    );
+    expect(decision.name).toBe('unhandled-event-source');
+    expect(decision.action.kind).toBe('fail');
+  });
 });
 
 describe('aws.ec2 events', () => {
@@ -406,8 +430,20 @@ describe('aws.tag events', () => {
     expectModule(decision, ServiceModules.parseSFNEventAndCreateAlarms);
   });
 
+  test('lambda tag events route to the Lambda module', () => {
+    const decision = routeEvent(
+      tagEvent(
+        'lambda',
+        'function',
+        'arn:aws:lambda:us-west-2:123456789012:function:my-function',
+      ),
+    );
+    expect(decision.name).toBe('tag-lambda');
+    expectModule(decision, ServiceModules.parseLambdaEventAndCreateAlarms);
+  });
+
   test('tag events for an unhandled service are skipped with a warning', () => {
-    const decision = routeEvent(tagEvent('lambda', 'function'));
+    const decision = routeEvent(tagEvent('kinesis', 'stream'));
     expect(decision.name).toBe('tag-unhandled-service');
     expect(decision.action.kind).toBe('skip');
   });
@@ -424,19 +460,19 @@ describe('aws.tag events', () => {
 describe('unmatched events', () => {
   test('unknown source produces a failure decision (warn + batch item failure)', () => {
     const decision = routeEvent({
-      'source': 'aws.lambda',
+      'source': 'aws.kinesis',
       'detail-type': 'AWS API Call via CloudTrail',
       'detail': {
-        eventSource: 'lambda.amazonaws.com',
-        eventName: 'CreateFunction',
+        eventSource: 'kinesis.amazonaws.com',
+        eventName: 'CreateStream',
       },
     });
     expect(decision.name).toBe('unhandled-event-source');
     expect(decision.action.kind).toBe('fail');
     if (decision.action.kind === 'fail') {
       expect(decision.action.level).toBe('warn');
-      expect(decision.action.message({source: 'aws.lambda'})).toBe(
-        'Unhandled event source: aws.lambda',
+      expect(decision.action.message({source: 'aws.kinesis'})).toBe(
+        'Unhandled event source: aws.kinesis',
       );
     }
   });

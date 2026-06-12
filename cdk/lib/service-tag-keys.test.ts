@@ -40,6 +40,7 @@ const CONFIG_EXPORTS: Record<TagRuleService, string> = {
   alb: 'ALB_CONFIGS',
   cloudfront: 'CLOUDFRONT_CONFIGS',
   ec2: 'EC2_CONFIGS',
+  lambda: 'LAMBDA_CONFIGS',
   opensearch: 'OPENSEARCH_CONFIGS',
   rds: 'RDS_CONFIGS',
   rdscluster: 'RDS_CLUSTER_CONFIGS',

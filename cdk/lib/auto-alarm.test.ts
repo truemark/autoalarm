@@ -18,16 +18,16 @@ beforeAll(() => {
 
 describe('AutoAlarm stack', () => {
   test('creates the expected number of SQS queues', () => {
-    // 14 service queues + 14 service DLQs + main handler queue + DLQ +
+    // 15 service queues + 15 service DLQs + main handler queue + DLQ +
     // ReAlarm consumer queue + DLQ + ReAlarm tag event queue + DLQ
-    // + 1 shared EventBridge rule target DLQ (standard) = 35
-    template.resourceCountIs('AWS::SQS::Queue', 35);
+    // + 1 shared EventBridge rule target DLQ (standard) = 37
+    template.resourceCountIs('AWS::SQS::Queue', 37);
   });
 
   test('every EventBridge rule has at least one target', () => {
     const rules = template.findResources('AWS::Events::Rule');
     const ruleEntries = Object.entries(rules);
-    // 25 service rules + ReAlarm schedule rule + ReAlarm tag rule
+    // 27 service rules + ReAlarm schedule rule + ReAlarm tag rule
     expect(ruleEntries.length).toBeGreaterThanOrEqual(27);
     for (const [logicalId, rule] of ruleEntries) {
       const targets = rule.Properties?.Targets ?? [];
@@ -126,9 +126,9 @@ describe('AutoAlarm stack', () => {
     const queuesWithRedrive = queues.filter(
       (queue) => queue.Properties?.RedrivePolicy !== undefined,
     );
-    // main handler queue + 14 service queues + ReAlarm consumer queue +
+    // main handler queue + 15 service queues + ReAlarm consumer queue +
     // ReAlarm tag event queue
-    expect(queuesWithRedrive.length).toBe(17);
+    expect(queuesWithRedrive.length).toBe(18);
     for (const queue of queuesWithRedrive) {
       expect(queue.Properties.RedrivePolicy.maxReceiveCount).toBe(3);
       // ~6x the 900s consumer Lambda timeout per AWS guidance
@@ -140,8 +140,8 @@ describe('AutoAlarm stack', () => {
     const mappings = Object.values(
       template.findResources('AWS::Lambda::EventSourceMapping'),
     );
-    // 14 service queues + main handler + ReAlarm consumer + ReAlarm tag event
-    expect(mappings.length).toBeGreaterThanOrEqual(17);
+    // 15 service queues + main handler + ReAlarm consumer + ReAlarm tag event
+    expect(mappings.length).toBeGreaterThanOrEqual(18);
     for (const mapping of mappings) {
       expect(mapping.Properties?.FunctionResponseTypes).toEqual([
         'ReportBatchItemFailures',
