@@ -20,17 +20,16 @@ const lambdaClient: LambdaClient = new LambdaClient({
 const metricConfigs = LAMBDA_CONFIGS;
 
 export async function fetchLambdaTags(functionArn: string): Promise<Tag> {
-  return fetchResourceTags(
-    'Lambda',
-    functionArn,
-    async () => {
-      const command = new ListTagsCommand({Resource: functionArn});
-      const response = await lambdaClient.send(command);
-      // Lambda returns tags as a flat key/value map already.
-      return response.Tags ?? {};
-    },
-    'return-empty',
-  );
+  // Default 'rethrow' (not 'return-empty'): a transient ListTags failure must
+  // fail the SQS record for retry, not be treated as "no tags" — which would
+  // make manageServiceAlarms see autoalarm:enabled absent and delete every
+  // alarm for the function. See fetchResourceTags in service-helpers.mts.
+  return fetchResourceTags('Lambda', functionArn, async () => {
+    const command = new ListTagsCommand({Resource: functionArn});
+    const response = await lambdaClient.send(command);
+    // Lambda returns tags as a flat key/value map already.
+    return response.Tags ?? {};
+  });
 }
 
 async function checkAndManageLambdaAlarms(
@@ -64,9 +63,16 @@ export async function manageInactiveLambdaAlarms(
 /**
  * Extracts the Lambda function name from a function ARN or returns a bare
  * function name unchanged. The CloudWatch `FunctionName` dimension uses the
- * name, not the ARN.
+ * name, not the ARN, so a trailing version/alias qualifier is intentionally
+ * dropped: AutoAlarm monitors function-level errors.
  *
  * arn:aws:lambda:<region>:<account>:function:<name>[:<qualifier>]
+ *
+ * This does not cause prod/staging alias alarms to collide: Lambda tags can
+ * only be attached to the function resource itself (you cannot tag a version
+ * or alias), so every tag-change event — and every CloudTrail Create/Delete
+ * — carries the unqualified function ARN. There is no per-alias tag flow that
+ * could produce two identifiers to merge.
  */
 function extractFunctionName(functionArnOrName: string): string {
   if (!functionArnOrName) {
