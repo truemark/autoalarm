@@ -36,7 +36,7 @@ cd autoalarm
 - **Configure Keys and Session Token**
 
     ```bash
-    export AWS_ACCESS_KEY_ID="<access-key-id"
+    export AWS_ACCESS_KEY_ID="<access-key-id>"
     export AWS_SECRET_ACCESS_KEY="<secret-access-key>"
     export AWS_SESSION_TOKEN="<aws-session-token>"
     ```
