@@ -12,6 +12,9 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # Skip runs triggered by the version-bump commit the bot pushes back to
+    # main — without this guard the workflow re-triggers itself in a loop.
+    if: github.actor != 'github-actions[bot]'
     strategy:
       matrix:
         node-version: [18, 20, 22]

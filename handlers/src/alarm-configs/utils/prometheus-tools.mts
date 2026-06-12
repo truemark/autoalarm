@@ -983,14 +983,24 @@ export async function managePromNamespaceAlarms(
     .str('namespace', namespace)
     .msg('Retrieved namespaces');
 
-  // Describe all namespaces in parallel and reuse the results below instead of
-  // re-describing the target namespace.
-  const describedNamespaces = await Promise.all(
-    namespaces.map(async (ns) => ({
-      name: ns.name as string,
-      details: await describeNamespace(promWorkspaceId, ns.name as string),
-    })),
-  );
+  // Describe all namespaces with bounded concurrency to avoid throttling on
+  // workspaces that have many namespaces (each DescribeRuleGroupsNamespace call
+  // counts against the AMP API rate limit).
+  const DESCRIBE_CONCURRENCY = 5;
+  const describedNamespaces: Array<{
+    name: string;
+    details: NamespaceDetails | null;
+  }> = [];
+  for (let i = 0; i < namespaces.length; i += DESCRIBE_CONCURRENCY) {
+    const batch = namespaces.slice(i, i + DESCRIBE_CONCURRENCY);
+    const results = await Promise.all(
+      batch.map(async (ns) => ({
+        name: ns.name as string,
+        details: await describeNamespace(promWorkspaceId, ns.name as string),
+      })),
+    );
+    describedNamespaces.push(...results);
+  }
 
   let totalWSRules = 0;
   // Count total rules across all namespaces

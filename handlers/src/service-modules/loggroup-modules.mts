@@ -186,9 +186,13 @@ export async function parseLogGroupEventAndCreateAlarms(
     }
   }
 
-  // bedrock-agentcore creates and destroys log groups continuously; processing
-  // those events floods the main handler queue and delays all other services.
-  if (resourceName.startsWith('/aws/bedrock-agentcore/')) {
+  // bedrock-agentcore creates and destroys log groups continuously; skip all
+  // non-delete events to avoid flooding the queue. DeleteLogGroup must still
+  // proceed so any previously created alarms are cleaned up.
+  if (
+    resourceName.startsWith('/aws/bedrock-agentcore/') &&
+    eventName !== 'DeleteLogGroup'
+  ) {
     log
       .info()
       .str('function', 'parseLogGroupEventAndCreateAlarms')
