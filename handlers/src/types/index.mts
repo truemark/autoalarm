@@ -11,14 +11,7 @@ export {
 } from './alarm-config-types.mjs';
 
 // Import and re-export from enums.mjs
-export {
-  ValidInstanceState,
-  AlarmClassification,
-  ValidAlbEvent,
-  ValidTargetGroupEvent,
-  ValidSqsEvent,
-  ValidOpenSearchState,
-} from './enums.mjs';
+export {ValidInstanceState, AlarmClassification} from './enums.mjs';
 
 // Import and re-export from module-types.mjs
 export {

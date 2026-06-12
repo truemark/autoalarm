@@ -8,13 +8,15 @@ import {
 } from 'aws-cdk-lib/aws-iam';
 import {Construct} from 'constructs';
 import * as path from 'path';
-import {Duration} from 'aws-cdk-lib';
+import {Duration, Stack} from 'aws-cdk-lib';
 import {Architecture} from 'aws-cdk-lib/aws-lambda';
-import {Rule, Schedule} from 'aws-cdk-lib/aws-events';
+import {CronOptions, Rule, Schedule} from 'aws-cdk-lib/aws-events';
 import {LambdaFunction} from 'aws-cdk-lib/aws-events-targets';
+import {IQueue} from 'aws-cdk-lib/aws-sqs';
 
 export class ReAlarmProducer extends Construct {
   public readonly lambdaFunction: ExtendedNodejsFunction;
+  private readonly eventRuleTargetDLQ: IQueue;
   constructor(
     scope: Construct,
     id: string,
@@ -22,8 +24,11 @@ export class ReAlarmProducer extends Construct {
     accountId: string,
     reAlarmConsumerQueueArn: string,
     reAlarmConsumerQueueURL: string,
+    eventRuleTargetDLQ: IQueue,
+    reAlarmSchedule?: CronOptions,
   ) {
     super(scope, id);
+    this.eventRuleTargetDLQ = eventRuleTargetDLQ;
     /**
      * Set up the IAM role and policies for the ReAlarm Producer function
      * @param reAlarmConsumerQueueArn - The ARN of the reAlarm consumer queue used to grant permissions to the producer to send messages to the consumer queue
@@ -52,7 +57,7 @@ export class ReAlarmProducer extends Construct {
     /**
      * Set up the EventBridge rule to trigger the ReAlarm Producer function
      */
-    this.createEventBridgeRules();
+    this.createEventBridgeRules(reAlarmSchedule);
   }
 
   /**
@@ -69,12 +74,18 @@ export class ReAlarmProducer extends Construct {
       description: 'Execution role for ReAlarm Producer Lambda function',
     });
 
+    // DescribeAlarms enumerates eligibility; ListTagsForResource is the
+    // single-alarm tag lookup for the override path; tag:GetResources is the
+    // bulk Resource Groups Tagging API sweep that builds the standard-cycle
+    // exclusion/override sets. None of these read/list actions are
+    // resource-scopable in a useful way, so they stay on '*'.
     reAlarmProducerRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: [
           'cloudwatch:DescribeAlarms',
           'cloudwatch:ListTagsForResource',
+          'tag:GetResources',
         ],
         resources: ['*'],
       }),
@@ -83,20 +94,24 @@ export class ReAlarmProducer extends Construct {
     reAlarmProducerRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
-        actions: ['sqs:SendMessage', 'sqs:SendMessageBatch', 'sqs:GetQueueUrl'],
+        // SendMessageBatch is authorized by sqs:SendMessage; there is no
+        // separate sqs:SendMessageBatch IAM action.
+        actions: ['sqs:SendMessage', 'sqs:GetQueueUrl'],
         resources: [reAlarmConsumerQueueArn],
       }),
     );
 
+    // The log group is created and managed by CDK (ExtendedNodejsFunction),
+    // so logs:CreateLogGroup is not needed; the function name is
+    // CDK-generated, so writes are scoped to the Lambda log-group namespace
+    // rather than '*'.
     reAlarmProducerRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
-        resources: ['*'],
-        actions: [
-          'logs:CreateLogGroup',
-          'logs:CreateLogStream',
-          'logs:PutLogEvents',
+        resources: [
+          `arn:aws:logs:${Stack.of(this).region}:${Stack.of(this).account}:log-group:/aws/lambda/*:*`,
         ],
+        actions: ['logs:CreateLogStream', 'logs:PutLogEvents'],
       }),
     );
 
@@ -105,16 +120,24 @@ export class ReAlarmProducer extends Construct {
 
   /**
    * private method to up the EventBridge rule to trigger the ReAlarm Producer function
+   * @param reAlarmSchedule - Optional cron schedule override. Defaults to a rate of every 2 hours.
    */
-  private createEventBridgeRules(): void {
+  private createEventBridgeRules(reAlarmSchedule?: CronOptions): void {
     const reAlarmeScheduleRule = new Rule(this, 'ReAlarmScheduleRule', {
-      schedule: Schedule.rate(Duration.minutes(120)),
+      schedule: reAlarmSchedule
+        ? Schedule.cron(reAlarmSchedule)
+        : Schedule.rate(Duration.minutes(120)),
       description:
         'Default rule to trigger the ReAlarm Producer function every 2 hours',
     });
 
-    // add target to rule
-    reAlarmeScheduleRule.addTarget(new LambdaFunction(this.lambdaFunction));
+    // add target to rule; failed invocations after EventBridge's retry policy
+    // is exhausted are captured in the shared event rule target DLQ.
+    reAlarmeScheduleRule.addTarget(
+      new LambdaFunction(this.lambdaFunction, {
+        deadLetterQueue: this.eventRuleTargetDLQ,
+      }),
+    );
   }
 
   /**

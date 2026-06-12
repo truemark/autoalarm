@@ -14,7 +14,7 @@ import {
 import * as logging from '@nr1e/logging';
 
 // Initialize logging
-const level = process.env.LOG_LEVEL || 'trace';
+const level = process.env.LOG_LEVEL || 'info';
 if (!logging.isLevel(level)) {
   throw new Error(`Invalid log level: ${level}`);
 }
@@ -72,6 +72,18 @@ function parseIntegerOption(value: string, defaultValue: number): number {
   const parsedValue = parseFloat(trimmed);
 
   if (isNaN(parsedValue)) {
+    return defaultValue;
+  }
+
+  if (!Number.isInteger(parsedValue) || parsedValue <= 0) {
+    log
+      .warn()
+      .str('Function', 'parseIntegerOption')
+      .str('Input', value)
+      .num('DefaultValue', defaultValue)
+      .msg(
+        'Value is not a positive integer. Falling back to the default value.',
+      );
     return defaultValue;
   }
 
@@ -152,13 +164,27 @@ function parseMissingDataTreatmentOption(
   value: string,
   defaultValue: MissingDataTreatment,
 ): MissingDataTreatment {
-  const validDataTreatment = Object.keys(TreatMissingData).find(
-    (V) => V.toLowerCase() === value.trim().toLowerCase(),
+  const normalized = value.trim().toLowerCase();
+
+  // Match against the enum VALUES first (e.g. 'notBreaching', 'ignore') which
+  // are the documented tag values and what the CloudWatch API expects.
+  const validDataTreatmentValue = Object.values(TreatMissingData).find(
+    (treatment) => treatment.toLowerCase() === normalized,
   );
 
-  if (validDataTreatment) {
+  if (validDataTreatmentValue) {
+    return validDataTreatmentValue as MissingDataTreatment;
+  }
+
+  // Fall back to matching the legacy enum KEY spellings (e.g. 'NOT_BREACHING')
+  // so existing tags using those values keep working. Return the mapped VALUE.
+  const validDataTreatmentKey = Object.keys(TreatMissingData).find(
+    (key) => key.toLowerCase() === normalized,
+  );
+
+  if (validDataTreatmentKey) {
     return TreatMissingData[
-      validDataTreatment as keyof typeof TreatMissingData
+      validDataTreatmentKey as keyof typeof TreatMissingData
     ];
   }
 

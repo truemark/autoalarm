@@ -1,29 +1,19 @@
 import {RDSClient, DescribeDBInstancesCommand} from '@aws-sdk/client-rds';
 import * as logging from '@nr1e/logging';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
-import {AlarmClassification, Tag} from '../types/index.mjs';
+import {Tag} from '../types/index.mjs';
 import {
-  getCWAlarmsForInstance,
   deleteExistingAlarms,
-  buildAlarmName,
-  handleAnomalyAlarms,
-  handleStaticAlarms,
-  parseMetricAlarmOptions,
+  fetchResourceTags,
+  findArnInEvent,
+  manageServiceAlarms,
 } from '../alarm-configs/utils/index.mjs';
-import {
-  CloudWatchClient,
-  DeleteAlarmsCommand,
-} from '@aws-sdk/client-cloudwatch';
 import {RDS_CONFIGS} from '../alarm-configs/_index.mjs';
 
 const log: logging.Logger = logging.getLogger('rds-modules');
-const region: string = process.env.AWS_REGION || '';
+const region = process.env.AWS_REGION;
 const retryStrategy = new ConfiguredRetryStrategy(20);
 const rdsClient: RDSClient = new RDSClient({
-  region: region,
-  retryStrategy: retryStrategy,
-});
-const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   region: region,
   retryStrategy: retryStrategy,
 });
@@ -33,7 +23,7 @@ const metricConfigs = RDS_CONFIGS;
 export async function fetchRDSTags(
   dbInstanceId: string,
 ): Promise<{[key: string]: string}> {
-  try {
+  return fetchResourceTags('RDS', dbInstanceId, async () => {
     const command = new DescribeDBInstancesCommand({
       DBInstanceIdentifier: dbInstanceId,
     });
@@ -46,169 +36,28 @@ export async function fetchRDSTags(
       }
     });
 
-    log
-      .info()
-      .str('function', 'fetchRDSTags')
-      .str('dbInstanceId', dbInstanceId)
-      .str('tags', JSON.stringify(tags))
-      .msg('Fetched database tags');
-
     return tags;
-  } catch (error) {
-    log
-      .error()
-      .str('function', 'fetchRDSTags')
-      .err(error)
-      .str('dbInstanceId', dbInstanceId)
-      .msg('Error fetching database tags');
-    return {};
-  }
+  });
 }
 
 async function checkAndManageRDSStatusAlarms(
   dbInstanceId: string,
   tags: Tag,
 ): Promise<void> {
-  log
-    .info()
-    .str('function', 'checkAndManageRDSStatusAlarms')
-    .str('dbInstanceId', dbInstanceId)
-    .msg('Starting alarm management process');
-
-  const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
-  if (!isAlarmEnabled) {
-    log
-      .info()
-      .str('function', 'checkAndManageRDSStatusAlarms')
-      .str('dbInstanceId', dbInstanceId)
-      .msg('Alarm creation disabled by tag settings');
-    await deleteExistingAlarms('RDS', dbInstanceId);
-    return;
-  }
-
-  const alarmsToKeep = new Set<string>();
-
-  for (const config of metricConfigs) {
-    log
-      .info()
-      .str('function', 'checkAndManageRDSStatusAlarms')
-      .obj('config', config)
-      .str('dbInstanceId', dbInstanceId)
-      .msg('Processing metric configuration');
-
-    const tagValue = tags[`autoalarm:${config.tagKey}`];
-    const updatedDefaults = parseMetricAlarmOptions(
-      tagValue || '',
-      config.defaults,
-    );
-    if (config.defaultCreate || tagValue !== undefined) {
-      if (config.tagKey.includes('anomaly')) {
-        log
-          .info()
-          .str('function', 'checkAndManageRDSStatusAlarms')
-          .str('dbInstanceId', dbInstanceId)
-          .msg('Tag key indicates anomaly alarm. Handling anomaly alarms');
-        const anomalyAlarms = await handleAnomalyAlarms(
-          config,
-          'RDS',
-          dbInstanceId,
-          [{Name: 'DBInstanceIdentifier', Value: dbInstanceId}],
-          updatedDefaults,
-        );
-        anomalyAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
-      } else {
-        log
-          .info()
-          .str('function', 'checkAndManageRDSStatusAlarms')
-          .str('dbInstanceId', dbInstanceId)
-          .msg('Tag key indicates static alarm. Handling static alarms');
-        const staticAlarms = await handleStaticAlarms(
-          config,
-          'RDS',
-          dbInstanceId,
-          [{Name: 'DBInstanceIdentifier', Value: dbInstanceId}],
-          updatedDefaults,
-        );
-        staticAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
-      }
-    } else {
-      log
-        .info()
-        .str('function', 'checkAndManageRDSStatusAlarms')
-        .str('dbInstanceId', dbInstanceId)
-        .str(
-          'alarm prefix: ',
-          buildAlarmName(
-            config,
-            'RDS',
-            dbInstanceId,
-            AlarmClassification.Warning,
-            'static',
-          ).replace('Warning', ''),
-        )
-        .msg(
-          'No default or overridden alarm values. Marking alarms for deletion.',
-        );
-    }
-  }
-  // Delete alarms that are not in the alarmsToKeep set
-  const existingAlarms = await getCWAlarmsForInstance('RDS', dbInstanceId);
-
-  // Log the full structure of retrieved alarms for debugging
-  log
-    .info()
-    .str('function', 'checkAndManageRDSStatusAlarms')
-    .obj('raw existing alarms', existingAlarms)
-    .msg('Fetched existing alarms before filtering');
-
-  // Log the expected pattern
-  const expectedPattern = `AutoAlarm-RDS-${dbInstanceId}`;
-  log
-    .info()
-    .str('function', 'checkAndManageRDSStatusAlarms')
-    .str('expected alarm pattern', expectedPattern)
-    .msg('Verifying alarms against expected naming pattern');
-
-  // Check and log if alarms match expected pattern
-  existingAlarms.forEach((alarm) => {
-    const matchesPattern = alarm.includes(expectedPattern);
-    log
-      .info()
-      .str('function', 'checkAndManageRDSStatusAlarms')
-      .str('alarm name', alarm)
-      .bool('matches expected pattern', matchesPattern)
-      .msg('Evaluating alarm name match');
+  await manageServiceAlarms({
+    service: 'RDS',
+    identifier: dbInstanceId,
+    tags,
+    configs: metricConfigs,
+    dimensions: [{Name: 'DBInstanceIdentifier', Value: dbInstanceId}],
   });
-
-  // Filter alarms that need deletion
-  const alarmsToDelete = existingAlarms.filter(
-    (alarm) => !alarmsToKeep.has(alarm),
-  );
-
-  log
-    .info()
-    .str('function', 'checkAndManageRDSStatusAlarms')
-    .obj('alarms to delete', alarmsToDelete)
-    .msg('Deleting alarms that are no longer needed');
-
-  await cloudWatchClient.send(
-    new DeleteAlarmsCommand({
-      AlarmNames: [...alarmsToDelete],
-    }),
-  );
-
-  log
-    .info()
-    .str('function', 'checkAndManageRDSStatusAlarms')
-    .str('dbInstanceId', dbInstanceId)
-    .msg('Finished alarm management process');
 }
 
 export async function manageInactiveRDSAlarms(
   dbInstanceId: string,
 ): Promise<void> {
   try {
-    await deleteExistingAlarms('RDS', dbInstanceId);
+    await deleteExistingAlarms('RDS', dbInstanceId, metricConfigs);
   } catch (e) {
     log
       .error()
@@ -312,51 +161,11 @@ function extractRDSInstanceIdFromArn(arn: string | null | undefined): string {
 
 /**
  * Searches the provided object for the first occurrence of an RDS ARN.
- * Serializes the object to a JSON string, looks for the substring "arn:aws:rds",
- * and then extracts everything up to the next quotation mark.
  * Logs an error and returns an empty string if no valid RDS ARN can be found.
- *
- * @param {Record<string, any>} eventObj - A JSON-serializable object to search for an RDS ARN.
- * @returns {string} The extracted RDS ARN, or an empty string if not found.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function findRDSArn(eventObj: Record<string, any>): string {
-  const eventString = JSON.stringify(eventObj);
-
-  // 1) Find where the ARN starts.
-  const startIndex = eventString.indexOf('arn:aws:rds');
-  if (startIndex === -1) {
-    log
-      .error()
-      .str('function', 'findRDSArn')
-      .obj('eventObj', eventObj)
-      .msg('No RDS ARN found in event');
-    return '';
-  }
-
-  // 2) Find the next quote after that.
-  const endIndex = eventString.indexOf('"', startIndex);
-  if (endIndex === -1) {
-    log
-      .error()
-      .str('function', 'findRDSArn')
-      .obj('eventObj', eventObj)
-      .msg('No ending quote found for RDS ARN');
-    return '';
-  }
-
-  // 3) Extract the ARN
-  const arn = eventString.substring(startIndex, endIndex);
-
-  log
-    .info()
-    .str('function', 'findRDSArn')
-    .str('arn', arn)
-    .str('startIndex', startIndex.toString())
-    .str('endIndex', endIndex.toString())
-    .msg('Extracted RDS ARN');
-
-  return arn;
+  return findArnInEvent(eventObj, 'arn:aws:rds');
 }
 
 export async function parseRDSEventAndCreateAlarms(

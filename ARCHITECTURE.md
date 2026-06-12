@@ -47,7 +47,9 @@ event-driven, dynamically responding to state and tag changes across these resou
 ### Special Considerations:
 
 - **Alerting**: If you are not a customer of the TrueMark Enterprise Operations Center, you will need to configure Alarm
-  notification routing via SNS or other custom integrations.
+  notification routing via SNS or other custom integrations. By design, alarms created by AutoAlarm carry no alarm
+  actions—TrueMark EOC observes alarm state changes via EventBridge, so non-EOC users must wire SNS (or another
+  integration) themselves.
 
 ## AWS Services Used
 

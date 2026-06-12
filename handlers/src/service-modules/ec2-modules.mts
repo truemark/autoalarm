@@ -6,7 +6,6 @@ import {
 import {ComparisonOperator} from '@aws-sdk/client-cloudwatch';
 import {
   CloudWatchClient,
-  DeleteAlarmsCommand,
   ListMetricsCommand,
   PutMetricAlarmCommand,
 } from '@aws-sdk/client-cloudwatch';
@@ -15,6 +14,7 @@ import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
   deleteAlarm,
   doesAlarmExist,
+  fetchResourceTags,
   getCWAlarmsForInstance,
   handleAnomalyAlarms,
   handleStaticAlarms,
@@ -37,7 +37,7 @@ import {
 const log: logging.Logger = logging.getLogger('ec2-modules');
 export const prometheusWorkspaceId: string =
   process.env.PROMETHEUS_WORKSPACE_ID || '';
-const region: string = process.env.AWS_REGION || '';
+const region = process.env.AWS_REGION;
 const retryStrategy = new ConfiguredRetryStrategy(20);
 const ec2Client: EC2Client = new EC2Client({
   region: region,
@@ -304,7 +304,7 @@ const metricConfigs = EC2_CONFIGS;
 export async function fetchInstanceTags(
   instanceId: string,
 ): Promise<{[key: string]: string}> {
-  try {
+  return fetchResourceTags('EC2', instanceId, async () => {
     const response = await ec2Client.send(
       new DescribeTagsCommand({
         Filters: [{Name: 'resource-id', Values: [instanceId]}],
@@ -318,29 +318,15 @@ export async function fetchInstanceTags(
       }
     });
 
-    log
-      .info()
-      .str('function', 'fetchInstanceTags')
-      .str('instanceId', instanceId)
-      .str('tags', JSON.stringify(tags))
-      .msg('Fetched instance tags');
-
     return tags;
-  } catch (error) {
-    log
-      .error()
-      .str('function', 'fetchInstanceTags')
-      .err(error)
-      .str('instanceId', instanceId)
-      .msg('Error fetching instance tags');
-    return {};
-  }
+  });
 }
 
 async function handleAlarmCreation(
   config: MetricAlarmConfig,
   instanceId: string,
   isWindows: boolean,
+  tagValue: string,
   updatedDefaults: MetricAlarmOptions,
   alarmType: 'anomaly' | 'static',
   alarmsToKeep: Set<string>,
@@ -355,14 +341,20 @@ async function handleAlarmCreation(
      * memory case handles both windows and linux instances.
      */
     case config.tagKey.includes('memory'): {
-      // Set the correct metric name before making the CloudWatch call
-      config.metricName = isWindows
-        ? 'Memory % Committed Bytes In Use'
-        : 'mem_used_percent';
+      // Resolve the correct metric name on a local copy of the config before
+      // making the CloudWatch call. Never mutate the shared EC2_CONFIGS
+      // objects: they are module-level and mutations leak across warm Lambda
+      // invocations and into the Prometheus path.
+      const resolvedConfig: MetricAlarmConfig = {
+        ...config,
+        metricName: isWindows
+          ? 'Memory % Committed Bytes In Use'
+          : 'mem_used_percent',
+      };
 
       const memoryMetricsExist = await getMemoryMetricsFromCloudWatch(
         instanceId,
-        config.metricName,
+        resolvedConfig.metricName,
       );
 
       if (memoryMetricsExist) {
@@ -375,7 +367,7 @@ async function handleAlarmCreation(
           );
 
         const alarms = await alarmFunction(
-          config,
+          resolvedConfig,
           'EC2',
           instanceId,
           [{Name: 'InstanceId', Value: instanceId}],
@@ -399,25 +391,34 @@ async function handleAlarmCreation(
      */
     case config.tagKey.includes('storage'): {
       /**
-       * Set the correct metric name before making the CloudWatch call
-       * Set thresholds based on the OS type
-       * set correct comparison operator based on the OS type
+       * Resolve the correct metric name on a local copy of the config before
+       * making the CloudWatch call (never mutate the shared EC2_CONFIGS
+       * objects). For Windows, the metric measures free space instead of used
+       * space, so apply the Windows-specific thresholds and comparison
+       * operator to the DEFAULTS and re-parse the tag value, so any user tag
+       * overrides still win over the Windows defaults.
        */
-      if (isWindows) {
-        config.metricName = 'LogicalDisk % Free Space';
-        updatedDefaults.warningThreshold = 15;
-        updatedDefaults.criticalThreshold = 10;
-        updatedDefaults.comparisonOperator =
-          ComparisonOperator.LessThanThreshold;
-      }
+      const resolvedConfig: MetricAlarmConfig = {
+        ...config,
+        metricName: isWindows
+          ? 'LogicalDisk % Free Space'
+          : 'disk_used_percent',
+      };
 
-      if (!isWindows) {
-        config.metricName = 'disk_used_percent';
+      let resolvedDefaults = updatedDefaults;
+      if (isWindows) {
+        const windowsDefaults: MetricAlarmOptions = {
+          ...config.defaults,
+          warningThreshold: 15,
+          criticalThreshold: 10,
+          comparisonOperator: ComparisonOperator.LessThanThreshold,
+        };
+        resolvedDefaults = parseMetricAlarmOptions(tagValue, windowsDefaults);
       }
 
       const storagePaths = await getStoragePathsFromCloudWatch(
         instanceId,
-        config.metricName,
+        resolvedConfig.metricName,
       );
 
       if (Object.keys(storagePaths).length > 0) {
@@ -437,11 +438,11 @@ async function handleAlarmCreation(
             );
 
           const alarms = await alarmFunction(
-            config,
+            resolvedConfig,
             'EC2',
             instanceId,
             [...dimensions_props],
-            updatedDefaults,
+            resolvedDefaults,
             path,
           );
           alarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
@@ -509,6 +510,7 @@ async function handleCloudWatchAlarms(
         config,
         instanceID,
         isWindows,
+        tagValue || '',
         updatedDefaults,
         config.tagKey.includes('anomaly') ? 'anomaly' : 'static',
         alarmsToKeep,
@@ -516,6 +518,12 @@ async function handleCloudWatchAlarms(
     }
   }
 
+  // EC2 intentionally keeps prefix-based reconciliation instead of the
+  // exact expected-name filtering used by other service modules: instance ids
+  // (i-xxxxxxxx) are fixed-format and cannot prefix-collide with another
+  // instance id, and EC2 storage alarms embed dynamic storage paths and
+  // platform-resolved metric names that cannot be precomputed from the
+  // configs alone.
   const existingAlarms = await getCWAlarmsForInstance('EC2', instanceID);
   const alarmsToDelete = existingAlarms.filter(
     (alarm) => !alarmsToKeep.has(alarm),
@@ -526,9 +534,7 @@ async function handleCloudWatchAlarms(
     .obj('alarms to delete', alarmsToDelete)
     .msg('Deleting unnecessary alarms');
 
-  await cloudWatchClient.send(
-    new DeleteAlarmsCommand({AlarmNames: alarmsToDelete}),
-  );
+  await massDeleteAlarms(alarmsToDelete);
 }
 
 // Helper function to get disabled alarms
@@ -551,7 +557,7 @@ export async function manageActiveEC2InstanceAlarms(
     const deletePrometheusAlarmsArray: EC2AlarmManagerArray = [];
 
     const instanceIDsReportingToPrometheus: string[] = prometheusWorkspaceId
-      ? await queryPrometheusForService('ec2', prometheusWorkspaceId, region)
+      ? await queryPrometheusForService('ec2', prometheusWorkspaceId, region!)
       : [];
 
     for (const {instanceID, tags, state} of activeInstancesInfoArray) {
@@ -566,6 +572,17 @@ export async function manageActiveEC2InstanceAlarms(
 
         const isWindows = ec2Metadata.platform?.includes('Windows') || false;
         const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
+
+        /*
+         * queryPrometheusForService returns a mix of instance IDs and bare
+         * private IPs (the 'instance' label is often ip:port, which is
+         * stripped to the bare IP), so membership must be checked against
+         * BOTH the instance ID and the instance's private IP.
+         */
+        const reportsToPrometheus =
+          instanceIDsReportingToPrometheus.includes(instanceID) ||
+          (!!ec2Metadata.privateIP &&
+            instanceIDsReportingToPrometheus.includes(ec2Metadata.privateIP));
 
         if (!isAlarmEnabled) {
           log
@@ -587,8 +604,7 @@ export async function manageActiveEC2InstanceAlarms(
         if (
           prometheusWorkspaceId &&
           (tags['autoalarm:target'] === 'prometheus' ||
-            (!tags['autoalarm:target'] &&
-              instanceIDsReportingToPrometheus.includes(instanceID)))
+            (!tags['autoalarm:target'] && reportsToPrometheus))
         ) {
           log
             .info()
@@ -612,11 +628,7 @@ export async function manageActiveEC2InstanceAlarms(
                 .obj('CWAlarmsToDelete', CWAlarmsToDelete)
                 .msg('Deleting CloudWatch alarms for instances with auto');
 
-              await cloudWatchClient.send(
-                new DeleteAlarmsCommand({
-                  AlarmNames: CWAlarmsToDelete,
-                }),
-              );
+              await massDeleteAlarms(CWAlarmsToDelete);
             }
           } catch (error) {
             log
@@ -633,10 +645,8 @@ export async function manageActiveEC2InstanceAlarms(
           prometheusArray.push({instanceID, tags, state, ec2Metadata});
         } else if (
           tags['autoalarm:target'] === 'cloudwatch' ||
-          (!tags['autoalarm:target'] &&
-            !instanceIDsReportingToPrometheus.includes(instanceID)) ||
-          (tags['autoalarm:target'] === 'prometheus' &&
-            !instanceIDsReportingToPrometheus.includes(instanceID))
+          (!tags['autoalarm:target'] && !reportsToPrometheus) ||
+          (tags['autoalarm:target'] === 'prometheus' && !reportsToPrometheus)
         ) {
           log
             .info()
@@ -647,7 +657,7 @@ export async function manageActiveEC2InstanceAlarms(
               'autoalarm target set to cloudwatch. Creating cloudwatch alarms in place of prometheus alarms',
             );
 
-          if (instanceIDsReportingToPrometheus.includes(instanceID)) {
+          if (reportsToPrometheus) {
             deletePrometheusAlarmsArray.push({
               instanceID,
               tags,
@@ -798,17 +808,27 @@ export async function manageInactiveInstanceAlarms(
   inactiveInstancesInfoArray: EC2AlarmManagerArray,
 ) {
   const instanceIPsReportingToPrometheus: string[] = prometheusWorkspaceId
-    ? await queryPrometheusForService('ec2', prometheusWorkspaceId, region)
+    ? await queryPrometheusForService('ec2', prometheusWorkspaceId, region!)
     : [];
 
   const CWAlarmsToDelete: string[] = [];
   const prometheusAlarmsToDelete: EC2AlarmManagerArray = [];
   for (const instanceInfo of inactiveInstancesInfoArray) {
     const ec2MetaData = await getInstanceDetails(instanceInfo.instanceID);
-    //const privateIP = ec2MetaData.privateIP || '';
+
+    /*
+     * queryPrometheusForService returns a mix of instance IDs and bare private
+     * IPs (the 'instance' label is often ip:port, which is stripped to the
+     * bare IP), so membership must be checked against BOTH the instance ID and
+     * the instance's private IP.
+     */
+    const reportsToPrometheus =
+      instanceIPsReportingToPrometheus.includes(instanceInfo.instanceID) ||
+      (!!ec2MetaData.privateIP &&
+        instanceIPsReportingToPrometheus.includes(ec2MetaData.privateIP));
 
     // Check if instance reports to Prometheus and process Prometheus alarm deletion
-    if (instanceIPsReportingToPrometheus.includes(instanceInfo.instanceID)) {
+    if (reportsToPrometheus) {
       prometheusAlarmsToDelete.push({
         instanceID: instanceInfo.instanceID,
         tags: instanceInfo.tags,
@@ -824,12 +844,9 @@ export async function manageInactiveInstanceAlarms(
     CWAlarmsToDelete.push(...existingAlarms);
   }
   try {
-    // Delete all cw alarms for instance.
-    await cloudWatchClient.send(
-      new DeleteAlarmsCommand({
-        AlarmNames: CWAlarmsToDelete,
-      }),
-    );
+    // Delete all cw alarms for instance. massDeleteAlarms chunks the names to
+    // stay within the DeleteAlarms API limit of 100 names per call.
+    await massDeleteAlarms(CWAlarmsToDelete);
 
     // Delete all prometheus alarms for instance if they exist.
     if (prometheusAlarmsToDelete.length > 0) {
@@ -877,12 +894,8 @@ export async function getEC2IdAndState(
 
 export const liveStates: Set<ValidInstanceState> = new Set([
   ValidInstanceState.Running,
-  //ValidInstanceState.Pending,
 ]);
 
 export const deadStates: Set<ValidInstanceState> = new Set([
   ValidInstanceState.Terminated,
-  //ValidInstanceState.Stopping, //for testing.
-  //ValidInstanceState.Stopped, //for testing.
-  //ValidInstanceState.ShuttingDown, //for testing.
 ]);

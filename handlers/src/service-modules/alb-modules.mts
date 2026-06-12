@@ -3,202 +3,67 @@ import {
   ElasticLoadBalancingV2Client,
 } from '@aws-sdk/client-elastic-load-balancing-v2';
 import * as logging from '@nr1e/logging';
-import {
-  LoadBalancerIdentifiers,
-  Tag,
-  AlarmClassification,
-} from '../types/index.mjs';
-import {
-  CloudWatchClient,
-  DeleteAlarmsCommand,
-} from '@aws-sdk/client-cloudwatch';
+import {LoadBalancerIdentifiers, Tag} from '../types/index.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
   deleteExistingAlarms,
-  buildAlarmName,
-  handleAnomalyAlarms,
-  handleStaticAlarms,
-  getCWAlarmsForInstance,
-  parseMetricAlarmOptions,
+  fetchResourceTags,
+  manageServiceAlarms,
 } from '../alarm-configs/utils/index.mjs';
 import {ALB_CONFIGS} from '../alarm-configs/_index.mjs';
 
 const log: logging.Logger = logging.getLogger('alb-modules');
-const region: string = process.env.AWS_REGION || '';
+const region = process.env.AWS_REGION;
 const retryStrategy = new ConfiguredRetryStrategy(20);
 const elbClient: ElasticLoadBalancingV2Client =
   new ElasticLoadBalancingV2Client({
     region,
     retryStrategy,
   });
-const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
-  region: region,
-  retryStrategy: retryStrategy,
-});
 
 const metricConfigs = ALB_CONFIGS;
 
 export async function fetchALBTags(loadBalancerArn: string): Promise<Tag> {
-  try {
-    const command = new DescribeTagsCommand({
-      ResourceArns: [loadBalancerArn],
-    });
-    const response = await elbClient.send(command);
-    const tags: Tag = {};
-
-    response.TagDescriptions?.forEach((tagDescription) => {
-      tagDescription.Tags?.forEach((tag) => {
-        if (tag.Key && tag.Value) {
-          tags[tag.Key] = tag.Value;
-        }
+  return fetchResourceTags(
+    'ALB',
+    loadBalancerArn,
+    async () => {
+      const command = new DescribeTagsCommand({
+        ResourceArns: [loadBalancerArn],
       });
-    });
+      const response = await elbClient.send(command);
+      const tags: Tag = {};
 
-    log
-      .info()
-      .str('function', 'fetchALBTags')
-      .str('loadBalancerArn', loadBalancerArn)
-      .str('tags', JSON.stringify(tags))
-      .msg('Fetched ALB tags');
+      response.TagDescriptions?.forEach((tagDescription) => {
+        tagDescription.Tags?.forEach((tag) => {
+          if (tag.Key && tag.Value) {
+            tags[tag.Key] = tag.Value;
+          }
+        });
+      });
 
-    return tags;
-  } catch (error) {
-    log
-      .error()
-      .str('function', 'fetchALBTags')
-      .err(error)
-      .str('loadBalancerArn', loadBalancerArn)
-      .msg('Error fetching ALB tags');
-    return {};
-  }
-}
-
-async function checkAndManageALBStatusAlarms(
-  loadBalancerName: string,
-  tags: Tag,
-) {
-  log
-    .info()
-    .str('function', 'checkAndManageALBStatusAlarms')
-    .str('LoadBalancerName', loadBalancerName)
-    .msg('Starting alarm management process');
-
-  const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
-  if (!isAlarmEnabled) {
-    log
-      .info()
-      .str('function', 'checkAndManageALBStatusAlarms')
-      .str('LoadBalancerName', loadBalancerName)
-      .msg('Alarm creation disabled by tag settings');
-    await deleteExistingAlarms('ALB', loadBalancerName);
-    return;
-  }
-
-  const alarmsToKeep = new Set<string>();
-
-  for (const config of metricConfigs) {
-    log
-      .info()
-      .str('function', 'checkAndManageALBStatusAlarms')
-      .obj('config', config)
-      .str('LoadBalancerName', loadBalancerName)
-      .msg('Processing metric configuration');
-
-    const tagValue = tags[`autoalarm:${config.tagKey}`];
-    const updatedDefaults = parseMetricAlarmOptions(
-      tagValue || '',
-      config.defaults,
-    );
-
-    if (config.defaultCreate || tagValue !== undefined) {
-      if (config.tagKey.includes('anomaly')) {
-        log
-          .info()
-          .str('function', 'checkAndManageALBStatusAlarms')
-          .str('LoadBalancerName', loadBalancerName)
-          .msg('Tag key indicates anomaly alarm. Handling anomaly alarms');
-        const anomalyAlarms = await handleAnomalyAlarms(
-          config,
-          'ALB',
-          loadBalancerName,
-          [{Name: 'LoadBalancer', Value: loadBalancerName}],
-          updatedDefaults,
-        );
-        anomalyAlarms.forEach((alarmName: string) =>
-          alarmsToKeep.add(alarmName),
-        );
-      } else {
-        log
-          .info()
-          .str('function', 'checkAndManageALBStatusAlarms')
-          .str('LoadBalancerName', loadBalancerName)
-          .msg('Tag key indicates static alarm. Handling static alarms');
-        const staticAlarms = await handleStaticAlarms(
-          config,
-          'ALB',
-          loadBalancerName,
-          [{Name: 'LoadBalancer', Value: loadBalancerName}],
-          updatedDefaults,
-        );
-        staticAlarms.forEach((alarmName: string) =>
-          alarmsToKeep.add(alarmName),
-        );
-      }
-    } else {
-      log
-        .info()
-        .str('function', 'checkAndManageALBStatusAlarms')
-        .str('LoadBalancerName', loadBalancerName)
-        .str(
-          'alarm prefix: ',
-          buildAlarmName(
-            config,
-            'ALB',
-            loadBalancerName,
-            AlarmClassification.Warning,
-            'static',
-          ).replace('Warning', ''),
-        )
-        .msg(
-          'No default or overridden alarm values. Marking alarms for deletion.',
-        );
-    }
-  }
-
-  // Delete alarms that are not in the alarmsToKeep set
-  const existingAlarms = await getCWAlarmsForInstance('ALB', loadBalancerName);
-  const alarmsToDelete = existingAlarms.filter(
-    (alarm: string) => !alarmsToKeep.has(alarm),
+      return tags;
+    },
+    'return-empty',
   );
-
-  log
-    .info()
-    .str('function', 'checkAndManageALBStatusAlarms')
-    .obj('alarms to delete', alarmsToDelete)
-    .msg('Deleting alarms that are no longer needed');
-  await cloudWatchClient.send(
-    new DeleteAlarmsCommand({
-      AlarmNames: [...alarmsToDelete],
-    }),
-  );
-
-  log
-    .info()
-    .str('function', 'checkAndManageALBStatusAlarms')
-    .str('LoadBalancerName', loadBalancerName)
-    .msg('Finished alarm management process');
 }
 
 export async function manageALBAlarms(
   loadBalancerName: string,
   tags: Tag,
 ): Promise<void> {
-  await checkAndManageALBStatusAlarms(loadBalancerName, tags);
+  await manageServiceAlarms({
+    service: 'ALB',
+    identifier: loadBalancerName,
+    tags,
+    configs: metricConfigs,
+    dimensions: [{Name: 'LoadBalancer', Value: loadBalancerName}],
+  });
 }
 
 export async function manageInactiveALBAlarms(loadBalancerName: string) {
   try {
-    await deleteExistingAlarms('ALB', loadBalancerName);
+    await deleteExistingAlarms('ALB', loadBalancerName, metricConfigs);
   } catch (e) {
     log
       .error()
@@ -209,7 +74,17 @@ export async function manageInactiveALBAlarms(loadBalancerName: string) {
   }
 }
 
-function extractAlbNameFromArn(arn: string): LoadBalancerIdentifiers {
+function extractAlbNameFromArn(
+  arn: string | undefined | null,
+): LoadBalancerIdentifiers {
+  // Classic ELB events carry a loadBalancerName instead of an ARN, so the
+  // input may be undefined. Treat that as an unsupported load balancer.
+  if (!arn) {
+    return {
+      LBType: null,
+      LBName: null,
+    };
+  }
   const regex = /\/(app|net)\/(.*?\/[^/]+)$/;
   const match = arn.match(regex);
   if (!match)
@@ -217,9 +92,11 @@ function extractAlbNameFromArn(arn: string): LoadBalancerIdentifiers {
       LBType: null,
       LBName: null,
     };
+  // The CloudWatch AWS/ApplicationELB LoadBalancer dimension requires the
+  // type prefix (e.g. 'app/my-alb/1234567890abcdef'), so keep it in the name.
   return {
     LBType: match[1] as 'app' | 'net',
-    LBName: match[2],
+    LBName: `${match[1]}/${match[2]}`,
   };
 }
 
@@ -252,7 +129,7 @@ export async function parseALBEventAndCreateAlarms(event: any): Promise<{
       switch (event.detail.eventName) {
         case 'CreateLoadBalancer':
           loadBalancerArn =
-            event.detail.responseElements?.loadBalancers[0]?.loadBalancerArn;
+            event.detail.responseElements?.loadBalancers?.[0]?.loadBalancerArn;
           eventType = 'Create';
           log
             .info()
@@ -309,13 +186,18 @@ export async function parseALBEventAndCreateAlarms(event: any): Promise<{
   }
 
   const loadBalancer = extractAlbNameFromArn(loadBalancerArn);
-  if (loadBalancer.LBType === null) {
+  if (loadBalancer.LBType === null || loadBalancer.LBName === null) {
     log
-      .error()
+      .warn()
       .str('function', 'parseALBEventAndCreateAlarms')
       .str('loadBalancerArn', loadBalancerArn)
       .obj('Load Balancer Identifiers', loadBalancer)
-      .msg('Extracted load balancer name is empty');
+      .msg(
+        'Unable to extract an application or network load balancer name from the event. ' +
+          'This is likely a Classic or Gateway load balancer which AutoAlarm does not support. Skipping processing.',
+      );
+    // return early to avoid processing unsupported load balancers
+    return;
   }
 
   // TODO: we can use this conditional as an entry point to manage nlbs in the future as we build this out.
@@ -323,7 +205,7 @@ export async function parseALBEventAndCreateAlarms(event: any): Promise<{
    *
    * gracefully logging a warning for now if a network load balancer has been tagged.
    */
-  if (loadBalancer.LBType!.includes('net')) {
+  if (loadBalancer.LBType.includes('net')) {
     log
       .warn()
       .str('function', 'parseALBEventAndCreateAlarms')
@@ -352,14 +234,14 @@ export async function parseALBEventAndCreateAlarms(event: any): Promise<{
       .str('function', 'parseALBEventAndCreateAlarms')
       .str('loadBalancerArn', loadBalancerArn)
       .msg('Starting to manage ALB alarms');
-    await manageALBAlarms(loadBalancer.LBName!, tags);
+    await manageALBAlarms(loadBalancer.LBName, tags);
   } else if (eventType === 'Delete') {
     log
       .info()
       .str('function', 'parseALBEventAndCreateAlarms')
       .str('loadBalancerArn', loadBalancerArn)
       .msg('Starting to manage inactive ALB alarms');
-    await manageInactiveALBAlarms(loadBalancer.LBName!);
+    await manageInactiveALBAlarms(loadBalancer.LBName);
   }
 
   return {loadBalancerArn, eventType, tags};

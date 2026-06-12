@@ -8,7 +8,7 @@ import {
 } from 'aws-cdk-lib/aws-iam';
 import {Construct} from 'constructs';
 import * as path from 'path';
-import {Duration} from 'aws-cdk-lib';
+import {ArnFormat, Duration, Stack} from 'aws-cdk-lib';
 import {Architecture} from 'aws-cdk-lib/aws-lambda';
 import {SqsEventSource} from 'aws-cdk-lib/aws-lambda-event-sources';
 import {NoBreachingExtendedQueue} from './extended-libs-subconstruct';
@@ -50,6 +50,9 @@ export class ReAlarmConsumer extends Construct {
         batchSize: 10,
         reportBatchItemFailures: true,
         enabled: true,
+        // Caps concurrent pollers to protect CloudWatch control-plane TPS
+        // (SetAlarmState). Tunable starting point.
+        maxConcurrency: 10,
       }),
     );
   }
@@ -79,7 +82,9 @@ export class ReAlarmConsumer extends Construct {
         fifo: true,
         contentBasedDeduplication: true,
         retentionPeriod: Duration.days(14),
-        visibilityTimeout: Duration.seconds(900),
+        // ~6x the consumer Lambda timeout (900s) per AWS guidance for Lambda
+        // event source queues.
+        visibilityTimeout: Duration.seconds(5400),
         deadLetterQueue: {queue: reAlarmConsumerDLQ, maxReceiveCount: 3},
       },
     );
@@ -95,7 +100,7 @@ export class ReAlarmConsumer extends Construct {
   private createRole(reAlarmConsumerQueueArn: string): IRole {
     /**
      * Set up the IAM roles for the ReAlarm Consumer function
-     * Allow the consumer to describe alarms and list tags
+     * Allow the consumer to describe alarms
      * Allow the consumer to set alarm state
      * Allow the consumer to write to CloudWatch Logs
      * Allow Consumer to consume messages from the Consumer queue
@@ -105,27 +110,47 @@ export class ReAlarmConsumer extends Construct {
       description: 'Execution role for ReAlarm Consumer Lambda function',
     });
 
+    // ReAlarm intentionally operates on every alarm in the account (opt-out
+    // via the autoalarm:re-alarm-enabled=false tag), but SetAlarmState can
+    // still be scoped to alarm ARNs in this account/region rather than '*'.
     reAlarmConsumerRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
-        actions: [
-          'cloudwatch:DescribeAlarms',
-          'cloudwatch:SetAlarmState',
-          'cloudwatch:ListTagsForResource',
+        actions: ['cloudwatch:SetAlarmState'],
+        resources: [
+          Stack.of(this).formatArn({
+            service: 'cloudwatch',
+            resource: 'alarm',
+            resourceName: '*',
+            arnFormat: ArnFormat.COLON_RESOURCE_NAME,
+          }),
         ],
+      }),
+    );
+
+    // DescribeAlarms is a read/list operation that must run against all
+    // alarms in the account. ListTagsForResource is no longer needed: the
+    // producer resolves all tag-derived facts (bulk Tagging API sweep /
+    // single-alarm lookup) and embeds them in each SQS message.
+    reAlarmConsumerRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['cloudwatch:DescribeAlarms'],
         resources: ['*'],
       }),
     );
 
+    // The log group is created and managed by CDK (ExtendedNodejsFunction),
+    // so logs:CreateLogGroup is not needed; the function name is
+    // CDK-generated, so writes are scoped to the Lambda log-group namespace
+    // rather than '*'.
     reAlarmConsumerRole.addToPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
-        resources: ['*'],
-        actions: [
-          'logs:CreateLogGroup',
-          'logs:CreateLogStream',
-          'logs:PutLogEvents',
+        resources: [
+          `arn:aws:logs:${Stack.of(this).region}:${Stack.of(this).account}:log-group:/aws/lambda/*:*`,
         ],
+        actions: ['logs:CreateLogStream', 'logs:PutLogEvents'],
       }),
     );
 

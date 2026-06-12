@@ -28,12 +28,14 @@ export const singleValSchema = pipe(
   string(),
   check(
     (value: string) => {
-      // Regexes
-      const isValidSingleStat = /^IQM$|(p|tm|tc|ts|wm)[1-9][0-9]?$/;
+      // Anchored across the whole expression (so e.g. "maxp95" is rejected) and
+      // supports decimal percentiles (p99.9) as well as 100 (p100).
+      const isValidSingleStat =
+        /^(IQM|(p|tm|tc|ts|wm)(100|[0-9]{1,2}(\.[0-9]+)?))$/;
       return isValidSingleStat.test(value);
     },
     (value) =>
-      `Invalid statistic "${value}" - Must be one of the following formats: IQM, p1, tm22, tc3, ts4, wm59`,
+      `Invalid statistic "${value}" - Must be one of the following formats: IQM, p1, p99.9, p100, tm22, tc3, ts4, wm59`,
   ),
 );
 

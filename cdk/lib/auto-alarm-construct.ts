@@ -2,14 +2,18 @@ import {Construct} from 'constructs';
 import {AutoAlarm} from './main-function-subsconstruct';
 import {ReAlarmProducer} from './realarm-producer-subconstruct';
 import {ReAlarmConsumer} from './realarm-consumer-subconstruct';
-import {Stack} from 'aws-cdk-lib';
+import {Duration, Stack} from 'aws-cdk-lib';
+import {Queue, QueueEncryption} from 'aws-cdk-lib/aws-sqs';
+import {PolicyStatement, ServicePrincipal} from 'aws-cdk-lib/aws-iam';
 import {ReAlarmTagEventHandler} from './realarm-tag-event-subconstruct';
 import {EventRules} from './service-eventbridge-subconstruct';
 import {SqsHandlerSubConstruct} from './sqs-handler-subconstruct';
+import {CronOptions} from 'aws-cdk-lib/aws-events';
 
 interface AutoAlarmConstructProps {
   readonly prometheusWorkspaceId?: string;
   readonly enableReAlarm?: boolean;
+  readonly reAlarmSchedule?: CronOptions;
 }
 
 export class AutoAlarmConstruct extends Construct {
@@ -29,6 +33,42 @@ export class AutoAlarmConstruct extends Construct {
 
     const enableReAlarm = props.enableReAlarm ?? true;
 
+    /**
+     * Shared dead-letter queue for all EventBridge rule targets. Events that
+     * EventBridge cannot deliver to a target after its retry policy is
+     * exhausted land here instead of being dropped.
+     *
+     * We add a single account-scoped resource policy here rather than letting
+     * CDK auto-generate one statement per EventBridge rule target (25+ rules
+     * would exceed the SQS 20 KB policy size limit).  Sub-constructs receive
+     * an imported queue reference so CDK's automatic per-rule grants are
+     * suppressed while the DeadLetterConfig.Arn is still set correctly on
+     * every EventBridge target.
+     */
+    const eventRuleTargetDLQ = new Queue(this, 'EventRuleTargetDLQ', {
+      encryption: QueueEncryption.SQS_MANAGED,
+      retentionPeriod: Duration.days(14),
+    });
+
+    eventRuleTargetDLQ.addToResourcePolicy(
+      new PolicyStatement({
+        principals: [new ServicePrincipal('events.amazonaws.com')],
+        actions: ['sqs:SendMessage'],
+        resources: [eventRuleTargetDLQ.queueArn],
+        conditions: {
+          StringEquals: {'aws:SourceAccount': accountId},
+        },
+      }),
+    );
+
+    // Imported reference: addToResourcePolicy is a no-op on imported queues,
+    // preventing CDK from appending per-rule SQS policy statements.
+    const eventRuleTargetDLQRef = Queue.fromQueueArn(
+      this,
+      'EventRuleTargetDLQRef',
+      eventRuleTargetDLQ.queueArn,
+    );
+
     if (enableReAlarm) {
       /**
        * If reAlarm is enabled, create the ReAlarm Consumer, Producer and tag event handler objects
@@ -47,6 +87,8 @@ export class AutoAlarmConstruct extends Construct {
         accountId,
         this.reAlarmConsumer.reAlarmConsumerQueue.queueArn,
         this.reAlarmConsumer.reAlarmConsumerQueue.queueUrl,
+        eventRuleTargetDLQRef,
+        props.reAlarmSchedule,
       );
 
       this.reAlarmTagEventHandler = new ReAlarmTagEventHandler(
@@ -55,6 +97,7 @@ export class AutoAlarmConstruct extends Construct {
         region,
         accountId,
         this.reAlarmProducer.lambdaFunction.functionArn,
+        eventRuleTargetDLQRef,
       );
 
       /**
@@ -109,6 +152,7 @@ export class AutoAlarmConstruct extends Construct {
       this,
       'ServiceEventRules',
       this.sqsHandler.eventSourceQueues,
+      eventRuleTargetDLQRef,
     );
   }
 }

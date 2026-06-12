@@ -1,6 +1,10 @@
 {
-  "name": "autoalarm",
-  "version": "1.14.3",
+  "name": "@truemark/autoalarm",
+  "version": "1.14.4",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  },
   "scripts": {
     "install-handlers": "cd handlers && pnpm i --frozen-lockfile",
     "install-cdk": "cd cdk && pnpm i --frozen-lockfile",
@@ -21,7 +25,6 @@
     "clean-cdk-lib": "cd cdk/lib ; find . -type f \\( -name '*.d.ts' -o -name '*.js' \\) -delete",
     "clean-cdk-bin": "cd cdk/bin ; find . -type f \\( -name '*.d.ts' -o -name '*.js' \\) -delete",
     "clean": "concurrently \"pnpm:clean-handlers\" \"pnpm:clean-cdk-lib\" \"pnpm:clean-cdk-bin\" -c blue,green,yellow",
-    "create-cw-configs": "tsx handlers/src/alarm-configs/cloudwatch-alarms/_template-configs.mts",
     "watch-cdk": "cd cdk && cdk watch",
     "deploy-cdk": "cd cdk && cdk deploy",
     "destroy-cdk": "cd cdk && cdk destroy",
@@ -29,14 +32,6 @@
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
-    "prettier": "^3.6.2",
-    "tsx": "^4.20.6",
-    "valibot": "^1.1.0"
-  },
-  "dependencies": {
-    "@aws-sdk/credential-provider-node": "^3.934.0",
-    "@aws-sdk/protocol-http": "^3.374.0",
-    "@aws-sdk/signature-v4": "^3.374.0",
-    "aws4": "^1.13.2"
+    "prettier": "^3.6.2"
   }
 }

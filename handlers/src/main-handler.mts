@@ -7,11 +7,12 @@ import {
 } from 'aws-lambda';
 import * as logging from '@nr1e/logging';
 import * as ServiceModules from './service-modules/_index.mjs';
+import {routeEvent} from './event-router.mjs';
 import {EC2AlarmManagerArray} from './types/index.mjs';
 
 // Initialize logging
 //TODO: maybe initialize logging in src so we can get child loggers across all modules
-const level = process.env.LOG_LEVEL || 'trace';
+const level = process.env.LOG_LEVEL || 'info';
 if (!logging.isLevel(level)) {
   throw new Error(`Invalid log level: ${level}`);
 }
@@ -21,105 +22,172 @@ const log = logging.initialize({
   level,
 });
 
-// TODO Fix the use of any
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function processEC2Event(events: any[]): Promise<void> {
+/**
+ * Pairs a parsed event body with the SQS record it came from so that
+ * failures during deferred EC2 processing can be reported per record.
+ */
+interface EC2EventRecord {
+  // TODO Fix the use of any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  event: any;
+  record: SQSRecord;
+}
+
+/**
+ * Processes accumulated EC2 instance state-change events. Returns the SQS
+ * records whose events could not be processed so the handler can report them
+ * as batch item failures without failing the whole batch.
+ */
+async function processEC2Event(
+  eventRecords: EC2EventRecord[],
+): Promise<SQSRecord[]> {
   const activeInstancesInfoArray: EC2AlarmManagerArray = [];
   const inactiveInstancesInfoArray: EC2AlarmManagerArray = [];
+  const activeRecords: SQSRecord[] = [];
+  const inactiveRecords: SQSRecord[] = [];
+  const failedRecords: SQSRecord[] = [];
 
-  for (const event of events) {
-    const instanceId = event.detail['instance-id'];
-    const state = event.detail.state;
-    const tags = await ServiceModules.fetchInstanceTags(instanceId);
+  for (const {event, record} of eventRecords) {
+    try {
+      const instanceId = event.detail['instance-id'];
+      const state = event.detail.state;
+      const tags = await ServiceModules.fetchInstanceTags(instanceId);
 
-    if (
-      instanceId &&
-      ServiceModules.liveStates.has(state) &&
-      tags['autoalarm:enabled'] === 'true'
-    ) {
-      activeInstancesInfoArray.push({
-        instanceID: instanceId,
-        tags: tags,
-        state: state,
-      });
-    } else if (
-      (ServiceModules.deadStates.has(state) &&
-        tags['autoalarm:enabled'] === 'false') ||
-      (tags['autoalarm:enabled'] === 'true' &&
-        ServiceModules.deadStates.has(state)) ||
-      !tags['autoalarm:enabled']
-    ) {
-      inactiveInstancesInfoArray.push({
-        instanceID: instanceId,
-        tags: tags,
-        state: state,
-      });
+      // checking our liveStates set to see if the instance is in a state that we should be managing alarms for.
+      if (
+        instanceId &&
+        ServiceModules.liveStates.has(state) &&
+        tags['autoalarm:enabled'] === 'true'
+      ) {
+        activeInstancesInfoArray.push({
+          instanceID: instanceId,
+          tags: tags,
+          state: state,
+        });
+        activeRecords.push(record);
+      } else if (
+        ServiceModules.deadStates.has(state) ||
+        !tags['autoalarm:enabled']
+      ) {
+        // An instance in a dead state (regardless of the autoalarm:enabled tag
+        // value) or without the autoalarm:enabled tag takes the inactive path
+        // so its alarms are cleaned up.
+        inactiveInstancesInfoArray.push({
+          instanceID: instanceId,
+          tags: tags,
+          state: state,
+        });
+        inactiveRecords.push(record);
+      }
+    } catch (error) {
+      log
+        .error()
+        .str('function', 'processEC2Event')
+        .str('messageId', record.messageId)
+        .err(error)
+        .msg('Error processing EC2 event');
+      failedRecords.push(record);
     }
-    // checking our liveStates set to see if the instance is in a state that we should be managing alarms for.
-    // we are iterating over the AlarmClassification enum to manage alarms for each classification: 'Critical'|'Warning'.
-    if (activeInstancesInfoArray.length > 0) {
+  }
+
+  // Manage alarms once with the fully accumulated arrays (matches the shape
+  // of processEC2TagEvent) instead of re-running the managers per event.
+  if (activeInstancesInfoArray.length > 0) {
+    try {
       await ServiceModules.manageActiveEC2InstanceAlarms(
         activeInstancesInfoArray,
       );
+    } catch (error) {
+      log.error().err(error).msg('Error managing active EC2 instance alarms');
+      failedRecords.push(...activeRecords);
     }
+  }
 
-    // If the instance is in a state that we should not be managing alarms for, we will remove the alarms.
-    if (inactiveInstancesInfoArray.length > 0) {
+  // If the instance is in a state that we should not be managing alarms for, we will remove the alarms.
+  if (inactiveInstancesInfoArray.length > 0) {
+    try {
       await ServiceModules.manageInactiveInstanceAlarms(
         inactiveInstancesInfoArray,
       );
+    } catch (error) {
+      log.error().err(error).msg('Error managing inactive EC2 instance alarms');
+      failedRecords.push(...inactiveRecords);
     }
   }
+
+  return failedRecords;
 }
 
-// TODO Fix the use of any
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function processEC2TagEvent(events: any[]) {
+/**
+ * Processes accumulated EC2 tag events. Returns the SQS records whose events
+ * could not be processed so the handler can report them as batch item
+ * failures without failing the whole batch.
+ */
+async function processEC2TagEvent(
+  eventRecords: EC2EventRecord[],
+): Promise<SQSRecord[]> {
   const activeInstancesInfoArray: EC2AlarmManagerArray = [];
   const inactiveInstancesInfoArray: EC2AlarmManagerArray = [];
-  for (const event of events) {
-    const {instanceId, state} = await ServiceModules.getEC2IdAndState(event);
-    const tags = await ServiceModules.fetchInstanceTags(instanceId);
-    if (tags['autoalarm:enabled'] === 'false') {
-      inactiveInstancesInfoArray.push({
-        instanceID: instanceId,
-        tags: tags,
-        state: state,
-      });
+  const activeRecords: SQSRecord[] = [];
+  const inactiveRecords: SQSRecord[] = [];
+  const failedRecords: SQSRecord[] = [];
+
+  for (const {event, record} of eventRecords) {
+    try {
+      const {instanceId, state} = await ServiceModules.getEC2IdAndState(event);
+      const tags = await ServiceModules.fetchInstanceTags(instanceId);
+      if (tags['autoalarm:enabled'] === 'false') {
+        inactiveInstancesInfoArray.push({
+          instanceID: instanceId,
+          tags: tags,
+          state: state,
+        });
+        inactiveRecords.push(record);
+        log
+          .info()
+          .str('function', 'processEC2TagEvent')
+          .str('instanceId', instanceId)
+          .str('autoalarm:enabled', tags['autoalarm:enabled'])
+          .msg(
+            'autoalarm:enabled tag set to false. Adding to inactiveInstancesInfoArray for alarm deletion',
+          );
+      } else if (
+        tags['autoalarm:enabled'] === 'true' &&
+        instanceId &&
+        ServiceModules.liveStates.has(state)
+      ) {
+        activeInstancesInfoArray.push({
+          instanceID: instanceId,
+          tags: tags,
+          state: state,
+        });
+        activeRecords.push(record);
+      } else if (
+        !tags['autoalarm:enabled'] ||
+        tags['autoalarm:enabled'] === undefined
+      ) {
+        inactiveInstancesInfoArray.push({
+          instanceID: instanceId,
+          tags: tags,
+          state: state,
+        });
+        inactiveRecords.push(record);
+        log
+          .info()
+          .str('function', 'processEC2TagEvent')
+          .str('instanceId', instanceId)
+          .msg(
+            'autoalarm:enabled tag not found. Adding to inactiveInstancesInfoArray for alarm deletion',
+          );
+      }
+    } catch (error) {
       log
-        .info()
+        .error()
         .str('function', 'processEC2TagEvent')
-        .str('instanceId', instanceId)
-        .str('autoalarm:enabled', tags['autoalarm:enabled'])
-        .msg(
-          'autoalarm:enabled tag set to false. Adding to inactiveInstancesInfoArray for alarm deletion',
-        );
-    } else if (
-      tags['autoalarm:enabled'] === 'true' &&
-      instanceId &&
-      ServiceModules.liveStates.has(state)
-    ) {
-      activeInstancesInfoArray.push({
-        instanceID: instanceId,
-        tags: tags,
-        state: state,
-      });
-    } else if (
-      !tags['autoalarm:enabled'] ||
-      tags['autoalarm:enabled'] === undefined
-    ) {
-      inactiveInstancesInfoArray.push({
-        instanceID: instanceId,
-        tags: tags,
-        state: state,
-      });
-      log
-        .info()
-        .str('function', 'processEC2TagEvent')
-        .str('instanceId', instanceId)
-        .msg(
-          'autoalarm:enabled tag not found. Adding to inactiveInstancesInfoArray for alarm deletion',
-        );
+        .str('messageId', record.messageId)
+        .err(error)
+        .msg('Error processing EC2 tag event');
+      failedRecords.push(record);
     }
   }
 
@@ -130,7 +198,7 @@ async function processEC2TagEvent(events: any[]) {
       );
     } catch (error) {
       log.error().err(error).msg('Error managing active EC2 instance alarms');
-      throw new Error('Error managing active EC2 instance alarms');
+      failedRecords.push(...activeRecords);
     }
   }
 
@@ -141,86 +209,11 @@ async function processEC2TagEvent(events: any[]) {
       );
     } catch (error) {
       log.error().err(error).msg('Error managing inactive EC2 instance alarms');
-      throw new Error('Error managing inactive EC2 instance alarms');
+      failedRecords.push(...inactiveRecords);
     }
   }
-}
 
-// TODO Fix the use of any
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function routeTagEvent(event: any) {
-  const detail = event.detail;
-  const resourceType = detail['resource-type'];
-  const service = detail.service;
-
-  log
-    .info()
-    .str('function', 'routeTagEvent')
-    .str('resourceType', resourceType)
-    .str('service', service)
-    .msg('Processing tag event');
-
-  switch (service) {
-    case 'transit-gateway':
-      await ServiceModules.parseTransitGatewayEventAndCreateAlarms(event);
-      break;
-
-    case 'vpn-connection':
-      await ServiceModules.parseVpnEventAndCreateAlarms(event);
-      break;
-
-    case 'elasticloadbalancing':
-      switch (resourceType) {
-        case 'loadbalancer':
-          await ServiceModules.parseALBEventAndCreateAlarms(event);
-          break;
-
-        case 'targetgroup':
-          await ServiceModules.parseTGEventAndCreateAlarms(event);
-          break;
-
-        default:
-          log
-            .warn()
-            .str('function', 'routeTagEvent')
-            .msg(`Unhandled resource type for ELB: ${resourceType}`);
-          break;
-      }
-      break;
-
-    case 'es':
-      await ServiceModules.parseOSEventAndCreateAlarms(event);
-      break;
-
-    case 'route53resolver':
-      await ServiceModules.parseR53ResolverEventAndCreateAlarms(event);
-      break;
-
-    case 'cloudfront':
-      await ServiceModules.parseCloudFrontEventAndCreateAlarms(event);
-      break;
-
-    case 'rds':
-      if (resourceType === 'cluster') {
-        await ServiceModules.parseRDSClusterEventAndCreateAlarms(event);
-      } else if (resourceType === 'db') {
-        await ServiceModules.parseRDSEventAndCreateAlarms(event);
-      } else {
-        log.warn().msg(`Unhandled RDS resource: ${resourceType}`);
-      }
-      break;
-
-    case 'states':
-      await ServiceModules.parseSFNEventAndCreateAlarms(event);
-      break;
-
-    default:
-      log
-        .warn()
-        .str('function', 'routeTagEvent')
-        .msg(`Unhandled service: ${service}`);
-      break;
-  }
+  return failedRecords;
 }
 
 export const handler: Handler = async (
@@ -229,10 +222,10 @@ export const handler: Handler = async (
   log.trace().unknown('event', event).msg('Received event');
   // Create an array for all the EC2 events to be stored in and passed to the processEC2Event function imported form ec2-modules.mts
   // Still need to figure out type for event objects as they can vary from event to event
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ec2Events: any[] = [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ec2TagEvents: any[] = [];
+  // Each entry carries the originating SQS record so failures during deferred
+  // processing can be reported per messageId.
+  const ec2Events: EC2EventRecord[] = [];
+  const ec2TagEvents: EC2EventRecord[] = [];
   /**
    * Create batch item failures array to store any failed items from the batch.
    */
@@ -245,158 +238,87 @@ export const handler: Handler = async (
   }
 
   for (const record of event.Records) {
-    // Check if the record body contains an error message
-    if (record.body && record.body.includes('errorMessage')) {
+    // Parse the body of the SQS message into a json object
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let parsedBody: any;
+    try {
+      parsedBody = JSON.parse(record.body);
+    } catch (error) {
+      log
+        .error()
+        .str('messageId', record.messageId)
+        .err(error)
+        .msg('Failed to parse record body as JSON');
+      batchItemFailures.push({itemIdentifier: record.messageId});
+      batchItemBodies.push(record);
+      continue;
+    }
+
+    // Skip error envelopes forwarded by the upstream sqs-handler (Lambda
+    // destination/error payloads carry a top-level errorMessage property).
+    if (
+      parsedBody &&
+      typeof parsedBody === 'object' &&
+      'errorMessage' in parsedBody
+    ) {
       log
         .warn()
         .str('messageId', record.messageId)
         .msg('Error message found in record body');
       continue;
     }
-    // Parse the body of the SQS message into a json object
-    const event = JSON.parse(record.body);
 
-    log.trace().obj('body', event).msg('Processing message body');
+    log.trace().obj('body', parsedBody).msg('Processing message body');
 
     try {
-      // TODO Fix the ugliness below. Future modules should be simple if statements
-      if (event.source === 'aws.ecs') {
-        await ServiceModules.parseECSEventAndCreateAlarms(
-          record,
-          process.env.ACCT_ID!,
-        );
-        continue;
-      }
+      const {name, action} = routeEvent(parsedBody);
 
-      if (event.source === 'aws.logs') {
-        await ServiceModules.parseLogGroupEventAndCreateAlarms(record);
-        continue;
-      }
+      log
+        .debug()
+        .str('function', 'handler')
+        .str('route', name)
+        .str('source', parsedBody.source)
+        .str('messageId', record.messageId)
+        .msg('Matched route entry');
 
-      switch (event.source) {
-        case 'aws.cloudfront':
-          await ServiceModules.parseCloudFrontEventAndCreateAlarms(event);
-          break;
-        case 'aws.ec2':
-          log
-            .debug()
-            .str('function', 'handler')
-            .obj('eventDetail', event.detail)
-            .str('resourceType', JSON.stringify(event.detail))
-            .msg('Processing EC2 event');
-
-          // Check for EC2 Instance State-change Notification based on detail-type
-          if (
-            event['detail-type'] === 'EC2 Instance State-change Notification'
-          ) {
-            ec2Events.push(event);
-          } else if (event.detail && event.detail.resourceType) {
-            // Handle other EC2 events that have a resourceType defined
-            switch (event.detail.resourceType) {
-              case 'instance':
-                ec2Events.push(event);
-                break;
-              case 'transit-gateway':
-                if (
-                  event.detail.eventName === 'CreateTransitGateway' ||
-                  event.detail.eventName === 'DeleteTransitGateway'
-                )
-                  await ServiceModules.parseTransitGatewayEventAndCreateAlarms(
-                    event,
-                  );
-                break;
-              case 'vpn-connection':
-                if (
-                  event.detail.eventName === 'CreateVpnConnection' ||
-                  event.detail.eventName === 'DeleteVpnConnection'
-                )
-                  await ServiceModules.parseVpnEventAndCreateAlarms(event);
-                break;
-              default:
-                log
-                  .error()
-                  .msg(
-                    `Unhandled resource type for aws.ec2: ${event.detail.resourceType}`,
-                  );
-                batchItemFailures.push({itemIdentifier: record.messageId});
-                batchItemBodies.push(record);
-                break;
-            }
+      switch (action.kind) {
+        case 'module':
+          if (action.args === 'record-account') {
+            await action.handler(record, process.env.ACCT_ID!);
+          } else if (action.args === 'record') {
+            await action.handler(record);
           } else {
-            log.error().msg('Unhandled EC2 event format');
-            batchItemFailures.push({itemIdentifier: record.messageId});
-            batchItemBodies.push(record);
+            await action.handler(parsedBody);
           }
           break;
-        case 'aws.elasticloadbalancing':
-          if (
-            event.detail.eventName === 'CreateLoadBalancer' ||
-            event.detail.eventName === 'DeleteLoadBalancer'
-          ) {
-            await ServiceModules.parseALBEventAndCreateAlarms(event);
-          } else if (
-            event.detail.eventName === 'CreateTargetGroup' ||
-            event.detail.eventName === 'DeleteTargetGroup'
-          ) {
-            await ServiceModules.parseTGEventAndCreateAlarms(event);
-          } else {
+
+        case 'accumulate-ec2':
+          // EC2 instance events are accumulated and processed in one batch
+          // after the loop (see processEC2Event).
+          ec2Events.push({event: parsedBody, record: record});
+          break;
+
+        case 'accumulate-ec2-tag':
+          // EC2 instance tag events are accumulated and processed in one
+          // batch after the loop (see processEC2TagEvent).
+          ec2TagEvents.push({event: parsedBody, record: record});
+          break;
+
+        case 'skip':
+          if (!action.silent) {
             log
-              .error()
-              .msg('Unhandled event name for aws.elasticloadbalancing');
-            batchItemFailures.push({itemIdentifier: record.messageId});
-            batchItemBodies.push(record);
+              .warn()
+              .str('function', 'handler')
+              .str('route', name)
+              .msg(action.message(parsedBody));
           }
           break;
 
-        case 'aws.opensearch':
-          await ServiceModules.parseOSEventAndCreateAlarms(event);
-          break;
-
-        case 'aws.rds':
-          if (
-            event.detail.eventName === 'CreateDBInstance' ||
-            event.detail.eventName === 'DeleteDBInstance'
-          ) {
-            await ServiceModules.parseRDSEventAndCreateAlarms(event);
-          } else if (
-            event.detail.eventName === 'CreateDBCluster' ||
-            event.detail.eventName === 'DeleteDBCluster'
-          ) {
-            await ServiceModules.parseRDSClusterEventAndCreateAlarms(event);
-          } else {
-            log.error().msg('Unhandled event name for aws.rds');
-            batchItemFailures.push({itemIdentifier: record.messageId});
-            batchItemBodies.push(record);
-          }
-          break;
-
-        case 'aws.route53resolver':
-          await ServiceModules.parseR53ResolverEventAndCreateAlarms(event);
-          break;
-
-        case 'aws.sqs':
-          await ServiceModules.parseSQSEventAndCreateAlarms(event);
-          break;
-
-        case 'aws.states':
-          await ServiceModules.parseSFNEventAndCreateAlarms(event);
-          break;
-
-        case 'aws.tag':
-          // add ec2 tag events to another array for processing.
-          if (
-            (event.detail.service === 'ec2' ||
-              event.detail.service === 'aws.ec2') &&
-            event.detail['resource-type'] === 'instance'
-          ) {
-            ec2TagEvents.push(event);
-          } else {
-            await routeTagEvent(event);
-          }
-          break;
-
-        default:
-          log.warn().msg(`Unhandled event source: ${event.source}`);
+        case 'fail':
+          log[action.level]()
+            .str('function', 'handler')
+            .str('route', name)
+            .msg(action.message(parsedBody));
           batchItemFailures.push({itemIdentifier: record.messageId});
           batchItemBodies.push(record);
           break;
@@ -410,12 +332,40 @@ export const handler: Handler = async (
 
   // If there were EC2 events after all iterations of the event records from the for loop, process them
   if (ec2Events.length > 0) {
-    await processEC2Event(ec2Events);
+    try {
+      const failedEC2Records = await processEC2Event(ec2Events);
+      for (const failedRecord of failedEC2Records) {
+        batchItemFailures.push({itemIdentifier: failedRecord.messageId});
+        batchItemBodies.push(failedRecord);
+      }
+    } catch (error) {
+      // If EC2 processing throws, fail every record that contributed an EC2
+      // event rather than losing the partial-batch response.
+      log.error().err(error).msg('Error processing EC2 events');
+      for (const {record} of ec2Events) {
+        batchItemFailures.push({itemIdentifier: record.messageId});
+        batchItemBodies.push(record);
+      }
+    }
   }
 
   // If there were EC2 tag events after all iterations of the event records from the for loop, process them
   if (ec2TagEvents.length > 0) {
-    await processEC2TagEvent(ec2TagEvents);
+    try {
+      const failedEC2TagRecords = await processEC2TagEvent(ec2TagEvents);
+      for (const failedRecord of failedEC2TagRecords) {
+        batchItemFailures.push({itemIdentifier: failedRecord.messageId});
+        batchItemBodies.push(failedRecord);
+      }
+    } catch (error) {
+      // If EC2 tag processing throws, fail every record that contributed an
+      // EC2 tag event rather than losing the partial-batch response.
+      log.error().err(error).msg('Error processing EC2 tag events');
+      for (const {record} of ec2TagEvents) {
+        batchItemFailures.push({itemIdentifier: record.messageId});
+        batchItemBodies.push(record);
+      }
+    }
   }
 
   if (batchItemFailures.length > 0) {

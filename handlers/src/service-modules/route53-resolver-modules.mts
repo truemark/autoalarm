@@ -3,30 +3,19 @@ import {
   Route53ResolverClient,
 } from '@aws-sdk/client-route53resolver';
 import * as logging from '@nr1e/logging';
-import {AlarmClassification, Tag} from '../types/index.mjs';
-import {
-  CloudWatchClient,
-  DeleteAlarmsCommand,
-} from '@aws-sdk/client-cloudwatch';
+import {Tag} from '../types/index.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
   deleteExistingAlarms,
-  buildAlarmName,
-  handleAnomalyAlarms,
-  handleStaticAlarms,
-  getCWAlarmsForInstance,
-  parseMetricAlarmOptions,
+  fetchResourceTags,
+  manageServiceAlarms,
 } from '../alarm-configs/utils/index.mjs';
 import {ROUTE53_RESOLVER_CONFIGS} from '../alarm-configs/_index.mjs';
 
 const log: logging.Logger = logging.getLogger('route53-resolver-modules');
-const region: string = process.env.AWS_REGION || '';
+const region = process.env.AWS_REGION;
 const retryStrategy = new ConfiguredRetryStrategy(20);
 const route53ResolverClient = new Route53ResolverClient({
-  region,
-  retryStrategy,
-});
-const cloudWatchClient = new CloudWatchClient({
   region,
   retryStrategy,
 });
@@ -34,159 +23,44 @@ const cloudWatchClient = new CloudWatchClient({
 const metricConfigs = ROUTE53_RESOLVER_CONFIGS;
 
 export async function fetchR53ResolverTags(endpointId: string): Promise<Tag> {
-  try {
-    const command = new ListTagsForResourceCommand({
-      ResourceArn: endpointId,
-    });
-    const response = await route53ResolverClient.send(command);
-    const tags: Tag = {};
+  return fetchResourceTags(
+    'R53R',
+    endpointId,
+    async () => {
+      const command = new ListTagsForResourceCommand({
+        ResourceArn: endpointId,
+      });
+      const response = await route53ResolverClient.send(command);
+      const tags: Tag = {};
 
-    response.Tags?.forEach((tag) => {
-      if (tag.Key && tag.Value) {
-        tags[tag.Key] = tag.Value;
-      }
-    });
+      response.Tags?.forEach((tag) => {
+        if (tag.Key && tag.Value) {
+          tags[tag.Key] = tag.Value;
+        }
+      });
 
-    log
-      .info()
-      .str('function', 'fetchR53ResolverTags')
-      .str('resolverId', endpointId)
-      .str('tags', JSON.stringify(tags))
-      .msg('Fetched tags for R53 Resolver Endpoint');
-    return tags;
-  } catch (error) {
-    log
-      .error()
-      .str('function', 'fetchR53ResolverTags')
-      .str('resolverId', endpointId)
-      .err(error)
-      .msg('Error fetching tags for R53 Resolver Endpoint');
-    return {};
-  }
-}
-
-async function checkAndManageR53ResolverStatusAlarms(
-  endpointId: string,
-  tags: Tag,
-) {
-  log
-    .info()
-    .str('function', 'checkAndManageR53ResolverStatusAlarms')
-    .str('EndpointId', endpointId)
-    .msg('Starting alarm management process');
-
-  const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
-  if (!isAlarmEnabled) {
-    log
-      .info()
-      .str('function', 'checkAndManageR53ResolverStatusAlarms')
-      .str('EndpointId', endpointId)
-      .msg('Alarm creation disabled by tag settings');
-    await deleteExistingAlarms('R53R', endpointId);
-    return;
-  }
-
-  const alarmsToKeep = new Set<string>();
-
-  for (const config of metricConfigs) {
-    log
-      .info()
-      .str('function', 'checkAndManageR53ResolverStatusAlarms')
-      .obj('config', config)
-      .str('EndpointId', endpointId)
-      .msg('Processing metric configuration');
-
-    const tagValue = tags[`autoalarm:${config.tagKey}`];
-    const updatedDefaults = parseMetricAlarmOptions(
-      tagValue || '',
-      config.defaults,
-    );
-
-    if (config.defaultCreate || tagValue !== undefined) {
-      if (config.tagKey.includes('anomaly')) {
-        log
-          .info()
-          .str('function', 'checkAndManageR53ResolverStatusAlarms')
-          .str('EndpointId', endpointId)
-          .msg('Tag key indicates anomaly alarm. Handling anomaly alarms');
-        const anomalyAlarms = await handleAnomalyAlarms(
-          config,
-          'R53R',
-          endpointId,
-          [{Name: 'EndpointId', Value: endpointId}],
-          updatedDefaults,
-        );
-        anomalyAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
-      } else {
-        log
-          .info()
-          .str('function', 'checkAndManageR53ResolverStatusAlarms')
-          .str('EndpointId', endpointId)
-          .msg('Tag key indicates static alarm. Handling static alarms');
-        const staticAlarms = await handleStaticAlarms(
-          config,
-          'R53R',
-          endpointId,
-          [{Name: 'EndpointId', Value: endpointId}],
-          updatedDefaults,
-        );
-        staticAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
-      }
-    } else {
-      log
-        .info()
-        .str('function', 'checkAndManageR53ResolverStatusAlarms')
-        .str('EndpointId', endpointId)
-        .str(
-          'alarm prefix: ',
-          buildAlarmName(
-            config,
-            'R53R',
-            endpointId,
-            AlarmClassification.Warning,
-            'static',
-          ).replace('Warning', ''),
-        )
-        .msg(
-          'No default or overridden alarm values. Marking alarms for deletion.',
-        );
-    }
-  }
-
-  // Delete alarms that are not in the alarmsToKeep set
-  const existingAlarms = await getCWAlarmsForInstance('R53R', endpointId);
-  const alarmsToDelete = existingAlarms.filter(
-    (alarm) => !alarmsToKeep.has(alarm),
+      return tags;
+    },
+    'return-empty',
   );
-
-  log
-    .info()
-    .str('function', 'checkAndManageR53ResolverStatusAlarms')
-    .obj('alarms to delete', alarmsToDelete)
-    .msg('Deleting alarms that are no longer needed');
-  await cloudWatchClient.send(
-    new DeleteAlarmsCommand({
-      AlarmNames: [...alarmsToDelete],
-    }),
-  );
-
-  log
-    .info()
-    .str('function', 'checkAndManageR53ResolverStatusAlarms')
-    .str('EndpointId', endpointId)
-    .msg('Finished alarm management process');
 }
 
 export async function manageR53ResolverAlarms(
   endpointId: string,
   tags: Tag,
 ): Promise<void> {
-  await checkAndManageR53ResolverStatusAlarms(endpointId, tags);
+  await manageServiceAlarms({
+    service: 'R53R',
+    identifier: endpointId,
+    tags,
+    configs: metricConfigs,
+    dimensions: [{Name: 'EndpointId', Value: endpointId}],
+  });
 }
 
 export async function manageInactiveR53ResolverAlarms(endpointId: string) {
   try {
-    await deleteExistingAlarms('R53R', endpointId);
+    await deleteExistingAlarms('R53R', endpointId, metricConfigs);
   } catch (e) {
     log
       .error()
@@ -201,6 +75,22 @@ function extractR53ResolverNameFromArn(arn: string): string {
   const regex = /resolver-endpoint\/([^/]+)$/;
   const match = arn.match(regex);
   return match ? match[1] : '';
+}
+
+/**
+ * Builds the full resolver endpoint ARN from a bare endpoint ID using the
+ * region and account ID carried on the CloudTrail event detail. The
+ * ListTagsForResource API requires an ARN, but CloudTrail events only carry
+ * the bare 'rslvr-...' endpoint ID.
+ */
+function buildR53ResolverArn(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  event: any,
+  endpointId: string,
+): string {
+  const eventRegion = event.detail?.awsRegion || event.region || region;
+  const accountId = event.detail?.recipientAccountId || event.account || '';
+  return `arn:aws:route53resolver:${eventRegion}:${accountId}:resolver-endpoint/${endpointId}`;
 }
 
 export async function parseR53ResolverEventAndCreateAlarms(
@@ -242,7 +132,11 @@ export async function parseR53ResolverEventAndCreateAlarms(
             .str('requestId', event.detail.requestID)
             .msg('Processing CreateResolverEndpoint event');
           if (endpointId) {
-            tags = await fetchR53ResolverTags(endpointId);
+            // ListTagsForResource requires an ARN, but the CloudTrail event
+            // only carries the bare endpoint ID. Build the ARN from the event.
+            tags = await fetchR53ResolverTags(
+              buildR53ResolverArn(event, endpointId),
+            );
             log
               .info()
               .str('function', 'parseR53ResolverEventAndCreateAlarms')
@@ -288,14 +182,23 @@ export async function parseR53ResolverEventAndCreateAlarms(
         .msg('Unexpected event type');
   }
 
-  // Extract the Resolver name from the ARN
-  const resolverName = extractR53ResolverNameFromArn(endpointId);
+  // Resolve the endpoint identifier. CloudTrail events carry a bare
+  // 'rslvr-...' endpoint ID while Tag Change events carry the full ARN.
+  const resolverName = endpointId?.startsWith('rslvr-')
+    ? endpointId
+    : extractR53ResolverNameFromArn(endpointId ?? '');
   if (!resolverName) {
     log
       .error()
       .str('function', 'parseR53ResolverEventAndCreateAlarms')
       .str('endpointId', endpointId)
-      .msg('Extracted Route 53 Resolver name is empty');
+      .str('eventType', eventType)
+      .msg(
+        'Resolved Route 53 Resolver endpoint identifier is empty. Aborting to avoid acting on all R53R alarms.',
+      );
+    throw new Error(
+      'Resolved Route 53 Resolver endpoint identifier is empty. Aborting to avoid acting on all R53R alarms.',
+    );
   }
 
   log

@@ -1,29 +1,18 @@
 import {EC2Client, DescribeTagsCommand} from '@aws-sdk/client-ec2';
 import * as logging from '@nr1e/logging';
-import {AlarmClassification, Tag} from '../types/index.mjs';
-import {
-  CloudWatchClient,
-  DeleteAlarmsCommand,
-} from '@aws-sdk/client-cloudwatch';
+import {Tag} from '../types/index.mjs';
 import {ConfiguredRetryStrategy} from '@smithy/util-retry';
 import {
   deleteExistingAlarms,
-  buildAlarmName,
-  handleAnomalyAlarms,
-  handleStaticAlarms,
-  getCWAlarmsForInstance,
-  parseMetricAlarmOptions,
+  fetchResourceTags,
+  manageServiceAlarms,
 } from '../alarm-configs/utils/index.mjs';
 import {VPN_CONFIGS} from '../alarm-configs/_index.mjs';
 
 const log: logging.Logger = logging.getLogger('vpn-modules');
-const region: string = process.env.AWS_REGION || '';
+const region = process.env.AWS_REGION;
 const retryStrategy = new ConfiguredRetryStrategy(20);
 const ec2Client: EC2Client = new EC2Client({
-  region: region,
-  retryStrategy: retryStrategy,
-});
-const cloudWatchClient: CloudWatchClient = new CloudWatchClient({
   region: region,
   retryStrategy: retryStrategy,
 });
@@ -33,155 +22,42 @@ const metricConfigs = VPN_CONFIGS;
 export async function fetchVpnTags(
   vpnId: string,
 ): Promise<{[key: string]: string}> {
-  try {
-    const response = await ec2Client.send(
-      new DescribeTagsCommand({
-        Filters: [{Name: 'resource-id', Values: [vpnId]}],
-      }),
-    );
+  return fetchResourceTags(
+    'VPN',
+    vpnId,
+    async () => {
+      const response = await ec2Client.send(
+        new DescribeTagsCommand({
+          Filters: [{Name: 'resource-id', Values: [vpnId]}],
+        }),
+      );
 
-    const tags: {[key: string]: string} = {};
-    response.Tags?.forEach((tag) => {
-      if (tag.Key && tag.Value) {
-        tags[tag.Key] = tag.Value;
-      }
-    });
+      const tags: {[key: string]: string} = {};
+      response.Tags?.forEach((tag) => {
+        if (tag.Key && tag.Value) {
+          tags[tag.Key] = tag.Value;
+        }
+      });
 
-    log
-      .info()
-      .str('function', 'fetchVpnTags')
-      .str('vpnId', vpnId)
-      .str('tags', JSON.stringify(tags))
-      .msg('Fetched tags for VPN');
-
-    return tags;
-  } catch (error) {
-    log
-      .error()
-      .str('function', 'fetchVpnTags')
-      .err(error)
-      .msg('Error fetching tags for VPN');
-    return {};
-  }
-}
-
-async function checkAndManageVpnStatusAlarms(
-  vpnId: string,
-  tags: Tag,
-): Promise<void> {
-  log
-    .info()
-    .str('function', 'checkAndManageVpnStatusAlarms')
-    .str('vpnId', vpnId)
-    .msg('Starting alarm management process');
-
-  const isAlarmEnabled = tags['autoalarm:enabled'] === 'true';
-  if (!isAlarmEnabled) {
-    log
-      .info()
-      .str('function', 'checkAndManageVpnStatusAlarms')
-      .str('vpnId', vpnId)
-      .msg('Alarm creation disabled by tag settings');
-    await deleteExistingAlarms('VPN', vpnId);
-    return;
-  }
-
-  const alarmsToKeep = new Set<string>();
-
-  for (const config of metricConfigs) {
-    log
-      .info()
-      .str('function', 'checkAndManageVpnStatusAlarms')
-      .obj('config', config)
-      .str('vpnId', vpnId)
-      .msg('Processing metric configuration');
-
-    const tagValue = tags[`autoalarm:${config.tagKey}`];
-    const updatedDefaults = parseMetricAlarmOptions(
-      tagValue || '',
-      config.defaults,
-    );
-    if (config.defaultCreate || tagValue !== undefined) {
-      if (config.tagKey.includes('anomaly')) {
-        log
-          .info()
-          .str('function', 'checkAndManageVpnStatusAlarms')
-          .str('vpnId', vpnId)
-          .msg('Tag key indicates anomaly alarm. Handling anomaly alarms');
-        const anomalyAlarms = await handleAnomalyAlarms(
-          config,
-          'VPN',
-          vpnId,
-          [{Name: 'VpnId', Value: vpnId}],
-          updatedDefaults,
-        );
-        anomalyAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
-      } else {
-        log
-          .info()
-          .str('function', 'checkAndManageVpnStatusAlarms')
-          .str('vpnId', vpnId)
-          .msg('Tag key indicates static alarm. Handling static alarms');
-        const staticAlarms = await handleStaticAlarms(
-          config,
-          'VPN',
-          vpnId,
-          [{Name: 'VpnId', Value: vpnId}],
-          updatedDefaults,
-        );
-        staticAlarms.forEach((alarmName) => alarmsToKeep.add(alarmName));
-      }
-    } else {
-      log
-        .info()
-        .str('function', 'checkAndManageVpnStatusAlarms')
-        .str('vpnId', vpnId)
-        .str(
-          'alarm prefix: ',
-          buildAlarmName(
-            config,
-            'VPN',
-            vpnId,
-            AlarmClassification.Warning,
-            'static',
-          ).replace('Warning', ''),
-        )
-        .msg(
-          'No default or overridden alarm values. Marking alarms for deletion.',
-        );
-    }
-  }
-  // Delete alarms that are not in the alarmsToKeep set
-  const existingAlarms = await getCWAlarmsForInstance('VPN', vpnId);
-  const alarmsToDelete = existingAlarms.filter(
-    (alarm) => !alarmsToKeep.has(alarm),
+      return tags;
+    },
+    'return-empty',
   );
-
-  log
-    .info()
-    .str('function', 'checkAndManageVpnStatusAlarms')
-    .obj('alarms to delete', alarmsToDelete)
-    .msg('Deleting alarms that are no longer needed');
-  await cloudWatchClient.send(
-    new DeleteAlarmsCommand({
-      AlarmNames: [...alarmsToDelete],
-    }),
-  );
-
-  log
-    .info()
-    .str('function', 'checkAndManageVpnStatusAlarms')
-    .str('vpnId', vpnId)
-    .msg('Finished alarm management process');
 }
 
 export async function manageVpnAlarms(vpnId: string, tags: Tag): Promise<void> {
-  await checkAndManageVpnStatusAlarms(vpnId, tags);
+  await manageServiceAlarms({
+    service: 'VPN',
+    identifier: vpnId,
+    tags,
+    configs: metricConfigs,
+    dimensions: [{Name: 'VpnId', Value: vpnId}],
+  });
 }
 
 export async function manageInactiveVpnAlarms(vpnId: string): Promise<void> {
   try {
-    await deleteExistingAlarms('VPN', vpnId);
+    await deleteExistingAlarms('VPN', vpnId, metricConfigs);
   } catch (e) {
     log
       .error()
@@ -205,7 +81,9 @@ export async function parseVpnEventAndCreateAlarms(
 
   switch (event['detail-type']) {
     case 'Tag Change on Resource':
-      vpnId = event.resources[0];
+      // resources[0] is a full ARN (arn:aws:ec2:...:vpn-connection/vpn-xxx);
+      // extract the bare 'vpn-...' id to match the VpnId dimension and alarm names
+      vpnId = event.resources[0]?.split('/').pop() || '';
       eventType = 'TagChange';
       tags = event.detail.tags || {};
       log
@@ -281,7 +159,12 @@ export async function parseVpnEventAndCreateAlarms(
       .error()
       .str('function', 'parseVpnEventAndCreateAlarms')
       .str('vpnId', vpnId)
-      .msg('Vpn Id is empty');
+      .msg(
+        'Could not resolve VPN identifier from event. Failing record to avoid managing alarms with an empty identifier',
+      );
+    throw new Error(
+      'Could not resolve VPN identifier from event. Cannot manage alarms with an empty identifier',
+    );
   }
 
   log
