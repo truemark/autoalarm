@@ -164,6 +164,17 @@ export async function parseLogGroupEventAndCreateAlarms(
       .str('eventName', eventName)
       .msg('No ARN in event body; falling back to requestParameters');
 
+    // Failed API calls (e.g. AccessDenied) always have null requestParameters.
+    // Nothing to process — skip quietly.
+    if (!body.detail.requestParameters) {
+      log
+        .debug()
+        .str('function', 'parseLogGroupEventAndCreateAlarms')
+        .str('eventName', eventName)
+        .msg('requestParameters is null (failed API call) — skipping event');
+      return;
+    }
+
     try {
       resourceName = body.detail.requestParameters.logGroupName;
       arn = `arn:aws:logs:${body.region}:${body.account}:log-group:${resourceName}`;
