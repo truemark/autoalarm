@@ -337,6 +337,23 @@ export const eventRoutes: RouteEntry[] = [
     matches: source('aws.states'),
     action: module(ServiceModules.parseSFNEventAndCreateAlarms),
   },
+  {
+    // Lambda CloudTrail create/delete events. Current Lambda management
+    // events carry a "...v2" suffix (verified against a live us-west-2
+    // CloudTrail record: TagResource20170331v2), so both the legacy and v2
+    // names are matched for create and delete.
+    name: 'lambda',
+    matches: all(
+      source('aws.lambda'),
+      eventName(
+        'CreateFunction20150331',
+        'CreateFunction20150331v2',
+        'DeleteFunction20150331',
+        'DeleteFunction20150331v2',
+      ),
+    ),
+    action: module(ServiceModules.parseLambdaEventAndCreateAlarms),
+  },
 
   /*
    * aws.tag — Tag Change on Resource events, keyed on detail.service and
@@ -450,6 +467,15 @@ export const eventRoutes: RouteEntry[] = [
     name: 'tag-step-functions',
     matches: all(source('aws.tag'), tagService('states')),
     action: module(ServiceModules.parseSFNEventAndCreateAlarms),
+  },
+  {
+    name: 'tag-lambda',
+    matches: all(
+      source('aws.tag'),
+      tagService('lambda'),
+      tagResourceType('function'),
+    ),
+    action: module(ServiceModules.parseLambdaEventAndCreateAlarms),
   },
   {
     name: 'tag-unhandled-service',

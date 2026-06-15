@@ -26,6 +26,7 @@ export type TagRuleService =
   | 'alb'
   | 'cloudfront'
   | 'ec2'
+  | 'lambda'
   | 'opensearch'
   | 'rds'
   | 'rdscluster'
@@ -81,6 +82,7 @@ export const SERVICE_TAG_KEYS: Record<TagRuleService, string[]> = {
     'autoalarm:network-out-anomaly',
     'autoalarm:target',
   ],
+  lambda: ['autoalarm:enabled', 'autoalarm:errors'],
   opensearch: [
     'autoalarm:enabled',
     'autoalarm:4xx-errors',

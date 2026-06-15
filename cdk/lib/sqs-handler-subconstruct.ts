@@ -98,6 +98,7 @@ export class SqsHandlerSubConstruct extends Construct {
       'AutoAlarm-Cloudfront',
       'AutoAlarm-Ec2',
       'AutoAlarm-Ecs',
+      'AutoAlarm-Lambda',
       'AutoAlarm-Logs',
       'AutoAlarm-OpenSearchRule',
       'AutoAlarm-Rds',

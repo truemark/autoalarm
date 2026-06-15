@@ -18,6 +18,7 @@
     "@aws-sdk/client-ecs": "^3.934.0",
     "@aws-sdk/client-elastic-load-balancing-v2": "^3.799.0",
     "@aws-sdk/client-eventbridge": "^3.800.0",
+    "@aws-sdk/client-lambda": "^3.934.0",
     "@aws-sdk/client-opensearch": "^3.799.0",
     "@aws-sdk/client-rds": "^3.799.0",
     "@aws-sdk/client-resource-groups-tagging-api": "^3.799.0",
