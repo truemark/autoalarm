@@ -193,3 +193,39 @@ describe('findArnInEvent', () => {
     expect(findArnInEvent({foo: 'bar'}, 'arn:aws:rds')).toBe('');
   });
 });
+
+describe('findArnInEvent double-encoded bodies', () => {
+  const PREFIX = 'arn:aws:rds';
+  const ARN = 'arn:aws:rds:us-west-2:123456789012:db:orders-prod';
+
+  test('does not keep the escape backslash from a nested JSON string', () => {
+    // EventBridge and SQS payloads routinely carry a nested JSON *string*.
+    // Serialising the outer event escapes the inner quotes as \", and a scan
+    // that excludes only '"' kept the preceding backslash — yielding an ARN
+    // that matches nothing downstream, so tags and alarms were never
+    // reconciled for that resource.
+    const event = {detail: {body: JSON.stringify({resourceArn: ARN})}};
+    expect(findArnInEvent(event, PREFIX)).toBe(ARN);
+  });
+
+  test('extracts cleanly from a pre-serialized event string', () => {
+    expect(findArnInEvent(JSON.stringify({r: ARN}), PREFIX)).toBe(ARN);
+  });
+
+  test('never returns a value containing whitespace, a quote or a backslash', () => {
+    const shapes: unknown[] = [
+      {detail: {body: JSON.stringify({resourceArn: ARN})}},
+      JSON.stringify({nested: JSON.stringify({r: ARN})}),
+      {resources: [ARN]},
+      {detail: {tags: {owner: 'team a'}}, resources: [ARN]},
+    ];
+    for (const event of shapes) {
+      const extracted = findArnInEvent(event, PREFIX);
+      expect(extracted).not.toMatch(/[\s"\\]/);
+    }
+  });
+
+  test('still returns an empty string when the prefix is absent', () => {
+    expect(findArnInEvent({detail: {}}, PREFIX)).toBe('');
+  });
+});

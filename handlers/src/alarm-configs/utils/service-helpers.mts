@@ -334,9 +334,17 @@ export function findArnInEvent(
     return '';
   }
 
-  // 2) ARNs contain no whitespace or quotes — extract up to the first of these.
+  // 2) ARNs contain no whitespace, quotes or backslashes — extract up to the
+  // first of these.
+  //
+  // The backslash matters: when an event carries a nested JSON *string* (a
+  // double-encoded body, which EventBridge and SQS payloads routinely do),
+  // serialising the outer event escapes the inner quotes as \". Excluding only
+  // `"` stopped at the quote but kept the preceding backslash, yielding
+  // `arn:aws:rds:...:db:orders\` — an ARN that matches nothing downstream, so
+  // the resource's tags and alarms were silently never reconciled.
   const tail = eventString.slice(startIndex);
-  const arnMatch = tail.match(/^[^\s"]+/);
+  const arnMatch = tail.match(/^[^\s"\\]+/);
   if (!arnMatch) {
     log
       .error()
