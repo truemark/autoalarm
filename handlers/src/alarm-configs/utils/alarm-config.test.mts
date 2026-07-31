@@ -414,3 +414,148 @@ describe('parseMetricAlarmOptions', () => {
     ).toBe(2);
   });
 });
+
+/**
+ * Numeric strictness. Every case here previously produced a plausible but
+ * WRONG number via parseFloat's prefix parsing, with no log line to notice it
+ * by. The worst was '1,200' -> 1: a 1200x misconfiguration that silently makes
+ * an alarm fire constantly.
+ */
+describe('parseMetricAlarmOptions numeric strictness', () => {
+  const defaults: MetricAlarmOptions = {
+    warningThreshold: 90,
+    criticalThreshold: 95,
+    period: 300,
+    evaluationPeriods: 2,
+    statistic: 'Average',
+    dataPointsToAlarm: 1,
+    missingDataTreatment: TreatMissingData.MISSING,
+    comparisonOperator: 'GreaterThanThreshold',
+  };
+
+  test.each([
+    ['1,200', 'comma-grouped — parseFloat yielded 1'],
+    ['90abc', 'trailing garbage — parseFloat yielded 90'],
+    ['90%', 'percent suffix — parseFloat yielded 90'],
+    ['0x10', 'hex literal — parseFloat yielded 0'],
+    ['٩٠', 'non-ASCII digits — parseFloat yielded 90'],
+    ['12.34.56', 'double decimal point'],
+    ['--12', 'double negative'],
+    ['TBD', 'placeholder text'],
+  ])('rejects partially-numeric threshold %j (%s)', (value) => {
+    const parsed = parseMetricAlarmOptions(`${value}/95`, defaults);
+    expect(parsed.warningThreshold).toBe(90);
+  });
+
+  test.each([
+    ['Infinity', 'literal Infinity'],
+    ['-Infinity', 'literal -Infinity'],
+    ['1e400', 'overflows a double to Infinity'],
+  ])('rejects non-finite threshold %j (%s)', (value) => {
+    // A non-finite threshold serialises to null in the PutMetricAlarm call.
+    const parsed = parseMetricAlarmOptions(`${value}/95`, defaults);
+    expect(parsed.warningThreshold).toBe(90);
+    expect(Number.isFinite(parsed.warningThreshold)).toBe(true);
+  });
+
+  test('still accepts legitimate complete numbers', () => {
+    expect(parseMetricAlarmOptions('1e5/95', defaults).warningThreshold).toBe(
+      100000,
+    );
+    expect(parseMetricAlarmOptions('0.5/95', defaults).warningThreshold).toBe(
+      0.5,
+    );
+    expect(parseMetricAlarmOptions('.5/95', defaults).warningThreshold).toBe(
+      0.5,
+    );
+    expect(parseMetricAlarmOptions('-5/95', defaults).warningThreshold).toBe(
+      -5,
+    );
+    expect(parseMetricAlarmOptions(' 90 /95', defaults).warningThreshold).toBe(
+      90,
+    );
+    // 0 is a legitimate threshold, distinct from '-' (disabled).
+    expect(parseMetricAlarmOptions('0/95', defaults).warningThreshold).toBe(0);
+  });
+});
+
+/**
+ * CloudWatch's own limits (valid period set, evaluation window,
+ * dataPointsToAlarm <= evaluationPeriods) are NOT enforced here — the
+ * Prometheus rule path shares this parser and does not share those rules. They
+ * are asserted against the real PutMetricAlarm input in alarm-tools.test.mts.
+ */
+describe('parseMetricAlarmOptions leaves CloudWatch limits to the CloudWatch path', () => {
+  const defaults: MetricAlarmOptions = {
+    warningThreshold: 90,
+    criticalThreshold: 95,
+    period: 300,
+    evaluationPeriods: 10,
+    statistic: 'Average',
+    dataPointsToAlarm: 5,
+    missingDataTreatment: TreatMissingData.MISSING,
+    comparisonOperator: 'GreaterThanThreshold',
+  };
+
+  test('passes a CloudWatch-invalid period through as authored', () => {
+    // 7 is not a legal CloudWatch period, but it is a legal duration input for
+    // a Prometheus rule. alarm-tools snaps it on the CloudWatch path.
+    expect(parseMetricAlarmOptions('90/95/7', defaults).period).toBe(7);
+  });
+
+  test('passes dataPointsToAlarm > evaluationPeriods through as authored', () => {
+    const parsed = parseMetricAlarmOptions('90/95/300/2/Average/5', defaults);
+    expect(parsed.evaluationPeriods).toBe(2);
+    expect(parsed.dataPointsToAlarm).toBe(5);
+  });
+});
+
+/**
+ * The round trip must be lossless, because a threshold of 0 is legitimate
+ * (RDS DatabaseDeadlocks alarms on > 0) and a falsy check rendered it as '-',
+ * which parses back as null — silently disabling the alarm.
+ */
+describe('metricAlarmOptionsToString round trip', () => {
+  const base: MetricAlarmOptions = {
+    warningThreshold: 90,
+    criticalThreshold: 95,
+    period: 300,
+    evaluationPeriods: 2,
+    statistic: 'Average',
+    dataPointsToAlarm: 1,
+    missingDataTreatment: TreatMissingData.MISSING,
+    comparisonOperator: 'GreaterThanThreshold',
+  };
+
+  test.each([
+    [0, 95],
+    [null, 0],
+    [0, 0],
+    [90, 95],
+    [null, null],
+    [-5, -1],
+    [0.5, 0.75],
+  ])('preserves thresholds warning=%s critical=%s', (warning, critical) => {
+    const options: MetricAlarmOptions = {
+      ...base,
+      warningThreshold: warning,
+      criticalThreshold: critical,
+    };
+    const parsed = parseMetricAlarmOptions(
+      metricAlarmOptionsToString(options),
+      base,
+    );
+    expect(parsed.warningThreshold).toBe(warning);
+    expect(parsed.criticalThreshold).toBe(critical);
+  });
+
+  test('renders 0 as 0 and null as "-"', () => {
+    expect(
+      metricAlarmOptionsToString({
+        ...base,
+        warningThreshold: 0,
+        criticalThreshold: null,
+      }),
+    ).toBe('0/-/300/2/Average/1/GreaterThanThreshold/missing');
+  });
+});

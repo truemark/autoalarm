@@ -539,8 +539,74 @@ export function buildAlarmName(
 
 // used as input validation to ensure that the period value is always a valid number for the cloudwatch api
 // Valid CloudWatch periods are 10, 30, and any multiple of 60.
+/**
+ * CloudWatch caps an alarm's total evaluation window at seven days, and at one
+ * day when the period is under an hour. Period x EvaluationPeriods must fit.
+ *
+ * Source: PutMetricAlarm API reference, Period.
+ */
+const MAX_EVALUATION_WINDOW_SECONDS = 604_800;
+const SUB_HOUR_PERIOD_SECONDS = 3_600;
+const MAX_SUB_HOUR_EVALUATION_WINDOW_SECONDS = 86_400;
+
+function maxEvaluationWindow(period: number): number {
+  return period < SUB_HOUR_PERIOD_SECONDS
+    ? MAX_SUB_HOUR_EVALUATION_WINDOW_SECONDS
+    : MAX_EVALUATION_WINDOW_SECONDS;
+}
+
+/**
+ * Bring evaluationPeriods and dataPointsToAlarm inside the CloudWatch contract.
+ *
+ * Both violations below are rejected by PutMetricAlarm as a ValidationError, so
+ * without this the alarm simply fails to be created. Values are clamped rather
+ * than reverted to defaults, matching validatePeriod's snap-to-nearest-valid
+ * idiom and preserving as much of the author's intent as the API allows.
+ */
+function validateEvaluationRange(options: MetricAlarmOptions): void {
+  const maxWindow = maxEvaluationWindow(options.period);
+  const maxEvaluationPeriods = Math.max(
+    1,
+    Math.floor(maxWindow / options.period),
+  );
+
+  if (options.evaluationPeriods > maxEvaluationPeriods) {
+    log
+      .warn()
+      .str('function', 'validateEvaluationRange')
+      .num('period', options.period)
+      .num('evaluationPeriods', options.evaluationPeriods)
+      .num('maxEvaluationPeriods', maxEvaluationPeriods)
+      .num('maxWindowSeconds', maxWindow)
+      .msg(
+        'Period x EvaluationPeriods exceeds the maximum alarm evaluation window. Clamping evaluationPeriods.',
+      );
+    options.evaluationPeriods = maxEvaluationPeriods;
+  }
+
+  // dataPointsToAlarm is the M in an "M out of N" alarm and can never exceed N.
+  if (options.dataPointsToAlarm > options.evaluationPeriods) {
+    log
+      .warn()
+      .str('function', 'validateEvaluationRange')
+      .num('dataPointsToAlarm', options.dataPointsToAlarm)
+      .num('evaluationPeriods', options.evaluationPeriods)
+      .msg(
+        'DataPointsToAlarm exceeds EvaluationPeriods. Clamping to EvaluationPeriods.',
+      );
+    options.dataPointsToAlarm = options.evaluationPeriods;
+  }
+}
+
 function validatePeriod(period: number) {
-  if (period === 10 || period === 30 || (period >= 60 && period % 60 === 0)) {
+  // 20 is as valid as 10 and 30: PutMetricAlarm accepts 10, 20, 30, and any
+  // multiple of 60. Omitting it silently snapped a requested 20 up to 30.
+  if (
+    period === 10 ||
+    period === 20 ||
+    period === 30 ||
+    (period >= 60 && period % 60 === 0)
+  ) {
     log
       .info()
       .str('function', 'validatePeriod')
@@ -554,12 +620,19 @@ function validatePeriod(period: number) {
       .str('period', period.toString())
       .msg('Period is less than 10, setting to 10');
     return 10;
+  } else if (period < 20) {
+    log
+      .info()
+      .str('function', 'validatePeriod')
+      .str('period', period.toString())
+      .msg('Period is between 11 and 19, setting to 20');
+    return 20;
   } else if (period < 30) {
     log
       .info()
       .str('function', 'validatePeriod')
       .str('period', period.toString())
-      .msg('Period is between 11 and 29, setting to 30');
+      .msg('Period is between 21 and 29, setting to 30');
     return 30;
   } else {
     log
@@ -779,6 +852,9 @@ async function handleAlarmsForVariant(
   }
 
   updatedDefaults.period = validatePeriod(updatedDefaults.period);
+  // Must follow validatePeriod: the evaluation window depends on the final
+  // period, and dataPointsToAlarm is clamped against the final evaluationPeriods.
+  validateEvaluationRange(updatedDefaults);
   validateComparisonOperator(config, updatedDefaults, variant);
 
   const workflow =

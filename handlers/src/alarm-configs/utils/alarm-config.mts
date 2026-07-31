@@ -26,9 +26,12 @@ const log = logging.initialize({
 
 export function metricAlarmOptionsToString(value: MetricAlarmOptions): string {
   return (
-    (value.warningThreshold ? value.warningThreshold : '-') +
+    // Nullish, NOT falsy: a threshold of 0 is legitimate (e.g. RDS
+    // DatabaseDeadlocks alarms on > 0). A falsy check renders 0 as '-', which
+    // parses back as null — silently disabling the alarm on a round trip.
+    (value.warningThreshold ?? '-') +
     '/' +
-    (value.criticalThreshold ? value.criticalThreshold : '-') +
+    (value.criticalThreshold ?? '-') +
     '/' +
     value.period +
     '/' +
@@ -44,6 +47,34 @@ export function metricAlarmOptionsToString(value: MetricAlarmOptions): string {
   );
 }
 
+/**
+ * A complete JSON-style number and nothing else.
+ *
+ * `parseFloat` is deliberately NOT used for tag values: it parses a leading
+ * numeric prefix and discards the rest, so a user typo becomes a plausible but
+ * wrong number instead of an error. Measured: '90abc' -> 90, '90%' -> 90,
+ * '0x10' -> 0, and worst of all '1,200' -> 1 — a 1200x misconfiguration with
+ * no signal that anything was wrong. `\d` is ASCII-only in JS, so
+ * non-ASCII digits ('٩٠', which parseFloat accepts as 90) are rejected too.
+ */
+const STRICT_NUMBER = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+
+/**
+ * Parse a strictly-numeric, finite tag field.
+ *
+ * Returns undefined when the input is not a complete finite number, leaving
+ * the caller to log and apply its own default. Non-finite is rejected as well
+ * as unparseable: 'Infinity' and overflow literals like '1e400' both yield
+ * Infinity, which serialises to null in the CloudWatch API call.
+ */
+function strictNumber(trimmed: string): number | undefined {
+  if (!STRICT_NUMBER.test(trimmed)) {
+    return undefined;
+  }
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 function parseThresholdOption(
   value: string,
   defaultValue: number | null,
@@ -55,9 +86,20 @@ function parseThresholdOption(
   if (trimmed === '') {
     return defaultValue;
   }
-  const parsedValue = parseFloat(trimmed);
 
-  if (isNaN(parsedValue)) {
+  const parsedValue = strictNumber(trimmed);
+
+  // Every fallback is logged. A threshold that silently becomes its default is
+  // an alarm that quietly watches the wrong number.
+  if (parsedValue === undefined) {
+    log
+      .warn()
+      .str('Function', 'parseThresholdOption')
+      .str('Input', value)
+      .str('DefaultValue', String(defaultValue))
+      .msg(
+        'Value is not a complete finite number. Falling back to the default value.',
+      );
     return defaultValue;
   }
 
@@ -69,9 +111,18 @@ function parseIntegerOption(value: string, defaultValue: number): number {
   if (trimmed === '') {
     return defaultValue;
   }
-  const parsedValue = parseFloat(trimmed);
 
-  if (isNaN(parsedValue)) {
+  const parsedValue = strictNumber(trimmed);
+
+  if (parsedValue === undefined) {
+    log
+      .warn()
+      .str('Function', 'parseIntegerOption')
+      .str('Input', value)
+      .num('DefaultValue', defaultValue)
+      .msg(
+        'Value is not a complete finite number. Falling back to the default value.',
+      );
     return defaultValue;
   }
 
@@ -96,11 +147,11 @@ export function parseStatisticOption(
 ): ValidStatistic {
   // Base formatting normalization for validating statistics
   let trim = exp.trim().toLowerCase();
-  trim === 'iqm'
-    ? (trim = 'IQM') // Account for IQM as all caps and single word expression
-    : trim === 'samplecount'
-      ? (trim = 'SampleCount') // Account for SampleCount with CamelCase
-      : exp.trim().toLowerCase();
+  if (trim === 'iqm') {
+    trim = 'IQM'; // Account for IQM as all caps and single word expression
+  } else if (trim === 'samplecount') {
+    trim = 'SampleCount'; // Account for SampleCount with CamelCase
+  }
 
   // Early return if we match IQM or SampleCount
   if (trim === 'IQM' || trim === 'SampleCount') return trim as ValidStatistic;
@@ -191,12 +242,24 @@ function parseMissingDataTreatmentOption(
   return defaultValue;
 }
 
+/**
+ * Parse a tag value into alarm options.
+ *
+ * This enforces only what is true of the tag GRAMMAR — numbers must be
+ * complete and finite, integers positive. CloudWatch's own limits (the valid
+ * period set, the evaluation-window ceiling, dataPointsToAlarm <=
+ * evaluationPeriods) are deliberately NOT applied here: the Prometheus rule
+ * path in `prometheus-tools.mts` consumes these same options and uses
+ * `period * evaluationPeriods` as a plain duration, where CloudWatch's period
+ * rules do not apply. Those constraints live on the CloudWatch path, in
+ * `alarm-tools.mts`.
+ */
 export function parseMetricAlarmOptions(
   value: string,
   defaults: MetricAlarmOptions,
 ): MetricAlarmOptions {
   const parts = value.split('/');
-  return {
+  const parsed = {
     warningThreshold:
       parts.length > 0
         ? parseThresholdOption(parts[0], defaults.warningThreshold)
@@ -236,4 +299,6 @@ export function parseMetricAlarmOptions(
           ) satisfies MissingDataTreatment)
         : (defaults.missingDataTreatment satisfies MissingDataTreatment),
   };
+
+  return parsed;
 }
